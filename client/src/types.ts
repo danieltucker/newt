@@ -52,6 +52,8 @@ export interface ReadingListItem {
   savedAt: string;
 }
 
+export type CommentVisibility = 'public' | 'friends' | 'private';
+
 // A comment thread hangs off an article's canonical URL, so the same
 // conversation shows on the feed card and the saved reading-list card alike.
 export interface ArticleComment {
@@ -59,7 +61,7 @@ export interface ArticleComment {
   parentId: string | null;
   title: string | null;      // root comments only
   body: string;              // sanitized HTML from the rich editor
-  isPublic: boolean;
+  visibility: CommentVisibility;
   createdAt: string;
   updatedAt: string;
   mine: boolean;
@@ -69,9 +71,47 @@ export interface ArticleComment {
 
 export interface CommentPrefs {
   showPublic: boolean;
-  defaultPublic: boolean;
+  defaultVisibility: CommentVisibility;
   sort: 'newest' | 'oldest';
   autoExpand: boolean;
+}
+
+// ── Friends & notifications ────────────────────────────────────────────────
+export interface PublicUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+}
+
+export interface FriendRequest {
+  id: string;
+  user: PublicUser;
+  createdAt: string;
+}
+
+export interface FriendRequests {
+  incoming: FriendRequest[];
+  outgoing: FriendRequest[];
+}
+
+export type FriendRelation = 'none' | 'friends' | 'incoming' | 'outgoing';
+
+export interface FriendSearchResult extends PublicUser {
+  relation: FriendRelation;
+}
+
+export type NotificationType = 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  actor: PublicUser | null;
+  articleUrl: string | null;
+  articleTitle: string | null;
+  commentId: string | null;
+  read: boolean;
+  createdAt: string;
 }
 
 export interface AuthState {

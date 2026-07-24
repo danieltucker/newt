@@ -4,8 +4,28 @@ import {
   isBlankHtml,
   canonicalArticleKey,
   isHttpUrl,
+  commentTextLength,
   MAX_COMMENT_BODY,
 } from './comments';
+
+describe('commentTextLength', () => {
+  it('counts only the visible text, ignoring tags', () => {
+    expect(commentTextLength('<p>hello</p>')).toBe(5);
+    expect(commentTextLength('<p><strong>hi</strong> there</p>')).toBe(8); // "hi there"
+  });
+  it('collapses whitespace and decodes &nbsp;', () => {
+    expect(commentTextLength('<p>a\n\n  b</p>')).toBe(3);      // "a b"
+    expect(commentTextLength('<p>a&nbsp;&nbsp;b</p>')).toBe(3); // "a b"
+  });
+  it('does not count markup toward the length', () => {
+    const heavyMarkup = '<p>' + '<em></em>'.repeat(1000) + 'hi</p>';
+    expect(commentTextLength(heavyMarkup)).toBe(2);
+  });
+  it('is zero for a textless body', () => {
+    expect(commentTextLength('<p><br></p>')).toBe(0);
+    expect(commentTextLength('<hr>')).toBe(0);
+  });
+});
 
 describe('sanitizeCommentHtml', () => {
   it('keeps allowed formatting', () => {

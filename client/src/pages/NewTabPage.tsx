@@ -17,7 +17,9 @@ import NotesConsole from '../components/NotesConsole';
 import FolderArticles from '../components/FolderArticles';
 import SaveArticleModal from '../components/SaveArticleModal';
 import AdminModal from '../components/AdminModal';
+import FriendsModal from '../components/FriendsModal';
 import { useFolders } from '../hooks/useFolders';
+import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
 import { useSettings } from '../hooks/useSettings';
@@ -178,6 +180,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showFriends, setShowFriends] = useState(false);
+  const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
 
   // Profile (avatar) for the top bar; kept in sync by SettingsModal's Account tab
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -224,27 +228,33 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     setShowNotes(true);
   }, []);
 
-  // Only one full-screen surface at a time: opening the notes console, the
-  // command console, or the new-bookmark dialog dismisses the others.
-  useEffect(() => {
-    if (!showNotes) return;
-    setShowConsole(false); setConsoleFading(false);
-    setShowAddLink(false);
-  }, [showNotes]);
-  useEffect(() => {
-    if (!showConsole) return;
-    setShowNotes(false); setNotesFading(false); setNotesTarget(null);
-    setShowAddLink(false);
-  }, [showConsole]);
-  useEffect(() => {
-    if (!showAddLink) return;
-    setShowConsole(false); setConsoleFading(false);
-    setShowNotes(false); setNotesFading(false); setNotesTarget(null);
-  }, [showAddLink]);
-
-  const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+
+  // Only one overlay at a time. Opening the notes console, the command console,
+  // or the new-bookmark dialog tears down every other dialog on screen —
+  // otherwise a console typed over a half-filled settings pane leaves two
+  // surfaces fighting for Escape and for focus.
+  type Overlay = 'notes' | 'console' | 'addLink';
+  const dismissOtherOverlays = useCallback((keep: Overlay) => {
+    if (keep !== 'console') { setShowConsole(false); setConsoleFading(false); }
+    if (keep !== 'notes') { setShowNotes(false); setNotesFading(false); setNotesTarget(null); }
+    if (keep !== 'addLink') { setShowAddLink(false); setBookmarkletAddUrl(''); }
+    setShowNewFolder(false);
+    setShowSettings(false);
+    setShowAdmin(false);
+    setShowImport(false);
+    setEditingBookmark(null);
+    setEditingFolder(null);
+    setSavingArticle(null);
+    setArticleUrl(null);
+  }, []);
+
+  useEffect(() => { if (showNotes) dismissOtherOverlays('notes'); }, [showNotes, dismissOtherOverlays]);
+  useEffect(() => { if (showConsole) dismissOtherOverlays('console'); }, [showConsole, dismissOtherOverlays]);
+  useEffect(() => { if (showAddLink) dismissOtherOverlays('addLink'); }, [showAddLink, dismissOtherOverlays]);
+
+  const [feedRefreshKey, setFeedRefreshKey] = useState(0);
 
   // Detect bookmarklet intent from URL params (set before React renders)
   useEffect(() => {
@@ -517,10 +527,12 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // Comment display prefs, shared by the feed and reading-list threads
   const commentPrefs = useMemo<CommentPrefs>(() => ({
     showPublic: settings.commentsShowPublic !== false,
-    defaultPublic: settings.commentsDefaultPublic === true,
+    // Fall back to the legacy boolean for accounts saved before the 3-way setting
+    defaultVisibility: settings.commentsDefaultVisibility
+      ?? (settings.commentsDefaultPublic ? 'public' : 'private'),
     sort: settings.commentsSort ?? 'newest',
     autoExpand: settings.commentsAutoExpand === true,
-  }), [settings.commentsShowPublic, settings.commentsDefaultPublic, settings.commentsSort, settings.commentsAutoExpand]);
+  }), [settings.commentsShowPublic, settings.commentsDefaultVisibility, settings.commentsDefaultPublic, settings.commentsSort, settings.commentsAutoExpand]);
 
   // null when background is disabled, otherwise the resolved theme key
   const bgKey = settings.backgroundGradient !== 'none' ? resolvedTheme : null;
@@ -597,6 +609,17 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
             ? <img src={profile.avatar} alt="" className={styles.userAvatar} />
             : <span className={styles.userAvatarFallback}>{username.charAt(0).toUpperCase()}</span>}
           <span className={styles.username}>{username}</span>
+        </button>
+        <button className={`${styles.iconBtn} ${notifUnread > 0 ? styles.iconBtnActive : ''}`} onClick={() => setShowFriends(true)} title="People & notifications">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          {notifUnread > 0 && (
+            <span className={styles.notifBadge}>{notifUnread > 9 ? '9+' : notifUnread}</span>
+          )}
         </button>
         {isAdmin && (
           <button className={styles.iconBtn} onClick={() => setShowAdmin(true)} title="Admin">
@@ -702,6 +725,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onOpenArticle={setArticleUrl}
                 layout={settings.readingListLayout ?? 'cards'}
                 onLayoutChange={l => updateSetting({ readingListLayout: l })}
+                collapsed={settings.readingListCollapsed === true}
+                onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
                 commentPrefs={commentPrefs}
               />
             </div>
@@ -743,7 +768,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
         <footer className={styles.footer}>
           <a href="https://github.com/danieltucker/newTab" target="_blank" rel="noopener noreferrer" className={styles.footerLink}>
-            v1.5
+            v1.6
           </a>
         </footer>
       </div>
@@ -874,6 +899,17 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
       {showAdmin && (
         <AdminModal currentUsername={username} onClose={() => setShowAdmin(false)} />
+      )}
+
+      {showFriends && (
+        <FriendsModal
+          accessToken={accessToken}
+          notifications={notifications}
+          notifLoading={notifLoading}
+          onLoadNotifications={loadNotifications}
+          onMarkAllRead={markNotificationsRead}
+          onClose={() => setShowFriends(false)}
+        />
       )}
 
       {showConsole && (

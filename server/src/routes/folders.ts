@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
+import { syncBookmarkBadges } from '../lib/unread';
 import logger from '../lib/logger';
 
 const router = Router();
@@ -77,10 +78,33 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
   res.json({ ok: true });
 });
 
-// Clears the unread badges on every bookmark in the folder
+// Clears the unread badges on every bookmark in the folder. Because the badge
+// now derives from read-state, clearing it durably means marking the folder's
+// feed items read too — which also keeps the RSS reader in step, so "mark read"
+// on the bookmarks side and the feed side mean the same thing.
 router.post('/:id/mark-read', async (req: AuthRequest, res: Response): Promise<void> => {
   const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
+
+  if (folder.feedUrls.length > 0) {
+    const feeds = await ensureFeeds(folder.feedUrls);
+    const items = await prisma.feedItem.findMany({
+      where: {
+        feedId: { in: feeds.map(f => f.id) },
+        reads: { none: { userId: req.userId! } },
+        dismissals: { none: { userId: req.userId!, folderId: req.params.id } },
+      },
+      select: { id: true },
+      take: 5000,
+    });
+    if (items.length > 0) {
+      await prisma.readFeedItem.createMany({
+        data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
+        skipDuplicates: true,
+      });
+    }
+  }
+
   await prisma.bookmark.updateMany({
     where: { folderId: req.params.id, userId: req.userId! },
     data: { unreadCount: 0 },
@@ -212,15 +236,11 @@ router.post('/:id/articles/read-all', async (req: AuthRequest, res: Response): P
   }
 });
 
-function hostOf(url: string): string {
-  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
-}
-
-// Marks items read for this user (idempotent) and draws down the unread badge
-// on whichever site tile the article came from. Articles and bookmarks have no
-// stored relation, so they're matched on the link's hostname — an exact match
-// on bookmark.domain, or a subdomain of it (news.bbc.co.uk → bbc.co.uk).
-// Returns the bookmarks whose counts changed so the client can sync badges.
+// Marks items read for this user (idempotent) and redraws the unread badge on
+// the site tiles whose feed those items belong to. The badge is recomputed from
+// read-state rather than decremented, so it always matches what the feed reader
+// shows. Returns the bookmarks whose counts changed so the client can sync
+// badges without a refetch.
 router.post('/:id/articles/read', async (req: AuthRequest, res: Response): Promise<void> => {
   const ids: unknown = req.body?.itemIds;
   if (!Array.isArray(ids) || ids.some(i => typeof i !== 'string')) {
@@ -234,8 +254,8 @@ router.post('/:id/articles/read', async (req: AuthRequest, res: Response): Promi
     const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
     if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
 
-    // Only items becoming read for the first time may decrement a badge,
-    // otherwise a re-scroll would drive counts down repeatedly
+    // Only items becoming read for the first time can move a badge; a re-scroll
+    // over already-read items is a no-op.
     const already = await prisma.readFeedItem.findMany({
       where: { userId: req.userId!, itemId: { in: itemIds } },
       select: { itemId: true },
@@ -246,44 +266,16 @@ router.post('/:id/articles/read', async (req: AuthRequest, res: Response): Promi
 
     const items = await prisma.feedItem.findMany({
       where: { id: { in: fresh } },
-      select: { id: true, link: true },
+      select: { id: true, feedId: true },
     });
     await prisma.readFeedItem.createMany({
       data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
       skipDuplicates: true,
     });
 
-    const readsByHost = new Map<string, number>();
-    for (const i of items) {
-      const host = hostOf(i.link);
-      if (host) readsByHost.set(host, (readsByHost.get(host) ?? 0) + 1);
-    }
-
-    const candidates = await prisma.bookmark.findMany({
-      where: { userId: req.userId!, unreadCount: { gt: 0 } },
-      select: { id: true, domain: true, unreadCount: true },
-    });
-    const updates = candidates
-      .map(b => {
-        const domain = b.domain.toLowerCase().replace(/^www\./, '');
-        let hits = 0;
-        for (const [host, n] of readsByHost) {
-          if (host === domain || host.endsWith(`.${domain}`)) hits += n;
-        }
-        return { id: b.id, unreadCount: Math.max(0, b.unreadCount - hits), hits };
-      })
-      .filter(u => u.hits > 0);
-
-    if (updates.length > 0) {
-      await prisma.$transaction(updates.map(u =>
-        prisma.bookmark.updateMany({
-          where: { id: u.id, userId: req.userId! },
-          data: { unreadCount: u.unreadCount },
-        })
-      ));
-    }
-
-    res.json({ bookmarks: updates.map(({ id, unreadCount }) => ({ id, unreadCount })) });
+    const feedIds = [...new Set(items.map(i => i.feedId))];
+    const updates = await syncBookmarkBadges(req.userId!, feedIds);
+    res.json({ bookmarks: updates });
   } catch (err) {
     logger.error(err, 'Mark articles read error');
     res.status(500).json({ error: 'Server error' });

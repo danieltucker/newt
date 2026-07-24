@@ -119,6 +119,8 @@ interface Props {
   onOpenArticle?: (url: string) => void;
   layout?: ReadingListLayout;
   onLayoutChange?: (layout: ReadingListLayout) => void;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
   commentPrefs: CommentPrefs;
 }
 
@@ -159,8 +161,9 @@ interface CardProps {
   item: ReadingListItem;
   variant?: MagVariant;
   isPendingDelete?: boolean;
-  postReadState?: 'active' | 'leaving';
+  isPostRead?: boolean;
   onPostReadAction?: (action: 'archive' | 'delete') => void;
+  onPostReadDismiss?: () => void;
   onOpened?: (id: string) => void;
   onDelete: (id: string) => void;
   onUndo: (id: string) => void;
@@ -172,7 +175,7 @@ interface CardProps {
   onOpenReader: () => void;
 }
 
-function ReadingCard({ item, variant, isPendingDelete, postReadState, onPostReadAction, onOpened, onDelete, onUndo, onArchive, onEdit, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader }: CardProps) {
+function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, onArchive, onEdit, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader }: CardProps) {
   const tags = parseTags(item.tag);
 
   // Magazine text/brief variants stay type-only; everything else shows art when it exists
@@ -185,7 +188,7 @@ function ReadingCard({ item, variant, isPendingDelete, postReadState, onPostRead
     variant === 'brief' ? styles.briefWrap : '',
     item.archived ? styles.archivedCard : '',
     isPendingDelete ? styles.pendingDelete : '',
-    postReadState ? styles.postReadCard : '',
+    isPostRead ? styles.postReadCard : '',
     // No cover art → reserve top space so the floating controls push text down
     // instead of overlapping it
     !showImage ? styles.noHero : '',
@@ -289,8 +292,18 @@ function ReadingCard({ item, variant, isPendingDelete, postReadState, onPostRead
         </div>
       )}
 
-      {postReadState && !isPendingDelete && (
-        <div className={`${styles.postReadOverlay} ${postReadState === 'leaving' ? styles.postReadLeaving : ''}`}>
+      {isPostRead && !isPendingDelete && (
+        <div className={styles.postReadOverlay}>
+          <button
+            className={styles.postReadCloseBtn}
+            aria-label="Dismiss"
+            title="Dismiss"
+            onClick={onPostReadDismiss}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M1 1l10 10M11 1L1 11"/>
+            </svg>
+          </button>
           <div className={styles.postReadTitle}>
             Are you done with <span className={styles.postReadItemTitle}>{item.title}</span>?
           </div>
@@ -302,6 +315,10 @@ function ReadingCard({ item, variant, isPendingDelete, postReadState, onPostRead
               Remove
             </button>
           </div>
+          {/* Drains left-to-right; hovering the overlay pauses it (see CSS), and
+              the animation ending — not a JS timer — is what dismisses it, so the
+              bar can never disagree with the countdown it's drawing. */}
+          <div className={styles.postReadCountdown} onAnimationEnd={onPostReadDismiss} />
         </div>
       )}
     </div>
@@ -310,7 +327,7 @@ function ReadingCard({ item, variant, isPendingDelete, postReadState, onPostRead
 
 const DELETE_DELAY = 3000;
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchive, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, commentPrefs }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchive, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs }: Props) {
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const timerMap = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -346,8 +363,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
   // ── Post-read overlay: when you come back from an article you opened,
   // that card offers big Archive/Remove actions, then drains away ──
   const [postRead, setPostRead] = useState<string | null>(null);
-  const [postReadLeaving, setPostReadLeaving] = useState(false);
-  const postReadTimers = useRef<{ dismiss?: ReturnType<typeof setTimeout> }>({});
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -367,7 +382,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
         // Only for recent reads on articles that still exist and aren't archived
         if (Date.now() - ts < 60 * 60 * 1000 && itemsRef.current.some(i => i.id === id && !i.archived)) {
           setPostRead(id);
-          setPostReadLeaving(false);
         }
       } catch {}
     }
@@ -384,47 +398,16 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     };
   }, []);
 
-  // Once the user starts interacting with the page again, the overlay
-  // lingers 10s and then drains away
-  useEffect(() => {
-    if (!postRead || postReadLeaving) return;
-    const timers = postReadTimers.current;
-    function onInteract() {
-      remove();
-      timers.dismiss = setTimeout(() => setPostReadLeaving(true), 10_000);
-    }
-    function remove() {
-      window.removeEventListener('pointerdown', onInteract, true);
-      window.removeEventListener('keydown', onInteract, true);
-      window.removeEventListener('wheel', onInteract, true);
-      window.removeEventListener('touchstart', onInteract, true);
-    }
-    window.addEventListener('pointerdown', onInteract, true);
-    window.addEventListener('keydown', onInteract, true);
-    window.addEventListener('wheel', onInteract, true);
-    window.addEventListener('touchstart', onInteract, true);
-    return () => {
-      remove();
-      clearTimeout(timers.dismiss);
-    };
-  }, [postRead, postReadLeaving]);
-
-  // Unmount the overlay once its drain animation has played out
-  useEffect(() => {
-    if (!postReadLeaving) return;
-    const t = setTimeout(() => {
-      setPostRead(null);
-      setPostReadLeaving(false);
-    }, 480);
-    return () => clearTimeout(t);
-  }, [postReadLeaving]);
+  // Dismissal is driven by the countdown bar in the overlay itself — it runs
+  // down while the overlay is ignored and pauses under the pointer, so leaving
+  // the cursor on the prompt keeps it around for as long as you're reading it.
+  // It goes the moment it's dismissed; no exit animation to sit through.
+  const dismissPostRead = useCallback(() => setPostRead(null), []);
 
   function postReadAction(action: 'archive' | 'delete') {
     const id = postRead;
     if (!id) return;
-    clearTimeout(postReadTimers.current.dismiss);
     setPostRead(null);
-    setPostReadLeaving(false);
     if (action === 'archive') handleArchive(id, true);
     else requestDelete(id);
   }
@@ -518,6 +501,13 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     }
   }
 
+  // Collapsing takes the add form down with it — a half-typed article hidden
+  // behind a chevron would come back as a surprise on the next expand.
+  function toggleCollapsed() {
+    if (!collapsed) handleCancel();
+    onCollapsedChange?.(!collapsed);
+  }
+
   function handleCancel() {
     setExpanded(false);
     setUrl(''); setTitle(''); setTags([]); setTagInput('');
@@ -528,18 +518,38 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
   return (
     <div className={styles.section}>
       <div className={styles.headerRow}>
-        <div className={styles.sectionLabel}>Reading list</div>
-        <div className={styles.headerActions}>
-          {onLayoutChange && (
-            <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
-          )}
-          {!expanded ? (
-            <button className={styles.addBtn} onClick={() => setExpanded(true)}>+ Save article</button>
-          ) : (
-            <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
-          )}
-        </div>
+        {onCollapsedChange ? (
+          <button
+            className={styles.sectionToggle}
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Expand reading list' : 'Collapse reading list'}
+          >
+            <span className={`${styles.chevron} ${collapsed ? '' : styles.chevronOpen}`} aria-hidden>▶</span>
+            <span className={styles.sectionLabel}>Reading list</span>
+            {collapsed && active.length > 0 && (
+              <span className={styles.sectionCount}>{active.length}</span>
+            )}
+          </button>
+        ) : (
+          <div className={styles.sectionLabel}>Reading list</div>
+        )}
+        {!collapsed && (
+          <div className={styles.headerActions}>
+            {onLayoutChange && (
+              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
+            )}
+            {!expanded ? (
+              <button className={styles.addBtn} onClick={() => setExpanded(true)}>+ Save article</button>
+            ) : (
+              <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Collapsed keeps only the heading — chips, form, cards and archive all go */}
+      {!collapsed && <>
 
       {allTags.length > 0 && (
         <div className={styles.chips}>
@@ -623,8 +633,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
             item={item}
             variant={variants?.[i]}
             isPendingDelete={pendingDeletes.has(item.id)}
-            postReadState={postRead === item.id ? (postReadLeaving ? 'leaving' : 'active') : undefined}
+            isPostRead={postRead === item.id}
             onPostReadAction={postReadAction}
+            onPostReadDismiss={dismissPostRead}
             onOpened={markOpened}
             onDelete={requestDelete}
             onUndo={undoDelete}
@@ -669,6 +680,8 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
           )}
         </div>
       )}
+
+      </>}
 
       {editingItem && (
         <EditArticleModal

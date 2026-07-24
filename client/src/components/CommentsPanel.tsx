@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
-import { ArticleComment, CommentPrefs } from '../types';
+import { ArticleComment, CommentPrefs, CommentVisibility } from '../types';
 import RichEditor from './RichEditor';
 import styles from './CommentsPanel.module.css';
 
@@ -49,6 +49,14 @@ function htmlIsBlank(html: string): boolean {
   return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length === 0;
 }
 
+// Keep in step with MAX_COMMENT_TEXT in server/src/lib/comments.ts. Enforced
+// server-side; this just gives the composer a live counter and blocks Post so
+// the user isn't surprised by a rejection.
+const MAX_COMMENT_TEXT = 5000;
+function commentTextLength(html: string): number {
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().length;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -63,6 +71,14 @@ function textToHtml(text: string): string {
 function initialOf(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
+
+// The three visibility tiers, in the order they appear in the segmented control.
+const VIS_ORDER: CommentVisibility[] = ['public', 'friends', 'private'];
+const VIS_META: Record<CommentVisibility, { label: string; tag: string; hint: string; icon: JSX.Element }> = {
+  public:  { label: 'Public',        tag: 'Public',        hint: 'Anyone using this app can read this comment',        icon: <GlobeIcon /> },
+  friends: { label: 'Friends',       tag: 'Friends',       hint: 'Only your accepted friends can read this comment',    icon: <FriendsIcon /> },
+  private: { label: 'Personal Note', tag: 'Personal Note', hint: 'Only you can read this — a private note to yourself', icon: <LockIcon /> },
+};
 
 // ── The compact strip that sits on a card ────────────────────────────────
 export function CommentBar({ count, onClick }: { count: number; onClick: () => void }) {
@@ -86,28 +102,31 @@ export function CommentBar({ count, onClick }: { count: number; onClick: () => v
 // re-rendering it on every keystroke buys nothing. Only the empty/non-empty
 // flip needs a render, to enable the Post button.
 function Composer({
-  allowTitle, initialTitle = '', initialBody = '', defaultPublic, submitLabel,
+  allowTitle, initialTitle = '', initialBody = '', defaultVisibility, submitLabel,
   autoFocusTitle, busy, onSubmit, onCancel,
 }: {
   allowTitle: boolean;
   initialTitle?: string;
   initialBody?: string;
-  defaultPublic: boolean;
+  defaultVisibility: CommentVisibility;
   submitLabel: string;
   autoFocusTitle?: boolean;
   busy: boolean;
-  onSubmit: (v: { title: string; body: string; isPublic: boolean }) => void;
+  onSubmit: (v: { title: string; body: string; visibility: CommentVisibility }) => void;
   onCancel?: () => void;
 }) {
   const bodyRef = useRef(initialBody);
   const [empty, setEmpty] = useState(htmlIsBlank(initialBody));
+  const [textLen, setTextLen] = useState(() => commentTextLength(initialBody));
   const [title, setTitle] = useState(initialTitle);
-  const [isPublic, setIsPublic] = useState(defaultPublic);
+  const [visibility, setVisibility] = useState<CommentVisibility>(defaultVisibility);
+  const tooLong = textLen > MAX_COMMENT_TEXT;
 
   const handleChange = useCallback((html: string) => {
     bodyRef.current = html;
     const blank = htmlIsBlank(html);
     setEmpty(prev => (prev === blank ? prev : blank));
+    setTextLen(commentTextLength(html));
   }, []);
 
   return (
@@ -126,18 +145,28 @@ function Composer({
         <RichEditor initialHtml={initialBody} onChange={handleChange} />
       </div>
       <div className={styles.composerFoot}>
-        <button
-          type="button"
-          className={`${styles.visToggle} ${isPublic ? styles.visPublic : ''}`}
-          onClick={() => setIsPublic(v => !v)}
-          title={isPublic
-            ? 'Public — anyone using this app can read this comment'
-            : 'Private — only you can read this comment'}
-        >
-          {isPublic ? <GlobeIcon /> : <LockIcon />}
-          {isPublic ? 'Public' : 'Private'}
-        </button>
+        <div className={styles.visSwitch} role="radiogroup" aria-label="Who can see this comment">
+          {VIS_ORDER.map(v => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={visibility === v}
+              className={`${styles.visOption} ${visibility === v ? styles.visOptionActive : ''}`}
+              onClick={() => setVisibility(v)}
+              title={VIS_META[v].hint}
+            >
+              {VIS_META[v].icon}
+              <span className={styles.visOptionLabel}>{VIS_META[v].label}</span>
+            </button>
+          ))}
+        </div>
         <div className={styles.composerBtns}>
+          {textLen > MAX_COMMENT_TEXT * 0.8 && (
+            <span className={`${styles.charCount} ${tooLong ? styles.charCountOver : ''}`}>
+              {textLen.toLocaleString()} / {MAX_COMMENT_TEXT.toLocaleString()}
+            </span>
+          )}
           {onCancel && (
             <button type="button" className={styles.cancelBtn} onClick={onCancel} disabled={busy}>
               Cancel
@@ -146,8 +175,9 @@ function Composer({
           <button
             type="button"
             className={styles.postBtn}
-            disabled={empty || busy}
-            onClick={() => onSubmit({ title: title.trim(), body: bodyRef.current, isPublic })}
+            disabled={empty || busy || tooLong}
+            title={tooLong ? `Comment is too long — keep it under ${MAX_COMMENT_TEXT.toLocaleString()} characters` : undefined}
+            onClick={() => onSubmit({ title: title.trim(), body: bodyRef.current, visibility })}
           >
             {busy ? 'Saving…' : submitLabel}
           </button>
@@ -171,8 +201,8 @@ function CommentItem({
   onReply: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-  onSubmitReply: (parentId: string, v: { body: string; isPublic: boolean }) => void;
-  onSubmitEdit: (id: string, v: { title: string; body: string; isPublic: boolean }) => void;
+  onSubmitReply: (parentId: string, v: { body: string; visibility: CommentVisibility }) => void;
+  onSubmitEdit: (id: string, v: { title: string; body: string; visibility: CommentVisibility }) => void;
   onCancel: () => void;
 }) {
   const isEditing = editing === node.id;
@@ -191,10 +221,12 @@ function CommentItem({
           {commentDate(node.createdAt)}
         </time>
         {node.updatedAt !== node.createdAt && <span className={styles.edited}>edited</span>}
-        {/* Only your own comments need the badge — anything from someone else is public by definition */}
-        {node.mine && (
-          <span className={`${styles.visTag} ${node.isPublic ? styles.visTagPublic : ''}`}>
-            {node.isPublic ? 'Public' : 'Private'}
+        {/* Tag your own comments (all three tiers), and others' friends-only
+            comments so it's clear why you can see them. Others' public comments
+            need no tag — public is the default read. */}
+        {(node.mine || node.visibility === 'friends') && (
+          <span className={`${styles.visTag} ${styles[`visTag_${node.visibility}`]}`}>
+            {VIS_META[node.visibility].tag}
           </span>
         )}
       </div>
@@ -204,7 +236,7 @@ function CommentItem({
           allowTitle={node.parentId === null}
           initialTitle={node.title ?? ''}
           initialBody={node.body}
-          defaultPublic={node.isPublic}
+          defaultVisibility={node.visibility}
           submitLabel="Save"
           busy={busyId === node.id}
           onSubmit={v => onSubmitEdit(node.id, v)}
@@ -234,10 +266,10 @@ function CommentItem({
       {isReplying && (
         <Composer
           allowTitle={false}
-          defaultPublic={prefs.defaultPublic}
+          defaultVisibility={prefs.defaultVisibility}
           submitLabel="Reply"
           busy={busyId === node.id}
-          onSubmit={v => onSubmitReply(node.id, { body: v.body, isPublic: v.isPublic })}
+          onSubmit={v => onSubmitReply(node.id, { body: v.body, visibility: v.visibility })}
           onCancel={onCancel}
         />
       )}
@@ -319,7 +351,7 @@ export default function CommentsPanel({
             url: articleUrl,
             articleTitle,
             body: textToHtml(note.trim()),
-            isPublic: false,
+            visibility: 'private',
           });
           const refreshed = await fetchThread();
           if (refreshed) tree = refreshed;
@@ -341,12 +373,12 @@ export default function CommentsPanel({
     if (tree) publish(tree);
   }, [fetchThread, publish]);
 
-  async function submitRoot(v: { title: string; body: string; isPublic: boolean }) {
+  async function submitRoot(v: { title: string; body: string; visibility: CommentVisibility }) {
     setBusyId('new');
     try {
       await apiPost('/api/v1/comments', {
         url: articleUrl, articleTitle,
-        title: v.title || undefined, body: v.body, isPublic: v.isPublic,
+        title: v.title || undefined, body: v.body, visibility: v.visibility,
       });
       setComposing(false);
       await reload();
@@ -357,11 +389,11 @@ export default function CommentsPanel({
     }
   }
 
-  async function submitReply(parentId: string, v: { body: string; isPublic: boolean }) {
+  async function submitReply(parentId: string, v: { body: string; visibility: CommentVisibility }) {
     setBusyId(parentId);
     try {
       await apiPost('/api/v1/comments', {
-        url: articleUrl, articleTitle, parentId, body: v.body, isPublic: v.isPublic,
+        url: articleUrl, articleTitle, parentId, body: v.body, visibility: v.visibility,
       });
       setReplyTo(null);
       await reload();
@@ -372,11 +404,11 @@ export default function CommentsPanel({
     }
   }
 
-  async function submitEdit(id: string, v: { title: string; body: string; isPublic: boolean }) {
+  async function submitEdit(id: string, v: { title: string; body: string; visibility: CommentVisibility }) {
     setBusyId(id);
     try {
       await apiPatch(`/api/v1/comments/${id}`, {
-        title: v.title || null, body: v.body, isPublic: v.isPublic,
+        title: v.title || null, body: v.body, visibility: v.visibility,
       });
       setEditing(null);
       await reload();
@@ -439,7 +471,7 @@ export default function CommentsPanel({
         <Composer
           allowTitle
           autoFocusTitle
-          defaultPublic={prefs.defaultPublic}
+          defaultVisibility={prefs.defaultVisibility}
           submitLabel="Post comment"
           busy={busyId === 'new'}
           onSubmit={submitRoot}
@@ -497,6 +529,18 @@ function LockIcon() {
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function FriendsIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }

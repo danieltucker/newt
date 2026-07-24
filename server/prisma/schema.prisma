@@ -28,6 +28,49 @@ model User {
   dismissedFeedItems DismissedFeedItem[]
   readFeedItems      ReadFeedItem[]
   comments           Comment[]
+  friendshipsRequested Friendship[]  @relation("FriendshipRequester")
+  friendshipsReceived  Friendship[]  @relation("FriendshipAddressee")
+  notifications        Notification[]
+  notificationsActed   Notification[] @relation("NotificationActor")
+}
+
+// A friend relationship, created as a directed request and confirmed when the
+// addressee accepts. The pair is unordered once accepted — friendIdsOf() reads
+// it from either side. A declined request or an unfriend simply deletes the row.
+model Friendship {
+  id          String    @id @default(cuid())
+  requesterId String
+  requester   User      @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User      @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      String    @default("pending") // 'pending' | 'accepted'
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+}
+
+// Recipient-scoped, generic notification. `actor` is whoever triggered it; the
+// article* / commentId columns carry context for the comment-activity types.
+// commentId is a plain string (no FK) so deleting a comment can't cascade here.
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment'
+  actorId      String?
+  actor        User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  articleKey   String?
+  articleUrl   String?
+  articleTitle String?
+  commentId    String?
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 model RefreshToken {
@@ -162,7 +205,8 @@ model Bookmark {
 // Comments attach to an article by its canonical URL key, so the same thread
 // shows whether the article lives in the reading list or the RSS feed. Threaded
 // via parentId; only root comments (parentId == null) may set a title.
-// isPublic comments are visible to every user; private ones only to the author.
+// visibility controls who can read it: public (everyone), friends (accepted
+// friends), or private (author only).
 model Comment {
   id           String    @id @default(cuid())
   userId       String
@@ -175,7 +219,8 @@ model Comment {
   replies      Comment[] @relation("CommentThread")
   title        String?   // root comments only
   body         String    // sanitized HTML from the rich editor
-  isPublic     Boolean   @default(false)
+  // 'public' (every signed-in user) | 'friends' (accepted friends) | 'private' (only the author)
+  visibility   String    @default("private")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

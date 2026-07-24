@@ -494,16 +494,38 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                   <div className={styles.row}>
                     <div>
-                      <div className={styles.rowLabel}>New comments are public</div>
+                      <div className={styles.rowLabel}>Default visibility for new comments</div>
                       <div className={styles.rowHint}>
-                        Start each new comment as public so anyone using this app can read it.
-                        You can always flip a single comment before posting it.
+                        What each new comment starts as. You can always change a single
+                        comment before posting it.
                       </div>
                     </div>
-                    <Toggle
-                      checked={settings.commentsDefaultPublic === true}
-                      onChange={v => onUpdate({ commentsDefaultPublic: v })}
-                    />
+                  </div>
+                  <div className={styles.openModeList}>
+                    {([
+                      { value: 'public',  label: 'Public',        hint: 'Anyone using this app can read it' },
+                      { value: 'friends', label: 'Friends',       hint: 'Only your accepted friends can read it' },
+                      { value: 'private', label: 'Personal Note', hint: 'Only you can read it — a private note' },
+                    ] as const).map(opt => {
+                      const cur = settings.commentsDefaultVisibility
+                        ?? (settings.commentsDefaultPublic ? 'public' : 'private');
+                      const active = cur === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          className={`${styles.openModeOption} ${active ? styles.openModeSelected : ''}`}
+                          onClick={() => onUpdate({ commentsDefaultVisibility: opt.value })}
+                        >
+                          <div className={styles.openModeRadio}>
+                            <span className={active ? styles.radioFilled : styles.radioEmpty} />
+                          </div>
+                          <div>
+                            <div className={styles.openModeLabel}>{opt.label}</div>
+                            <div className={styles.rowHint}>{opt.hint}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                   <div className={styles.row}>
                     <div>

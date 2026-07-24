@@ -7,8 +7,26 @@ import sanitizeHtml from 'sanitize-html';
 const TODO_CLASS = 'note-todo';
 const TABLE_CLASS = 'note-table';
 
+// Two independent caps on a comment body:
+//  - MAX_COMMENT_BODY bounds the raw HTML (markup + text) — a hard safety limit
+//    against oversized payloads.
+//  - MAX_COMMENT_TEXT bounds the *visible* text once tags are stripped, so a
+//    comment stays comment-sized (rich formatting can still be verbose in HTML
+//    while the readable content is capped).
 export const MAX_COMMENT_BODY = 20_000;
+export const MAX_COMMENT_TEXT = 5_000;
 export const MAX_COMMENT_TITLE = 200;
+
+// Length of the readable text in a comment body, with tags stripped and
+// whitespace collapsed. Structural-but-textless content (an image, a divider)
+// contributes nothing here — the raw-HTML cap covers those.
+export function commentTextLength(html: string): number {
+  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} })
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length;
+}
 
 export function sanitizeCommentHtml(html: string): string {
   return sanitizeHtml(html, {

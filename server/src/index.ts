@@ -17,6 +17,8 @@ import adminRoutes from './routes/admin';
 import accountRoutes from './routes/account';
 import commentRoutes from './routes/comments';
 import articleRoutes from './routes/articles';
+import friendRoutes from './routes/friends';
+import notificationRoutes from './routes/notifications';
 import { startFeedScheduler, stopFeedScheduler } from './lib/feedScheduler';
 
 const app = express();
@@ -70,6 +72,8 @@ app.use('/api/v1/admin', apiLimiter, adminRoutes);
 app.use('/api/v1/account', apiLimiter, accountRoutes);
 app.use('/api/v1/comments', apiLimiter, commentRoutes);
 app.use('/api/v1/articles', apiLimiter, articleRoutes);
+app.use('/api/v1/friends', apiLimiter, friendRoutes);
+app.use('/api/v1/notifications', apiLimiter, notificationRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

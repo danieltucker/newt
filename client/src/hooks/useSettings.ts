@@ -45,11 +45,13 @@ export interface UserSettings {
   backgroundGradient?: 'none' | 'default';
   rssLayout?: 'list' | 'cards' | 'magazine';
   readingListLayout?: 'list' | 'cards' | 'magazine';
+  readingListCollapsed?: boolean;
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
   commentsShowPublic?: boolean;
-  commentsDefaultPublic?: boolean;
+  commentsDefaultPublic?: boolean; // legacy, superseded by commentsDefaultVisibility
+  commentsDefaultVisibility?: 'public' | 'friends' | 'private';
   commentsSort?: 'newest' | 'oldest';
   commentsAutoExpand?: boolean;
   activeWidgets: string[];
@@ -78,11 +80,13 @@ const DEFAULTS: UserSettings = {
   backgroundGradient: 'default',
   rssLayout: 'cards',
   readingListLayout: 'cards',
+  readingListCollapsed: false,
   rssEnabled: true,
   saveArticleMode: 'dialog',
   markReadOnScroll: true,
   commentsShowPublic: true,
   commentsDefaultPublic: false,
+  commentsDefaultVisibility: 'private',
   commentsSort: 'newest',
   commentsAutoExpand: false,
   activeWidgets: ['weather', 'notes'],

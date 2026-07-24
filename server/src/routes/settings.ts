@@ -25,12 +25,14 @@ export interface UserSettings {
   backgroundGradient?: 'none' | 'aurora' | 'dusk' | 'ocean' | 'midnight' | 'rose';
   rssLayout?: 'list' | 'cards' | 'magazine';
   readingListLayout?: 'list' | 'cards' | 'magazine';
+  readingListCollapsed?: boolean;
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
   // Comments — shared threads hanging off an article's canonical URL
   commentsShowPublic?: boolean;      // see other people's public comments
-  commentsDefaultPublic?: boolean;   // new comments start public
+  commentsDefaultPublic?: boolean;   // legacy: new comments start public (superseded)
+  commentsDefaultVisibility?: 'public' | 'friends' | 'private'; // new comments' starting visibility
   commentsSort?: 'newest' | 'oldest';
   commentsAutoExpand?: boolean;      // open the thread without clicking
   activeWidgets: string[];
@@ -58,6 +60,7 @@ const DEFAULTS: UserSettings = {
   backgroundGradient: 'none',
   rssLayout: 'cards',
   readingListLayout: 'cards',
+  readingListCollapsed: false,
   rssEnabled: true,
   saveArticleMode: 'dialog',
   markReadOnScroll: true,
@@ -65,6 +68,7 @@ const DEFAULTS: UserSettings = {
   // someone starts commenting — opt in instead.
   commentsShowPublic: true,
   commentsDefaultPublic: false,
+  commentsDefaultVisibility: 'private',
   commentsSort: 'newest',
   commentsAutoExpand: false,
   activeWidgets: ['weather', 'notes'],
@@ -91,7 +95,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'weatherLocation', 'weatherUnit', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'clockFormat', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'activeWidgets', 'worldClockZones', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsSort', 'commentsAutoExpand']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'weatherLocation', 'weatherUnit', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'clockFormat', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'activeWidgets', 'worldClockZones', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys

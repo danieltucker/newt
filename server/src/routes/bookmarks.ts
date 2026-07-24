@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { isSafeUrl } from '../lib/isSafeUrl';
 import { canonicalFeedKey } from '../lib/feedUtils';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
+import { feedUnreadCount } from '../lib/unread';
 import logger from '../lib/logger';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
@@ -247,17 +248,14 @@ router.post('/:id/check-feed', async (req: AuthRequest, res: Response): Promise<
     else refreshStaleFeeds([feed]).catch(() => {});
   }
 
-  // Unread = shared items published since the user last opened this site (or a
-  // 7-day baseline on first check). Idempotent — re-checking never double-counts,
-  // and POST /visited zeroes it by advancing lastVisitedAt.
-  const since = bookmark.lastVisitedAt
-    ? new Date(bookmark.lastVisitedAt)
-    : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
+  // Unread = shared items in this feed the user hasn't read or dismissed — the
+  // same read-state the RSS reader writes, so the badge and the feed's "new"
+  // outlines never disagree and a background check can't resurrect a count the
+  // user already cleared. Idempotent by construction.
   let unreadCount = 0;
   let feedLatestAt: Date | undefined;
   if (feed) {
-    unreadCount = await prisma.feedItem.count({ where: { feedId: feed.id, pubDate: { gt: since } } });
+    unreadCount = await feedUnreadCount(req.userId!, feed.id, bookmark.folderId);
     const latest = await prisma.feedItem.findFirst({
       where: { feedId: feed.id },
       orderBy: { pubDate: 'desc' },
@@ -271,7 +269,7 @@ router.post('/:id/check-feed', async (req: AuthRequest, res: Response): Promise<
     data: {
       feedUrl,
       feedCheckedAt: new Date(),
-      unreadCount: Math.min(unreadCount, 100),
+      unreadCount,
       ...(feedLatestAt && { feedLatestAt }),
     },
   });
@@ -306,9 +304,30 @@ router.post('/:id/unpin', async (req: AuthRequest, res: Response): Promise<void>
   res.json(updated);
 });
 
+// Opening a site clears its badge. To keep that durable — and to keep the badge
+// in step with the RSS reader — visiting also marks the site's feed items read,
+// so the next check-feed recomputes to zero instead of resurrecting the count.
 router.post('/:id/visited', async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.bookmark.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+  if (existing.feedUrl) {
+    const [feed] = await ensureFeeds([existing.feedUrl]);
+    if (feed) {
+      const items = await prisma.feedItem.findMany({
+        where: { feedId: feed.id, reads: { none: { userId: req.userId! } } },
+        select: { id: true },
+        take: 5000,
+      });
+      if (items.length > 0) {
+        await prisma.readFeedItem.createMany({
+          data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
+
   await prisma.bookmark.update({
     where: { id: req.params.id },
     data: { lastVisitedAt: new Date(), unreadCount: 0 },

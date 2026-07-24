@@ -173,11 +173,19 @@
   letter-spacing: 0.04em;
 }
 
-.visTagPublic {
+.visTag_public {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 40%, transparent);
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
+
+.visTag_friends {
+  color: #d98b2b;
+  border-color: color-mix(in oklab, #d98b2b 45%, transparent);
+  background: color-mix(in oklab, #d98b2b 14%, transparent);
+}
+
+/* visTag_private uses the neutral base .visTag styling */
 
 .dot { opacity: 0.5; }
 
@@ -421,28 +429,53 @@
   gap: 6px;
 }
 
-.visToggle {
-  display: flex;
+.charCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 2px;
+}
+
+.charCountOver { color: #e5484d; }
+
+/* Three-way visibility segmented control */
+.visSwitch {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
+  gap: 2px;
+  padding: 2px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
+}
+
+.visOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
-.visToggle:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+.visOption:hover { color: var(--text); }
 
-.visPublic {
+.visOptionActive {
   color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+/* Below a narrow composer, drop the labels and keep just the icons */
+@media (max-width: 380px) {
+  .visOptionLabel { display: none; }
 }
 
 .postBtn,
@@ -474,5 +507,5 @@
 .cancelBtn:hover:not(:disabled) { color: var(--text); }
 
 @media (prefers-reduced-motion: reduce) {
-  .chevron, .toggle, .actionBtn, .visToggle, .postBtn { transition: none; }
+  .chevron, .toggle, .actionBtn, .visOption, .postBtn { transition: none; }
 }

@@ -7,14 +7,32 @@ import {
   sanitizeCommentHtml,
   isBlankHtml,
   isHttpUrl,
+  commentTextLength,
   MAX_COMMENT_BODY,
+  MAX_COMMENT_TEXT,
   MAX_COMMENT_TITLE,
 } from '../lib/comments';
+import { friendIdsOf } from '../lib/friends';
+import { Visibility, isVisibility, visibilityWhere } from '../lib/commentVisibility';
+import { perUserLimiter } from '../lib/rateLimit';
 
 const router = Router();
 router.use(requireAuth);
 
 const MAX_URLS_PER_COUNT = 200;
+
+// Per-user write limits (keyed on userId, so a single account can't spam even
+// across IPs). A burst cap for fast back-and-forth, plus an hourly ceiling.
+// These also bound notification fan-out, since a friends-comment notifies every
+// friend and a reply notifies the parent author.
+const commentBurstLimiter = perUserLimiter({
+  windowMs: 60_000, max: 8,
+  message: "You're posting comments too fast — take a breather and try again in a moment.",
+});
+const commentHourlyLimiter = perUserLimiter({
+  windowMs: 60 * 60_000, max: 60,
+  message: "You've hit the hourly comment limit — please try again later.",
+});
 
 // Author fields exposed on every comment. Never the email or anything else
 // private — public comments are readable by every signed-in user.
@@ -33,7 +51,7 @@ type CommentRow = {
   parentId: string | null;
   title: string | null;
   body: string;
-  isPublic: boolean;
+  visibility: string;
   createdAt: Date;
   updatedAt: Date;
   user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
@@ -44,7 +62,7 @@ interface CommentNode {
   parentId: string | null;
   title: string | null;
   body: string;
-  isPublic: boolean;
+  visibility: string;
   createdAt: Date;
   updatedAt: Date;
   mine: boolean;
@@ -63,7 +81,7 @@ function toNode(row: CommentRow, viewerId: string): CommentNode {
     parentId: row.parentId,
     title: row.title,
     body: row.body,
-    isPublic: row.isPublic,
+    visibility: row.visibility,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     mine: row.userId === viewerId,
@@ -113,12 +131,41 @@ async function viewerPrefs(userId: string): Promise<{ showPublic: boolean; sort:
   };
 }
 
-// Visibility rule, applied everywhere: your own comments always, plus everyone
-// else's public ones when you haven't opted out.
-function visibilityWhere(userId: string, showPublic: boolean) {
-  return showPublic
-    ? { OR: [{ userId }, { isPublic: true }] }
-    : { userId };
+// Fan out notifications for a freshly-created comment: the author of a comment
+// you reply to hears about it, and when you post a friends-only comment your
+// friends do. Public comments notify no one — that would be noise.
+async function notifyOnComment(
+  authorId: string,
+  commentId: string,
+  visibility: Visibility,
+  articleUrl: string,
+  articleTitle: string,
+  parentAuthorId: string | null,
+): Promise<void> {
+  const key = canonicalArticleKey(articleUrl);
+  const rows: {
+    userId: string; type: string; actorId: string;
+    articleKey: string; articleUrl: string; articleTitle: string; commentId: string;
+  }[] = [];
+  const recipients = new Set<string>();
+
+  if (parentAuthorId && parentAuthorId !== authorId) {
+    recipients.add(parentAuthorId);
+    rows.push({ userId: parentAuthorId, type: 'comment_reply', actorId: authorId, articleKey: key, articleUrl, articleTitle, commentId });
+  }
+
+  if (visibility === 'friends') {
+    const friendIds = await friendIdsOf(authorId);
+    for (const fid of friendIds) {
+      if (fid === authorId || recipients.has(fid)) continue; // don't double-notify the parent author
+      recipients.add(fid);
+      rows.push({ userId: fid, type: 'friend_comment', actorId: authorId, articleKey: key, articleUrl, articleTitle, commentId });
+    }
+  }
+
+  if (rows.length > 0) {
+    await prisma.notification.createMany({ data: rows });
+  }
 }
 
 // GET /api/v1/comments?url=<article url>
@@ -127,11 +174,14 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
 
   try {
-    const { showPublic, sort } = await viewerPrefs(req.userId!);
+    const [{ showPublic, sort }, friendIds] = await Promise.all([
+      viewerPrefs(req.userId!),
+      friendIdsOf(req.userId!),
+    ]);
     const rows = await prisma.comment.findMany({
       where: {
         articleKey: canonicalArticleKey(url),
-        ...visibilityWhere(req.userId!, showPublic),
+        ...visibilityWhere(req.userId!, showPublic, friendIds),
       },
       orderBy: { createdAt: 'asc' },
       take: 500,
@@ -155,14 +205,17 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
   if (valid.length === 0) { res.json({ counts: {} }); return; }
 
   try {
-    const { showPublic } = await viewerPrefs(req.userId!);
+    const [{ showPublic }, friendIds] = await Promise.all([
+      viewerPrefs(req.userId!),
+      friendIdsOf(req.userId!),
+    ]);
     // Several URLs can share one key, so count by key then fan back out
     const keyByUrl = new Map(valid.map(u => [u, canonicalArticleKey(u)]));
     const grouped = await prisma.comment.groupBy({
       by: ['articleKey'],
       where: {
         articleKey: { in: [...new Set(keyByUrl.values())] },
-        ...visibilityWhere(req.userId!, showPublic),
+        ...visibilityWhere(req.userId!, showPublic, friendIds),
       },
       _count: { _all: true },
     });
@@ -177,14 +230,17 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
 });
 
 // POST /api/v1/comments
-router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { url, articleTitle, parentId, title, body, isPublic } = req.body as Record<string, unknown>;
+router.post('/', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { url, articleTitle, parentId, title, body, visibility } = req.body as Record<string, unknown>;
 
   if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
   if (typeof body !== 'string' || body.length > MAX_COMMENT_BODY) {
     res.status(400).json({ error: `body must be a string of ≤${MAX_COMMENT_BODY} characters` }); return;
   }
   if (isBlankHtml(body)) { res.status(400).json({ error: 'Comment is empty' }); return; }
+  if (commentTextLength(body) > MAX_COMMENT_TEXT) {
+    res.status(400).json({ error: `Comment is too long — keep it under ${MAX_COMMENT_TEXT.toLocaleString()} characters` }); return;
+  }
   if (title !== undefined && title !== null && typeof title !== 'string') {
     res.status(400).json({ error: 'title must be a string' }); return;
   }
@@ -194,19 +250,29 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   if (parentId !== undefined && parentId !== null && typeof parentId !== 'string') {
     res.status(400).json({ error: 'parentId must be a string' }); return;
   }
+  if (visibility !== undefined && !isVisibility(visibility)) {
+    res.status(400).json({ error: "visibility must be 'public', 'friends', or 'private'" }); return;
+  }
 
   const key = canonicalArticleKey(url);
+  const vis: Visibility = isVisibility(visibility) ? visibility : 'private';
+  const titleText = typeof articleTitle === 'string' ? articleTitle.slice(0, 500) : '';
 
   try {
     // A reply must hang off a comment on the same article that this user is
     // actually allowed to see — otherwise replies could probe private threads.
+    let parentAuthorId: string | null = null;
     if (typeof parentId === 'string') {
-      const { showPublic } = await viewerPrefs(req.userId!);
+      const [{ showPublic }, friendIds] = await Promise.all([
+        viewerPrefs(req.userId!),
+        friendIdsOf(req.userId!),
+      ]);
       const parent = await prisma.comment.findFirst({
-        where: { id: parentId, articleKey: key, ...visibilityWhere(req.userId!, showPublic) },
-        select: { id: true },
+        where: { id: parentId, articleKey: key, ...visibilityWhere(req.userId!, showPublic, friendIds) },
+        select: { id: true, userId: true },
       });
       if (!parent) { res.status(404).json({ error: 'Parent comment not found' }); return; }
+      parentAuthorId = parent.userId;
     }
 
     const created = await prisma.comment.create({
@@ -214,15 +280,21 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         userId: req.userId!,
         articleKey: key,
         articleUrl: url,
-        articleTitle: typeof articleTitle === 'string' ? articleTitle.slice(0, 500) : '',
+        articleTitle: titleText,
         // Only a root comment carries a title; replies inherit their thread's
         parentId: typeof parentId === 'string' ? parentId : null,
         title: typeof parentId === 'string' ? null : (typeof title === 'string' && title.trim() ? title.trim() : null),
         body: sanitizeCommentHtml(body),
-        isPublic: isPublic === true,
+        visibility: vis,
       },
       include: { user: { select: AUTHOR_SELECT } },
     });
+
+    // Best-effort notifications — never fail the comment over these.
+    await notifyOnComment(req.userId!, created.id, vis, url, titleText, parentAuthorId).catch(err =>
+      logger.warn(err, 'Comment notification failed')
+    );
+
     res.status(201).json(toNode(created as CommentRow, req.userId!));
   } catch (err) {
     logger.error(err, 'Create comment error');
@@ -231,8 +303,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 // PATCH /api/v1/comments/:id — author only
-router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { title, body, isPublic } = req.body as Record<string, unknown>;
+router.patch('/:id', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { title, body, visibility } = req.body as Record<string, unknown>;
 
   try {
     const existing = await prisma.comment.findFirst({
@@ -247,6 +319,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         res.status(400).json({ error: `body must be a string of ≤${MAX_COMMENT_BODY} characters` }); return;
       }
       if (isBlankHtml(body)) { res.status(400).json({ error: 'Comment is empty' }); return; }
+      if (commentTextLength(body) > MAX_COMMENT_TEXT) {
+        res.status(400).json({ error: `Comment is too long — keep it under ${MAX_COMMENT_TEXT.toLocaleString()} characters` }); return;
+      }
       data.body = sanitizeCommentHtml(body);
     }
     if (title !== undefined) {
@@ -259,9 +334,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       // Replies never carry a title, however the client asks
       data.title = existing.parentId ? null : (typeof title === 'string' && title.trim() ? title.trim() : null);
     }
-    if (isPublic !== undefined) {
-      if (typeof isPublic !== 'boolean') { res.status(400).json({ error: 'isPublic must be a boolean' }); return; }
-      data.isPublic = isPublic;
+    if (visibility !== undefined) {
+      if (!isVisibility(visibility)) { res.status(400).json({ error: "visibility must be 'public', 'friends', or 'private'" }); return; }
+      data.visibility = visibility;
     }
     if (Object.keys(data).length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
 

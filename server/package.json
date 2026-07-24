@@ -11,6 +11,7 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "make-admin": "ts-node --transpile-only scripts/makeAdmin.ts",
+    "seed-comments": "ts-node --transpile-only scripts/seedComments.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
