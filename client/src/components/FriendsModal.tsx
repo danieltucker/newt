@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import styles from './FriendsModal.module.css';
 import { useFriends } from '../hooks/useFriends';
 import { AppNotification, FriendSearchResult, PublicUser } from '../types';
@@ -13,6 +13,7 @@ interface Props {
   onLoadNotifications: () => void;
   onMarkAllRead: () => void;
   onClose: () => void;
+  onViewProfile?: (username: string) => void;
 }
 
 function initialOf(name: string): string {
@@ -24,8 +25,33 @@ function Avatar({ user }: { user: PublicUser | null }) {
   return <span className={styles.avatarFallback}>{initialOf(user?.displayName ?? '?')}</span>;
 }
 
+// A person's avatar + name (with optional sub-line). When onView is given, the
+// avatar and name link to that user's public profile.
+function PersonHead({ user, sub, onView }: {
+  user: PublicUser;
+  sub?: ReactNode;
+  onView?: (username: string) => void;
+}) {
+  const view = onView ? () => onView(user.username) : undefined;
+  return (
+    <>
+      {view
+        ? <button type="button" className={styles.personBtn} onClick={view} title={`View @${user.username}`}><Avatar user={user} /></button>
+        : <Avatar user={user} />}
+      <div className={styles.rowText}>
+        <div>
+          {view
+            ? <button type="button" className={styles.personBtn} onClick={view}><strong>{user.displayName}</strong></button>
+            : <strong>{user.displayName}</strong>}
+        </div>
+        {sub != null && <div className={styles.sub}>{sub}</div>}
+      </div>
+    </>
+  );
+}
+
 export default function FriendsModal({
-  accessToken, notifications, notifLoading, onLoadNotifications, onMarkAllRead, onClose,
+  accessToken, notifications, notifLoading, onLoadNotifications, onMarkAllRead, onClose, onViewProfile,
 }: Props) {
   const [tab, setTab] = useState<Tab>('activity');
   const { friends, requests, loading, load, search, sendRequest, accept, decline, unfriend } = useFriends(accessToken);
@@ -83,10 +109,11 @@ export default function FriendsModal({
               loading={loading}
               onUnfriend={unfriend}
               onCancel={decline}
+              onViewProfile={onViewProfile}
             />
           )}
           {tab === 'add' && (
-            <AddTab search={search} onSend={sendRequest} />
+            <AddTab search={search} onSend={sendRequest} onViewProfile={onViewProfile} />
           )}
         </div>
       </div>
@@ -147,12 +174,13 @@ function ActivityTab({ incoming, notifications, loading, onAccept, onDecline }: 
 }
 
 // ── Friends ─────────────────────────────────────────────────────────────────
-function FriendsTab({ friends, outgoing, loading, onUnfriend, onCancel }: {
+function FriendsTab({ friends, outgoing, loading, onUnfriend, onCancel, onViewProfile }: {
   friends: PublicUser[];
   outgoing: { id: string; user: PublicUser; createdAt: string }[];
   loading: boolean;
   onUnfriend: (userId: string) => void;
   onCancel: (id: string) => void;
+  onViewProfile?: (username: string) => void;
 }) {
   if (loading && friends.length === 0 && outgoing.length === 0) {
     return <div className={styles.empty}>Loading…</div>;
@@ -164,11 +192,7 @@ function FriendsTab({ friends, outgoing, loading, onUnfriend, onCancel }: {
     <div className={styles.list}>
       {friends.map(f => (
         <div key={f.id} className={styles.row}>
-          <Avatar user={f} />
-          <div className={styles.rowText}>
-            <div><strong>{f.displayName}</strong></div>
-            <div className={styles.sub}>@{f.username}</div>
-          </div>
+          <PersonHead user={f} sub={`@${f.username}`} onView={onViewProfile} />
           <div className={styles.rowBtns}>
             <button className={styles.ghostBtn} onClick={() => onUnfriend(f.id)}>Unfriend</button>
           </div>
@@ -177,11 +201,7 @@ function FriendsTab({ friends, outgoing, loading, onUnfriend, onCancel }: {
       {outgoing.length > 0 && <div className={styles.sectionLabel}>Sent requests</div>}
       {outgoing.map(r => (
         <div key={r.id} className={styles.row}>
-          <Avatar user={r.user} />
-          <div className={styles.rowText}>
-            <div><strong>{r.user.displayName}</strong></div>
-            <div className={styles.sub}>@{r.user.username} · pending</div>
-          </div>
+          <PersonHead user={r.user} sub={`@${r.user.username} · pending`} onView={onViewProfile} />
           <div className={styles.rowBtns}>
             <button className={styles.ghostBtn} onClick={() => onCancel(r.id)}>Cancel</button>
           </div>
@@ -192,9 +212,10 @@ function FriendsTab({ friends, outgoing, loading, onUnfriend, onCancel }: {
 }
 
 // ── Add ─────────────────────────────────────────────────────────────────────
-function AddTab({ search, onSend }: {
+function AddTab({ search, onSend, onViewProfile }: {
   search: (q: string) => Promise<FriendSearchResult[]>;
   onSend: (username: string) => Promise<{ ok: boolean; error?: string }>;
+  onViewProfile?: (username: string) => void;
 }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<FriendSearchResult[]>([]);
@@ -246,11 +267,7 @@ function AddTab({ search, onSend }: {
           const relation = justSent ? 'outgoing' : u.relation;
           return (
             <div key={u.id} className={styles.row}>
-              <Avatar user={u} />
-              <div className={styles.rowText}>
-                <div><strong>{u.displayName}</strong></div>
-                <div className={styles.sub}>@{u.username}</div>
-              </div>
+              <PersonHead user={u} sub={`@${u.username}`} onView={onViewProfile} />
               <div className={styles.rowBtns}>
                 {relation === 'friends' && <span className={styles.statusTag}>Friends</span>}
                 {relation === 'outgoing' && <span className={styles.statusTag}>Requested</span>}

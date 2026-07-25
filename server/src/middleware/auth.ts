@@ -30,6 +30,23 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   next();
 }
 
+// Like requireAuth, but never rejects: a missing, malformed, expired, or invalid
+// token simply leaves req.userId undefined and the request continues as anonymous.
+// Used by public surfaces (e.g. profiles) that show more when a valid viewer is
+// known but must still serve logged-out visitors.
+export async function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) { next(); return; }
+  try {
+    const userId = verifyAccess(header.slice(7)).sub;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { bannedAt: true } });
+    if (user && !user.bannedAt) req.userId = userId;
+  } catch {
+    // Anonymous — fall through with no userId.
+  }
+  next();
+}
+
 // Checks the DB on every request (not a JWT claim) so a revoked admin
 // loses access as soon as their flag is cleared, not when their token expires.
 export async function requireAdmin(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {

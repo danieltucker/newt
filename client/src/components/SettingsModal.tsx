@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import styles from './SettingsModal.module.css';
 import { UserSettings } from '../hooks/useSettings';
-import { apiFetch, apiGet, apiPatch } from '../services/api';
+import { apiFetch, apiGet, apiPatch, apiPost } from '../services/api';
 
 export interface UserProfile {
   username: string;
@@ -86,6 +86,73 @@ function BookmarkletRow({ label, href }: { label: string; href: string }) {
       <button className={styles.copyBtn} onClick={handleCopy}>
         {copied ? 'Copied!' : 'Copy URL'}
       </button>
+    </div>
+  );
+}
+
+// Your personal blog feed: one URL that aggregates your friends' posts,
+// including the friends-only ones. Because it carries content narrower than
+// public, the URL itself is the credential — hence the warning and the rotate.
+function PersonalFeedPanel() {
+  const [url, setUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ url: string }>('/api/v1/blogs/feed-token')
+      .then(d => { if (!cancelled) setUrl(d.url); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  function copy() {
+    navigator.clipboard?.writeText(url).then(
+      () => { setCopied(true); setTimeout(() => setCopied(false), 1600); },
+      () => {},
+    );
+  }
+
+  async function rotate() {
+    setBusy(true);
+    try {
+      const d = await apiPost<{ url: string }>('/api/v1/blogs/feed-token/rotate', {});
+      setUrl(d.url);
+    } catch { /* keep the old URL on screen */ }
+    setBusy(false);
+  }
+
+  if (!url) return null;
+
+  return (
+    <div className={styles.sectionBlock}>
+      <div className={styles.blockTitle}>Your friends’ blog feed</div>
+      <div className={styles.rowHint} style={{ marginBottom: 12 }}>
+        A private RSS feed of blog posts from you and your friends, including
+        friends-only posts. Add it to a folder’s feeds, or any RSS reader.
+        <br />
+        <strong>Treat this link like a password</strong> — anyone who has it can
+        read your friends’ friends-only posts. Rotate it to revoke a link you’ve shared.
+      </div>
+      <div className={styles.row}>
+        <input
+          className={styles.input}
+          readOnly
+          value={revealed ? url : url.replace(/\/feed\/[^.]+\.xml$/, '/feed/••••••••.xml')}
+          onFocus={e => e.currentTarget.select()}
+          style={{ flex: 1, minWidth: 0, fontFamily: 'ui-monospace, monospace', fontSize: 11.5 }}
+        />
+      </div>
+      <div className={styles.row} style={{ gap: 8, justifyContent: 'flex-end' }}>
+        <button className={styles.enableBtn} onClick={() => setRevealed(r => !r)}>
+          {revealed ? 'Hide' : 'Reveal'}
+        </button>
+        <button className={styles.enableBtn} onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
+        <button className={styles.enableBtn} disabled={busy} onClick={rotate}>
+          {busy ? 'Rotating…' : 'Rotate'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -869,6 +936,8 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                 )}
               </>
             )}
+
+            {section === 'integrations' && <PersonalFeedPanel />}
 
             {section === 'integrations' && (() => {
               const origin = typeof window !== 'undefined' ? window.location.origin : '';

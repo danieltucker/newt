@@ -8,6 +8,7 @@ export function notifText(n: Pick<AppNotification, 'type' | 'actor'>): string {
     case 'friend_accept':  return `${who} accepted your friend request`;
     case 'comment_reply':  return `${who} replied to your comment`;
     case 'friend_comment': return `${who} shared a comment with friends`;
+    case 'friend_post':    return `${who} shared a blog post with friends`;
     default:               return who;
   }
 }

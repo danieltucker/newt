@@ -1,11 +1,13 @@
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { optionalAuth, AuthRequest } from '../middleware/auth';
 import logger from '../lib/logger';
 import { canonicalArticleKey, isHttpUrl } from '../lib/comments';
 
 const router = Router();
-router.use(requireAuth);
+// Feed items are shared across all users with nothing user-scoped to authorise,
+// so the reader content is public — a shared /a/<id> thread link opens logged-out.
+router.use(optionalAuth);
 
 // Article detail for the reader modal, looked up by canonical URL rather than
 // by feed-item id. That way a reading-list entry saved months ago resolves to

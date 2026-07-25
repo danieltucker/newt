@@ -1,0 +1,306 @@
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  padding: 32px 16px 64px;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.backBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.backBtn:hover { color: var(--text); background: var(--surface2); }
+
+.ghostBtn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+/* ── Article ── */
+.article {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 32px;
+}
+
+.title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 32px;
+  font-weight: 650;
+  line-height: 1.15;
+  color: var(--text);
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+}
+
+.byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.authorBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.authorBtn:hover { background: var(--surface2); }
+
+.avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.avatarFallback {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface2));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.authorName { color: var(--text); }
+.dot { color: var(--muted); }
+.date { color: var(--muted); }
+
+.chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* ── Post body ──
+   The same block styling the note editor and comment bodies use, scaled up for
+   long-form reading. The markup is sanitized server-side before it is stored,
+   and includes the editor's own .note-todo / .note-table classes. */
+
+.body {
+  font-size: 16px;
+  line-height: 1.72;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.body > * { margin: 0 0 14px; }
+.body > *:last-child { margin-bottom: 0; }
+
+.body h1, .body h2, .body h3 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 620;
+  line-height: 1.25;
+  margin: 30px 0 10px;
+}
+
+.body h1 { font-size: 25px; }
+.body h2 { font-size: 21px; }
+.body h3 { font-size: 17.5px; }
+
+.body ul, .body ol { padding-left: 24px; }
+.body li { margin: 5px 0; }
+
+.body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.body blockquote {
+  margin-left: 0;
+  padding: 4px 0 4px 16px;
+  border-left: 3px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--muted);
+  font-size: 16.5px;
+}
+
+.body pre {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+}
+
+.body :not(pre) > code {
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: var(--surface2);
+}
+
+.body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 28px 0;
+}
+
+/* Embedded images. height:auto overrides the intrinsic height attribute once
+   the aspect ratio is known, so a downscaled image is never stretched — the
+   attributes are still what reserve the space before it loads. A remote image
+   that fails to load leaves its alt text rather than a broken-icon gap. */
+.body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 22px auto;
+}
+
+/* Wide tables scroll inside the article rather than widening the page */
+.body :global(table.note-table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+}
+
+.body :global(table.note-table) th,
+.body :global(table.note-table) td {
+  border: 1px solid var(--border);
+  padding: 7px 11px;
+  text-align: left;
+}
+
+.body :global(table.note-table) th {
+  background: var(--surface2);
+  font-weight: 650;
+}
+
+/* To-do blocks keep their checkbox gutter, read-only here */
+.body :global(.note-todo) {
+  position: relative;
+  padding-left: 28px;
+}
+
+.body :global(.note-todo)::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.4em;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid color-mix(in oklab, var(--muted) 60%, transparent);
+}
+
+.body :global(.note-todo[data-checked='true'])::before {
+  content: '✓';
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.body :global(.note-todo[data-checked='true']) {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* Indented blocks, as produced by Tab in the editor */
+.body :global([data-indent='1']) { margin-left: 24px; }
+.body :global([data-indent='2']) { margin-left: 48px; }
+.body :global([data-indent='3']) { margin-left: 72px; }
+.body :global([data-indent='4']) { margin-left: 96px; }
+.body :global([data-indent='5']) { margin-left: 120px; }
+
+/* ── Comments ── */
+.commentsWrap {
+  margin-top: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px;
+}
+
+.commentsOff {
+  margin-top: 28px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 20px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+
+/* ── States ── */
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 56px 16px;
+}
+.big {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+.hint { margin: 0; font-size: 13px; color: var(--muted); max-width: 34ch; }
+
+@media (max-width: 560px) {
+  .article { padding: 22px 18px; }
+  .title { font-size: 26px; }
+  .body { font-size: 15.5px; }
+  .commentsWrap { padding: 16px 14px; }
+}

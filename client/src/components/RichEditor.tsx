@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import styles from './NotesConsole.module.css';
 import { getCaretPath, setCaretPath, CaretPath } from '../utils/caret';
 import { HistoryStack, EditKind } from '../utils/history';
+import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 
 // A Confluence-style block editor. There is no separate "edit mode" — the
 // surface is always a contentEditable that renders its content live. Typing "/"
@@ -19,7 +20,9 @@ import { HistoryStack, EditKind } from '../utils/history';
 const TODO_CLASS = 'note-todo';
 const TABLE_CLASS = 'note-table';
 
-type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table';
+// 'image' is grouped with the blocks in the menu but is not a block transform —
+// it opens a file picker, so applyCmd intercepts it before applyBlock.
+type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image';
 type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear';
 
 interface Cmd {
@@ -45,6 +48,7 @@ const CMDS: Cmd[] = [
   { id: 'code',  kind: 'block', label: 'Code block',  badge: '<>', hint: 'or type ```',           keys: ['code', 'codeblock', 'pre', 'snippet', '```'] },
   { id: 'table', kind: 'block', label: 'Table',       badge: '⊞',  hint: '3×3 — Tab moves cell',  keys: ['table', 'grid', 'tbl', 'rows', 'columns', '|'] },
   { id: 'hr',    kind: 'block', label: 'Divider',     badge: '—',  hint: 'or type ---',           keys: ['hr', 'divider', 'rule', 'line', 'separator', '---'] },
+  { id: 'image', kind: 'block', label: 'Image',       badge: '🖼', hint: 'or paste / drop a file', keys: ['image', 'img', 'picture', 'photo', 'screenshot', 'upload'] },
 
   { id: 'bold',       kind: 'inline', label: 'Bold',          badge: 'B',  hint: 'Ctrl+B — **text**',  keys: ['bold', 'b', 'strong', '**'] },
   { id: 'italic',     kind: 'inline', label: 'Italic',        badge: 'I',  hint: 'Ctrl+I — *text*',    keys: ['italic', 'i', 'em', 'emphasis', '*', '_'] },
@@ -226,6 +230,13 @@ const LinkIcon = () => icon(<>
   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
 </>);
 
+// Framed picture — a sun and a hill, the usual shorthand for a photo
+const ImageIcon = () => icon(<>
+  <rect x="3" y="3" width="18" height="18" rx="2" />
+  <circle cx="8.5" cy="8.5" r="1.5" />
+  <path d="m21 15-4.35-4.35a2 2 0 0 0-2.83 0L3 21" />
+</>);
+
 // ── Tables ────────────────────────────────────────────────────────────
 // A table is ordinary <table class="note-table"> markup living inside the
 // editable surface: a header row plus body rows, every cell editable on its
@@ -288,6 +299,23 @@ function escapeHtml(s: string): string {
           .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Where a drop landed, as a collapsed Range. The two APIs are the WebKit/Blink
+// and Gecko spellings of the same thing; neither is in every browser, so a null
+// return has to be tolerated by the caller.
+function rangeFromPoint(x: number, y: number): Range | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
+  const pos = doc.caretPositionFromPoint?.(x, y);
+  if (!pos) return null;
+  const r = document.createRange();
+  r.setStart(pos.offsetNode, pos.offset);
+  r.collapse(true);
+  return r;
+}
+
 // ── Links ─────────────────────────────────────────────────────────────
 // What the user types in the link dialog is rarely a full URL — "example.com"
 // is the common case, so a bare host gets https://. Anything that already names
@@ -324,6 +352,10 @@ interface Props {
   initialHtml: string;
   onChange: (html: string) => void;
   readOnly?: boolean;   // notes in Recently Deleted are shown, not edited
+  // Supplied by whichever surface embeds the editor. Its absence is what hides
+  // the image affordances entirely — the editor itself knows nothing about how
+  // or where an image is stored, only how to ask for a URL and insert it.
+  onUploadImage?: (file: File) => Promise<{ url: string; width: number; height: number }>;
 }
 
 interface MenuPos { left: number; top: number | null; bottom: number | null; maxHeight: number; }
@@ -457,9 +489,16 @@ function isBlank(el: HTMLElement): boolean {
   return !el.querySelector(`hr, img, pre, blockquote, ul, ol, h1, h2, h3, table, .${TODO_CLASS}`);
 }
 
-export default function RichEditor({ initialHtml, onChange, readOnly = false }: Props) {
+export default function RichEditor({ initialHtml, onChange, readOnly = false, onUploadImage }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // The range to insert into, stashed before the file picker opens. Choosing a
+  // file moves focus out of the editor and collapses the selection, so without
+  // this the image would land wherever focus happens to return to.
+  const imageRange = useRef<Range | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState<LinkForm | null>(null);
   // The selection the dialog was opened on. Focusing an input collapses it, so
   // it's restored before the link is written back.
@@ -555,7 +594,9 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false }: 
     if (el.innerHTML !== beforeRepair && !readOnly) onChange(el.innerHTML);   // persist the repair
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = slashQuery ? CMDS.filter(c => cmdMatches(c, slashQuery)) : CMDS;
+  // Insert-image is only offered where the embedding surface can store one
+  const available = onUploadImage ? CMDS : CMDS.filter(c => c.id !== 'image');
+  const filtered = slashQuery ? available.filter(c => cmdMatches(c, slashQuery)) : available;
 
   function emit() {
     const el = ref.current;
@@ -673,6 +714,98 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false }: 
     const sel = restoreLinkRange();
     if (sel) { record('struct'); document.execCommand('unlink'); emit(); }
     closeLink();
+  }
+
+  // ── Images ────────────────────────────────────────────────────────────
+  // Three ways in — the toolbar/slash command, paste, and drop — all funnel
+  // through insertImages so they behave identically.
+  function pickImage() {
+    const sel = window.getSelection();
+    imageRange.current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    setUploadError(null);
+    fileRef.current?.click();
+  }
+
+  // Restore the stashed caret if we have one; otherwise fall back to the end of
+  // the note, which is where a drop with no prior selection belongs.
+  function restoreImageRange() {
+    const editor = ref.current;
+    const sel = window.getSelection();
+    if (!editor || !sel) return;
+    editor.focus();
+    const saved = imageRange.current;
+    // A stashed range is only usable if it still points inside this editor —
+    // the DOM may have changed while the upload was in flight.
+    if (saved && editor.contains(saved.commonAncestorContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(saved);
+      return;
+    }
+    const r = document.createRange();
+    r.selectNodeContents(editor);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  async function insertImages(files: File[]) {
+    if (!onUploadImage || files.length === 0) return;
+    const images = files.filter(f => f.type.startsWith('image/'));
+    if (images.length === 0) return;
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      // Sequential rather than parallel: each insertion depends on where the
+      // last one left the caret, and uploads are rate-limited per user anyway.
+      for (const file of images) {
+        const { url, width, height } = await onUploadImage(file);
+        restoreImageRange();
+        record('struct');
+        // width/height are the intrinsic pixel size, so the browser can reserve
+        // the right space before the bytes arrive; CSS caps the displayed size.
+        const dims = width && height ? ` width="${width}" height="${height}"` : '';
+        document.execCommand('insertHTML', false,
+          `<p><img src="${escapeHtml(url)}" alt=""${dims}></p><p><br></p>`);
+        // Carry the caret forward so a second file lands after the first
+        const sel = window.getSelection();
+        imageRange.current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+      }
+      emit();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    // Reset first, so choosing the same file twice in a row still fires
+    e.target.value = '';
+    void insertImages(files);
+  }
+
+  // Pasting an image gives a file on the clipboard; everything else falls
+  // through to the browser's own paste handling.
+  function handlePaste(e: React.ClipboardEvent) {
+    if (!onUploadImage) return;
+    const files = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    e.preventDefault();
+    void insertImages(files);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!onUploadImage) return;
+    const files = Array.from(e.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    e.preventDefault();
+    // Drop puts the caret where the pointer is, which is what we want — but the
+    // browser only moves it as part of its own default handling, which we just
+    // cancelled. Take the position from the drop point instead.
+    imageRange.current = rangeFromPoint(e.clientX, e.clientY);
+    void insertImages(files);
   }
 
   // Track the selection to light up the active marks and raise the bubble.
@@ -940,6 +1073,17 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false }: 
   }
 
   function applyCmd(cmd: Cmd) {
+    // Insert-image opens a file picker rather than transforming a block. The
+    // "/image" text has to be cleared here, before the picker takes focus —
+    // once it has, there is no selection left to strip.
+    if (cmd.id === 'image') {
+      ref.current?.focus();
+      if (slashInfo.current) stripSlash();
+      closeSlash();
+      emit();
+      pickImage();
+      return;
+    }
     if (cmd.kind === 'inline') applyInline(cmd.id as InlineId);
     else applyBlock(cmd.id as BlockId);
   }
@@ -1235,6 +1379,15 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false }: 
   const linkBtns = (
     <>
       <TBtn title="Add link" onRun={applyLink}><LinkIcon /></TBtn>
+      {onUploadImage && (
+        <TBtn
+          title={uploading ? 'Uploading…' : 'Insert image — or paste and drop one'}
+          onRun={pickImage}
+          disabled={uploading}
+        >
+          <ImageIcon />
+        </TBtn>
+      )}
       <TBtn title="Divider" onRun={() => applyBlock('hr')}><DividerIcon /></TBtn>
       <TBtn title="Clear formatting" onRun={() => execInline('removeFormat')}><ClearIcon /></TBtn>
     </>
@@ -1319,9 +1472,34 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false }: 
         onKeyDown={handleKeyDown}
         onClick={handleClick}
         onAuxClick={e => { if (e.button === 1 && openLinkAt(e.target as HTMLElement)) e.preventDefault(); }}
+        onPaste={handlePaste}
+        onDrop={handleDrop}
+        // Without this the browser navigates away to the dropped file
+        onDragOver={e => { if (onUploadImage && e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
         onBlur={emit}
         data-placeholder="Type / for commands, or just start writing…"
       />
+
+      {onUploadImage && (
+        <input
+          ref={fileRef}
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES}
+          multiple
+          hidden
+          onChange={onFileChosen}
+        />
+      )}
+
+      {/* Upload feedback sits under the text rather than over it, so it never
+          covers what is being written. Both states are transient. */}
+      {uploading && <div className={styles.uploadNote}>Uploading image…</div>}
+      {uploadError && (
+        <div className={styles.uploadError} role="alert">
+          {uploadError}
+          <button className={styles.uploadDismiss} onClick={() => setUploadError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Portaled to <body> so its position:fixed resolves against the viewport
           — the console shell keeps a transform (animation fill), which would
@@ -1470,8 +1648,8 @@ function WordBtn({ title, onRun, danger, chip, children }: {
 
 // Toolbar button. Suppressing mousedown is what keeps the caret/selection alive
 // in the editor while the button is pressed.
-function TBtn({ title, active, onRun, children }: {
-  title: string; active?: boolean; onRun: () => void; children: React.ReactNode;
+function TBtn({ title, active, onRun, disabled, children }: {
+  title: string; active?: boolean; onRun: () => void; disabled?: boolean; children: React.ReactNode;
 }) {
   return (
     <button
@@ -1480,6 +1658,7 @@ function TBtn({ title, active, onRun, children }: {
       title={title}
       aria-label={title}
       aria-pressed={active}
+      disabled={disabled}
       onMouseDown={e => e.preventDefault()}
       onClick={onRun}
     >

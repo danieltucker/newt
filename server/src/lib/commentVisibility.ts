@@ -10,9 +10,12 @@ export function isVisibility(v: unknown): v is Visibility {
 
 // Visibility rule, applied everywhere: your own comments always; everyone else's
 // public ones unless you've opted out; and friends-only comments from people you
-// are actually friends with.
-export function visibilityWhere(userId: string, showPublic: boolean, friendIds: Set<string>) {
-  const or: Record<string, unknown>[] = [{ userId }];
+// are actually friends with. An undefined userId is an anonymous (logged-out)
+// viewer — they get public comments only, and crucially no `{ userId }` clause,
+// since `{ userId: undefined }` would match every row in Prisma.
+export function visibilityWhere(userId: string | undefined, showPublic: boolean, friendIds: Set<string>) {
+  const or: Record<string, unknown>[] = [];
+  if (userId) or.push({ userId });
   if (showPublic) or.push({ visibility: 'public' });
   if (friendIds.size > 0) or.push({ visibility: 'friends', userId: { in: [...friendIds] } });
   return { OR: or };

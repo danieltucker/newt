@@ -13,6 +13,7 @@ import RichEditor from './RichEditor';
 import { NoteDoc, NoteFolder } from '../hooks/useSettings';
 import { searchNotes } from '../utils/noteText';
 import { markdownToHtml } from '../utils/noteMigrate';
+import { uploadImage } from '../utils/imageUpload';
 import {
   INDENT, isFolderId, folderIdOf, sameOrder, buildRows, getProjection, computeDrop, reconcileFlat,
 } from '../utils/noteTree';
@@ -1022,6 +1023,7 @@ export default function NotesConsole({
                     initialHtml={active.body}
                     onChange={handleBody}
                     readOnly={activeTrashed}
+                    onUploadImage={uploadImage}
                   />
                 </>
               ) : (

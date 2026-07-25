@@ -45,4 +45,11 @@ describe('visibilityWhere', () => {
     expect(where.OR).toContainEqual({ visibility: 'friends', userId: { in: ['a'] } });
     expect(where.OR).not.toContainEqual({ visibility: 'public' });
   });
+
+  it('gives an anonymous viewer public comments only — never an unscoped userId clause', () => {
+    const where = visibilityWhere(undefined, true, new Set());
+    expect(where).toEqual({ OR: [{ visibility: 'public' }] });
+    // The dangerous case: `{ userId: undefined }` would match every row.
+    expect(JSON.stringify(where)).not.toContain('userId');
+  });
 });

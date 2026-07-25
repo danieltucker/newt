@@ -18,6 +18,8 @@ import FolderArticles from '../components/FolderArticles';
 import SaveArticleModal from '../components/SaveArticleModal';
 import AdminModal from '../components/AdminModal';
 import FriendsModal from '../components/FriendsModal';
+import ArticleDetailModal from '../components/ArticleDetailModal';
+import { parseArticlePath } from '../utils/articleUrl';
 import { useFolders } from '../hooks/useFolders';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
@@ -26,6 +28,9 @@ import { useSettings } from '../hooks/useSettings';
 import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
 import { Bookmark, Folder, FeedArticle, CommentPrefs } from '../types';
 import { ThemeSetting, ResolvedTheme } from '../App';
+
+// Injected at build time from package.json (see vite.config.ts).
+declare const __APP_VERSION__: string;
 
 // Background depth — max px each blob leans as the cursor crosses the viewport.
 // The far layer leans opposite the near ones, which is what sells the depth.
@@ -41,6 +46,7 @@ interface Props {
   resolvedTheme: ResolvedTheme;
   onSetTheme: (t: ThemeSetting) => void;
   onLogout: () => void;
+  onViewProfile?: (username: string) => void;
 }
 
 // Bare-letter shortcuts must not fire while the user is typing — otherwise "n"
@@ -51,7 +57,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
 }
 
-export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout }: Props) {
+export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile }: Props) {
   const { settings, update: updateSetting, loaded: settingsLoaded } = useSettings(accessToken);
 
   // Sync theme setting from server on first load
@@ -182,6 +188,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [showImport, setShowImport] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
+  // If the app was opened on a shared article link (/a/<id>), open that reader.
+  const [deepLinkUrl, setDeepLinkUrl] = useState<string | null>(() => parseArticlePath(window.location.pathname));
 
   // Profile (avatar) for the top bar; kept in sync by SettingsModal's Account tab
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -602,8 +610,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       <div className={styles.topBar}>
         <button
           className={styles.userBtn}
-          onClick={() => { setSettingsSection('account'); setShowSettings(true); }}
-          title="Account settings"
+          onClick={() => onViewProfile?.(username)}
+          title="Your profile"
         >
           {profile?.avatar
             ? <img src={profile.avatar} alt="" className={styles.userAvatar} />
@@ -728,6 +736,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 collapsed={settings.readingListCollapsed === true}
                 onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
                 commentPrefs={commentPrefs}
+                onViewProfile={onViewProfile}
               />
             </div>
             {settings.rssEnabled !== false && activeFolderId && (activeFolder?.feedUrls?.length ?? 0) > 0 && (
@@ -761,6 +770,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onUnreadCountsChange={handleUnreadCountsChange}
                 commentPrefs={commentPrefs}
                 onFolderMarkedRead={handleMarkFolderRead}
+                onViewProfile={onViewProfile}
               />
             )}
           </div>
@@ -768,7 +778,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
         <footer className={styles.footer}>
           <a href="https://github.com/danieltucker/newTab" target="_blank" rel="noopener noreferrer" className={styles.footerLink}>
-            v1.6
+            v{__APP_VERSION__}
           </a>
         </footer>
       </div>
@@ -909,6 +919,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           onLoadNotifications={loadNotifications}
           onMarkAllRead={markNotificationsRead}
           onClose={() => setShowFriends(false)}
+          onViewProfile={onViewProfile}
+        />
+      )}
+
+      {/* Reader opened from a shared /a/<id> link — resolves content by URL */}
+      {deepLinkUrl && (
+        <ArticleDetailModal
+          url={deepLinkUrl}
+          title=""
+          prefs={commentPrefs}
+          onClose={() => setDeepLinkUrl(null)}
+          onViewProfile={onViewProfile}
         />
       )}
 

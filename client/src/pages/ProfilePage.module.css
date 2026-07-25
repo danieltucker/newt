@@ -1,0 +1,369 @@
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  padding: 32px 16px 64px;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.topbar {
+  margin-bottom: 16px;
+}
+
+.backBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.backBtn:hover { color: var(--text); background: var(--surface2); }
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.identity { flex: 1; min-width: 0; }
+
+.displayName {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.handle {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.avatarFallback {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface2));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 24px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 650;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover { color: var(--text); }
+.tabActive { color: var(--text); border-bottom-color: var(--accent); }
+.tabCount { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+/* ── Lists ── */
+.list { display: flex; flex-direction: column; gap: 10px; }
+
+.commentCard, .historyRow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+}
+.commentCard:hover, .historyRow:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+.commentTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.articleTitle {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.dot { color: var(--muted); }
+.host { color: var(--muted); }
+
+.chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.commentTitle {
+  font-weight: 650;
+  font-size: 14.5px;
+  margin-bottom: 4px;
+}
+
+.commentBody {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.commentBody :where(p) { margin: 0 0 6px; }
+.commentBody :where(p):last-child { margin-bottom: 0; }
+.commentBody :where(img) { max-width: 100%; border-radius: 8px; }
+.commentBody :where(a) { color: var(--accent); }
+
+.commentTime {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* ── Post cards ── */
+.postCard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  /* A post is the substantial thing on a profile — give it a visible spine
+     so it reads as more than another comment in the timeline. */
+  border-left: 3px solid color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.postCard:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.kindTag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.postTitle {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--text);
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+
+.postExcerpt {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Folder picker (Follow blog) ── */
+.folderPick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 320px;
+}
+.folderPickLabel {
+  font-size: 11.5px;
+  color: var(--muted);
+  width: 100%;
+  text-align: right;
+}
+.folderOption {
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.folderOption:hover { background: color-mix(in oklab, var(--accent) 18%, transparent); }
+.folderOption:disabled { opacity: 0.6; cursor: default; }
+
+/* ── History rows ── */
+.historyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.historyText { flex: 1; min-width: 0; }
+.historyMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.countPill {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface2);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.historyTime { font-size: 11px; color: var(--muted); }
+
+/* ── Buttons & shared ── */
+.moreBtn {
+  align-self: center;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.moreBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+.moreBtn:disabled { opacity: 0.6; cursor: default; }
+
+.primaryBtn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.primaryBtn:hover { filter: brightness(1.08); }
+.primaryBtn:disabled { opacity: 0.6; cursor: default; }
+
+.ghostBtn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.statusTag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface2);
+  white-space: nowrap;
+}
+
+.error { color: #e5484d; font-size: 12.5px; margin-top: 6px; }
+
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 56px 16px;
+}
+.big {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+@media (max-width: 520px) {
+  .header { flex-wrap: wrap; }
+  .actions { flex-direction: row; align-items: center; width: 100%; }
+}

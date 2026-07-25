@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
-import { ArticleComment, CommentPrefs, CommentVisibility } from '../types';
+import { ArticleComment, CommentPrefs, CommentVisibility, CommentHistory } from '../types';
 import RichEditor from './RichEditor';
+import { uploadImage } from '../utils/imageUpload';
+import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import styles from './CommentsPanel.module.css';
 
 // The comment thread, always open. It lives at the foot of the article reader
@@ -21,9 +23,12 @@ interface Props {
   // note, folded into the thread as a private comment the first time it loads.
   legacyNote?: string;
   onLegacyNoteMigrated?: () => void;
+  // Open a comment author's public profile (/u/<username>). Absent when there's
+  // nowhere to route to (e.g. rendered outside the app shell).
+  onViewProfile?: (username: string) => void;
+  // Logged-out viewers can read a public thread but not post/reply/edit/delete.
+  readOnly?: boolean;
 }
-
-const MAX_DEPTH = 4; // deeper replies keep the last indent rather than marching off the page
 
 function countTree(nodes: ArticleComment[]): number {
   return nodes.reduce((n, c) => n + 1 + countTree(c.replies), 0);
@@ -72,13 +77,9 @@ function initialOf(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
 
-// The three visibility tiers, in the order they appear in the segmented control.
-const VIS_ORDER: CommentVisibility[] = ['public', 'friends', 'private'];
-const VIS_META: Record<CommentVisibility, { label: string; tag: string; hint: string; icon: JSX.Element }> = {
-  public:  { label: 'Public',        tag: 'Public',        hint: 'Anyone using this app can read this comment',        icon: <GlobeIcon /> },
-  friends: { label: 'Friends',       tag: 'Friends',       hint: 'Only your accepted friends can read this comment',    icon: <FriendsIcon /> },
-  private: { label: 'Personal Note', tag: 'Personal Note', hint: 'Only you can read this — a private note to yourself', icon: <LockIcon /> },
-};
+// The three visibility tiers live in VisibilityMeta so the blog composer shows
+// the identical set — they write the same `visibility` values and are read
+// through the same friendship rules.
 
 // ── The compact strip that sits on a card ────────────────────────────────
 export function CommentBar({ count, onClick }: { count: number; onClick: () => void }) {
@@ -95,6 +96,16 @@ export function CommentBar({ count, onClick }: { count: number; onClick: () => v
       {count > 0 && <span className={styles.barCount}>{count}</span>}
     </button>
   );
+}
+
+// Comment images are capped at 320px tall so one screenshot can't push the rest
+// of the thread off-screen. Clicking opens the full size in a new tab — cheaper
+// than a lightbox, and it works for remote images too.
+function openImageAt(e: React.MouseEvent) {
+  const img = (e.target as HTMLElement).closest('img');
+  if (!img) return;
+  const src = img.getAttribute('src');
+  if (src) window.open(src, '_blank', 'noopener,noreferrer');
 }
 
 // ── Composer ──────────────────────────────────────────────────────────────
@@ -142,7 +153,7 @@ function Composer({
         />
       )}
       <div className={styles.editorShell}>
-        <RichEditor initialHtml={initialBody} onChange={handleChange} />
+        <RichEditor initialHtml={initialBody} onChange={handleChange} onUploadImage={uploadImage} />
       </div>
       <div className={styles.composerFoot}>
         <div className={styles.visSwitch} role="radiogroup" aria-label="Who can see this comment">
@@ -190,7 +201,7 @@ function Composer({
 // ── One comment (and its replies) ────────────────────────────────────────
 function CommentItem({
   node, depth, prefs, busyId, replyTo, editing,
-  onReply, onEdit, onDelete, onSubmitReply, onSubmitEdit, onCancel,
+  onReply, onEdit, onDelete, onSubmitReply, onSubmitEdit, onCancel, onViewProfile, readOnly,
 }: {
   node: ArticleComment;
   depth: number;
@@ -204,34 +215,91 @@ function CommentItem({
   onSubmitReply: (parentId: string, v: { body: string; visibility: CommentVisibility }) => void;
   onSubmitEdit: (id: string, v: { title: string; body: string; visibility: CommentVisibility }) => void;
   onCancel: () => void;
+  onViewProfile?: (username: string) => void;
+  readOnly?: boolean;
 }) {
   const isEditing = editing === node.id;
   const isReplying = replyTo === node.id;
+  const wasEdited = node.updatedAt !== node.createdAt;
+  const replyCount = countTree(node.replies);
+
+  const [collapsed, setCollapsed] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<CommentHistory | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histError, setHistError] = useState(false);
+
+  async function toggleHistory() {
+    if (showHistory) { setShowHistory(false); return; }
+    setShowHistory(true);
+    if (history || histLoading) return;
+    setHistLoading(true);
+    setHistError(false);
+    try {
+      setHistory(await apiGet<CommentHistory>(`/api/v1/comments/${node.id}/history`));
+    } catch {
+      setHistError(true);
+    } finally {
+      setHistLoading(false);
+    }
+  }
 
   return (
     <div className={styles.comment}>
       <div className={styles.commentHead}>
-        {node.author.avatar
-          ? <img className={styles.avatar} src={node.author.avatar} alt="" />
-          : <span className={styles.avatarFallback}>{initialOf(node.author.displayName)}</span>}
-        <span className={styles.authorName}>{node.author.displayName}</span>
-        {node.mine && <span className={styles.youTag}>you</span>}
+        {(() => {
+          const avatarEl = node.deleted
+            ? <span className={styles.avatarFallback}>–</span>
+            : node.author.avatar
+              ? <img className={styles.avatar} src={node.author.avatar} alt="" />
+              : <span className={styles.avatarFallback}>{initialOf(node.author.displayName)}</span>;
+          const canView = !node.deleted && onViewProfile && node.author.username;
+          if (!canView) {
+            return <>
+              {avatarEl}
+              <span className={`${styles.authorName} ${node.deleted ? styles.deletedAuthor : ''}`}>{node.author.displayName}</span>
+            </>;
+          }
+          return (
+            <button
+              type="button"
+              className={styles.authorLink}
+              onClick={() => onViewProfile!(node.author.username)}
+              title={`View @${node.author.username}`}
+            >
+              {avatarEl}
+              <span className={styles.authorName}>{node.author.displayName}</span>
+            </button>
+          );
+        })()}
+        {!node.deleted && node.mine && <span className={styles.youTag}>you</span>}
         <span className={styles.dot}>·</span>
         <time className={styles.date} dateTime={node.createdAt} title={new Date(node.createdAt).toLocaleString()}>
           {commentDate(node.createdAt)}
         </time>
-        {node.updatedAt !== node.createdAt && <span className={styles.edited}>edited</span>}
+        {!node.deleted && wasEdited && (
+          <button
+            type="button"
+            className={`${styles.edited} ${showHistory ? styles.editedActive : ''}`}
+            onClick={toggleHistory}
+            title={`Edited ${new Date(node.updatedAt).toLocaleString()} — click to view history`}
+          >
+            edited {commentDate(node.updatedAt)}
+          </button>
+        )}
         {/* Tag your own comments (all three tiers), and others' friends-only
             comments so it's clear why you can see them. Others' public comments
             need no tag — public is the default read. */}
-        {(node.mine || node.visibility === 'friends') && (
+        {!node.deleted && (node.mine || node.visibility === 'friends') && (
           <span className={`${styles.visTag} ${styles[`visTag_${node.visibility}`]}`}>
             {VIS_META[node.visibility].tag}
           </span>
         )}
       </div>
 
-      {isEditing ? (
+      {node.deleted ? (
+        <div className={styles.deletedBody}>This comment was deleted.</div>
+      ) : isEditing ? (
         <Composer
           allowTitle={node.parentId === null}
           initialTitle={node.title ?? ''}
@@ -246,20 +314,29 @@ function CommentItem({
         <>
           {node.title && <div className={styles.commentTitle}>{node.title}</div>}
           {/* Sanitized server-side on write — see server/src/lib/comments.ts */}
-          <div className={styles.body} dangerouslySetInnerHTML={{ __html: node.body }} />
-          <div className={styles.actions}>
-            <button className={styles.actionBtn} onClick={() => onReply(node.id)}>Reply</button>
-            {node.mine && <button className={styles.actionBtn} onClick={() => onEdit(node.id)}>Edit</button>}
-            {node.mine && (
-              <button
-                className={`${styles.actionBtn} ${styles.deleteAction}`}
-                onClick={() => onDelete(node.id)}
-                disabled={busyId === node.id}
-              >
-                Delete
-              </button>
-            )}
-          </div>
+          <div
+            className={styles.body}
+            onClick={openImageAt}
+            dangerouslySetInnerHTML={{ __html: node.body }}
+          />
+          {!readOnly && (
+            <div className={styles.actions}>
+              <button className={styles.actionBtn} onClick={() => onReply(node.id)}>Reply</button>
+              {node.mine && <button className={styles.actionBtn} onClick={() => onEdit(node.id)}>Edit</button>}
+              {node.mine && (
+                <button
+                  className={`${styles.actionBtn} ${styles.deleteAction}`}
+                  onClick={() => onDelete(node.id)}
+                  disabled={busyId === node.id}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+          {showHistory && (
+            <CommentHistoryPanel loading={histLoading} error={histError} history={history} />
+          )}
         </>
       )}
 
@@ -275,32 +352,100 @@ function CommentItem({
       )}
 
       {node.replies.length > 0 && (
-        <div className={depth < MAX_DEPTH ? styles.replies : undefined}>
-          {node.replies.map(r => (
-            <CommentItem
-              key={r.id}
-              node={r}
-              depth={depth + 1}
-              prefs={prefs}
-              busyId={busyId}
-              replyTo={replyTo}
-              editing={editing}
-              onReply={onReply}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onSubmitReply={onSubmitReply}
-              onSubmitEdit={onSubmitEdit}
-              onCancel={onCancel}
-            />
-          ))}
+        <div className={styles.replies}>
+          {/* Clicking the rail folds the whole subtree — the pressure valve for
+              deep threads, since replies now keep indenting at every level. */}
+          <button
+            className={styles.collapseRail}
+            onClick={() => setCollapsed(c => !c)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Show ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}` : 'Collapse replies'}
+            title={collapsed ? 'Expand' : 'Collapse'}
+          />
+          <div className={styles.repliesBody}>
+            {collapsed ? (
+              <button className={styles.showReplies} onClick={() => setCollapsed(false)}>
+                Show {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+              </button>
+            ) : (
+              node.replies.map(r => (
+                <CommentItem
+                  key={r.id}
+                  node={r}
+                  depth={depth + 1}
+                  prefs={prefs}
+                  busyId={busyId}
+                  replyTo={replyTo}
+                  editing={editing}
+                  onReply={onReply}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onSubmitReply={onSubmitReply}
+                  onSubmitEdit={onSubmitEdit}
+                  onCancel={onCancel}
+                  onViewProfile={onViewProfile}
+                  readOnly={readOnly}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ── Inline edit history for one comment ──────────────────────────────────────
+function CommentHistoryPanel({ loading, error, history }: {
+  loading: boolean; error: boolean; history: CommentHistory | null;
+}) {
+  if (loading) return <div className={styles.history}><div className={styles.historyEmpty}>Loading history…</div></div>;
+  if (error) return <div className={styles.history}><div className={styles.historyEmpty}>Couldn’t load history.</div></div>;
+  if (!history) return null;
+
+  // Nothing to compare against — the comment was edited before history tracking
+  if (history.revisions.length === 0) {
+    return (
+      <div className={styles.history}>
+        <div className={styles.historyEmpty}>
+          This comment was edited before history was recorded, so earlier versions aren’t available.
+        </div>
+      </div>
+    );
+  }
+
+  const versions = [
+    { ...history.current, label: 'Current version' },
+    ...history.revisions.map(r => ({ ...r, label: 'Earlier version' })),
+  ];
+
+  return (
+    <div className={styles.history}>
+      <div className={styles.historyTitle}>Edit history</div>
+      <ol className={styles.historyList}>
+        {versions.map((v, i) => (
+          <li key={i} className={styles.historyItem}>
+            <div className={styles.historyMeta}>
+              <span className={styles.historyLabel}>{v.label}</span>
+              <span className={styles.historyTime}>
+                {i === 0 ? `edited ${commentDate(v.editedAt)}` : commentDate(v.editedAt)}
+              </span>
+              <span className={`${styles.visTag} ${styles[`visTag_${v.visibility}`]}`}>
+                {VIS_META[v.visibility].tag}
+              </span>
+            </div>
+            {v.title && <div className={styles.commentTitle}>{v.title}</div>}
+            {/* Sanitized server-side on write, same as live comment bodies */}
+            <div className={styles.historyBody} dangerouslySetInnerHTML={{ __html: v.body }} />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export default function CommentsPanel({
-  articleUrl, articleTitle, prefs, onCountChange, legacyNote, onLegacyNoteMigrated,
+  articleUrl, articleTitle, prefs, onCountChange, legacyNote, onLegacyNoteMigrated, onViewProfile, readOnly,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -445,11 +590,12 @@ export default function CommentsPanel({
           Comments
           {total > 0 && <span className={styles.panelCount}>{total}</span>}
         </h2>
-        {!composing && !loading && (
+        {!composing && !loading && !readOnly && (
           <button className={styles.addBtn} onClick={() => setComposing(true)}>
             Add comment
           </button>
         )}
+        {readOnly && <span className={styles.readOnlyHint}>Sign in to join the conversation</span>}
       </div>
 
       {loading && (
@@ -463,7 +609,7 @@ export default function CommentsPanel({
       {!loading && comments.length === 0 && !composing && (
         <div className={styles.empty}>
           <CommentIcon />
-          <span>No comments yet — start the thread.</span>
+          <span>{readOnly ? 'No comments yet.' : 'No comments yet — start the thread.'}</span>
         </div>
       )}
 
@@ -496,6 +642,8 @@ export default function CommentsPanel({
               onSubmitReply={submitReply}
               onSubmitEdit={submitEdit}
               onCancel={cancelAll}
+              onViewProfile={onViewProfile}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -513,34 +661,5 @@ function CommentIcon() {
   );
 }
 
-function GlobeIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
-
-function FriendsIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
+// GlobeIcon / LockIcon / FriendsIcon now live in VisibilityMeta alongside the
+// tier labels they belong to.

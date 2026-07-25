@@ -56,6 +56,59 @@ describe('sanitizeCommentHtml', () => {
   });
 });
 
+// Images are loaded without any user action, so what an <img src> may point at is
+// a tighter question than what an <a href> may. These lock the allowlist down.
+describe('sanitizeCommentHtml — images', () => {
+  it('keeps our own uploads, which are site-relative and have no scheme', () => {
+    const out = sanitizeCommentHtml('<p><img src="/api/v1/images/abc123" alt="a cat"></p>');
+    expect(out).toContain('src="/api/v1/images/abc123"');
+    expect(out).toContain('alt="a cat"');
+  });
+
+  it('keeps remote https images', () => {
+    expect(sanitizeCommentHtml('<img src="https://example.com/cat.png">'))
+      .toContain('https://example.com/cat.png');
+  });
+
+  it('adds no-referrer so the embedding page\'s URL is not leaked to the host', () => {
+    const out = sanitizeCommentHtml('<img src="https://example.com/cat.png">');
+    expect(out).toContain('referrerpolicy="no-referrer"');
+    expect(out).toContain('loading="lazy"');
+  });
+
+  it('strips a plain http src, which would be blocked as mixed content anyway', () => {
+    expect(sanitizeCommentHtml('<img src="http://example.com/cat.png">'))
+      .not.toContain('example.com');
+  });
+
+  it('strips a protocol-relative src, which names no scheme to check', () => {
+    expect(sanitizeCommentHtml('<img src="//evil.com/cat.png">'))
+      .not.toContain('evil.com');
+  });
+
+  it('strips a data: src, which would smuggle bytes past the size caps', () => {
+    expect(sanitizeCommentHtml('<img src="data:image/svg+xml,<svg onload=alert(1)>">'))
+      .not.toContain('data:');
+  });
+
+  it('strips javascript: and event handlers on an image', () => {
+    expect(sanitizeCommentHtml('<img src="javascript:alert(1)">')).not.toContain('javascript:');
+    const out = sanitizeCommentHtml('<img src="https://e.com/a.png" onerror="alert(1)">');
+    expect(out).not.toContain('onerror');
+  });
+
+  it('strips a style attribute rather than letting CSS into the host page', () => {
+    expect(sanitizeCommentHtml('<img src="https://e.com/a.png" style="position:fixed;inset:0">'))
+      .not.toContain('position');
+  });
+
+  it('drops an svg entirely — it is a scriptable document, not a raster image', () => {
+    const out = sanitizeCommentHtml('<svg><script>alert(1)</script></svg>');
+    expect(out).not.toContain('svg');
+    expect(out).not.toContain('alert');
+  });
+});
+
 describe('isBlankHtml', () => {
   it('treats an empty editor as blank', () => {
     expect(isBlankHtml('')).toBe(true);

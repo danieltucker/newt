@@ -1,0 +1,22 @@
+/* The reader is a fixed-overlay modal; this just paints the page behind it so
+   the backdrop blur has something to sit over when there's no app shell. */
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.signInBtn {
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.signInBtn:hover {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+}

@@ -122,6 +122,7 @@ interface Props {
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
   commentPrefs: CommentPrefs;
+  onViewProfile?: (username: string) => void;
 }
 
 function parseTags(tag: string): string[] {
@@ -327,7 +328,7 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
 
 const DELETE_DELAY = 3000;
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchive, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchive, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile }: Props) {
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const timerMap = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -705,6 +706,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
           legacyNote={reading.notes}
           onLegacyNoteMigrated={() => handleNoteMigrated(reading.id)}
           onClose={() => setReading(null)}
+          onViewProfile={onViewProfile}
           actions={
             <>
               <button onClick={() => { handleArchive(reading.id, !reading.archived); setReading(null); }}>

@@ -62,6 +62,7 @@ export interface ArticleComment {
   title: string | null;      // root comments only
   body: string;              // sanitized HTML from the rich editor
   visibility: CommentVisibility;
+  deleted: boolean;          // a tombstone: content wiped, kept to hold up its replies
   createdAt: string;
   updatedAt: string;
   mine: boolean;
@@ -74,6 +75,20 @@ export interface CommentPrefs {
   defaultVisibility: CommentVisibility;
   sort: 'newest' | 'oldest';
   autoExpand: boolean;
+}
+
+// One version of a comment's content. `editedAt` on a revision is when it was
+// replaced; on `current` it's the comment's last-updated time.
+export interface CommentRevision {
+  title: string | null;
+  body: string;
+  visibility: CommentVisibility;
+  editedAt: string;
+}
+
+export interface CommentHistory {
+  current: CommentRevision;
+  revisions: CommentRevision[];   // newest-first; empty for edits made before history tracking
 }
 
 // ── Friends & notifications ────────────────────────────────────────────────
@@ -101,7 +116,7 @@ export interface FriendSearchResult extends PublicUser {
   relation: FriendRelation;
 }
 
-export type NotificationType = 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment';
+export type NotificationType = 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'friend_post';
 
 export interface AppNotification {
   id: string;
@@ -118,3 +133,70 @@ export interface AuthState {
   accessToken: string | null;
   username: string | null;
 }
+
+// ── Public profiles (/u/<username>) ────────────────────────────────────────
+export interface ProfileUser {
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  createdAt: string;
+  commentCount: number;
+  postCount: number;
+  isSelf: boolean;
+  relation: FriendRelation;
+  // RSS URL for this person's public posts — offered for copying, and what the
+  // Follow button subscribes a folder to.
+  blogFeedUrl: string;
+}
+
+// One of the profile owner's comments, with the article it was posted on.
+export interface ProfileComment {
+  id: string;
+  title: string | null;
+  body: string;
+  visibility: CommentVisibility;
+  articleUrl: string;
+  articleTitle: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A distinct article the owner has commented on (History tab).
+export interface ProfileArticle {
+  articleUrl: string;
+  articleTitle: string;
+  commentCount: number;
+  lastCommentedAt: string;
+}
+
+// ── Blog posts (/u/<username>/<slug>) ──────────────────────────────────────
+// Visibility reuses the comment tiers exactly, and 'private' doubles as the
+// draft state — publishing is just widening it.
+
+// List-view shape: everything but the body.
+export interface BlogPostSummary {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  visibility: CommentVisibility;
+  commentsEnabled: boolean;
+  // Absolute canonical URL. Also the key its comment thread hangs on, so it is
+  // what gets handed to CommentsPanel rather than anything recomputed locally.
+  url: string;
+  publishedAt: string;
+  updatedAt: string;
+  author?: PublicUser;
+}
+
+export interface BlogPost extends BlogPostSummary {
+  body: string;              // sanitized HTML from the rich editor
+  articleKey?: string;
+  isSelf?: boolean;
+}
+
+// One entry in a profile's merged Activity tab: either a post the owner wrote or
+// a comment they shared. The `kind` tag is what the renderer switches on.
+export type ProfileActivityItem =
+  | { kind: 'post'; at: string; post: BlogPostSummary }
+  | { kind: 'comment'; at: string; comment: ProfileComment };

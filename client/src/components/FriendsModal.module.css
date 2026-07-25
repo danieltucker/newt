@@ -129,6 +129,21 @@
 .rowText { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text); }
 .rowText strong { font-weight: 650; }
 
+/* Avatar / name that links to a public profile. */
+.personBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.personBtn:hover strong { text-decoration: underline; }
+
 .sub {
   font-size: 11.5px;
   color: var(--muted);

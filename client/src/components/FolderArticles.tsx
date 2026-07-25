@@ -37,6 +37,7 @@ interface Props {
   commentPrefs: CommentPrefs;
   // Clears the folder's site badges once its articles have been marked read
   onFolderMarkedRead?: (folderId: string) => void;
+  onViewProfile?: (username: string) => void;
 }
 
 function relativeDate(s: string | null): string {
@@ -106,7 +107,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead }: Props) {
+export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile }: Props) {
   const seededFolders = useRef<Set<string>>(new Set());
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
@@ -468,6 +469,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
           prefs={commentPrefs}
           onCountChange={setCommentCount}
           onClose={() => setReading(null)}
+          onViewProfile={onViewProfile}
           actions={
             <>
               <button onClick={() => { handleSave(reading); setReading(null); }}>

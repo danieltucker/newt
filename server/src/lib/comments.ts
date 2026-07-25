@@ -28,39 +28,70 @@ export function commentTextLength(html: string): number {
     .length;
 }
 
-export function sanitizeCommentHtml(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: [
-      'p', 'br', 'hr', 'div', 'span',
-      'h1', 'h2', 'h3',
-      'ul', 'ol', 'li',
-      'blockquote', 'pre', 'code',
-      'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del',
-      'a',
-      'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    ],
-    allowedAttributes: {
-      // rel/target must be allowed here or the transformTags below is silently
-      // stripped back off, losing the noopener protection it exists to add
-      a: ['href', 'title', 'rel', 'target'],
-      div: ['class', 'data-checked'],
-      table: ['class'],
-    },
-    // Only real web links — blocks javascript:, data:, vbscript:
-    allowedSchemes: ['http', 'https', 'mailto'],
-    allowedSchemesAppliedToAttributes: ['href'],
+// The single allowlist for every piece of user-authored rich text in the app —
+// comments and blog posts alike. Both come out of the same RichEditor, and both
+// end up readable by other users, so they must be sanitized to exactly the same
+// shape. Keep one copy: a divergence here is a security bug, not a style issue.
+const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p', 'br', 'hr', 'div', 'span',
+    'h1', 'h2', 'h3',
+    'ul', 'ol', 'li',
+    'blockquote', 'pre', 'code',
+    'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del',
+    'a', 'img',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+  ],
+  allowedAttributes: {
+    // rel/target must be allowed here or the transformTags below is silently
+    // stripped back off, losing the noopener protection it exists to add
+    a: ['href', 'title', 'rel', 'target'],
+    // Same applies to loading/referrerpolicy, which transformTags adds below.
+    // Intrinsic width/height let the browser reserve layout space; no style
+    // attribute, which would be a way to smuggle CSS into someone else's page.
+    img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'referrerpolicy'],
+    div: ['class', 'data-checked'],
+    table: ['class'],
+  },
+  // Only real web links — blocks javascript:, data:, vbscript:
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesAppliedToAttributes: ['href', 'src'],
+  // An image is loaded automatically, without the click a link needs, so its
+  // scheme list is stricter than a link's: https only. Plain http would be
+  // blocked as mixed content the moment the app is served over TLS anyway, and
+  // data: URLs are excluded so a body can't carry its own inline payload past
+  // the size caps. Site-relative srcs — our own /api/v1/images/<id> uploads —
+  // have no scheme and are unaffected by this list.
+  allowedSchemesByTag: { img: ['https'] },
+  // "//host/x.png" inherits the page's scheme and would otherwise slip past the
+  // per-tag list above, which only inspects URLs that name a scheme.
+  allowProtocolRelative: false,
+  transformTags: {
     // Anything user-supplied that opens a new tab must not get window.opener
-    transformTags: {
-      a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' }),
-    },
-    // Keep only the two structural classes the editor relies on
-    allowedClasses: {
-      div: [TODO_CLASS],
-      table: [TABLE_CLASS],
-    },
-    // Drop the contents of these outright rather than leaving bare text behind
-    nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'iframe'],
-  }).slice(0, MAX_COMMENT_BODY);
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' }),
+    // Remote images are permitted, so limit what the remote host learns: without
+    // this it receives the full URL of the post or thread doing the embedding in
+    // the Referer header. Lazy loading also means images below the fold are not
+    // fetched at all until scrolled to.
+    img: sanitizeHtml.simpleTransform('img', { loading: 'lazy', referrerpolicy: 'no-referrer' }),
+  },
+  // Keep only the two structural classes the editor relies on
+  allowedClasses: {
+    div: [TODO_CLASS],
+    table: [TABLE_CLASS],
+  },
+  // Drop the contents of these outright rather than leaving bare text behind
+  nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'iframe'],
+};
+
+// Sanitize rich-editor HTML and cap its raw length. `maxLength` differs by
+// content type (a comment is not a blog post) but the allowlist never does.
+export function sanitizeRichHtml(html: string, maxLength: number): string {
+  return sanitizeHtml(html, RICH_HTML_OPTIONS).slice(0, maxLength);
+}
+
+export function sanitizeCommentHtml(html: string): string {
+  return sanitizeRichHtml(html, MAX_COMMENT_BODY);
 }
 
 // True when the body carries no actual content — an empty editor still submits

@@ -1,7 +1,8 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { apiGet } from '../services/api';
 import { CommentPrefs } from '../types';
 import { faviconUrl } from '../utils/color';
+import { articlePathFor } from '../utils/articleUrl';
 import CommentsPanel from './CommentsPanel';
 import styles from './ArticleDetailModal.module.css';
 
@@ -42,7 +43,18 @@ interface Props {
   /** Caller-supplied buttons (Save, Dismiss, Archive…) — each list owns its own verbs */
   actions?: ReactNode;
   onClose: () => void;
+  onViewProfile?: (username: string) => void;
+  // Logged-out reader: comments are read-only (view a public thread, can't post).
+  readOnly?: boolean;
 }
+
+// History bookkeeping for the reader's /a/<id> URL. Module-level (only one reader
+// is ever open at a time) so that React StrictMode's mount→unmount→mount probe in
+// dev doesn't push/pop twice: the throwaway unmount schedules its cleanup on a
+// timeout, and the immediate re-mount cancels it before it can run.
+let readerActive = false;   // our /a/<id> entry is currently on the history stack
+let readerPushed = false;   // we pushed it (vs. the page was opened *at* that URL)
+let pendingHistoryCleanup: ReturnType<typeof setTimeout> | null = null;
 
 function domainOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
@@ -57,10 +69,13 @@ function longDate(iso: string | null | undefined): string {
 
 export default function ArticleDetailModal({
   url, title, source, imageUrl, categories, readTime, pubDate,
-  prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onClose,
+  prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onClose, onViewProfile, readOnly,
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Escape closes; the page behind must not scroll while the reader is up
   useEffect(() => {
@@ -73,6 +88,43 @@ export default function ArticleDetailModal({
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose]);
+
+  // Reflect the open article in the browser URL (/a/<id>) so it's shareable and
+  // the back button closes the reader. We push an entry on open (unless we were
+  // opened *from* that URL — a shared deep link) and undo it on close.
+  useEffect(() => {
+    const targetPath = articlePathFor(url);
+
+    // A pending cleanup means this is a StrictMode re-mount — cancel it so we
+    // don't tear down the history entry we're about to keep using.
+    if (pendingHistoryCleanup !== null) {
+      clearTimeout(pendingHistoryCleanup);
+      pendingHistoryCleanup = null;
+    }
+    if (!readerActive) {
+      readerActive = true;
+      readerPushed = window.location.pathname !== targetPath;
+      if (readerPushed) window.history.pushState({ articleReader: true }, '', targetPath);
+    }
+
+    const onPop = () => { readerActive = false; readerPushed = false; onCloseRef.current(); };
+    window.addEventListener('popstate', onPop);
+
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      pendingHistoryCleanup = setTimeout(() => {
+        pendingHistoryCleanup = null;
+        // Closed via UI (Escape/backdrop/close) while still on our URL — undo it.
+        // Closed via Back navigation already moved us away, so this no-ops.
+        if (readerActive && window.location.pathname === targetPath) {
+          if (readerPushed) window.history.back();
+          else window.history.replaceState(null, '', '/');
+        }
+        readerActive = false;
+        readerPushed = false;
+      }, 0);
+    };
+  }, [url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +241,8 @@ export default function ArticleDetailModal({
               onCountChange={onCountChange}
               legacyNote={legacyNote}
               onLegacyNoteMigrated={onLegacyNoteMigrated}
+              onViewProfile={onViewProfile}
+              readOnly={readOnly}
             />
           </div>
         </div>

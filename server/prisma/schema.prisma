@@ -20,8 +20,13 @@ model User {
   totpSecret        String?
   totpPendingSecret String?
   totpEnabled       Boolean           @default(false)
+  // Bearer secret for this user's personal aggregate blog feed. It travels in a
+  // URL (/api/v1/blogs/feed/<token>.xml), so it is never exposed for any user
+  // but the owner, and can be rotated to revoke a leaked link.
+  feedToken     String?           @unique
   createdAt     DateTime          @default(now())
   folders       Folder[]
+  blogPosts     BlogPost[]
   bookmarks     Bookmark[]
   readingList   ReadingListItem[]
   refreshTokens RefreshToken[]
@@ -32,6 +37,7 @@ model User {
   friendshipsReceived  Friendship[]  @relation("FriendshipAddressee")
   notifications        Notification[]
   notificationsActed   Notification[] @relation("NotificationActor")
+  images               Image[]
 }
 
 // A friend relationship, created as a directed request and confirmed when the
@@ -221,12 +227,89 @@ model Comment {
   body         String    // sanitized HTML from the rich editor
   // 'public' (every signed-in user) | 'friends' (accepted friends) | 'private' (only the author)
   visibility   String    @default("private")
+  // Set when the author deletes a comment that still has replies: the row is
+  // kept as a tombstone (content wiped) so the thread below it survives. A
+  // comment with no replies is hard-deleted instead, so this stays null.
+  deletedAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  revisions    CommentRevision[]
 
   @@index([articleKey])
   @@index([userId])
   @@index([parentId])
+}
+
+// A snapshot of a comment's content as it stood *before* an edit. One row is
+// written each time an edit actually changes the title, body, or visibility, so
+// the edit history can be reconstructed newest-first. editedAt is the moment the
+// snapshot stopped being the live version (i.e. when the edit happened).
+model CommentRevision {
+  id         String   @id @default(cuid())
+  commentId  String
+  comment    Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  title      String?
+  body       String
+  visibility String
+  editedAt   DateTime @default(now())
+
+  @@index([commentId])
+}
+
+// A blog post authored in the rich editor. Visibility mirrors Comment exactly —
+// 'private' doubles as the draft state, so publishing is just widening it.
+//
+// The post carries its own canonical URL *and* the articleKey derived from it.
+// That key is what Comment.articleKey threads on, so a post gets the whole
+// comment system (threading, visibility, edit history) with no join table: a
+// comment left on the post's page and one left on its card in an RSS folder
+// land in the same thread. Both columns are stored rather than derived so that
+// changing the deploy origin later can't orphan existing threads.
+model BlogPost {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  slug            String   // "my-post-title" — unique per author, no date suffix
+  body            String   // sanitized rich-editor HTML
+  excerpt         String   @default("")  // plain-text summary for cards and RSS
+  // 'public' (anyone, incl. logged-out) | 'friends' (accepted friends) | 'private' (author only)
+  visibility      String   @default("private")
+  commentsEnabled Boolean  @default(true)
+  url             String   // absolute canonical URL
+  articleKey      String   @unique       // canonicalArticleKey(url) — joins to Comment
+  publishedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, slug])
+  @@index([userId, publishedAt])
+  @@index([visibility, publishedAt])
+}
+
+// An image embedded in a note, comment or blog post. Bytes live in the database
+// rather than on disk because the server container has no persistent volume (see
+// docker-compose.yml) — only postgres does, so this is the one store that
+// survives a rebuild and travels in a pg_dump backup.
+//
+// The id is the whole access control: the serve route is unauthenticated, because
+// an image can be embedded in a public post read by logged-out visitors, and
+// there is no way to know from the bytes alone which post is asking. A random
+// cuid is treated as a bearer capability — unguessable, and never listed to
+// anyone but its owner.
+model Image {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Sniffed from the file's magic number on upload, never taken from the client
+  mime      String
+  data      Bytes
+  size      Int      // bytes, denormalised so quota sums don't read the blobs
+  width     Int
+  height    Int
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model ReadingListItem {

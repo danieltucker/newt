@@ -763,6 +763,56 @@
 /* ── Rendered blocks inside the editor ── */
 .editor > * { margin: 0 0 6px; }
 
+/* An embedded image is capped to the column width and keeps its aspect ratio.
+   The intrinsic width/height attributes are what stop the text below jumping
+   once the bytes arrive, so height:auto must not override that until it loads. */
+.editor img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 10px 0;
+}
+
+/* Clicking an image selects it, so Backspace removes the whole thing rather
+   than putting a caret inside a replaced element that cannot hold one. */
+.editor img::selection { background: rgb(91 91 230 / 0.3); }
+
+/* ── Image upload feedback ── */
+.uploadNote, .uploadError {
+  margin: 0 32px 10px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  padding: 7px 11px;
+  border-radius: 8px;
+}
+
+.uploadNote {
+  color: #5a5f6e;
+  background: #f1f2f6;
+}
+
+.uploadError {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #b4292d;
+  background: #fdeaea;
+  border: 1px solid #f5c2c4;
+}
+
+.uploadDismiss {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #b4292d;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
 .editor h1, .editor h2, .editor h3 {
   font-family: 'Bricolage Grotesque', sans-serif;
   font-weight: 600;

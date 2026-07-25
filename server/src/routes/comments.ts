@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, optionalAuth, AuthRequest } from '../middleware/auth';
 import logger from '../lib/logger';
 import {
   canonicalArticleKey,
@@ -14,12 +14,28 @@ import {
 } from '../lib/comments';
 import { friendIdsOf } from '../lib/friends';
 import { Visibility, isVisibility, visibilityWhere } from '../lib/commentVisibility';
+import { canSeePost } from '../lib/blog';
 import { perUserLimiter } from '../lib/rateLimit';
 
 const router = Router();
-router.use(requireAuth);
+// Reads (list a thread, counts, a comment's history) are public so a shared
+// thread link works logged-out; writes below opt back in with requireAuth.
+router.use(optionalAuth);
 
 const MAX_URLS_PER_COUNT = 200;
+
+// Read prefs + friends for whoever is viewing. An anonymous viewer sees public
+// comments only: prefs default to showing them, and they have no friends.
+async function viewerContext(userId: string | undefined): Promise<{
+  showPublic: boolean; sort: 'newest' | 'oldest'; friendIds: Set<string>;
+}> {
+  if (!userId) return { showPublic: true, sort: 'newest', friendIds: new Set() };
+  const [{ showPublic, sort }, friendIds] = await Promise.all([
+    viewerPrefs(userId),
+    friendIdsOf(userId),
+  ]);
+  return { showPublic, sort, friendIds };
+}
 
 // Per-user write limits (keyed on userId, so a single account can't spam even
 // across IPs). A burst cap for fast back-and-forth, plus an hourly ceiling.
@@ -52,6 +68,7 @@ type CommentRow = {
   title: string | null;
   body: string;
   visibility: string;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
@@ -63,6 +80,7 @@ interface CommentNode {
   title: string | null;
   body: string;
   visibility: string;
+  deleted: boolean;
   createdAt: Date;
   updatedAt: Date;
   mine: boolean;
@@ -75,13 +93,31 @@ function displayName(u: CommentRow['user']): string {
   return full || u.username;
 }
 
-function toNode(row: CommentRow, viewerId: string): CommentNode {
+function toNode(row: CommentRow, viewerId: string | undefined): CommentNode {
+  // A tombstone exposes no content or author identity — only its place in the
+  // tree, so replies beneath it still read in order.
+  if (row.deletedAt) {
+    return {
+      id: row.id,
+      parentId: row.parentId,
+      title: null,
+      body: '',
+      visibility: row.visibility,
+      deleted: true,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      mine: false,
+      author: { username: '', displayName: '[deleted]', avatar: null },
+      replies: [],
+    };
+  }
   return {
     id: row.id,
     parentId: row.parentId,
     title: row.title,
     body: row.body,
     visibility: row.visibility,
+    deleted: false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     mine: row.userId === viewerId,
@@ -97,7 +133,7 @@ function toNode(row: CommentRow, viewerId: string): CommentNode {
 // Builds the reply tree. Rows whose parent isn't visible to this viewer (a
 // private parent, or one deleted mid-flight) are surfaced at root level rather
 // than silently dropped, so no one loses a comment they can see.
-function buildTree(rows: CommentRow[], viewerId: string, sort: 'newest' | 'oldest'): CommentNode[] {
+function buildTree(rows: CommentRow[], viewerId: string | undefined, sort: 'newest' | 'oldest'): CommentNode[] {
   const byId = new Map<string, CommentNode>();
   for (const r of rows) byId.set(r.id, toNode(r, viewerId));
 
@@ -129,6 +165,48 @@ async function viewerPrefs(userId: string): Promise<{ showPublic: boolean; sort:
     showPublic: s.commentsShowPublic !== false,
     sort: s.commentsSort === 'oldest' ? 'oldest' : 'newest',
   };
+}
+
+// ── Blog-post threads ────────────────────────────────────────────────────────
+// Most articleKeys belong to feed items, which nobody owns and which anyone may
+// discuss. A key that resolves to a BlogPost is different: the thread has to
+// inherit the post's own visibility, because comment visibility alone doesn't
+// cover it — a *public* comment on a *friends-only* post would otherwise be
+// readable by the whole world. Posts can also switch commenting off entirely.
+//
+// These helpers no-op for every non-blog key, so article threads behave exactly
+// as they did before.
+
+type BlogGate =
+  | { kind: 'not-blog' }              // an ordinary article — no extra rules
+  | { kind: 'hidden' }                // a post this viewer may not read
+  | { kind: 'ok'; commentsEnabled: boolean };
+
+async function blogGate(articleKey: string, viewerId: string | undefined, friendIds: Set<string>): Promise<BlogGate> {
+  const post = await prisma.blogPost.findUnique({
+    where: { articleKey },
+    select: { userId: true, visibility: true, commentsEnabled: true },
+  });
+  if (!post) return { kind: 'not-blog' };
+  if (!canSeePost(post, viewerId, friendIds)) return { kind: 'hidden' };
+  return { kind: 'ok', commentsEnabled: post.commentsEnabled };
+}
+
+// Batch form for the counts endpoint: which of these keys are blog posts the
+// viewer may not read. One query regardless of how many keys are in play.
+async function hiddenBlogKeys(
+  keys: string[],
+  viewerId: string | undefined,
+  friendIds: Set<string>,
+): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const posts = await prisma.blogPost.findMany({
+    where: { articleKey: { in: keys } },
+    select: { articleKey: true, userId: true, visibility: true },
+  });
+  return new Set(
+    posts.filter(p => !canSeePost(p, viewerId, friendIds)).map(p => p.articleKey),
+  );
 }
 
 // Fan out notifications for a freshly-created comment: the author of a comment
@@ -174,20 +252,25 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
 
   try {
-    const [{ showPublic, sort }, friendIds] = await Promise.all([
-      viewerPrefs(req.userId!),
-      friendIdsOf(req.userId!),
-    ]);
+    const { showPublic, sort, friendIds } = await viewerContext(req.userId);
+    const key = canonicalArticleKey(url);
+
+    // A post they can't read answers as an empty thread rather than a 403 — the
+    // same shape an article with no comments returns, so the response doesn't
+    // reveal that anything is being withheld.
+    const gate = await blogGate(key, req.userId, friendIds);
+    if (gate.kind === 'hidden') { res.json({ comments: [], total: 0 }); return; }
+
     const rows = await prisma.comment.findMany({
       where: {
-        articleKey: canonicalArticleKey(url),
-        ...visibilityWhere(req.userId!, showPublic, friendIds),
+        articleKey: key,
+        ...visibilityWhere(req.userId, showPublic, friendIds),
       },
       orderBy: { createdAt: 'asc' },
       take: 500,
       include: { user: { select: AUTHOR_SELECT } },
     });
-    const tree = buildTree(rows as CommentRow[], req.userId!, sort);
+    const tree = buildTree(rows as CommentRow[], req.userId, sort);
     res.json({ comments: tree, total: rows.length });
   } catch (err) {
     logger.error(err, 'List comments error');
@@ -205,23 +288,23 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
   if (valid.length === 0) { res.json({ counts: {} }); return; }
 
   try {
-    const [{ showPublic }, friendIds] = await Promise.all([
-      viewerPrefs(req.userId!),
-      friendIdsOf(req.userId!),
-    ]);
+    const { showPublic, friendIds } = await viewerContext(req.userId);
     // Several URLs can share one key, so count by key then fan back out
     const keyByUrl = new Map(valid.map(u => [u, canonicalArticleKey(u)]));
     const grouped = await prisma.comment.groupBy({
       by: ['articleKey'],
       where: {
         articleKey: { in: [...new Set(keyByUrl.values())] },
-        ...visibilityWhere(req.userId!, showPublic, friendIds),
+        ...visibilityWhere(req.userId, showPublic, friendIds),
       },
       _count: { _all: true },
     });
     const byKey = new Map(grouped.map(g => [g.articleKey, g._count._all]));
+    // Blog posts the viewer can't read report zero — a count is a small leak,
+    // but it still tells them a post exists behind the URL.
+    const hidden = await hiddenBlogKeys([...new Set(keyByUrl.values())], req.userId, friendIds);
     const counts: Record<string, number> = {};
-    for (const [url, key] of keyByUrl) counts[url] = byKey.get(key) ?? 0;
+    for (const [url, key] of keyByUrl) counts[url] = hidden.has(key) ? 0 : (byKey.get(key) ?? 0);
     res.json({ counts });
   } catch (err) {
     logger.error(err, 'Comment counts error');
@@ -230,7 +313,7 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
 });
 
 // POST /api/v1/comments
-router.post('/', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', requireAuth, commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
   const { url, articleTitle, parentId, title, body, visibility } = req.body as Record<string, unknown>;
 
   if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
@@ -259,19 +342,26 @@ router.post('/', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequ
   const titleText = typeof articleTitle === 'string' ? articleTitle.slice(0, 500) : '';
 
   try {
+    // Blog posts govern their own threads. A post this user can't read answers
+    // 404 rather than 403, so posting can't be used to probe for its existence.
+    const friendIds = await friendIdsOf(req.userId!);
+    const gate = await blogGate(key, req.userId!, friendIds);
+    if (gate.kind === 'hidden') { res.status(404).json({ error: 'Not found' }); return; }
+    if (gate.kind === 'ok' && !gate.commentsEnabled) {
+      res.status(403).json({ error: 'Comments are turned off for this post' }); return;
+    }
+
     // A reply must hang off a comment on the same article that this user is
     // actually allowed to see — otherwise replies could probe private threads.
     let parentAuthorId: string | null = null;
     if (typeof parentId === 'string') {
-      const [{ showPublic }, friendIds] = await Promise.all([
-        viewerPrefs(req.userId!),
-        friendIdsOf(req.userId!),
-      ]);
+      const { showPublic } = await viewerPrefs(req.userId!);
       const parent = await prisma.comment.findFirst({
         where: { id: parentId, articleKey: key, ...visibilityWhere(req.userId!, showPublic, friendIds) },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, deletedAt: true },
       });
       if (!parent) { res.status(404).json({ error: 'Parent comment not found' }); return; }
+      if (parent.deletedAt) { res.status(409).json({ error: 'You can’t reply to a deleted comment' }); return; }
       parentAuthorId = parent.userId;
     }
 
@@ -303,15 +393,16 @@ router.post('/', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequ
 });
 
 // PATCH /api/v1/comments/:id — author only
-router.patch('/:id', commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id', requireAuth, commentBurstLimiter, commentHourlyLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
   const { title, body, visibility } = req.body as Record<string, unknown>;
 
   try {
     const existing = await prisma.comment.findFirst({
       where: { id: req.params.id, userId: req.userId! },
-      select: { id: true, parentId: true },
+      select: { id: true, parentId: true, title: true, body: true, visibility: true, deletedAt: true },
     });
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    if (existing.deletedAt) { res.status(409).json({ error: 'This comment has been deleted' }); return; }
 
     const data: Record<string, unknown> = {};
     if (body !== undefined) {
@@ -340,11 +431,36 @@ router.patch('/:id', commentBurstLimiter, commentHourlyLimiter, async (req: Auth
     }
     if (Object.keys(data).length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
 
-    const updated = await prisma.comment.update({
-      where: { id: req.params.id },
-      data,
-      include: { user: { select: AUTHOR_SELECT } },
-    });
+    // A real change (not a no-op re-save) snapshots the pre-edit content into the
+    // history, so the "edited" marker always has something to show. Snapshot +
+    // update run together so history can't be recorded without the edit landing.
+    const changed =
+      ('body' in data && data.body !== existing.body) ||
+      ('title' in data && data.title !== existing.title) ||
+      ('visibility' in data && data.visibility !== existing.visibility);
+
+    const updated = changed
+      ? await prisma.$transaction(async tx => {
+          await tx.commentRevision.create({
+            data: {
+              commentId: existing.id,
+              title: existing.title,
+              body: existing.body,
+              visibility: existing.visibility,
+            },
+          });
+          return tx.comment.update({
+            where: { id: req.params.id },
+            data,
+            include: { user: { select: AUTHOR_SELECT } },
+          });
+        })
+      : await prisma.comment.update({
+          where: { id: req.params.id },
+          data,
+          include: { user: { select: AUTHOR_SELECT } },
+        });
+
     res.json(toNode(updated as CommentRow, req.userId!));
   } catch (err) {
     logger.error(err, 'Update comment error');
@@ -352,14 +468,82 @@ router.patch('/:id', commentBurstLimiter, commentHourlyLimiter, async (req: Auth
   }
 });
 
-// DELETE /api/v1/comments/:id — author only; replies cascade with the parent
-router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+// GET /api/v1/comments/:id/history — the comment's prior versions, newest first.
+// Visible to anyone allowed to see the comment itself (same visibility rule).
+router.get('/:id/history', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const result = await prisma.comment.deleteMany({
-      where: { id: req.params.id, userId: req.userId! },
+    const { showPublic, friendIds } = await viewerContext(req.userId);
+    const comment = await prisma.comment.findFirst({
+      where: { id: req.params.id, ...visibilityWhere(req.userId, showPublic, friendIds) },
+      select: { title: true, body: true, visibility: true, updatedAt: true },
     });
-    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
-    res.json({ ok: true });
+    if (!comment) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const revisions = await prisma.commentRevision.findMany({
+      where: { commentId: req.params.id },
+      orderBy: { editedAt: 'desc' },
+      select: { title: true, body: true, visibility: true, editedAt: true },
+    });
+
+    res.json({
+      current: { title: comment.title, body: comment.body, visibility: comment.visibility, editedAt: comment.updatedAt },
+      revisions,
+    });
+  } catch (err) {
+    logger.error(err, 'Comment history error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Removes any ancestor tombstones that have just lost their last reply, walking
+// up the thread — so a "[deleted]" placeholder never lingers with nothing under
+// it. Bounded by the thread depth.
+async function pruneChildlessTombstones(startParentId: string | null): Promise<void> {
+  let pid = startParentId;
+  while (pid) {
+    const parent = await prisma.comment.findUnique({
+      where: { id: pid },
+      select: { id: true, parentId: true, deletedAt: true },
+    });
+    if (!parent || !parent.deletedAt) break;           // real comment, or gone — stop
+    const kids = await prisma.comment.count({ where: { parentId: pid } });
+    if (kids > 0) break;                                // still holding up replies
+    const grandparent = parent.parentId;
+    await prisma.comment.delete({ where: { id: pid } });
+    pid = grandparent;
+  }
+}
+
+// DELETE /api/v1/comments/:id — author only. A comment with replies is
+// tombstoned (content + edit history wiped, row kept) so the replies survive; a
+// leaf comment is removed outright.
+router.delete('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const comment = await prisma.comment.findFirst({
+      where: { id: req.params.id, userId: req.userId! },
+      select: { id: true, parentId: true, deletedAt: true },
+    });
+    if (!comment) { res.status(404).json({ error: 'Not found' }); return; }
+    if (comment.deletedAt) { res.json({ ok: true, deleted: true }); return; } // already a tombstone
+
+    const replyCount = await prisma.comment.count({ where: { parentId: comment.id } });
+
+    if (replyCount > 0) {
+      // Tombstone: wipe content + history, keep the node for the thread below it
+      await prisma.$transaction([
+        prisma.commentRevision.deleteMany({ where: { commentId: comment.id } }),
+        prisma.comment.update({
+          where: { id: comment.id },
+          data: { deletedAt: new Date(), body: '', title: null },
+        }),
+      ]);
+      res.json({ ok: true, deleted: true });
+    } else {
+      // Leaf: remove outright (revisions cascade), then tidy up orphaned tombstones
+      await prisma.comment.delete({ where: { id: comment.id } });
+      await pruneChildlessTombstones(comment.parentId);
+      res.json({ ok: true });
+    }
   } catch (err) {
     logger.error(err, 'Delete comment error');
     res.status(500).json({ error: 'Server error' });

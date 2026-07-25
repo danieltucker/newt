@@ -2,6 +2,7 @@ import nodeFetch from 'node-fetch';
 import prisma from './prisma';
 import { parseFeed, parseFeedTitle, canonicalFeedKey } from './feedUtils';
 import { canonicalArticleKey } from './comments';
+import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
@@ -66,6 +67,21 @@ function refreshOne(feed: RefreshableFeed): Promise<void> {
 async function doRefresh(feed: RefreshableFeed): Promise<void> {
   const now = new Date();
   if (!(await claimFeed(feed, now))) return; // another process is already on it
+
+  // Our own blog feeds are resolved straight from the database. Fetching them
+  // over HTTP would mean the server calling back through its own public origin —
+  // unreachable from inside the container in some deployments, refused by the
+  // SSRF guard on a private address in dev, and lossy either way, since the post
+  // HTML would have to survive a round trip through XML.
+  const blogTarget = parseBlogFeedUrl(feed.fetchUrl);
+  if (blogTarget) {
+    try {
+      await refreshBlogFeed(feed.id, blogTarget, now);
+    } catch (err) {
+      logger.warn({ err, feedUrl: feed.fetchUrl }, 'Blog feed refresh failed');
+    }
+    return;
+  }
 
   try {
     const headers: Record<string, string> = {
