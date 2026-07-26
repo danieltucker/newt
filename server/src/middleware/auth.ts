@@ -4,6 +4,11 @@ import prisma from '../lib/prisma';
 
 export interface AuthRequest extends Request {
   userId?: string;
+  // Set alongside userId by requireAuth/optionalAuth, which already load the
+  // user to check the ban flag — so surfaces that vary by role (the per-comment
+  // moderation flag, for one) cost no extra query. Authorisation still goes
+  // through requireAdmin; this is only for shaping a response.
+  isAdmin?: boolean;
 }
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -21,12 +26,16 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
   // Bans take effect immediately, not when the access token expires —
   // one indexed PK lookup per request.
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { bannedAt: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { bannedAt: true, isAdmin: true },
+  });
   if (!user || user.bannedAt) {
     res.status(401).json({ error: 'Account unavailable' });
     return;
   }
   req.userId = userId;
+  req.isAdmin = user.isAdmin;
   next();
 }
 
@@ -39,8 +48,11 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
   if (!header?.startsWith('Bearer ')) { next(); return; }
   try {
     const userId = verifyAccess(header.slice(7)).sub;
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { bannedAt: true } });
-    if (user && !user.bannedAt) req.userId = userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { bannedAt: true, isAdmin: true },
+    });
+    if (user && !user.bannedAt) { req.userId = userId; req.isAdmin = user.isAdmin; }
   } catch {
     // Anonymous — fall through with no userId.
   }

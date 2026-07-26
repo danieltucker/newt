@@ -20,3 +20,22 @@ export function visibilityWhere(userId: string | undefined, showPublic: boolean,
   if (friendIds.size > 0) or.push({ visibility: 'friends', userId: { in: [...friendIds] } });
   return { OR: or };
 }
+
+// Whether a viewer may take moderation action on one comment. Decided on the
+// server and sent to the client as `canModerate`, so the controls cannot be
+// conjured up by editing client state.
+//
+// Two carve-outs, both deliberate:
+//  · A tombstone has no content left to remove, so there is nothing to do.
+//  · Your own comment offers the ordinary Delete instead. An admin acting on
+//    their own words is not moderation, and routing it through the admin
+//    endpoint would write a misleading audit row against themselves.
+export function canModerateComment(opts: {
+  viewerIsAdmin: boolean;
+  isOwn: boolean;
+  deleted: boolean;
+}): boolean {
+  if (opts.deleted) return false;
+  if (opts.isOwn) return false;
+  return opts.viewerIsAdmin;
+}

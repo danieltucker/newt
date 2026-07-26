@@ -147,7 +147,7 @@ router.get('/:username/activity', async (req: AuthRequest, res: Response): Promi
         orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
         take: PAGE_SIZE,
         select: {
-          id: true, title: true, slug: true, excerpt: true, visibility: true,
+          id: true, title: true, slug: true, excerpt: true, heroImage: true, visibility: true,
           commentsEnabled: true, url: true, publishedAt: true, updatedAt: true,
         },
       }),

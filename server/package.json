@@ -1,6 +1,6 @@
 {
   "name": "newtab-server",
-  "version": "1.7.1",
+  "version": "1.7.4",
   "private": true,
   "scripts": {
     "postinstall": "prisma generate",
@@ -13,6 +13,7 @@
     "make-admin": "ts-node --transpile-only scripts/makeAdmin.ts",
     "seed-comments": "ts-node --transpile-only scripts/seedComments.ts",
     "seed-deep-threads": "ts-node --transpile-only scripts/seedDeepThreads.ts",
+    "seed-personas": "ts-node --transpile-only scripts/seedPersonas.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

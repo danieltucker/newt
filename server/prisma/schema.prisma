@@ -38,6 +38,7 @@ model User {
   notifications        Notification[]
   notificationsActed   Notification[] @relation("NotificationActor")
   images               Image[]
+  adminActions         AdminAction[] @relation("AdminActionActor")
 }
 
 // A friend relationship, created as a directed request and confirmed when the
@@ -273,6 +274,10 @@ model BlogPost {
   slug            String   // "my-post-title" — unique per author, no date suffix
   body            String   // sanitized rich-editor HTML
   excerpt         String   @default("")  // plain-text summary for cards and RSS
+  // Cover image, as a site-relative /api/v1/images/<id> path (see imagePathFor).
+  // "" means none. Stored relative for the same reason embedded images are: it
+  // survives the dev origin, a LAN address and the public domain unchanged.
+  heroImage       String   @default("")
   // 'public' (anyone, incl. logged-out) | 'friends' (accepted friends) | 'private' (author only)
   visibility      String   @default("private")
   commentsEnabled Boolean  @default(true)
@@ -327,4 +332,49 @@ model ReadingListItem {
   savedAt  DateTime @default(now())
 
   @@index([userId])
+}
+
+// An append-only record of what an admin did to somebody else's account or
+// content. The pino log already carried some of this, but a log file isn't
+// queryable and two of the five moderation endpoints never wrote to it at all.
+//
+// Three deliberate choices, all following from the same fact — this table exists
+// to outlive the things it describes:
+//
+//  1. `targetId` is a bare string with no foreign key. Most rows here record a
+//     deletion, so the target is already gone; a real relation would either
+//     block the delete or cascade the audit row away with it, which is exactly
+//     backwards. `targetLabel` carries the human-readable identity instead,
+//     captured before the action ran.
+//
+//  2. `actorId` is nullable and set null on delete, paired with a denormalised
+//     `actorUsername`. Deleting an admin must not erase the record of what they
+//     did while they held the role.
+//
+//  3. Nothing updates or deletes these rows, and no route offers to. Immutability
+//     is by convention rather than a database rule, which is the right weight for
+//     a single-instance deployment.
+model AdminAction {
+  id            String   @id @default(cuid())
+
+  actorId       String?
+  actor         User?    @relation("AdminActionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorUsername String
+
+  // Dotted verb from ADMIN_ACTIONS in lib/adminAudit.ts, e.g. 'user.ban'
+  action        String
+
+  targetType    String   // 'comment' | 'blogPost' | 'user'
+  targetId      String
+  targetLabel   String
+
+  // Whatever makes the row legible later without the target: a before/after
+  // visibility pair, a comment snippet, the counts a cascade destroyed.
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
 }

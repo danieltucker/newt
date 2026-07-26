@@ -7,6 +7,7 @@ import {
   visiblePostWhere,
   isBlogVisibility,
   postPathFor,
+  normalizeHeroImage,
 } from './blog';
 
 describe('slugify', () => {
@@ -164,6 +165,39 @@ describe('isBlogVisibility', () => {
     expect(isBlogVisibility('private')).toBe(true);
     expect(isBlogVisibility('secret')).toBe(false);
     expect(isBlogVisibility(undefined)).toBe(false);
+  });
+});
+
+describe('normalizeHeroImage', () => {
+  it('accepts one of our own uploaded image paths', () => {
+    expect(normalizeHeroImage('/api/v1/images/clx123abc')).toBe('/api/v1/images/clx123abc');
+  });
+
+  it('treats an empty or whitespace-only value as clearing the hero', () => {
+    expect(normalizeHeroImage('')).toBe('');
+    expect(normalizeHeroImage('   ')).toBe('');
+  });
+
+  it('trims surrounding whitespace off an otherwise valid path', () => {
+    expect(normalizeHeroImage('  /api/v1/images/abc  ')).toBe('/api/v1/images/abc');
+  });
+
+  // The whole point of the check: the column must not become a way to point a
+  // reader's browser at somewhere else, or to smuggle a script URL into an
+  // `src` attribute.
+  it('rejects anything that is not a site-relative image path', () => {
+    expect(normalizeHeroImage('https://evil.test/tracker.png')).toBeNull();
+    expect(normalizeHeroImage('//evil.test/tracker.png')).toBeNull();
+    expect(normalizeHeroImage('javascript:alert(1)')).toBeNull();
+    expect(normalizeHeroImage('data:image/png;base64,AAAA')).toBeNull();
+    expect(normalizeHeroImage('/api/v1/images/abc/../../account')).toBeNull();
+    expect(normalizeHeroImage('/etc/passwd')).toBeNull();
+  });
+
+  it('rejects a non-string', () => {
+    expect(normalizeHeroImage(undefined)).toBeNull();
+    expect(normalizeHeroImage(null)).toBeNull();
+    expect(normalizeHeroImage(42)).toBeNull();
   });
 });
 

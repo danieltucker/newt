@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isVisibility, visibilityWhere } from './commentVisibility';
+import { isVisibility, visibilityWhere, canModerateComment } from './commentVisibility';
 
 describe('isVisibility', () => {
   it('accepts the three valid tiers', () => {
@@ -51,5 +51,29 @@ describe('visibilityWhere', () => {
     expect(where).toEqual({ OR: [{ visibility: 'public' }] });
     // The dangerous case: `{ userId: undefined }` would match every row.
     expect(JSON.stringify(where)).not.toContain('userId');
+  });
+});
+
+describe('canModerateComment', () => {
+  it('lets an admin moderate somebody else\'s live comment', () => {
+    expect(canModerateComment({ viewerIsAdmin: true, isOwn: false, deleted: false })).toBe(true);
+  });
+
+  it('never offers moderation to a non-admin', () => {
+    for (const isOwn of [true, false]) {
+      for (const deleted of [true, false]) {
+        expect(canModerateComment({ viewerIsAdmin: false, isOwn, deleted })).toBe(false);
+      }
+    }
+  });
+
+  it('does not treat an admin acting on their own comment as moderation', () => {
+    // They get the ordinary Delete; routing this through the admin endpoint
+    // would write an audit row against themselves.
+    expect(canModerateComment({ viewerIsAdmin: true, isOwn: true, deleted: false })).toBe(false);
+  });
+
+  it('offers nothing on a tombstone — there is no content left to remove', () => {
+    expect(canModerateComment({ viewerIsAdmin: true, isOwn: false, deleted: true })).toBe(false);
   });
 });

@@ -69,6 +69,21 @@ export interface FeedItemData {
   description: string;
   content: string;
   pubDate: Date;
+  // The post's cover image as a site-relative path, or '' for none. Kept
+  // relative here because the internal refresh path below writes it straight
+  // into FeedItem.imageUrl, which the client renders from its own origin;
+  // absolutizing happens only where the value leaves this deployment (the RSS
+  // rendering, which an external reader resolves against nothing of ours).
+  heroImage: string;
+}
+
+// A hero lives outside the post body, so an external reader following the XML
+// would never see it. Fold it into content:encoded — with an absolute src, since
+// the reader has no origin of ours to resolve a relative path against.
+function withHero(content: string, heroImage: string): string {
+  if (!heroImage) return content;
+  const src = `${publicOrigin()}${heroImage}`;
+  return `<p><img src="${xmlEscape(src)}" alt="" /></p>${content}`;
 }
 
 function xmlEscape(s: string): string {
@@ -95,7 +110,7 @@ export function renderRss(feed: {
       <guid isPermaLink="true">${xmlEscape(i.link)}</guid>
       <pubDate>${i.pubDate.toUTCString()}</pubDate>
       <description>${cdata(i.description)}</description>
-      <content:encoded>${cdata(i.content)}</content:encoded>
+      <content:encoded>${cdata(withHero(i.content, i.heroImage))}</content:encoded>
     </item>`).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -159,7 +174,7 @@ export async function resolveBlogFeed(target: BlogFeedTarget): Promise<ResolvedF
     orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
     take: FEED_ITEM_LIMIT,
     select: {
-      title: true, url: true, body: true, excerpt: true, publishedAt: true,
+      title: true, url: true, body: true, excerpt: true, heroImage: true, publishedAt: true,
       user: { select: { username: true, firstName: true, lastName: true } },
     },
   });
@@ -176,6 +191,7 @@ export async function resolveBlogFeed(target: BlogFeedTarget): Promise<ResolvedF
       description: p.excerpt,
       content: p.body,
       pubDate: p.publishedAt,
+      heroImage: p.heroImage,
     })),
   };
 }
@@ -209,13 +225,15 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
         linkKey: canonicalArticleKey(item.link),
         pubDate: item.pubDate, fetchedAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
-        content: item.content, imageUrl: null, categories: [],
+        // Site-relative, and stays that way: subscribers render it from this
+        // same origin, which is exactly where the bytes are served from.
+        content: item.content, imageUrl: item.heroImage || null, categories: [],
       },
       update: {
         title: item.title, linkKey: canonicalArticleKey(item.link),
         pubDate: item.pubDate, fetchedAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
-        content: item.content,
+        content: item.content, imageUrl: item.heroImage || null,
       },
     }).catch(err => logger.warn({ err, link: item.link }, 'Blog feed item upsert failed'));
   }

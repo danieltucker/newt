@@ -2,12 +2,43 @@ import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 import logger from '../lib/logger';
+import { deleteCommentPreservingThread } from '../lib/commentDeletion';
+import { excerptOf } from '../lib/blog';
+import { recordAdminAction, ADMIN_ACTIONS, actionLabel, isDestructive } from '../lib/adminAudit';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
+// The acting admin's username, denormalised into every audit row so the record
+// stays readable if that account is later deleted. Resolved once per request,
+// outside the transaction — it's a read, and holding the tx open for it buys
+// nothing.
+async function actorName(userId: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+  return u?.username ?? 'unknown';
+}
+
 const SIGNUP_WINDOW_DAYS = 30;
 const HISTORY_DAYS = 90;
+// Detail tables are for spot-checking and moderation, not archaeology — cap the
+// rows so a busy instance can't turn the admin panel into a full table dump.
+const DETAIL_LIMIT = 200;
+const SNIPPET_CHARS = 160;
+// The audit view pages instead of capping — see GET /audit.
+const AUDIT_PAGE = 50;
+
+const VISIBILITIES = ['public', 'friends', 'private'] as const;
+type VisibilityCounts = Record<(typeof VISIBILITIES)[number], number>;
+
+// groupBy returns only the visibilities actually present; zero-fill the rest so
+// the client can render a stable three-part meter.
+function visibilityCounts(rows: { visibility: string; _count: { _all: number } }[]): VisibilityCounts {
+  const counts: VisibilityCounts = { public: 0, friends: 0, private: 0 };
+  for (const row of rows) {
+    if (row.visibility in counts) counts[row.visibility as keyof VisibilityCounts] = row._count._all;
+  }
+  return counts;
+}
 
 // Daily buckets of "date → cumulative total", zero-filled across the window.
 // Deletions aren't tracked historically, so totals reflect rows that still
@@ -40,7 +71,16 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
     histStart.setHours(0, 0, 0, 0);
     histStart.setDate(histStart.getDate() - (HISTORY_DAYS - 1));
 
-    const [users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles, recentUsers, activeTokens] = await Promise.all([
+    // Tombstoned comments are rows without content — they're structural, so they
+    // never count as comments and are reported on their own.
+    const liveComments = { deletedAt: null };
+
+    const [
+      users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles,
+      comments, deletedComments, commentReplies, commentEdits,
+      blogPosts, publishedPosts, images, imageBytes, friendships,
+      recentUsers, activeTokens,
+    ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { isAdmin: true } }),
       prisma.user.count({ where: { totpEnabled: true } }),
@@ -48,6 +88,15 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
       prisma.folder.count(),
       prisma.readingListItem.count(),
       prisma.feedItem.count(),
+      prisma.comment.count({ where: liveComments }),
+      prisma.comment.count({ where: { deletedAt: { not: null } } }),
+      prisma.comment.count({ where: { ...liveComments, parentId: { not: null } } }),
+      prisma.commentRevision.count(),
+      prisma.blogPost.count(),
+      prisma.blogPost.count({ where: { visibility: { not: 'private' } } }),
+      prisma.image.count(),
+      prisma.image.aggregate({ _sum: { size: true } }),
+      prisma.friendship.count({ where: { status: 'accepted' } }),
       prisma.user.findMany({
         where: { createdAt: { gte: since } },
         select: { createdAt: true },
@@ -60,11 +109,23 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
     ]);
 
     // Cumulative history: baseline before the window + per-day additions within it
-    const [userBaseline, userCreated, bookmarkBaseline, bookmarkCreated] = await Promise.all([
+    const [
+      userBaseline, userCreated,
+      bookmarkBaseline, bookmarkCreated,
+      commentBaseline, commentCreated,
+      postBaseline, postCreated,
+      commentVisibility, postVisibility,
+    ] = await Promise.all([
       prisma.user.count({ where: { createdAt: { lt: histStart } } }),
       prisma.user.findMany({ where: { createdAt: { gte: histStart } }, select: { createdAt: true } }),
       prisma.bookmark.count({ where: { createdAt: { lt: histStart } } }),
       prisma.bookmark.findMany({ where: { createdAt: { gte: histStart } }, select: { createdAt: true } }),
+      prisma.comment.count({ where: { ...liveComments, createdAt: { lt: histStart } } }),
+      prisma.comment.findMany({ where: { ...liveComments, createdAt: { gte: histStart } }, select: { createdAt: true } }),
+      prisma.blogPost.count({ where: { createdAt: { lt: histStart } } }),
+      prisma.blogPost.findMany({ where: { createdAt: { gte: histStart } }, select: { createdAt: true } }),
+      prisma.comment.groupBy({ by: ['visibility'], where: liveComments, _count: { _all: true } }),
+      prisma.blogPost.groupBy({ by: ['visibility'], _count: { _all: true } }),
     ]);
 
     // Bucket signups per day over the window (zero-filled)
@@ -82,12 +143,24 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
     }
 
     res.json({
-      totals: { users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles },
+      totals: {
+        users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles,
+        comments, deletedComments, commentReplies, commentEdits,
+        blogPosts, publishedPosts,
+        images, imageBytes: imageBytes._sum.size ?? 0,
+        friendships,
+      },
       activeUsers7d: activeTokens.length,
       signups,
       history: {
         users: cumulativeSeries(userBaseline, userCreated, histStart, HISTORY_DAYS),
         bookmarks: cumulativeSeries(bookmarkBaseline, bookmarkCreated, histStart, HISTORY_DAYS),
+        comments: cumulativeSeries(commentBaseline, commentCreated, histStart, HISTORY_DAYS),
+        blogPosts: cumulativeSeries(postBaseline, postCreated, histStart, HISTORY_DAYS),
+      },
+      visibility: {
+        comments: visibilityCounts(commentVisibility),
+        blogPosts: visibilityCounts(postVisibility),
       },
     });
   } catch (err) {
@@ -108,7 +181,7 @@ router.get('/users', async (_req: AuthRequest, res: Response): Promise<void> => 
         bannedAt: true,
         totpEnabled: true,
         createdAt: true,
-        _count: { select: { bookmarks: true, folders: true, readingList: true } },
+        _count: { select: { bookmarks: true, folders: true, readingList: true, comments: true, blogPosts: true } },
         refreshTokens: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -127,10 +200,196 @@ router.get('/users', async (_req: AuthRequest, res: Response): Promise<void> => 
       bookmarks: u._count.bookmarks,
       folders: u._count.folders,
       readingItems: u._count.readingList,
+      comments: u._count.comments,
+      blogPosts: u._count.blogPosts,
       lastActiveAt: u.refreshTokens[0]?.createdAt ?? null,
     })));
   } catch (err) {
     logger.error(err, 'Admin users error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/comments — newest comments across every user, ignoring the
+// visibility rules that govern the rest of the app: moderation can't work on a
+// filtered view. Tombstones are included (flagged) so a moderator can see where
+// content was removed without loading the bodies that no longer exist.
+router.get('/comments', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.comment.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: DETAIL_LIMIT,
+      select: {
+        id: true,
+        articleTitle: true,
+        articleUrl: true,
+        title: true,
+        body: true,
+        visibility: true,
+        parentId: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        user: { select: { username: true } },
+        _count: { select: { replies: true, revisions: true } },
+      },
+    });
+    res.json(rows.map(c => ({
+      id: c.id,
+      author: c.user.username,
+      articleTitle: c.articleTitle,
+      articleUrl: c.articleUrl,
+      title: c.title,
+      // Bodies are sanitized HTML; the table wants a short plain-text line
+      snippet: c.deletedAt ? '' : excerptOf(c.body, SNIPPET_CHARS),
+      visibility: c.visibility,
+      isReply: c.parentId !== null,
+      replies: c._count.replies,
+      edits: c._count.revisions,
+      deleted: c.deletedAt !== null,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    })));
+  } catch (err) {
+    logger.error(err, 'Admin comments error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/blog-posts — newest posts across every user, drafts included
+// (a draft is just visibility === 'private'). commentCount joins through
+// articleKey, the same key Comment threads on.
+router.get('/blog-posts', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.blogPost.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: DETAIL_LIMIT,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        excerpt: true,
+        body: true,
+        visibility: true,
+        commentsEnabled: true,
+        url: true,
+        articleKey: true,
+        publishedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        user: { select: { username: true } },
+      },
+    });
+
+    // One grouped count for the whole page rather than a per-row subquery
+    const threadCounts = await prisma.comment.groupBy({
+      by: ['articleKey'],
+      where: { articleKey: { in: rows.map(r => r.articleKey) }, deletedAt: null },
+      _count: { _all: true },
+    });
+    const byKey = new Map(threadCounts.map(t => [t.articleKey, t._count._all]));
+
+    res.json(rows.map(p => ({
+      id: p.id,
+      author: p.user.username,
+      title: p.title,
+      slug: p.slug,
+      excerpt: p.excerpt || excerptOf(p.body, SNIPPET_CHARS),
+      visibility: p.visibility,
+      commentsEnabled: p.commentsEnabled,
+      url: p.url,
+      comments: byKey.get(p.articleKey) ?? 0,
+      publishedAt: p.publishedAt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })));
+  } catch (err) {
+    logger.error(err, 'Admin blog posts error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/v1/admin/comments/:id — moderation delete of anyone's comment.
+// Shares deleteCommentPreservingThread with the author's own delete, so replies
+// below a removed comment survive here exactly as they do there.
+router.delete('/comments/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Read before deleting: afterwards there is no body left to describe, and
+    // the audit row is the only place this comment will still exist.
+    const before = await prisma.comment.findUnique({
+      where: { id: req.params.id },
+      select: {
+        articleTitle: true, articleUrl: true, body: true, visibility: true,
+        user: { select: { username: true } },
+      },
+    });
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    const actorUsername = await actorName(req.userId!);
+
+    const result = await prisma.$transaction(async tx => {
+      const outcome = await deleteCommentPreservingThread(req.params.id, undefined, tx);
+      if (outcome === 'not-found') return outcome;
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: ADMIN_ACTIONS.commentDelete,
+        targetType: 'comment',
+        targetId: req.params.id,
+        targetLabel: `@${before.user.username} on ${before.articleTitle || before.articleUrl}`,
+        metadata: {
+          outcome,
+          visibility: before.visibility,
+          snippet: excerptOf(before.body, SNIPPET_CHARS),
+        },
+      });
+      return outcome;
+    });
+
+    if (result === 'not-found') { res.status(404).json({ error: 'Not found' }); return; }
+    res.json({ ok: true, deleted: result !== 'removed' });
+  } catch (err) {
+    logger.error(err, 'Admin delete comment error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/v1/admin/blog-posts/:id/visibility — moderation takedown. Narrowing
+// to 'private' unpublishes without destroying the author's draft; widening is
+// deliberately not offered, since publishing on someone's behalf isn't
+// moderation.
+router.patch('/blog-posts/:id/visibility', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { visibility } = req.body as { visibility?: unknown };
+  if (visibility !== 'private') {
+    res.status(400).json({ error: 'Admins may only unpublish a post (visibility: "private")' });
+    return;
+  }
+  try {
+    const before = await prisma.blogPost.findUnique({
+      where: { id: req.params.id },
+      select: { title: true, visibility: true, slug: true, user: { select: { username: true } } },
+    });
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    // Already private — nothing changed, so nothing to record. Without this an
+    // idle click would write an audit row describing a no-op.
+    if (before.visibility === 'private') { res.json({ ok: true }); return; }
+    const actorUsername = await actorName(req.userId!);
+
+    await prisma.$transaction(async tx => {
+      await tx.blogPost.update({ where: { id: req.params.id }, data: { visibility } });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: ADMIN_ACTIONS.postUnpublish,
+        targetType: 'blogPost',
+        targetId: req.params.id,
+        targetLabel: `“${before.title}” by @${before.user.username}`,
+        metadata: { slug: before.slug, visibility: { from: before.visibility, to: 'private' } },
+      });
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, 'Admin blog visibility error');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -147,11 +406,27 @@ router.patch('/users/:id/admin', async (req: AuthRequest, res: Response): Promis
     return;
   }
   try {
-    const result = await prisma.user.updateMany({
+    const before = await prisma.user.findUnique({
       where: { id: req.params.id },
-      data: { isAdmin },
+      select: { username: true, isAdmin: true },
     });
-    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    if (before.isAdmin === isAdmin) { res.json({ ok: true }); return; }   // no-op
+    const actorUsername = await actorName(req.userId!);
+
+    await prisma.$transaction(async tx => {
+      await tx.user.update({ where: { id: req.params.id }, data: { isAdmin } });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: isAdmin ? ADMIN_ACTIONS.userPromote : ADMIN_ACTIONS.userDemote,
+        targetType: 'user',
+        targetId: req.params.id,
+        targetLabel: `@${before.username}`,
+        metadata: { isAdmin: { from: before.isAdmin, to: isAdmin } },
+      });
+    });
+
     res.json({ ok: true });
   } catch (err) {
     logger.error(err, 'Admin toggle error');
@@ -170,17 +445,37 @@ router.patch('/users/:id/ban', async (req: AuthRequest, res: Response): Promise<
     return;
   }
   try {
-    const result = await prisma.user.updateMany({
+    const before = await prisma.user.findUnique({
       where: { id: req.params.id },
-      data: { bannedAt: banned ? new Date() : null },
+      select: { username: true, bannedAt: true },
     });
-    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
-    if (banned) {
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    if (!!before.bannedAt === banned) { res.json({ ok: true }); return; }   // no-op
+    const actorUsername = await actorName(req.userId!);
+
+    const revoked = await prisma.$transaction(async tx => {
+      await tx.user.update({
+        where: { id: req.params.id },
+        data: { bannedAt: banned ? new Date() : null },
+      });
       // Revoke every session — combined with the ban check in requireAuth,
       // the user is locked out immediately, not at token expiry.
-      await prisma.refreshToken.deleteMany({ where: { userId: req.params.id } });
-    }
-    res.json({ ok: true });
+      const { count } = banned
+        ? await tx.refreshToken.deleteMany({ where: { userId: req.params.id } })
+        : { count: 0 };
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: banned ? ADMIN_ACTIONS.userBan : ADMIN_ACTIONS.userUnban,
+        targetType: 'user',
+        targetId: req.params.id,
+        targetLabel: `@${before.username}`,
+        metadata: { sessionsRevoked: count, previouslyBannedAt: before.bannedAt },
+      });
+      return count;
+    });
+
+    res.json({ ok: true, sessionsRevoked: revoked });
   } catch (err) {
     logger.error(err, 'Admin ban error');
     res.status(500).json({ error: 'Server error' });
@@ -193,12 +488,95 @@ router.delete('/users/:id', async (req: AuthRequest, res: Response): Promise<voi
     return;
   }
   try {
-    // Folders, bookmarks, reading list, feed articles, and sessions all cascade
-    const result = await prisma.user.deleteMany({ where: { id: req.params.id } });
-    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    // The heaviest action in the panel, and the only one with nothing left to
+    // inspect afterwards — so the audit row carries a census of what the
+    // cascade took with it.
+    const before = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        username: true, email: true, isAdmin: true, createdAt: true,
+        _count: { select: { bookmarks: true, folders: true, readingList: true, comments: true, blogPosts: true } },
+      },
+    });
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    const actorUsername = await actorName(req.userId!);
+
+    await prisma.$transaction(async tx => {
+      // Folders, bookmarks, reading list, feed articles, and sessions all cascade
+      await tx.user.delete({ where: { id: req.params.id } });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: ADMIN_ACTIONS.userDelete,
+        targetType: 'user',
+        targetId: req.params.id,
+        targetLabel: `@${before.username}`,
+        metadata: {
+          email: before.email,
+          wasAdmin: before.isAdmin,
+          registeredAt: before.createdAt,
+          cascaded: {
+            bookmarks: before._count.bookmarks,
+            folders: before._count.folders,
+            readingItems: before._count.readingList,
+            comments: before._count.comments,
+            blogPosts: before._count.blogPosts,
+          },
+        },
+      });
+    });
+
     res.json({ ok: true });
   } catch (err) {
     logger.error(err, 'Admin delete error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/audit — the moderation record, newest first.
+//
+// Cursor-paginated rather than capped like the other detail tables: those are
+// for spot-checking current state, but an audit trail is only worth having if
+// you can read all the way back through it.
+//
+// Read-only by construction. There is no PATCH or DELETE here, and there never
+// should be — a trail somebody can edit answers no question worth asking.
+router.get('/audit', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { cursor, actor, action, targetType } = req.query as Record<string, string | undefined>;
+  try {
+    const where = {
+      ...(actor ? { actorUsername: actor } : {}),
+      ...(action ? { action } : {}),
+      ...(targetType ? { targetType } : {}),
+    };
+
+    const rows = await prisma.adminAction.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: AUDIT_PAGE + 1,          // one extra row tells us another page exists
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+
+    const page = rows.slice(0, AUDIT_PAGE);
+    res.json({
+      entries: page.map(r => ({
+        id: r.id,
+        actor: r.actorUsername,
+        // Null once that admin's account is gone — the username above survives
+        actorExists: r.actorId !== null,
+        action: r.action,
+        label: actionLabel(r.action),
+        destructive: isDestructive(r.action),
+        targetType: r.targetType,
+        targetId: r.targetId,
+        targetLabel: r.targetLabel,
+        metadata: r.metadata,
+        createdAt: r.createdAt,
+      })),
+      nextCursor: rows.length > AUDIT_PAGE ? page[page.length - 1].id : null,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin audit error');
     res.status(500).json({ error: 'Server error' });
   }
 });

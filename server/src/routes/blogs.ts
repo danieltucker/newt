@@ -24,6 +24,7 @@ import {
   canSeePost,
   visiblePostWhere,
   isBlogVisibility,
+  normalizeHeroImage,
   MAX_BLOG_BODY,
   MAX_BLOG_TEXT,
   MAX_BLOG_TITLE,
@@ -48,14 +49,14 @@ const AUTHOR_SELECT = PUBLIC_USER_SELECT;
 
 // Everything the client needs to render a post, minus the body (list views).
 const SUMMARY_SELECT = {
-  id: true, title: true, slug: true, excerpt: true, visibility: true,
+  id: true, title: true, slug: true, excerpt: true, heroImage: true, visibility: true,
   commentsEnabled: true, url: true, publishedAt: true, updatedAt: true,
 } as const;
 
 const FULL_SELECT = { ...SUMMARY_SELECT, body: true, articleKey: true } as const;
 
 type PostRow = {
-  id: string; title: string; slug: string; excerpt: string; visibility: string;
+  id: string; title: string; slug: string; excerpt: string; heroImage: string; visibility: string;
   commentsEnabled: boolean; url: string; publishedAt: Date; updatedAt: Date;
   body?: string; articleKey?: string;
   user?: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
@@ -79,7 +80,7 @@ function validate(
   b: Record<string, unknown>,
   partial: boolean,
 ): string | null {
-  const { title, body, visibility, commentsEnabled } = b;
+  const { title, body, visibility, commentsEnabled, heroImage } = b;
 
   if (!partial || title !== undefined) {
     if (typeof title !== 'string' || !title.trim()) return 'A title is required';
@@ -99,6 +100,9 @@ function validate(
   }
   if (commentsEnabled !== undefined && typeof commentsEnabled !== 'boolean') {
     return 'commentsEnabled must be a boolean';
+  }
+  if (heroImage !== undefined && normalizeHeroImage(heroImage) === null) {
+    return 'heroImage must be an uploaded image path, or empty';
   }
   return null;
 }
@@ -151,7 +155,7 @@ router.post('/', requireAuth, blogWriteLimiter, async (req: AuthRequest, res: Re
   const problem = validate(req.body as Record<string, unknown>, false);
   if (problem) { res.status(400).json({ error: problem }); return; }
 
-  const { title, body, visibility, commentsEnabled } = req.body as Record<string, unknown>;
+  const { title, body, visibility, commentsEnabled, heroImage } = req.body as Record<string, unknown>;
 
   try {
     const user = await prisma.user.findUnique({
@@ -176,6 +180,7 @@ router.post('/', requireAuth, blogWriteLimiter, async (req: AuthRequest, res: Re
         slug,
         body: clean,
         excerpt: excerptOf(clean),
+        heroImage: normalizeHeroImage(heroImage) ?? '',
         visibility: isBlogVisibility(visibility) ? visibility : 'private',
         commentsEnabled: commentsEnabled !== false,
         url,
@@ -222,7 +227,7 @@ router.patch('/post/:id', requireAuth, blogWriteLimiter, async (req: AuthRequest
   const problem = validate(req.body as Record<string, unknown>, true);
   if (problem) { res.status(400).json({ error: problem }); return; }
 
-  const { title, body, visibility, commentsEnabled } = req.body as Record<string, unknown>;
+  const { title, body, visibility, commentsEnabled, heroImage } = req.body as Record<string, unknown>;
 
   try {
     const existing = await prisma.blogPost.findFirst({
@@ -240,6 +245,9 @@ router.patch('/post/:id', requireAuth, blogWriteLimiter, async (req: AuthRequest
     }
     if (isBlogVisibility(visibility)) data.visibility = visibility;
     if (typeof commentsEnabled === 'boolean') data.commentsEnabled = commentsEnabled;
+    // validate() has already rejected an unacceptable value, so a non-null
+    // result here is the one to store — including '' , which clears the hero.
+    if (heroImage !== undefined) data.heroImage = normalizeHeroImage(heroImage) ?? '';
 
     // publishedAt defaults to row creation, which for a draft is when the author
     // started writing, not when anyone could read it. Stamp it at the moment the

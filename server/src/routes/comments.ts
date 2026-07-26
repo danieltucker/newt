@@ -12,8 +12,9 @@ import {
   MAX_COMMENT_TEXT,
   MAX_COMMENT_TITLE,
 } from '../lib/comments';
+import { deleteCommentPreservingThread } from '../lib/commentDeletion';
 import { friendIdsOf } from '../lib/friends';
-import { Visibility, isVisibility, visibilityWhere } from '../lib/commentVisibility';
+import { Visibility, isVisibility, visibilityWhere, canModerateComment } from '../lib/commentVisibility';
 import { canSeePost } from '../lib/blog';
 import { perUserLimiter } from '../lib/rateLimit';
 
@@ -84,6 +85,11 @@ interface CommentNode {
   createdAt: Date;
   updatedAt: Date;
   mine: boolean;
+  // True only when the viewer is an admin looking at somebody *else's* live
+  // comment. Decided here rather than in the client so the moderation controls
+  // can never be conjured up by a non-admin editing their own state — and so a
+  // comment you wrote yourself offers the ordinary Delete, not a mod action.
+  canModerate: boolean;
   author: { username: string; displayName: string; avatar: string | null };
   replies: CommentNode[];
 }
@@ -93,9 +99,10 @@ function displayName(u: CommentRow['user']): string {
   return full || u.username;
 }
 
-function toNode(row: CommentRow, viewerId: string | undefined): CommentNode {
+function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = false): CommentNode {
   // A tombstone exposes no content or author identity — only its place in the
-  // tree, so replies beneath it still read in order.
+  // tree, so replies beneath it still read in order. There is nothing left to
+  // moderate on one either.
   if (row.deletedAt) {
     return {
       id: row.id,
@@ -107,10 +114,13 @@ function toNode(row: CommentRow, viewerId: string | undefined): CommentNode {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       mine: false,
+      canModerate: false,
       author: { username: '', displayName: '[deleted]', avatar: null },
       replies: [],
     };
   }
+  const mine = row.userId === viewerId;
+  const canModerate = canModerateComment({ viewerIsAdmin: viewerIsAdmin, isOwn: mine, deleted: false });
   return {
     id: row.id,
     parentId: row.parentId,
@@ -120,7 +130,8 @@ function toNode(row: CommentRow, viewerId: string | undefined): CommentNode {
     deleted: false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    mine: row.userId === viewerId,
+    mine,
+    canModerate,
     author: {
       username: row.user.username,
       displayName: displayName(row.user),
@@ -133,9 +144,14 @@ function toNode(row: CommentRow, viewerId: string | undefined): CommentNode {
 // Builds the reply tree. Rows whose parent isn't visible to this viewer (a
 // private parent, or one deleted mid-flight) are surfaced at root level rather
 // than silently dropped, so no one loses a comment they can see.
-function buildTree(rows: CommentRow[], viewerId: string | undefined, sort: 'newest' | 'oldest'): CommentNode[] {
+function buildTree(
+  rows: CommentRow[],
+  viewerId: string | undefined,
+  sort: 'newest' | 'oldest',
+  viewerIsAdmin = false,
+): CommentNode[] {
   const byId = new Map<string, CommentNode>();
-  for (const r of rows) byId.set(r.id, toNode(r, viewerId));
+  for (const r of rows) byId.set(r.id, toNode(r, viewerId, viewerIsAdmin));
 
   const roots: CommentNode[] = [];
   for (const node of byId.values()) {
@@ -270,7 +286,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       take: 500,
       include: { user: { select: AUTHOR_SELECT } },
     });
-    const tree = buildTree(rows as CommentRow[], req.userId, sort);
+    const tree = buildTree(rows as CommentRow[], req.userId, sort, req.isAdmin);
     res.json({ comments: tree, total: rows.length });
   } catch (err) {
     logger.error(err, 'List comments error');
@@ -495,55 +511,14 @@ router.get('/:id/history', async (req: AuthRequest, res: Response): Promise<void
   }
 });
 
-// Removes any ancestor tombstones that have just lost their last reply, walking
-// up the thread — so a "[deleted]" placeholder never lingers with nothing under
-// it. Bounded by the thread depth.
-async function pruneChildlessTombstones(startParentId: string | null): Promise<void> {
-  let pid = startParentId;
-  while (pid) {
-    const parent = await prisma.comment.findUnique({
-      where: { id: pid },
-      select: { id: true, parentId: true, deletedAt: true },
-    });
-    if (!parent || !parent.deletedAt) break;           // real comment, or gone — stop
-    const kids = await prisma.comment.count({ where: { parentId: pid } });
-    if (kids > 0) break;                                // still holding up replies
-    const grandparent = parent.parentId;
-    await prisma.comment.delete({ where: { id: pid } });
-    pid = grandparent;
-  }
-}
-
 // DELETE /api/v1/comments/:id — author only. A comment with replies is
 // tombstoned (content + edit history wiped, row kept) so the replies survive; a
 // leaf comment is removed outright.
 router.delete('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const comment = await prisma.comment.findFirst({
-      where: { id: req.params.id, userId: req.userId! },
-      select: { id: true, parentId: true, deletedAt: true },
-    });
-    if (!comment) { res.status(404).json({ error: 'Not found' }); return; }
-    if (comment.deletedAt) { res.json({ ok: true, deleted: true }); return; } // already a tombstone
-
-    const replyCount = await prisma.comment.count({ where: { parentId: comment.id } });
-
-    if (replyCount > 0) {
-      // Tombstone: wipe content + history, keep the node for the thread below it
-      await prisma.$transaction([
-        prisma.commentRevision.deleteMany({ where: { commentId: comment.id } }),
-        prisma.comment.update({
-          where: { id: comment.id },
-          data: { deletedAt: new Date(), body: '', title: null },
-        }),
-      ]);
-      res.json({ ok: true, deleted: true });
-    } else {
-      // Leaf: remove outright (revisions cascade), then tidy up orphaned tombstones
-      await prisma.comment.delete({ where: { id: comment.id } });
-      await pruneChildlessTombstones(comment.parentId);
-      res.json({ ok: true });
-    }
+    const result = await deleteCommentPreservingThread(req.params.id, req.userId!);
+    if (result === 'not-found') { res.status(404).json({ error: 'Not found' }); return; }
+    res.json({ ok: true, ...(result === 'removed' ? {} : { deleted: true }) });
   } catch (err) {
     logger.error(err, 'Delete comment error');
     res.status(500).json({ error: 'Server error' });
