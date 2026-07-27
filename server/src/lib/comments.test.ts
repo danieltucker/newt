@@ -154,6 +154,37 @@ describe('sanitizeCommentHtml — reference embeds', () => {
     expect(out).not.toContain('99 comments');
   });
 
+  // A repost is a post whose body opens with one of these, so the allowlist is
+  // the difference between a saved repost and a saved blank card. The kind is
+  // new; both of its links are site-relative, which the article case above -
+  // remote image, /a/ href - does not cover on its own.
+  it('keeps a reposted post’s card, links and all', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" data-embed="post" data-variant="large" ' +
+      'data-href="/u/ada/on-looms" data-url="https://newt.test/u/ada/on-looms" ' +
+      'data-title="On looms" data-source="Ada Lovelace" ' +
+      'data-image="/api/v1/images/img1" data-meta="Mar 4, 2026" ' +
+      'contenteditable="false">' +
+      '<a class="note-embed-a" href="/u/ada/on-looms">' +
+      '<img class="note-embed-cover" src="/api/v1/images/img1" alt="">' +
+      '<span class="note-embed-body">' +
+      '<span class="note-embed-kicker">Blog post</span>' +
+      '<span class="note-embed-title">On looms</span>' +
+      '<span class="note-embed-comments"></span>' +
+      '</span></a></span>');
+    for (const attr of [
+      'data-embed="post"', 'data-href="/u/ada/on-looms"',
+      'data-url="https://newt.test/u/ada/on-looms"', 'data-source="Ada Lovelace"',
+      'data-image="/api/v1/images/img1"',
+    ]) {
+      expect(out).toContain(attr);
+    }
+    // The uploaded hero is site-relative, so the https-only rule for <img> must
+    // not read it as a scheme it dislikes
+    expect(out).toContain('<img class="note-embed-cover" src="/api/v1/images/img1"');
+    expect(out).toContain('href="/u/ada/on-looms"');
+  });
+
   it('will not let a span reach any other styling in the app', () => {
     const out = sanitizeCommentHtml(
       '<span class="note-todo note-embed evil-class">x</span>');

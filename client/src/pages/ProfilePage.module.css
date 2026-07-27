@@ -405,31 +405,6 @@
 /* The follow control and its folder chooser moved to FollowBlogButton, which
    carries its own copy of these styles - the post page needs them too. */
 
-/* ── History rows ── */
-.historyRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.historyText { flex: 1; min-width: 0; }
-.historyMeta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.countPill {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--surface2);
-  padding: 3px 9px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.historyTime { font-size: 11px; color: var(--muted); }
-
 /* ── Buttons & shared ── */
 .moreBtn {
   align-self: center;

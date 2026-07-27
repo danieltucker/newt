@@ -2,7 +2,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './ProfilePage.module.css';
 import { apiFetch, apiGet, apiPost } from '../services/api';
 import {
-  ProfileUser, ProfileComment, ProfileArticle, FriendRelation,
+  ProfileUser, ProfileComment, FriendRelation,
   BlogPostSummary, ProfileActivityItem,
 } from '../types';
 import { relTime } from '../utils/notifications';
@@ -34,26 +34,33 @@ interface Props {
   library?: ReadingListBinding;
   /** Open an article the way the shell does. Standalone falls back to a tab. */
   onOpenArticle?: (url: string) => void;
-  /** Raw ?tab= value from the URL. Unrecognised values fall back to Content. */
+  /** Raw ?tab= value from the URL. Unrecognised values fall back to Posts. */
   initialTab?: string | null;
 }
 
-// Content is the landing tab: what this person has created or shared, posts and
-// shared comments together - which is what a profile is for. 'friends' and
-// 'library' are self-only: both are scoped to the authed user, so there is no
-// such thing as someone else's to show. The Library in particular is private by
-// design - it is never fetched for another user, not merely hidden.
-type Tab = 'content' | 'posts' | 'comments' | 'friends' | 'library' | 'history';
+// Posts is the landing tab. 'history' is the merged stream - posts and shared
+// comments together, newest first - and was called 'content' until the older
+// comments-grouped-by-article tab that owned the name was dropped.
+//
+// 'friends' and 'library' are self-only: both are scoped to the authed user, so
+// there is no such thing as someone else's to show. The Library in particular is
+// private by design - it is never fetched for another user, not merely hidden.
+type Tab = 'posts' | 'history' | 'comments' | 'friends' | 'library';
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
 
-const TABS: Tab[] = ['content', 'posts', 'comments', 'friends', 'library', 'history'];
+const TABS: Tab[] = ['posts', 'history', 'comments', 'friends', 'library'];
+const DEFAULT_TAB: Tab = 'posts';
 
 // A ?tab= value is whatever was in the URL, so it is checked against the real
 // list rather than cast. Self-only tabs need no special case here: the button
 // and the panel are both already gated on isSelf, so landing on ?tab=library
-// for someone else's profile just shows Content.
+// for someone else's profile just shows Posts.
+//
+// ?tab=content is accepted as an alias: it was this tab's name before the
+// rename, so any link already saved keeps landing where it meant to.
 function tabFromParam(raw: string | null | undefined): Tab {
-  return TABS.includes(raw as Tab) ? (raw as Tab) : 'content';
+  if (raw === 'content') return 'history';
+  return TABS.includes(raw as Tab) ? (raw as Tab) : DEFAULT_TAB;
 }
 
 function initialOf(name: string): string {
@@ -188,15 +195,15 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
       ) : (
         <>
           <div className={styles.tabs} role="tablist">
-            <button role="tab" aria-selected={tab === 'content'}
-              className={`${styles.tab} ${tab === 'content' ? styles.tabActive : ''}`}
-              onClick={() => setTab('content')}>
-              Content
-            </button>
             <button role="tab" aria-selected={tab === 'posts'}
               className={`${styles.tab} ${tab === 'posts' ? styles.tabActive : ''}`}
               onClick={() => setTab('posts')}>
               Posts{profile.postCount > 0 && <span className={styles.tabCount}>{profile.postCount}</span>}
+            </button>
+            <button role="tab" aria-selected={tab === 'history'}
+              className={`${styles.tab} ${tab === 'history' ? styles.tabActive : ''}`}
+              onClick={() => setTab('history')}>
+              History
             </button>
             <button role="tab" aria-selected={tab === 'comments'}
               className={`${styles.tab} ${tab === 'comments' ? styles.tabActive : ''}`}
@@ -218,19 +225,14 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
                 Library
               </button>
             )}
-            <button role="tab" aria-selected={tab === 'history'}
-              className={`${styles.tab} ${tab === 'history' ? styles.tabActive : ''}`}
-              onClick={() => setTab('history')}>
-              History
-            </button>
           </div>
 
-          {tab === 'content' && (
-            <ContentTab username={profile.username} authKey={accessToken}
-              onOpenArticle={goArticle} onOpenPost={goPost} />
-          )}
           {tab === 'posts' && (
             <PostsTab username={profile.username} authKey={accessToken} onOpen={goPost} />
+          )}
+          {tab === 'history' && (
+            <HistoryTab username={profile.username} authKey={accessToken}
+              onOpenArticle={goArticle} onOpenPost={goPost} />
           )}
           {tab === 'comments' && (
             <CommentsTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
@@ -247,9 +249,6 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
               binding={library}
               onOpenArticle={onOpenArticle ?? (url => window.open(url, '_blank', 'noopener,noreferrer'))}
             />
-          )}
-          {tab === 'history' && (
-            <HistoryTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
           )}
         </>
       )}
@@ -551,10 +550,13 @@ function PostCard({ post, onOpen }: { post: BlogPostSummary; onOpen: (slug: stri
   );
 }
 
-// ── Content tab ──────────────────────────────────────────────────────────────
+// ── History tab ──────────────────────────────────────────────────────────────
+// The merged stream: posts and shared comments interleaved, newest first. Named
+// "Content" until the older comments-grouped-by-article tab that held the name
+// was removed.
 // The profile's main page: everything this person made or shared - blog posts
 // and shared comments - in one timeline. The API route is still /activity.
-function ContentTab({ username, authKey, onOpenArticle, onOpenPost }: {
+function HistoryTab({ username, authKey, onOpenArticle, onOpenPost }: {
   username: string;
   authKey: string | null;
   onOpenArticle: (url: string) => void;
@@ -706,42 +708,3 @@ function CommentsTab({ username, authKey, onOpen }: {
   );
 }
 
-// ── History tab ──────────────────────────────────────────────────────────────
-function HistoryTab({ username, authKey, onOpen }: {
-  username: string;
-  authKey: string | null;
-  onOpen: (url: string) => void;
-}) {
-  const [articles, setArticles] = useState<ProfileArticle[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    apiGet<{ articles: ProfileArticle[] }>(`/api/v1/profiles/${encodeURIComponent(username)}/articles`)
-      .then(d => { if (!cancelled) setArticles(d.articles); })
-      .catch(() => { if (!cancelled) setArticles([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [username, authKey]);
-
-  if (loading) return <div className={styles.centered}>Loading…</div>;
-  if (articles.length === 0) return <div className={styles.centered}>No articles yet.</div>;
-
-  return (
-    <div className={styles.list}>
-      {articles.map(a => (
-        <button key={a.articleUrl} className={styles.historyRow} onClick={() => onOpen(a.articleUrl)}>
-          <div className={styles.historyText}>
-            <div className={styles.articleTitle}>{a.articleTitle || hostOf(a.articleUrl)}</div>
-            <div className={styles.host}>{hostOf(a.articleUrl)}</div>
-          </div>
-          <div className={styles.historyMeta}>
-            <span className={styles.countPill}>{a.commentCount} comment{a.commentCount === 1 ? '' : 's'}</span>
-            <span className={styles.historyTime}>{relTime(a.lastCommentedAt)}</span>
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}

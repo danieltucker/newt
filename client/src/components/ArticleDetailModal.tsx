@@ -3,6 +3,8 @@ import { apiGet } from '../services/api';
 import { CommentPrefs } from '../types';
 import { faviconUrl } from '../utils/color';
 import { articlePathFor } from '../utils/articleUrl';
+import { articleEmbed } from '../utils/noteEmbed';
+import { startRepost } from '../utils/repost';
 import CommentsPanel from './CommentsPanel';
 import styles from './ArticleDetailModal.module.css';
 
@@ -163,6 +165,32 @@ export default function ArticleDetailModal({
           </div>
           <div className={styles.toolbarRight}>
             {actions}
+            {/* Reposting writes a post as this reader, so it needs an account -
+                the same reason the comment composer is read-only signed out.
+                It carries whatever the reader resolved rather than what the
+                card was opened with, so the card quotes the better title. */}
+            {!readOnly && (
+              <button
+                title="Write a post quoting this article"
+                onClick={() => startRepost({
+                  title: displayTitle,
+                  embed: articleEmbed({
+                    url,
+                    title: displayTitle,
+                    source: displaySource || domain,
+                    imageUrl: heroImage,
+                    readTime: readText,
+                  }),
+                })}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+                Repost
+              </button>
+            )}
             <a
               className={styles.openBtn}
               href={url}

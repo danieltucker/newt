@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   EMBED_CLASS, EmbedData, applyCommentCounts, articleEmbed, buildEmbedHtml, commentLabel,
-  createEmbed, embedAt, embedMatches, embeddedUrls, hydrateEmbeds, readEmbed, variantOf,
+  createEmbed, embedAt, embedMatches, embeddedUrls, hydrateEmbeds, postEmbed, readEmbed,
+  variantOf,
 } from './noteEmbed';
 import { parseArticlePath } from './articleUrl';
 import { ReadingListItem } from '../types';
@@ -41,6 +42,64 @@ describe('articleEmbed', () => {
 
   it('leaves optional fields off rather than empty', () => {
     const data = articleEmbed(item({ imageUrl: '', readTime: '' }));
+    expect(data.image).toBeUndefined();
+    expect(data.meta).toBeUndefined();
+  });
+});
+
+const post = (over: Partial<Parameters<typeof postEmbed>[0]> = {}) => ({
+  url: 'https://newt.test/u/ada/on-looms',
+  title: 'On looms',
+  slug: 'on-looms',
+  heroImage: '/api/v1/images/img1',
+  // Midday, so the date renders the same either side of UTC - postEmbed formats
+  // in the reader's zone, as every other date in the app does
+  publishedAt: '2026-03-04T12:00:00.000Z',
+  author: { username: 'ada', displayName: 'Ada Lovelace' },
+  ...over,
+});
+
+describe('postEmbed', () => {
+  it('points at the post’s own page, not a reader for it', () => {
+    expect(postEmbed(post()).href).toBe('/u/ada/on-looms');
+  });
+
+  it('keeps the canonical URL, which is what its comments are threaded on', () => {
+    expect(postEmbed(post()).url).toBe('https://newt.test/u/ada/on-looms');
+  });
+
+  it('credits the author where an article would name a publication', () => {
+    const data = postEmbed(post());
+    expect(data.source).toBe('Ada Lovelace');
+    expect(data.meta).toBe('Mar 4, 2026');
+  });
+
+  it('shows no favicon, having a person’s name rather than a domain', () => {
+    for (const variant of ['link', 'small', 'large'] as const) {
+      expect(parse(buildEmbedHtml(postEmbed(post()), variant))
+        .querySelector('img.note-embed-fav')).toBeNull();
+    }
+    // The article it sits beside still gets one - this is per kind, not a
+    // favicon that stopped working
+    expect(parse(buildEmbedHtml(articleEmbed(item()), 'small'))
+      .querySelector('img.note-embed-fav')).not.toBeNull();
+  });
+
+  it('says what it is on the large card', () => {
+    expect(parse(buildEmbedHtml(postEmbed(post()), 'large')).textContent).toContain('Blog post');
+  });
+
+  it('round-trips through the markup like any other kind', () => {
+    const data = postEmbed(post());
+    expect(readEmbed(parse(buildEmbedHtml(data, 'large')))).toEqual(data);
+  });
+
+  it('falls back to the canonical URL when the author is unknown', () => {
+    expect(postEmbed(post({ author: null })).href).toBe('https://newt.test/u/ada/on-looms');
+  });
+
+  it('leaves a missing date and cover off rather than empty', () => {
+    const data = postEmbed(post({ heroImage: '', publishedAt: null }));
     expect(data.image).toBeUndefined();
     expect(data.meta).toBeUndefined();
   });
@@ -176,6 +235,14 @@ describe('live comment counts', () => {
     expect(commentLabel(12)).toBe('12 comments');
   });
 
+  it('counts a reposted post too - it has a thread of its own', () => {
+    const root = document.createElement('div');
+    root.innerHTML = buildEmbedHtml(postEmbed(post()), 'large');
+    applyCommentCounts(root, { 'https://newt.test/u/ada/on-looms': 1 });
+    expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
+      .toBe('1 comment');
+  });
+
   it('does nothing to the sizes that have no slot', () => {
     for (const v of ['link', 'small'] as const) {
       const root = mount(v);
@@ -220,6 +287,12 @@ describe('embeddedUrls', () => {
   it('reports one URL once, however many times it is cited', () => {
     const html = buildEmbedHtml(data, 'small') + buildEmbedHtml(data, 'large');
     expect(embeddedUrls(html)).toEqual(['https://example.com/post']);
+  });
+
+  it('gathers article and post references alike, in one request', () => {
+    const html = buildEmbedHtml(data, 'small') + buildEmbedHtml(postEmbed(post()), 'large');
+    expect(embeddedUrls(html).sort())
+      .toEqual(['https://example.com/post', 'https://newt.test/u/ada/on-looms']);
   });
 
   it('costs nothing on a body with no references', () => {

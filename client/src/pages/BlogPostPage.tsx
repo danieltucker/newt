@@ -1,10 +1,11 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../services/api';
 import { useCommentCounts } from '../hooks/useCommentCounts';
-import { applyCommentCounts, embeddedUrls } from '../utils/noteEmbed';
+import { applyCommentCounts, embeddedUrls, postEmbed } from '../utils/noteEmbed';
 import { BlogPost, CommentPrefs } from '../types';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogEditPathFor } from '../utils/blogUrl';
+import { startRepost } from '../utils/repost';
 import { POST_VIS_META } from '../components/VisibilityMeta';
 import CommentsPanel from '../components/CommentsPanel';
 import FollowBlogButton from '../components/FollowBlogButton';
@@ -155,6 +156,28 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
             writes to the viewer's own folders. */}
         {!post.isSelf && accessToken && author && (
           <FollowBlogButton username={author.username} variant="primary" />
+        )}
+        {/* Quoting a post into one of your own. Signed-in non-authors only:
+            it writes to the viewer's blog, and reposting yourself is what
+            editing the original is for. */}
+        {!post.isSelf && accessToken && (
+          <button
+            className={styles.ghostBtn}
+            title="Write a post quoting this one"
+            onClick={() => startRepost({
+              title: post.title,
+              embed: postEmbed({
+                url: post.url,
+                title: post.title,
+                slug: post.slug,
+                heroImage: post.heroImage,
+                publishedAt: post.publishedAt,
+                author,
+              }),
+            })}
+          >
+            Repost
+          </button>
         )}
         {/* Reporting needs an account to attribute the report to, so it is
             offered only to signed-in readers of somebody else's post. */}

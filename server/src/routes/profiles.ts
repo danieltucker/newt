@@ -14,7 +14,6 @@ const router = Router();
 router.use(optionalAuth);
 
 const PAGE_SIZE = 25;
-const HISTORY_LIMIT = 100;
 
 // Owner-centric visibility filter: this user's comments, minus tombstones, scoped
 // to what the viewer is allowed to see. `canSeeFriends` is true for the owner
@@ -199,53 +198,6 @@ router.get('/:username/activity', async (req: AuthRequest, res: Response): Promi
     res.json({ items });
   } catch (err) {
     logger.error(err, 'Profile activity error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// GET /api/v1/profiles/:username/articles — History tab: distinct articles the
-// owner commented on, most-recently-commented first.
-router.get('/:username/articles', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const owner = await findOwner(req.params.username);
-    if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
-
-    if (await isWalledOff(req.userId, owner.id)) { res.json({ articles: [] }); return; }
-
-    const canSeeFriends = await canSeeFriendsOf(owner.id, req.userId);
-    const where = profileCommentWhere(owner.id, canSeeFriends);
-
-    const grouped = await prisma.comment.groupBy({
-      by: ['articleKey'],
-      where,
-      _count: { _all: true },
-      _max: { createdAt: true },
-      orderBy: { _max: { createdAt: 'desc' } },
-      take: HISTORY_LIMIT,
-    });
-    if (grouped.length === 0) { res.json({ articles: [] }); return; }
-
-    // Resolve a representative url/title per key (the owner's latest on each).
-    const metas = await prisma.comment.findMany({
-      where: { ...where, articleKey: { in: grouped.map(g => g.articleKey) } },
-      distinct: ['articleKey'],
-      orderBy: { createdAt: 'desc' },
-      select: { articleKey: true, articleUrl: true, articleTitle: true },
-    });
-    const metaByKey = new Map(metas.map(m => [m.articleKey, m]));
-
-    const articles = grouped.map(g => {
-      const meta = metaByKey.get(g.articleKey);
-      return {
-        articleUrl: meta?.articleUrl ?? '',
-        articleTitle: meta?.articleTitle ?? '',
-        commentCount: g._count._all,
-        lastCommentedAt: g._max.createdAt,
-      };
-    });
-    res.json({ articles });
-  } catch (err) {
-    logger.error(err, 'Profile articles error');
     res.status(500).json({ error: 'Server error' });
   }
 });

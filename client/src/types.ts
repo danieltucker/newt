@@ -267,14 +267,6 @@ export interface ProfileComment {
   updatedAt: string;
 }
 
-// A distinct article the owner has commented on (History tab).
-export interface ProfileArticle {
-  articleUrl: string;
-  articleTitle: string;
-  commentCount: number;
-  lastCommentedAt: string;
-}
-
 // ── Blog posts (/u/<username>/<slug>) ──────────────────────────────────────
 // Visibility reuses the comment tiers exactly, and 'private' doubles as the
 // draft state - publishing is just widening it.

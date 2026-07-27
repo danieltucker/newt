@@ -6,6 +6,7 @@ import { createPost, updatePost, loadOwnPost } from '../hooks/useBlog';
 import { blogPathFor } from '../utils/blogUrl';
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { articleEmbed, embeddedUrls } from '../utils/noteEmbed';
+import { takeRepost, clearRepost, repostBody } from '../utils/repost';
 import { useReadingList } from '../hooks/useReadingList';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import SiteFooter from '../components/SiteFooter';
@@ -131,16 +132,35 @@ function HeroPicker({ value, onChange }: { value: string; onChange: (url: string
 
 export default function BlogEditorPage({ postId, username, accessToken, navigate }: Props) {
   const isNew = postId === null;
+
+  // A repost arrives as a reference stashed by whichever reader the author was
+  // in (see startRepost), so the composer opens already holding the card and
+  // the source's title, and all that is left to do is say something about it.
+  //
+  // Captured during the first render rather than in an effect: RichEditor is
+  // uncontrolled and reads initialHtml on mount, so a seed arriving afterwards
+  // would never reach it. takeRepost is idempotent for exactly this reason -
+  // StrictMode runs this initialiser twice and keeps one of the two answers.
+  const [seed] = useState(() => {
+    const draft = isNew ? takeRepost() : null;
+    return draft && { title: draft.title, body: repostBody(draft.embed) };
+  });
+  // Once this composer has the draft, nothing else should get it: without this,
+  // leaving and choosing "New post" again would reopen the same repost.
+  useEffect(() => clearRepost, []);
+
   const [state, setState] = useState<LoadState>(isNew ? 'ready' : 'loading');
   const [post, setPost] = useState<BlogPost | null>(null);
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(seed?.title ?? '');
   const [heroImage, setHeroImage] = useState('');
   const [visibility, setVisibility] = useState<CommentVisibility>('private');
   const [commentsEnabled, setCommentsEnabled] = useState(true);
-  const bodyRef = useRef('');
-  const [bodyEmpty, setBodyEmpty] = useState(true);
-  const [textLen, setTextLen] = useState(0);
+  // Seeded rather than empty for a repost: the card is real content the author
+  // never typed, so Save has to be live before they touch anything.
+  const bodyRef = useRef(seed?.body ?? '');
+  const [bodyEmpty, setBodyEmpty] = useState(() => htmlIsBlank(bodyRef.current));
+  const [textLen, setTextLen] = useState(() => textLength(bodyRef.current));
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -159,7 +179,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   const references = useMemo(() => readingList.map(articleEmbed), [readingList]);
   // Live comment counts for the references already in the post, seeded from the
   // loaded body and topped up as more are added.
-  const [embedUrls, setEmbedUrls] = useState<string[]>([]);
+  const [embedUrls, setEmbedUrls] = useState<string[]>(() => embeddedUrls(bodyRef.current));
   const { counts: commentCounts } = useCommentCounts(embedUrls);
 
   useEffect(() => {
@@ -186,9 +206,9 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   }, [postId, isNew]);
 
   useEffect(() => {
-    document.title = isNew ? 'New post' : 'Edit post';
+    document.title = isNew ? (seed ? 'Repost' : 'New post') : 'Edit post';
     return () => { document.title = 'New Tab'; };
-  }, [isNew]);
+  }, [isNew, seed]);
 
   const handleBody = useCallback((html: string) => {
     bodyRef.current = html;
@@ -322,7 +342,9 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
           onChange={e => setTitle(e.target.value)}
           placeholder="Post title"
           maxLength={200}
-          autoFocus={isNew}
+          // A repost lands with the title already filled from the source, so
+          // the cursor belongs where the author still has something to add.
+          autoFocus={isNew && !seed}
         />
 
         <div className={styles.urlLine}>
@@ -339,7 +361,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
               that post's HTML, since initialHtml is only read on mount. */}
           <RichEditor
             key={postId ?? 'new'}
-            initialHtml={post?.body ?? ''}
+            initialHtml={post?.body ?? seed?.body ?? ''}
             onChange={handleBody}
             onUploadImage={uploadImage}
             references={references}

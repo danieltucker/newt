@@ -13,14 +13,14 @@
 // <p>, and a block element there would be split back out by the HTML parser
 // the next time the note is loaded - the sizes come from CSS display instead.
 
-import { ReadingListItem } from '../types';
 import { articlePathFor } from './articleUrl';
+import { blogPathFor } from './blogUrl';
 
 // Stable, non-hashed classes: they are baked into saved note HTML, so a
 // CSS-module hash could change and orphan every embed already written.
 export const EMBED_CLASS = 'note-embed';
 
-export type EmbedKind = 'article';
+export type EmbedKind = 'article' | 'post';
 export type EmbedVariant = 'link' | 'small' | 'large';
 
 export const VARIANTS: EmbedVariant[] = ['link', 'small', 'large'];
@@ -43,6 +43,7 @@ export interface EmbedData {
 // one is. Keyed by kind - the only place a new kind has to be named.
 const KIND_LABEL: Record<EmbedKind, string> = {
   article: 'Saved article',
+  post: 'Blog post',
 };
 
 const DEFAULT_VARIANT: EmbedVariant = 'small';
@@ -68,8 +69,22 @@ export function faviconFor(source: string): string {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(source)}&sz=64`;
 }
 
-/** A reading-list row as something /reference can offer and embed. */
-export function articleEmbed(item: ReadingListItem): EmbedData {
+/**
+ * Everything an embed needs from an article, which is a subset of what a
+ * reading-list row carries - so a ReadingListItem satisfies this as it stands,
+ * and so does the looser set of fields the reader happens to know about the
+ * article currently open in it.
+ */
+export interface ArticleRef {
+  url: string;
+  title?: string | null;
+  source?: string | null;
+  imageUrl?: string | null;
+  readTime?: string | null;
+}
+
+/** An article - a saved one, or the one being read - as something to cite. */
+export function articleEmbed(item: ArticleRef): EmbedData {
   return {
     kind: 'article',
     href: articlePathFor(item.url),
@@ -81,18 +96,59 @@ export function articleEmbed(item: ReadingListItem): EmbedData {
   };
 }
 
+/** The same, for a blog post written on this instance. */
+export interface PostRef {
+  /** Absolute canonical URL - also the key its comment thread hangs on. */
+  url: string;
+  title: string;
+  slug: string;
+  heroImage?: string | null;
+  publishedAt?: string | null;
+  author?: { username: string; displayName: string } | null;
+}
+
+/**
+ * A post as something to cite. Unlike an article it is hosted here, so the card
+ * points straight at its page rather than at a reader for it; `url` still holds
+ * the canonical form, which is what the live comment count is keyed on.
+ */
+export function postEmbed(post: PostRef): EmbedData {
+  return {
+    kind: 'post',
+    href: post.author ? blogPathFor(post.author.username, post.slug) : post.url,
+    url: post.url,
+    title: post.title?.trim() || post.url,
+    // The author stands where a publication would: a post's provenance is the
+    // person who wrote it, not the host every post here shares.
+    source: post.author?.displayName ?? '',
+    image: post.heroImage || undefined,
+    meta: shortDate(post.publishedAt) || undefined,
+  };
+}
+
+function shortDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? '' : d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function attr(name: string, value: string | undefined): string {
   return value ? ` ${name}="${escapeHtml(value)}"` : '';
 }
 
-function favicon(source: string): string {
-  return source ? `<img class="note-embed-fav" src="${escapeHtml(faviconFor(source))}" alt="">` : '';
+// A favicon identifies a *publication*, which is what an article's source is.
+// A post's source is a person's name, so there is no domain to look one up by -
+// asking anyway would fetch a broken image on every card.
+function favicon(data: EmbedData): string {
+  if (data.kind !== 'article' || !data.source) return '';
+  return `<img class="note-embed-fav" src="${escapeHtml(faviconFor(data.source))}" alt="">`;
 }
 
 function metaLine(data: EmbedData): string {
   const text = [data.source, data.meta].filter(Boolean).join(' · ');
   if (!text) return '';
-  return `<span class="note-embed-meta">${favicon(data.source)}${escapeHtml(text)}</span>`;
+  return `<span class="note-embed-meta">${favicon(data)}${escapeHtml(text)}</span>`;
 }
 
 // The inside of the anchor, per size. The wrapper, the anchor and the data are
@@ -102,7 +158,7 @@ function innerHtml(data: EmbedData, variant: EmbedVariant): string {
   const image = safeUrl(data.image);
 
   if (variant === 'link') {
-    return `${favicon(data.source)}${title}`;
+    return `${favicon(data)}${title}`;
   }
 
   if (variant === 'large') {
@@ -157,7 +213,7 @@ export function createEmbed(data: EmbedData, variant: EmbedVariant): HTMLElement
 }
 
 function isKind(v: string): v is EmbedKind {
-  return v === 'article';
+  return v === 'article' || v === 'post';
 }
 
 export function isVariant(v: string): v is EmbedVariant {
@@ -204,14 +260,22 @@ export function embedAt(node: Node | null, root: HTMLElement): HTMLElement | nul
 
 const COMMENTS_ATTR = 'data-comments';
 
+// Kinds whose target has a conversation of its own. An article and a post are
+// both threaded on their canonical URL - the same key `url` already holds - so
+// one lookup serves both. A future kind that is nothing to comment on simply
+// stays off this list.
+const THREADED = (['article', 'post'] as EmbedKind[])
+  .map(kind => `.${EMBED_CLASS}[data-embed="${kind}"]`)
+  .join(', ');
+
 export function commentLabel(n: number): string {
   if (n <= 0) return 'No comments yet';
   return `${n} comment${n === 1 ? '' : 's'}`;
 }
 
-/** Write live counts into every article embed under `root`, keyed by source URL. */
+/** Write live counts into every threaded embed under `root`, keyed by source URL. */
 export function applyCommentCounts(root: ParentNode, counts: Record<string, number>): void {
-  root.querySelectorAll(`.${EMBED_CLASS}[data-embed="article"]`).forEach(el => {
+  root.querySelectorAll(THREADED).forEach(el => {
     const slot = el.querySelector('.note-embed-comments');
     if (!slot) return;
     const n = counts[el.getAttribute('data-url') ?? ''];
@@ -222,10 +286,10 @@ export function applyCommentCounts(root: ParentNode, counts: Record<string, numb
   });
 }
 
-/** The article URLs embedded under `root`, for one batched counts request. */
+/** The threaded URLs embedded under `root`, for one batched counts request. */
 export function embedUrlsIn(root: ParentNode): string[] {
   const urls = new Set<string>();
-  root.querySelectorAll(`.${EMBED_CLASS}[data-embed="article"]`).forEach(el => {
+  root.querySelectorAll(THREADED).forEach(el => {
     const url = el.getAttribute('data-url');
     if (url && /^https?:\/\//i.test(url)) urls.add(url);
   });
