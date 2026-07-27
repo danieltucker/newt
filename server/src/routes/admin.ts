@@ -1,10 +1,14 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 import logger from '../lib/logger';
 import { deleteCommentPreservingThread } from '../lib/commentDeletion';
+import { assembleThread } from '../lib/commentTree';
+import { canonicalArticleKey } from '../lib/comments';
 import { excerptOf } from '../lib/blog';
 import { recordAdminAction, ADMIN_ACTIONS, actionLabel, isDestructive } from '../lib/adminAudit';
+import { categoryLabel, isResolution, MAX_REPORT_NOTE } from '../lib/reports';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -26,6 +30,9 @@ const DETAIL_LIMIT = 200;
 const SNIPPET_CHARS = 160;
 // The audit view pages instead of capping — see GET /audit.
 const AUDIT_PAGE = 50;
+// The report queue pages for the same reason: it is work to get through, and a
+// cap would silently hide the oldest thing waiting.
+const REPORT_PAGE = 50;
 
 const VISIBILITIES = ['public', 'friends', 'private'] as const;
 type VisibilityCounts = Record<(typeof VISIBILITIES)[number], number>;
@@ -79,6 +86,7 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
       users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles,
       comments, deletedComments, commentReplies, commentEdits,
       blogPosts, publishedPosts, images, imageBytes, friendships,
+      blocks, openReports,
       recentUsers, activeTokens,
     ] = await Promise.all([
       prisma.user.count(),
@@ -97,6 +105,8 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
       prisma.image.count(),
       prisma.image.aggregate({ _sum: { size: true } }),
       prisma.friendship.count({ where: { status: 'accepted' } }),
+      prisma.block.count(),
+      prisma.report.count({ where: { status: 'open' } }),
       prisma.user.findMany({
         where: { createdAt: { gte: since } },
         select: { createdAt: true },
@@ -148,7 +158,7 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
         comments, deletedComments, commentReplies, commentEdits,
         blogPosts, publishedPosts,
         images, imageBytes: imageBytes._sum.size ?? 0,
-        friendships,
+        friendships, blocks, openReports,
       },
       activeUsers7d: activeTokens.length,
       signups,
@@ -305,6 +315,82 @@ router.get('/blog-posts', async (_req: AuthRequest, res: Response): Promise<void
     })));
   } catch (err) {
     logger.error(err, 'Admin blog posts error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/comments/thread?commentId=<id>  |  ?url=<article url>
+//
+// The whole conversation a comment sits in, unfiltered — every tier, every
+// author, tombstones included. A reported comment read on its own is very often
+// unjudgeable: "you too" is a pleasantry or an insult depending entirely on what
+// it answers, and the report's snapshot can only ever hold the one comment.
+//
+// Two ways in, because a report can outlive its target. `commentId` is the
+// direct route; `url` is the fallback for a report whose comment has since been
+// deleted, resolved through the same canonical key comments thread on.
+//
+// Declared before DELETE /comments/:id — "thread" is not an id.
+router.get('/comments/thread', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { commentId, url } = req.query as Record<string, string | undefined>;
+
+  try {
+    let articleKey: string | null = null;
+
+    if (commentId) {
+      const anchor = await prisma.comment.findUnique({
+        where: { id: commentId },
+        select: { articleKey: true },
+      });
+      articleKey = anchor?.articleKey ?? null;
+    }
+    // Either no commentId was given, or the comment is gone — fall back to the
+    // URL the report captured.
+    if (!articleKey && url) {
+      articleKey = canonicalArticleKey(url);
+    }
+    if (!articleKey) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const rows = await prisma.comment.findMany({
+      where: { articleKey },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+      select: {
+        id: true, parentId: true, title: true, body: true, visibility: true,
+        articleTitle: true, articleUrl: true, deletedAt: true,
+        createdAt: true, updatedAt: true,
+        user: { select: { username: true } },
+        _count: { select: { revisions: true } },
+      },
+    });
+
+    // A tombstone keeps its place in the tree but has no content left to show.
+    // Unlike the reader's view it keeps its author here: who wrote the comment
+    // that was removed is exactly the sort of thing a moderator is looking for.
+    const nodes = rows.map(c => ({
+      id: c.id,
+      parentId: c.parentId,
+      author: c.user.username,
+      title: c.deletedAt ? null : c.title,
+      body: c.deletedAt ? '' : c.body,
+      visibility: c.visibility,
+      deleted: c.deletedAt !== null,
+      edits: c._count.revisions,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      replies: [] as unknown[],
+    }));
+
+    const meta = rows.find(r => r.articleTitle) ?? rows[0];
+    res.json({
+      articleTitle: meta?.articleTitle ?? '',
+      articleUrl: meta?.articleUrl ?? url ?? '',
+      total: rows.length,
+      // Oldest-first: a moderator is reading a conversation, not a feed.
+      comments: assembleThread(nodes, 'oldest'),
+    });
+  } catch (err) {
+    logger.error(err, 'Admin comment thread error');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -529,6 +615,193 @@ router.delete('/users/:id', async (req: AuthRequest, res: Response): Promise<voi
     res.json({ ok: true });
   } catch (err) {
     logger.error(err, 'Admin delete error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+// One report, as the moderation UI reads it. Shared by the queue and the
+// single-report fetch the bell's alert opens, so the two can't drift into
+// describing the same row differently.
+//
+// `reportsAgainstSubject` counts every report naming this person, this one
+// included — so its smallest value is 1, and anything above that is a pattern.
+function toReportJson(r: Prisma.ReportGetPayload<object>, reportsAgainstSubject: number) {
+  return {
+    id: r.id,
+    reporter: r.reporterUsername,
+    // Null once that account is gone — the username above survives
+    reporterExists: r.reporterId !== null,
+    subject: r.subjectUsername,
+    subjectExists: r.subjectId !== null,
+    targetType: r.targetType,
+    targetId: r.targetId,
+    targetLabel: r.targetLabel,
+    targetUrl: r.targetUrl,
+    snapshot: r.snapshot,
+    category: r.category,
+    categoryLabel: categoryLabel(r.category),
+    note: r.note,
+    status: r.status,
+    resolvedBy: r.resolvedByUsername,
+    resolutionNote: r.resolutionNote,
+    resolvedAt: r.resolvedAt,
+    reportsAgainstSubject,
+    createdAt: r.createdAt,
+  };
+}
+
+// GET /api/v1/admin/reports?status=open&cursor= — the moderation queue.
+//
+// Paginated like the audit trail rather than capped like the detail tables: the
+// queue is work to get through, and a cap would quietly hide the oldest thing
+// waiting, which is exactly the one that needs attention.
+//
+// Each row carries `priorReports` — how many other reports name the same person.
+// One report is an incident; the fifth about the same account is a pattern, and
+// a moderator should not have to run a search to notice the difference.
+router.get('/reports', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { cursor, status, category } = req.query as Record<string, string | undefined>;
+  try {
+    const where = {
+      // Defaults to the open queue — the reason anyone opens this tab. Pass
+      // status=all to read back through everything already handled.
+      ...(status === 'all' ? {} : { status: status || 'open' }),
+      ...(category ? { category } : {}),
+    };
+
+    const rows = await prisma.report.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: REPORT_PAGE + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+
+    const page = rows.slice(0, REPORT_PAGE);
+
+    // One grouped count for the whole page rather than a per-row subquery.
+    // Keyed on subjectId, so it follows the person rather than the content.
+    const subjectIds = [...new Set(page.map(r => r.subjectId).filter((id): id is string => id !== null))];
+    const priorBySubject = new Map<string, number>();
+    if (subjectIds.length > 0) {
+      const grouped = await prisma.report.groupBy({
+        by: ['subjectId'],
+        where: { subjectId: { in: subjectIds } },
+        _count: { _all: true },
+      });
+      for (const g of grouped) {
+        if (g.subjectId) priorBySubject.set(g.subjectId, g._count._all);
+      }
+    }
+
+    res.json({
+      reports: page.map(r =>
+        toReportJson(r, r.subjectId ? (priorBySubject.get(r.subjectId) ?? 1) : 1)),
+      nextCursor: rows.length > REPORT_PAGE ? page[page.length - 1].id : null,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin reports error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/reports/count — the queue depth, for the tab's badge.
+router.get('/reports/count', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    res.json({ open: await prisma.report.count({ where: { status: 'open' } }) });
+  } catch (err) {
+    logger.error(err, 'Admin report count error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/reports/:id — one report, whatever its status or age.
+//
+// This is what the bell's alert opens. Fetching it directly rather than hunting
+// for it in the paged queue is the only approach that always works: by the time
+// a moderator clicks the alert the report may have been handled by a colleague
+// (so it has left the open filter) or pushed onto page three by newer arrivals.
+router.get('/reports/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const r = await prisma.report.findUnique({ where: { id: req.params.id } });
+    if (!r) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const reportsAgainstSubject = r.subjectId
+      ? await prisma.report.count({ where: { subjectId: r.subjectId } })
+      : 1;
+
+    res.json({ report: toReportJson(r, reportsAgainstSubject) });
+  } catch (err) {
+    logger.error(err, 'Admin report error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/v1/admin/reports/:id { status: 'resolved' | 'dismissed', note? }
+//
+// Closing a report records *the moderator's judgement*, nothing more. Acting on
+// the content — deleting the comment, unpublishing the post, banning the author
+// — stays with the endpoints that already do those things, each writing its own
+// audit row. Folding them together here would make one click mean two different
+// things and leave the audit trail unable to say which.
+router.patch('/reports/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { status, note } = req.body as { status?: unknown; note?: unknown };
+  if (!isResolution(status)) {
+    res.status(400).json({ error: "status must be 'resolved' or 'dismissed'" });
+    return;
+  }
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    res.status(400).json({ error: 'note must be a string' });
+    return;
+  }
+  const resolutionNote = typeof note === 'string' ? note.trim().slice(0, MAX_REPORT_NOTE) : '';
+
+  try {
+    const before = await prisma.report.findUnique({
+      where: { id: req.params.id },
+      select: { status: true, category: true, targetLabel: true, targetType: true, subjectUsername: true, reporterUsername: true },
+    });
+    if (!before) { res.status(404).json({ error: 'Not found' }); return; }
+    // Already handled — answer with what it was decided, rather than silently
+    // overwriting another moderator's judgement.
+    if (before.status !== 'open') {
+      res.status(409).json({ error: `This report was already ${before.status}` });
+      return;
+    }
+    const actorUsername = await actorName(req.userId!);
+
+    await prisma.$transaction(async tx => {
+      await tx.report.update({
+        where: { id: req.params.id },
+        data: {
+          status,
+          resolvedById: req.userId!,
+          resolvedByUsername: actorUsername,
+          resolutionNote,
+          resolvedAt: new Date(),
+        },
+      });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername,
+        action: status === 'resolved' ? ADMIN_ACTIONS.reportResolve : ADMIN_ACTIONS.reportDismiss,
+        targetType: 'report',
+        targetId: req.params.id,
+        targetLabel: before.targetLabel,
+        metadata: {
+          category: before.category,
+          reportedType: before.targetType,
+          subject: before.subjectUsername,
+          reporter: before.reporterUsername,
+          ...(resolutionNote ? { note: resolutionNote } : {}),
+        },
+      });
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, 'Admin resolve report error');
     res.status(500).json({ error: 'Server error' });
   }
 });

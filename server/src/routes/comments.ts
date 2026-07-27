@@ -14,7 +14,9 @@ import {
 } from '../lib/comments';
 import { deleteCommentPreservingThread } from '../lib/commentDeletion';
 import { friendIdsOf } from '../lib/friends';
+import { blockWallOf, notWalledWhere } from '../lib/blocks';
 import { Visibility, isVisibility, visibilityWhere, canModerateComment } from '../lib/commentVisibility';
+import { assembleThread } from '../lib/commentTree';
 import { canSeePost } from '../lib/blog';
 import { perUserLimiter } from '../lib/rateLimit';
 
@@ -25,17 +27,19 @@ router.use(optionalAuth);
 
 const MAX_URLS_PER_COUNT = 200;
 
-// Read prefs + friends for whoever is viewing. An anonymous viewer sees public
-// comments only: prefs default to showing them, and they have no friends.
+// Read prefs, friends and blocks for whoever is viewing. An anonymous viewer
+// sees public comments only: prefs default to showing them, and they have
+// neither friends nor blocks.
 async function viewerContext(userId: string | undefined): Promise<{
-  showPublic: boolean; sort: 'newest' | 'oldest'; friendIds: Set<string>;
+  showPublic: boolean; sort: 'newest' | 'oldest'; friendIds: Set<string>; wall: Set<string>;
 }> {
-  if (!userId) return { showPublic: true, sort: 'newest', friendIds: new Set() };
-  const [{ showPublic, sort }, friendIds] = await Promise.all([
+  if (!userId) return { showPublic: true, sort: 'newest', friendIds: new Set(), wall: new Set() };
+  const [{ showPublic, sort }, friendIds, wall] = await Promise.all([
     viewerPrefs(userId),
     friendIdsOf(userId),
+    blockWallOf(userId),
   ]);
-  return { showPublic, sort, friendIds };
+  return { showPublic, sort, friendIds, wall };
 }
 
 // Per-user write limits (keyed on userId, so a single account can't spam even
@@ -141,36 +145,16 @@ function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = f
   };
 }
 
-// Builds the reply tree. Rows whose parent isn't visible to this viewer (a
-// private parent, or one deleted mid-flight) are surfaced at root level rather
-// than silently dropped, so no one loses a comment they can see.
+// Builds the reply tree. The assembly (including what happens to a reply whose
+// parent isn't in the list) lives in lib/commentTree, shared with the
+// moderator's thread view; this only decides what each row looks like.
 function buildTree(
   rows: CommentRow[],
   viewerId: string | undefined,
   sort: 'newest' | 'oldest',
   viewerIsAdmin = false,
 ): CommentNode[] {
-  const byId = new Map<string, CommentNode>();
-  for (const r of rows) byId.set(r.id, toNode(r, viewerId, viewerIsAdmin));
-
-  const roots: CommentNode[] = [];
-  for (const node of byId.values()) {
-    const parent = node.parentId ? byId.get(node.parentId) : undefined;
-    if (parent) parent.replies.push(node);
-    else roots.push(node);
-  }
-
-  const dir = sort === 'oldest' ? 1 : -1;
-  const byDate = (a: CommentNode, b: CommentNode) =>
-    dir * (a.createdAt.getTime() - b.createdAt.getTime());
-  // Replies always read oldest-first — a conversation only makes sense in order
-  const sortReplies = (n: CommentNode) => {
-    n.replies.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-    n.replies.forEach(sortReplies);
-  };
-  roots.sort(byDate);
-  roots.forEach(sortReplies);
-  return roots;
+  return assembleThread(rows.map(r => toNode(r, viewerId, viewerIsAdmin)), sort);
 }
 
 // Whether this viewer wants other people's public comments in their threads.
@@ -268,7 +252,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
 
   try {
-    const { showPublic, sort, friendIds } = await viewerContext(req.userId);
+    const { showPublic, sort, friendIds, wall } = await viewerContext(req.userId);
     const key = canonicalArticleKey(url);
 
     // A post they can't read answers as an empty thread rather than a 403 — the
@@ -277,10 +261,14 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const gate = await blogGate(key, req.userId, friendIds);
     if (gate.kind === 'hidden') { res.json({ comments: [], total: 0 }); return; }
 
+    // Comments by anyone behind the wall never load. buildTree already lifts a
+    // reply whose parent is missing up to root level, so removing someone
+    // mid-thread leaves the replies to them readable rather than orphaned.
     const rows = await prisma.comment.findMany({
       where: {
         articleKey: key,
         ...visibilityWhere(req.userId, showPublic, friendIds),
+        ...notWalledWhere(wall),
       },
       orderBy: { createdAt: 'asc' },
       take: 500,
@@ -304,7 +292,7 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
   if (valid.length === 0) { res.json({ counts: {} }); return; }
 
   try {
-    const { showPublic, friendIds } = await viewerContext(req.userId);
+    const { showPublic, friendIds, wall } = await viewerContext(req.userId);
     // Several URLs can share one key, so count by key then fan back out
     const keyByUrl = new Map(valid.map(u => [u, canonicalArticleKey(u)]));
     const grouped = await prisma.comment.groupBy({
@@ -312,6 +300,9 @@ router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> =>
       where: {
         articleKey: { in: [...new Set(keyByUrl.values())] },
         ...visibilityWhere(req.userId, showPublic, friendIds),
+        // Counts follow the thread: a card must not advertise comments that
+        // vanish when the thread opens.
+        ...notWalledWhere(wall),
       },
       _count: { _all: true },
     });
@@ -369,11 +360,22 @@ router.post('/', requireAuth, commentBurstLimiter, commentHourlyLimiter, async (
 
     // A reply must hang off a comment on the same article that this user is
     // actually allowed to see — otherwise replies could probe private threads.
+    // The wall applies here too: replying is the main way to reach someone, so a
+    // blocked pair must not be able to answer each other. The parent reads as
+    // "not found", the same as a private one.
     let parentAuthorId: string | null = null;
     if (typeof parentId === 'string') {
-      const { showPublic } = await viewerPrefs(req.userId!);
+      const [{ showPublic }, wall] = await Promise.all([
+        viewerPrefs(req.userId!),
+        blockWallOf(req.userId!),
+      ]);
       const parent = await prisma.comment.findFirst({
-        where: { id: parentId, articleKey: key, ...visibilityWhere(req.userId!, showPublic, friendIds) },
+        where: {
+          id: parentId,
+          articleKey: key,
+          ...visibilityWhere(req.userId!, showPublic, friendIds),
+          ...notWalledWhere(wall),
+        },
         select: { id: true, userId: true, deletedAt: true },
       });
       if (!parent) { res.status(404).json({ error: 'Parent comment not found' }); return; }
@@ -488,9 +490,13 @@ router.patch('/:id', requireAuth, commentBurstLimiter, commentHourlyLimiter, asy
 // Visible to anyone allowed to see the comment itself (same visibility rule).
 router.get('/:id/history', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { showPublic, friendIds } = await viewerContext(req.userId);
+    const { showPublic, friendIds, wall } = await viewerContext(req.userId);
     const comment = await prisma.comment.findFirst({
-      where: { id: req.params.id, ...visibilityWhere(req.userId, showPublic, friendIds) },
+      where: {
+        id: req.params.id,
+        ...visibilityWhere(req.userId, showPublic, friendIds),
+        ...notWalledWhere(wall),
+      },
       select: { title: true, body: true, visibility: true, updatedAt: true },
     });
     if (!comment) { res.status(404).json({ error: 'Not found' }); return; }

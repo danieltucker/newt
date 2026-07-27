@@ -11,11 +11,13 @@ export const ADMIN_ACTIONS = {
   userPromote: 'user.promote',
   userDemote: 'user.demote',
   userDelete: 'user.delete',
+  reportResolve: 'report.resolve',
+  reportDismiss: 'report.dismiss',
 } as const;
 
 export type AdminActionName = (typeof ADMIN_ACTIONS)[keyof typeof ADMIN_ACTIONS];
 
-export type AdminTargetType = 'comment' | 'blogPost' | 'user';
+export type AdminTargetType = 'comment' | 'blogPost' | 'user' | 'report';
 
 export interface AdminActionInput {
   actorId: string;
@@ -59,6 +61,8 @@ const ACTION_LABELS: Record<string, string> = {
   'user.promote': 'Granted admin',
   'user.demote': 'Revoked admin',
   'user.delete': 'Deleted account',
+  'report.resolve': 'Upheld report',
+  'report.dismiss': 'Dismissed report',
 };
 
 export function actionLabel(action: string): string {

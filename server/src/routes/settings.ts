@@ -10,14 +10,11 @@ export interface UserSettings {
   searchNewTab: boolean;
   theme: 'dark' | 'light' | 'auto';
   consoleEnabled: boolean;
-  weatherLocation: string;
-  weatherUnit: 'celsius' | 'fahrenheit';
   notes: string;
   noteDocs: Array<{ id: string; title: string; body: string; updatedAt?: number; deletedAt?: number; folderId?: string }>;
   noteFolders: Array<{ id: string; name: string; color: string; collapsed?: boolean }>;
   noteTreeOrder: string[];
   noteSidebarWidth: number;
-  clockFormat: '12h' | '24h';
   articleOpenMode: 'new-tab' | 'same-tab' | 'iframe';
   readingListOpenMode?: 'new-tab' | 'same-tab' | 'reader';
   bookmarkOpenMode?: 'same-tab' | 'new-tab';
@@ -35,8 +32,9 @@ export interface UserSettings {
   commentsDefaultVisibility?: 'public' | 'friends' | 'private'; // new comments' starting visibility
   commentsSort?: 'newest' | 'oldest';
   commentsAutoExpand?: boolean;      // open the thread without clicking
-  activeWidgets: string[];
-  worldClockZones: Array<{ city: string; zone: string }>;
+  // Tags the user wants flagged when they turn up. Matched client-side by
+  // token (see client utils/favoriteTags) — the server only stores the list.
+  favoriteTags?: string[];
   rssFeedUrls: string[];
 }
 
@@ -45,14 +43,11 @@ const DEFAULTS: UserSettings = {
   searchNewTab: false,
   theme: 'dark',
   consoleEnabled: true,
-  weatherLocation: '',
-  weatherUnit: 'celsius',
   notes: '',
   noteDocs: [],
   noteFolders: [],
   noteTreeOrder: [],
   noteSidebarWidth: 210,
-  clockFormat: '12h',
   articleOpenMode: 'new-tab',
   readingListOpenMode: 'new-tab',
   bookmarkOpenMode: 'same-tab',
@@ -71,8 +66,7 @@ const DEFAULTS: UserSettings = {
   commentsDefaultVisibility: 'private',
   commentsSort: 'newest',
   commentsAutoExpand: false,
-  activeWidgets: ['weather', 'notes'],
-  worldClockZones: [],
+  favoriteTags: [],
   rssFeedUrls: [],
 };
 
@@ -95,7 +89,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'weatherLocation', 'weatherUnit', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'clockFormat', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'activeWidgets', 'worldClockZones', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys

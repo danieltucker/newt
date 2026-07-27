@@ -3,9 +3,11 @@ import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, optionalAuth, AuthRequest } from '../middleware/auth';
 import { PUBLIC_USER_SELECT, toPublicUser, friendIdsOf, displayNameOf } from '../lib/friends';
+import { isWalledOff } from '../lib/blocks';
 import { canonicalArticleKey, isBlankHtml } from '../lib/comments';
 import { perUserLimiter } from '../lib/rateLimit';
 import { ensureFeeds } from '../lib/feedRefresh';
+import { addFolderFeed } from '../lib/folderFeeds';
 import {
   renderBlogFeed,
   blogFeedUrlFor,
@@ -19,7 +21,7 @@ import {
   slugify,
   uniqueSlug,
   postUrlFor,
-  publicOrigin,
+  profileUrlFor,
   excerptOf,
   canSeePost,
   visiblePostWhere,
@@ -415,22 +417,22 @@ router.post('/:username/follow', requireAuth, async (req: AuthRequest, res: Resp
     });
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
     if (owner.id === req.userId) { res.status(400).json({ error: 'You already have your own posts' }); return; }
+    // Subscribing to someone's feed is a way of following them, so the wall
+    // applies. 404 keeps it indistinguishable from a profile that isn't there.
+    if (await isWalledOff(req.userId, owner.id)) { res.status(404).json({ error: 'Profile not found' }); return; }
 
     const folder = await prisma.folder.findFirst({
       where: { id: folderId, userId: req.userId! },
-      select: { id: true, feedUrls: true },
+      select: { id: true },
     });
     if (!folder) { res.status(404).json({ error: 'Folder not found' }); return; }
 
     const feedUrl = blogFeedUrlFor(owner.username);
-    const profileUrl = `${publicOrigin()}/u/${encodeURIComponent(owner.username)}`;
+    const profileUrl = profileUrlFor(owner.username);
 
-    if (!folder.feedUrls.includes(feedUrl)) {
-      await prisma.folder.update({
-        where: { id: folder.id },
-        data: { feedUrls: { set: [...folder.feedUrls, feedUrl] } },
-      });
-    }
+    // Seed the feed's name from the author's display name — a person's blog
+    // reads better under their name than under the hostname it derives from.
+    await addFolderFeed(req.userId!, folder.id, feedUrl, displayNameOf(owner));
     // Register the Feed row and pull the posts in now, so the folder isn't empty
     // on the first look.
     await ensureFeeds([feedUrl]);
@@ -468,16 +470,7 @@ router.post('/:username/follow', requireAuth, async (req: AuthRequest, res: Resp
 router.delete('/:username/follow', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const feedUrl = blogFeedUrlFor(req.params.username);
-    const folders = await prisma.folder.findMany({
-      where: { userId: req.userId!, feedUrls: { has: feedUrl } },
-      select: { id: true, feedUrls: true },
-    });
-    await Promise.all(folders.map(f =>
-      prisma.folder.update({
-        where: { id: f.id },
-        data: { feedUrls: { set: f.feedUrls.filter(u => u !== feedUrl) } },
-      })
-    ));
+    await prisma.folderFeed.deleteMany({ where: { userId: req.userId!, url: feedUrl } });
     await prisma.bookmark.deleteMany({ where: { userId: req.userId!, feedUrl } });
     res.json({ ok: true });
   } catch (err) {
@@ -490,8 +483,8 @@ router.delete('/:username/follow', requireAuth, async (req: AuthRequest, res: Re
 router.get('/:username/follow', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const feedUrl = blogFeedUrlFor(req.params.username);
-    const count = await prisma.folder.count({
-      where: { userId: req.userId!, feedUrls: { has: feedUrl } },
+    const count = await prisma.folderFeed.count({
+      where: { userId: req.userId!, url: feedUrl },
     });
     res.json({ following: count > 0, feedUrl });
   } catch (err) {
@@ -508,6 +501,9 @@ router.get('/:username/posts', async (req: AuthRequest, res: Response): Promise<
   try {
     const owner = await findOwner(req.params.username);
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
+    // A walled-off author has no posts as far as this reader is concerned —
+    // the same empty answer either side of the block gets.
+    if (await isWalledOff(req.userId, owner.id)) { res.json({ posts: [], nextCursor: null }); return; }
 
     const friendIds = req.userId ? await friendIdsOf(req.userId) : new Set<string>();
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
@@ -536,6 +532,9 @@ router.get('/:username/post/:slug', async (req: AuthRequest, res: Response): Pro
   try {
     const owner = await findOwner(req.params.username);
     if (!owner) { res.status(404).json({ error: 'Not found' }); return; }
+    // 404 rather than a "blocked" message, matching how an unreadable private
+    // post answers: the URL simply resolves to nothing for this reader.
+    if (await isWalledOff(req.userId, owner.id)) { res.status(404).json({ error: 'Not found' }); return; }
 
     const post = await prisma.blogPost.findFirst({
       where: { userId: owner.id, slug: req.params.slug },

@@ -81,6 +81,13 @@ export function postUrlFor(username: string, slug: string): string {
   return `${publicOrigin()}${postPathFor(username, slug)}`;
 }
 
+// The profile a post hangs off — /u/<username>, the parent of postPathFor's
+// path. Lives here beside it so the two spellings of a profile URL (this one
+// and the one the follow route builds inline) can't drift apart.
+export function profileUrlFor(username: string): string {
+  return `${publicOrigin()}/u/${encodeURIComponent(username)}`;
+}
+
 // Plain-text summary for cards, search results and RSS descriptions. Cuts on a
 // word boundary so the tail isn't a severed word.
 export function excerptOf(html: string, max = DEFAULT_EXCERPT): string {

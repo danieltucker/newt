@@ -109,6 +109,86 @@ describe('sanitizeCommentHtml — images', () => {
   });
 });
 
+// The allowlist was widened so /reference embeds survive a save. These pin down
+// both halves of that: the markup the editor produces has to come through
+// whole, and everything the widening does NOT grant has to stay refused.
+describe('sanitizeCommentHtml — reference embeds', () => {
+  const embed =
+    '<span class="note-embed" data-embed="article" data-variant="large" ' +
+    'data-href="/a/aHR0cHM6Ly9leGFtcGxlLmNvbS94" data-url="https://example.com/x" ' +
+    'data-title="A title" data-source="example.com" ' +
+    'data-image="https://cdn.example.com/hero.jpg" data-meta="6 min" ' +
+    'contenteditable="false">' +
+    '<a class="note-embed-a" href="/a/aHR0cHM6Ly9leGFtcGxlLmNvbS94">' +
+    '<img class="note-embed-cover" src="https://cdn.example.com/hero.jpg" alt="">' +
+    '<span class="note-embed-body">' +
+    '<span class="note-embed-kicker">Saved article</span>' +
+    '<span class="note-embed-title">A title</span>' +
+    '<span class="note-embed-comments"></span>' +
+    '</span></a></span>';
+
+  it('keeps everything the embed needs to be rebuilt', () => {
+    const out = sanitizeCommentHtml(embed);
+    for (const attr of [
+      'data-embed="article"', 'data-variant="large"', 'data-url="https://example.com/x"',
+      'data-title="A title"', 'data-source="example.com"', 'data-meta="6 min"',
+      'data-image="https://cdn.example.com/hero.jpg"', 'data-href="/a/aHR0cHM6Ly9leGFtcGxlLmNvbS94"',
+    ]) {
+      expect(out).toContain(attr);
+    }
+    expect(out).toContain('class="note-embed"');
+    expect(out).toContain('class="note-embed-a"');
+    expect(out).toContain('class="note-embed-cover"');
+    expect(out).toContain('class="note-embed-title"');
+  });
+
+  it('strips contenteditable — the editor re-applies it, readers never need it', () => {
+    expect(sanitizeCommentHtml(embed)).not.toContain('contenteditable');
+  });
+
+  it('refuses a live comment count, so a stale one can never be served', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" data-embed="article" data-url="https://example.com/x">' +
+      '<span class="note-embed-comments" data-comments="99 comments"></span></span>');
+    expect(out).not.toContain('data-comments');
+    expect(out).not.toContain('99 comments');
+  });
+
+  it('will not let a span reach any other styling in the app', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-todo note-embed evil-class">x</span>');
+    expect(out).toContain('note-embed');
+    expect(out).not.toContain('note-todo');
+    expect(out).not.toContain('evil-class');
+  });
+
+  it('will not let an anchor or image borrow a class either', () => {
+    const out = sanitizeCommentHtml(
+      '<a class="note-todo" href="https://x.com">l</a>' +
+      '<img class="note-table" src="https://x.com/i.png">');
+    expect(out).not.toContain('note-todo');
+    expect(out).not.toContain('note-table');
+  });
+
+  it('holds the line on schemes, in the data-* as well as the real attributes', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" data-embed="article" ' +
+      'data-href="javascript:alert(1)" data-image="javascript:alert(1)">' +
+      '<a class="note-embed-a" href="javascript:alert(1)">x</a></span>');
+    expect(out).not.toContain('javascript:');
+  });
+
+  it('still refuses every attribute the widening did not name', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" style="position:fixed;inset:0" onclick="alert(1)" ' +
+      'data-anything="x" id="hijack">t</span>');
+    expect(out).not.toContain('style');
+    expect(out).not.toContain('onclick');
+    expect(out).not.toContain('data-anything');
+    expect(out).not.toContain('id=');
+  });
+});
+
 describe('isBlankHtml', () => {
   it('treats an empty editor as blank', () => {
     expect(isBlankHtml('')).toBe(true);
@@ -123,6 +203,14 @@ describe('isBlankHtml', () => {
   it('treats structural-but-textless blocks as not blank', () => {
     expect(isBlankHtml('<hr>')).toBe(false);
     expect(isBlankHtml('<p></p><table><tr><td></td></tr></table>')).toBe(false);
+  });
+
+  // A reference whose source is unnamed carries no favicon and no meta line, so
+  // the <img> test above would not catch it
+  it('treats a bare reference as not blank', () => {
+    expect(isBlankHtml(
+      '<p><span class="note-embed" data-embed="article" data-url="https://x.com/a">' +
+      '<a class="note-embed-a" href="/a/x"></a></span></p>')).toBe(false);
   });
 });
 

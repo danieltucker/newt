@@ -3,9 +3,48 @@ import sanitizeHtml from 'sanitize-html';
 // Comment bodies are rich-editor HTML and — unlike notes — can be read by other
 // users once made public, so every body is sanitized on write. The allowlist is
 // exactly what RichEditor produces: standard blocks, inline formatting, links,
-// its `note-todo` checklist divs and `note-table` tables.
+// its `note-todo` checklist divs, `note-table` tables and `note-embed`
+// references.
 const TODO_CLASS = 'note-todo';
 const TABLE_CLASS = 'note-table';
+
+// ── Reference embeds ──────────────────────────────────────────────────
+// Mirrors client/src/utils/noteEmbed.ts, which is what produces this markup —
+// the two lists are duplicated across the client/server boundary exactly as
+// TODO_CLASS and TABLE_CLASS already are. An embed is a span carrying its whole
+// rendered state in data-*, so these have to survive the sanitizer or a saved
+// post comes back as a bare link.
+//
+// Why this is safe to allow:
+//  - The data-* are inert. Nothing renders them; the <a href> and <img src>
+//    that *do* render stay under the scheme rules below, so no new capability
+//    is reachable. data-href/data-image get the same scheme check anyway, in
+//    allowedSchemesAppliedToAttributes — belt and braces, since the client
+//    re-renders an embed from them.
+//  - The classes are an explicit list, never a wildcard: an author cannot
+//    reach for note-todo, or any other styling in the app, from a span.
+//  - `contenteditable` is deliberately NOT allowed. Rendered posts have no use
+//    for it, and letting an author make part of a reader's page editable is a
+//    pointless oddity. The editor stamps it back on load (hydrateEmbeds).
+//  - `data-comments` is likewise absent: the live comment count is written at
+//    render time and must never be persisted, or it would be served stale.
+//
+// The residual, which the markup cannot fix: an embed's displayed source is
+// author-supplied text that need not match where its link goes. That is the
+// same trust model as link text ("<a href=evil>nytimes.com</a>") and the
+// nofollow/noopener transform below still applies.
+const EMBED_CLASS = 'note-embed';
+
+const EMBED_SPAN_CLASSES = [
+  EMBED_CLASS,
+  'note-embed-body', 'note-embed-title', 'note-embed-meta',
+  'note-embed-kicker', 'note-embed-comments',
+];
+
+const EMBED_DATA_ATTRS = [
+  'data-embed', 'data-variant', 'data-href', 'data-url',
+  'data-title', 'data-source', 'data-image', 'data-meta',
+];
 
 // Two independent caps on a comment body:
 //  - MAX_COMMENT_BODY bounds the raw HTML (markup + text) — a hard safety limit
@@ -45,17 +84,20 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
   allowedAttributes: {
     // rel/target must be allowed here or the transformTags below is silently
     // stripped back off, losing the noopener protection it exists to add
-    a: ['href', 'title', 'rel', 'target'],
+    a: ['href', 'title', 'rel', 'target', 'class'],
     // Same applies to loading/referrerpolicy, which transformTags adds below.
     // Intrinsic width/height let the browser reserve layout space; no style
     // attribute, which would be a way to smuggle CSS into someone else's page.
-    img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'referrerpolicy'],
+    img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'referrerpolicy', 'class'],
     div: ['class', 'data-checked'],
     table: ['class'],
+    span: ['class', ...EMBED_DATA_ATTRS],
   },
   // Only real web links — blocks javascript:, data:, vbscript:
   allowedSchemes: ['http', 'https', 'mailto'],
-  allowedSchemesAppliedToAttributes: ['href', 'src'],
+  // data-href/data-image are inert in a rendered post, but the client rebuilds
+  // an embed from them, so they get the same scheme check as the real thing.
+  allowedSchemesAppliedToAttributes: ['href', 'src', 'data-href', 'data-image'],
   // An image is loaded automatically, without the click a link needs, so its
   // scheme list is stricter than a link's: https only. Plain http would be
   // blocked as mixed content the moment the app is served over TLS anyway, and
@@ -75,10 +117,16 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
     // fetched at all until scrolled to.
     img: sanitizeHtml.simpleTransform('img', { loading: 'lazy', referrerpolicy: 'no-referrer' }),
   },
-  // Keep only the two structural classes the editor relies on
+  // Keep only the structural classes the editor relies on. Every tag that
+  // allows `class` above must appear here — a tag missing from this map keeps
+  // its class attribute unfiltered, which is how an author would reach the
+  // rest of the app's styling.
   allowedClasses: {
     div: [TODO_CLASS],
     table: [TABLE_CLASS],
+    span: EMBED_SPAN_CLASSES,
+    a: ['note-embed-a'],
+    img: ['note-embed-thumb', 'note-embed-cover', 'note-embed-fav'],
   },
   // Drop the contents of these outright rather than leaving bare text behind
   nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'iframe'],
@@ -101,8 +149,9 @@ export function isBlankHtml(html: string): boolean {
     .replace(/&nbsp;/g, ' ')
     .trim();
   if (stripped.length > 0) return false;
-  // Text-free but still meaningful blocks (a checked to-do, a table, a divider)
-  return !/<(hr|table|img)\b/i.test(html);
+  // Text-free but still meaningful blocks (a checked to-do, a table, a divider,
+  // a reference — which can carry no text of its own if its source is unnamed)
+  return !/<(hr|table|img)\b/i.test(html) && !new RegExp(`\\b${EMBED_CLASS}\\b`).test(html);
 }
 
 // Normalises an article URL so the same piece read from a feed, a saved reading

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { optionalAuth, AuthRequest } from '../middleware/auth';
 import { PUBLIC_USER_SELECT, toPublicUser, friendIdsOf } from '../lib/friends';
+import { wallDirection, isWalledOff } from '../lib/blocks';
 import { blogFeedUrlFor } from '../lib/blogFeed';
 import logger from '../lib/logger';
 
@@ -74,6 +75,27 @@ router.get('/:username', async (req: AuthRequest, res: Response): Promise<void> 
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
 
     const isSelf = req.userId === owner.id;
+
+    // The one place the two sides of a wall are told apart. Whoever raised it
+    // gets a stub profile carrying the Unblock button — they chose this and
+    // need a way back. Whoever was blocked gets a plain 404, identical to a
+    // username that was never registered.
+    const wall = await wallDirection(req.userId, owner.id);
+    if (wall === 'they-blocked-you') { res.status(404).json({ error: 'Profile not found' }); return; }
+    if (wall === 'you-blocked-them') {
+      res.json({
+        ...toPublicUser(owner),
+        createdAt: owner.createdAt,
+        commentCount: 0,
+        postCount: 0,
+        isSelf: false,
+        relation: 'none' as const,
+        blocked: true,
+        blogFeedUrl: '',
+      });
+      return;
+    }
+
     const canSeeFriends = await canSeeFriendsOf(owner.id, req.userId);
     const [commentCount, postCount, relation] = await Promise.all([
       prisma.comment.count({ where: profileCommentWhere(owner.id, canSeeFriends) }),
@@ -88,6 +110,7 @@ router.get('/:username', async (req: AuthRequest, res: Response): Promise<void> 
       postCount,
       isSelf,
       relation,
+      blocked: false,
       blogFeedUrl: blogFeedUrlFor(owner.username),
     });
   } catch (err) {
@@ -102,6 +125,8 @@ router.get('/:username/comments', async (req: AuthRequest, res: Response): Promi
   try {
     const owner = await findOwner(req.params.username);
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
+
+    if (await isWalledOff(req.userId, owner.id)) { res.json({ comments: [], nextCursor: null }); return; }
 
     const canSeeFriends = await canSeeFriendsOf(owner.id, req.userId);
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
@@ -137,6 +162,8 @@ router.get('/:username/activity', async (req: AuthRequest, res: Response): Promi
   try {
     const owner = await findOwner(req.params.username);
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
+
+    if (await isWalledOff(req.userId, owner.id)) { res.json({ items: [] }); return; }
 
     const isSelf = req.userId === owner.id;
     const canSeeFriends = await canSeeFriendsOf(owner.id, req.userId);
@@ -182,6 +209,8 @@ router.get('/:username/articles', async (req: AuthRequest, res: Response): Promi
   try {
     const owner = await findOwner(req.params.username);
     if (!owner) { res.status(404).json({ error: 'Profile not found' }); return; }
+
+    if (await isWalledOff(req.userId, owner.id)) { res.json({ articles: [] }); return; }
 
     const canSeeFriends = await canSeeFriendsOf(owner.id, req.userId);
     const where = profileCommentWhere(owner.id, canSeeFriends);

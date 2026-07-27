@@ -3,17 +3,24 @@ import prisma from '../lib/prisma';
 import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
 import { syncBookmarkBadges } from '../lib/unread';
+import {
+  FEED_SELECT, withFeedUrls, folderFeedUrls,
+  MAX_FEEDS_PER_FOLDER, MAX_FEED_URL, MAX_FEED_NAME,
+} from '../lib/folderFeeds';
 import logger from '../lib/logger';
 
 const router = Router();
 router.use(requireAuth);
 
+const FEEDS_INCLUDE = { feeds: { orderBy: { position: 'asc' }, select: FEED_SELECT } } as const;
+
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const folders = await prisma.folder.findMany({
     where: { userId: req.userId! },
     orderBy: { position: 'asc' },
+    include: FEEDS_INCLUDE,
   });
-  res.json(folders);
+  res.json(folders.map(withFeedUrls));
 });
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -23,8 +30,9 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const count = await prisma.folder.count({ where: { userId: req.userId! } });
   const folder = await prisma.folder.create({
     data: { userId: req.userId!, name, color, position: count },
+    include: FEEDS_INCLUDE,
   });
-  res.status(201).json(folder);
+  res.status(201).json(withFeedUrls(folder));
 });
 
 router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -39,15 +47,13 @@ router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> =>
 });
 
 router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { name, color, feedUrls, backgroundImage } = req.body;
+  // Feeds are edited through the /feeds endpoints below, not as part of the
+  // folder — they are rows with their own identity now, not an array field.
+  const { name, color, backgroundImage } = req.body;
   try {
     const data: Record<string, unknown> = {};
     if (name) data.name = name;
     if (color) data.color = color;
-    if (Array.isArray(feedUrls)) {
-      if (feedUrls.length > 20) { res.status(400).json({ error: 'Maximum 20 feed URLs per folder' }); return; }
-      data.feedUrls = feedUrls.filter((u: unknown) => typeof u === 'string' && (u as string).length <= 2048);
-    }
     if ('backgroundImage' in req.body) data.backgroundImage = backgroundImage || null;
 
     const result = await prisma.folder.updateMany({
@@ -55,14 +61,6 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       data,
     });
     if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
-
-    // If feeds were updated, reset the check timer so next article load refreshes
-    if (Array.isArray(feedUrls)) {
-      await prisma.folder.updateMany({
-        where: { id: req.params.id, userId: req.userId! },
-        data: { feedLastCheckedAt: null },
-      });
-    }
 
     res.json({ ok: true });
   } catch {
@@ -78,6 +76,138 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
   res.json({ ok: true });
 });
 
+// ── Feeds within a folder ────────────────────────────────────────────────────
+
+// Feeds are fetched server-side, so a URL that isn't plain http(s) has no
+// meaning here beyond being a way to point the fetcher somewhere odd.
+function normalizeFeedUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const url = raw.trim();
+  if (!url || url.length > MAX_FEED_URL) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+  } catch { return null; }
+}
+
+// Prisma's unique-constraint code. The @@unique([folderId, url]) index is the
+// real guard against a folder listing a feed twice; the explicit lookups below
+// exist to give a readable message, and this catches the race between them.
+const P2002 = 'P2002';
+function isDuplicate(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === P2002;
+}
+
+router.post('/:id/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const url = normalizeFeedUrl(body.url);
+  if (!url) { res.status(400).json({ error: 'A valid http(s) feed URL is required' }); return; }
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, MAX_FEED_NAME) : '';
+
+  try {
+    const folder = await prisma.folder.findFirst({
+      where: { id: req.params.id, userId: req.userId! },
+      select: { id: true },
+    });
+    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const count = await prisma.folderFeed.count({ where: { folderId: folder.id } });
+    if (count >= MAX_FEEDS_PER_FOLDER) {
+      res.status(400).json({ error: `Maximum ${MAX_FEEDS_PER_FOLDER} feeds per folder` });
+      return;
+    }
+
+    const feed = await prisma.folderFeed.create({
+      data: { userId: req.userId!, folderId: folder.id, url, name, position: count },
+      select: FEED_SELECT,
+    });
+    // The folder's feeds changed, so make the next article load refetch.
+    await prisma.folder.update({ where: { id: folder.id }, data: { feedLastCheckedAt: null } });
+    res.status(201).json(feed);
+  } catch (err) {
+    if (isDuplicate(err)) { res.status(409).json({ error: 'That feed is already in this folder' }); return; }
+    logger.error(err, 'Add folder feed error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Rename a feed, re-point it at a different URL, or move it to another folder.
+// The row survives all three, which is the reason it exists: a feed that moves
+// or changes address is still the same subscription, and keeps its name.
+router.patch('/feeds/:feedId', async (req: AuthRequest, res: Response): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  try {
+    const existing = await prisma.folderFeed.findFirst({
+      where: { id: req.params.feedId, userId: req.userId! },
+      select: { id: true, folderId: true, url: true },
+    });
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const data: Record<string, unknown> = {};
+
+    if ('name' in body) {
+      if (typeof body.name !== 'string') { res.status(400).json({ error: 'name must be a string' }); return; }
+      data.name = body.name.trim().slice(0, MAX_FEED_NAME);
+    }
+
+    if ('url' in body) {
+      const url = normalizeFeedUrl(body.url);
+      if (!url) { res.status(400).json({ error: 'A valid http(s) feed URL is required' }); return; }
+      data.url = url;
+    }
+
+    if ('folderId' in body) {
+      if (typeof body.folderId !== 'string') { res.status(400).json({ error: 'folderId must be a string' }); return; }
+      const target = await prisma.folder.findFirst({
+        where: { id: body.folderId, userId: req.userId! },
+        select: { id: true },
+      });
+      if (!target) { res.status(404).json({ error: 'Target folder not found' }); return; }
+      if (target.id !== existing.folderId) {
+        const count = await prisma.folderFeed.count({ where: { folderId: target.id } });
+        if (count >= MAX_FEEDS_PER_FOLDER) {
+          res.status(400).json({ error: `Maximum ${MAX_FEEDS_PER_FOLDER} feeds per folder` });
+          return;
+        }
+        // Land it at the end of the target folder's list.
+        data.folderId = target.id;
+        data.position = count;
+      }
+    }
+
+    const folderId = (data.folderId as string) ?? existing.folderId;
+    const feed = await prisma.folderFeed.update({
+      where: { id: existing.id },
+      data,
+      select: FEED_SELECT,
+    });
+
+    // Both folders need to re-check: one lost a feed, one gained it. Deduped so
+    // a rename (where they're the same folder) doesn't list it twice.
+    const touched = [...new Set([existing.folderId, folderId])];
+    await prisma.folder.updateMany({ where: { id: { in: touched } }, data: { feedLastCheckedAt: null } });
+
+    res.json({ ...feed, folderId });
+  } catch (err) {
+    if (isDuplicate(err)) { res.status(409).json({ error: 'That feed is already in that folder' }); return; }
+    logger.error(err, 'Update folder feed error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/feeds/:feedId', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await prisma.folderFeed.deleteMany({
+      where: { id: req.params.feedId, userId: req.userId! },
+    });
+    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, 'Delete folder feed error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Clears the unread badges on every bookmark in the folder. Because the badge
 // now derives from read-state, clearing it durably means marking the folder's
 // feed items read too — which also keeps the RSS reader in step, so "mark read"
@@ -86,8 +216,9 @@ router.post('/:id/mark-read', async (req: AuthRequest, res: Response): Promise<v
   const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
 
-  if (folder.feedUrls.length > 0) {
-    const feeds = await ensureFeeds(folder.feedUrls);
+  const markUrls = await folderFeedUrls(req.params.id);
+  if (markUrls.length > 0) {
+    const feeds = await ensureFeeds(markUrls);
     const items = await prisma.feedItem.findMany({
       where: {
         feedId: { in: feeds.map(f => f.id) },
@@ -115,15 +246,15 @@ router.post('/:id/mark-read', async (req: AuthRequest, res: Response): Promise<v
 // Admin-only: force-refreshing every feed fans one action out into many
 // outbound requests, so it stays behind requireAdmin to avoid abuse/amplification.
 router.post('/refresh-all', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const folders = await prisma.folder.findMany({
-    where: { userId: req.userId!, NOT: { feedUrls: { isEmpty: true } } },
-    select: { feedUrls: true },
+  const rows = await prisma.folderFeed.findMany({
+    where: { userId: req.userId! },
+    select: { url: true },
   });
-  if (folders.length === 0) {
+  if (rows.length === 0) {
     res.json({ refreshed: 0 });
     return;
   }
-  const feeds = await ensureFeeds(folders.flatMap(f => f.feedUrls));
+  const feeds = await ensureFeeds(rows.map(r => r.url));
   // Force refresh regardless of staleness — this is an explicit user action.
   // Still claim-protected + concurrency-limited inside refreshStaleFeeds.
   await refreshStaleFeeds(feeds, { force: true });
@@ -140,12 +271,13 @@ router.get('/:id/articles', async (req: AuthRequest, res: Response): Promise<voi
     const folder = await prisma.folder.findFirst({ where: { id, userId: req.userId! } });
     if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
 
-    if (folder.feedUrls.length === 0) {
+    const urls = await folderFeedUrls(id);
+    if (urls.length === 0) {
       res.json({ articles: [], total: 0, hasMore: false });
       return;
     }
 
-    const feeds = await ensureFeeds(folder.feedUrls);
+    const feeds = await ensureFeeds(urls);
     const neverFetched = feeds.some(f => !f.lastCheckedAt);
     if (neverFetched) {
       // First load of at least one feed — wait so the user doesn't see an empty list
@@ -211,9 +343,10 @@ router.post('/:id/articles/read-all', async (req: AuthRequest, res: Response): P
   try {
     const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
     if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-    if (folder.feedUrls.length === 0) { res.json({ itemIds: [] }); return; }
+    const urls = await folderFeedUrls(req.params.id);
+    if (urls.length === 0) { res.json({ itemIds: [] }); return; }
 
-    const feeds = await ensureFeeds(folder.feedUrls);
+    const feeds = await ensureFeeds(urls);
     const items = await prisma.feedItem.findMany({
       where: {
         feedId: { in: feeds.map(f => f.id) },

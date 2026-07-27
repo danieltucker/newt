@@ -61,9 +61,16 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { archived, title, tag, notes } = req.body;
+  const { inLibrary, title, tag, notes } = req.body;
   const data: Record<string, unknown> = {};
-  if (typeof archived === 'boolean') data.archived = archived;
+  if (typeof inLibrary === 'boolean') {
+    data.inLibrary = inLibrary;
+    // Pulling an article back to the reading list takes it off its shelf too.
+    // "On a shelf but not in the Library" is a state nothing can render, so it
+    // is better not to be able to reach it. An explicit folderId in the same
+    // request still wins — see below.
+    if (!inLibrary) data.folderId = null;
+  }
   if (typeof title === 'string') {
     if (title.length > 500) { res.status(400).json({ error: 'title must be ≤500 characters' }); return; }
     data.title = title;
@@ -73,6 +80,28 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (notes.length > 50000) { res.status(400).json({ error: 'notes must be ≤50,000 characters' }); return; }
     data.notes = notes;
   }
+  // null is a meaningful value here (move to Unsorted), so this tests for the
+  // key's presence rather than truthiness.
+  if ('folderId' in req.body) {
+    const { folderId } = req.body;
+    if (folderId === null) {
+      data.folderId = null;
+    } else if (typeof folderId === 'string') {
+      // Scoped to the caller: without this you could file an article onto
+      // somebody else's shelf by guessing an id.
+      const target = await prisma.readingFolder.findFirst({
+        where: { id: folderId, userId: req.userId! },
+        select: { id: true },
+      });
+      if (!target) { res.status(404).json({ error: 'Folder not found' }); return; }
+      data.folderId = target.id;
+      // Filing something implies it belongs in the Library.
+      data.inLibrary = true;
+    } else {
+      res.status(400).json({ error: 'folderId must be a string or null' }); return;
+    }
+  }
+
   if (Object.keys(data).length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
   const existing = await prisma.readingListItem.findFirst({
     where: { id: req.params.id, userId: req.userId! },

@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { isSafeUrl } from '../lib/isSafeUrl';
 import { canonicalFeedKey } from '../lib/feedUtils';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
+import { addFolderFeed } from '../lib/folderFeeds';
 import { feedUnreadCount } from '../lib/unread';
 import logger from '../lib/logger';
 
@@ -172,14 +173,14 @@ async function autoAddFeed(userId: string, bookmarkId: string, folderId: string,
   // Remember it on the bookmark (drives the unread badge)
   await prisma.bookmark.updateMany({ where: { id: bookmarkId, userId }, data: { feedUrl } });
 
-  const folder = await prisma.folder.findFirst({ where: { id: folderId, userId } });
-  if (!folder || folder.feedUrls.length >= 20) return;
+  const folder = await prisma.folder.findFirst({ where: { id: folderId, userId }, select: { id: true } });
+  if (!folder) return;
+  // Compare canonically so a folder already subscribed via a different spelling
+  // of the same feed doesn't pick up a duplicate.
   const key = canonicalFeedKey(feedUrl);
-  if (folder.feedUrls.some(u => canonicalFeedKey(u) === key)) return;
-  await prisma.folder.updateMany({
-    where: { id: folderId, userId },
-    data: { feedUrls: [...folder.feedUrls, feedUrl] },
-  });
+  const existing = await prisma.folderFeed.findMany({ where: { folderId }, select: { url: true } });
+  if (existing.some(f => canonicalFeedKey(f.url) === key)) return;
+  await addFolderFeed(userId, folderId, feedUrl);
 }
 
 router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> => {

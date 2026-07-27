@@ -45,6 +45,10 @@ describe('isDestructive', () => {
       ADMIN_ACTIONS.userUnban,
       ADMIN_ACTIONS.userPromote,
       ADMIN_ACTIONS.userDemote,
+      // Handling a report changes its status, not any content — whatever the
+      // moderator then does to the content is its own audited action.
+      ADMIN_ACTIONS.reportResolve,
+      ADMIN_ACTIONS.reportDismiss,
     ]) {
       expect(isDestructive(action)).toBe(false);
     }

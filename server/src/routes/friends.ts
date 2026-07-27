@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { PUBLIC_USER_SELECT, toPublicUser, friendIdsOf } from '../lib/friends';
+import { blockWallOf, wallDirection, notWalledWhere } from '../lib/blocks';
 import { perUserLimiter } from '../lib/rateLimit';
 import logger from '../lib/logger';
 
@@ -62,11 +63,16 @@ router.get('/search', searchLimiter, async (req: AuthRequest, res: Response): Pr
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   if (q.length < 2) { res.json({ results: [] }); return; }
   try {
+    // Anyone behind a block wall is simply not in the directory — for both
+    // sides. Searching is where an unwanted approach starts, so it is the first
+    // place the wall has to hold.
+    const wall = await blockWallOf(req.userId!);
     const users = await prisma.user.findMany({
       where: {
         username: { contains: q, mode: 'insensitive' },
         bannedAt: null,
         NOT: { id: req.userId! },
+        ...notWalledWhere(wall, 'id'),
       },
       select: PUBLIC_USER_SELECT,
       take: 10,
@@ -112,6 +118,17 @@ router.post('/requests', requestLimiter, async (req: AuthRequest, res: Response)
     });
     if (!target) { res.status(404).json({ error: 'No such user' }); return; }
     if (target.id === req.userId!) { res.status(400).json({ error: "You can't friend yourself" }); return; }
+
+    // A wall in either direction stops the request, but the two answers differ
+    // on purpose. Someone who blocked this person is told so, because they can
+    // undo it. Someone who *was* blocked gets the same 404 a made-up username
+    // returns — telling them would hand back exactly the signal that blocking
+    // exists to withhold, and it is the signal that provokes a second account.
+    const wall = await wallDirection(req.userId!, target.id);
+    if (wall === 'you-blocked-them') {
+      res.status(409).json({ error: 'You’ve blocked this person. Unblock them first.' }); return;
+    }
+    if (wall === 'they-blocked-you') { res.status(404).json({ error: 'No such user' }); return; }
 
     const existing = await prisma.friendship.findFirst({
       where: {

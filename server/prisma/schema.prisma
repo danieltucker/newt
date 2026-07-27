@@ -26,6 +26,8 @@ model User {
   feedToken     String?           @unique
   createdAt     DateTime          @default(now())
   folders       Folder[]
+  readingFolders ReadingFolder[]
+  folderFeeds   FolderFeed[]
   blogPosts     BlogPost[]
   bookmarks     Bookmark[]
   readingList   ReadingListItem[]
@@ -39,6 +41,94 @@ model User {
   notificationsActed   Notification[] @relation("NotificationActor")
   images               Image[]
   adminActions         AdminAction[] @relation("AdminActionActor")
+  blocksMade           Block[]       @relation("BlockBlocker")
+  blocksReceived       Block[]       @relation("BlockBlocked")
+  reportsFiled         Report[]      @relation("ReportReporter")
+  reportsAgainst       Report[]      @relation("ReportSubject")
+  reportsResolved      Report[]      @relation("ReportResolver")
+}
+
+// One person's decision to have nothing more to do with another. The row is
+// directed — it records who did the blocking, which is what the Blocked list and
+// the unblock button need — but it is *enforced* symmetrically: every gate reads
+// it from both sides via blockWallOf() in lib/blocks.ts, so a single row makes
+// the two users mutually invisible.
+//
+// Blocking is not a weaker friendship. Creating one deletes any Friendship row
+// between the pair in the same transaction, so the two states can never disagree
+// and friendIdsOf() needs no block-awareness of its own.
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("BlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+// A user-filed report about a comment, a post, or a person, addressed to the
+// moderators. Three properties follow from the fact that a report outlives what
+// it describes — the usual outcome of a valid report is that the content is
+// deleted:
+//
+//  1. `targetId` has no foreign key, and `snapshot` carries the content as it
+//     read when reported. A moderator must be able to judge a report after the
+//     author has edited or deleted the evidence, so the report keeps its own
+//     copy rather than joining to a live row.
+//
+//  2. Both user columns are nullable with denormalised usernames beside them.
+//     Deleting an account must not erase the reports filed against it, nor the
+//     record of who raised them.
+//
+//  3. `status` moves open → resolved | dismissed and never back. Rows are never
+//     deleted; a handled report stays readable, which is the only way to see
+//     that the same person has been reported five times before.
+model Report {
+  id               String    @id @default(cuid())
+
+  reporterId       String?
+  reporter         User?     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterUsername String
+
+  // Who the report is *about* — the author of the reported content, or the
+  // reported user themselves. Denormalised so a repeat-offender count survives
+  // account deletion.
+  subjectId        String?
+  subject          User?     @relation("ReportSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+  subjectUsername  String
+
+  targetType       String    // 'comment' | 'blogPost' | 'user'
+  targetId         String
+  targetLabel      String    // human-readable identity, captured at report time
+  targetUrl        String?   // where the content lives, for the moderator to open
+
+  // The reported content as it stood when reported: sanitized HTML for a comment
+  // or post, empty for a user report.
+  snapshot         String    @default("")
+
+  // One of REPORT_CATEGORIES in lib/reports.ts
+  category         String
+  note             String    @default("")   // the reporter's own words
+
+  status           String    @default("open")  // 'open' | 'resolved' | 'dismissed'
+  resolvedById     String?
+  resolvedBy       User?     @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedByUsername String?
+  resolutionNote   String?
+  resolvedAt       DateTime?
+
+  createdAt        DateTime  @default(now())
+
+  // One open report per person per thing — re-reporting the same comment is a
+  // no-op rather than a way to flood the queue.
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt])
+  @@index([subjectId, createdAt])
+  @@index([targetType, targetId])
 }
 
 // A friend relationship, created as a directed request and confirmed when the
@@ -66,13 +156,18 @@ model Notification {
   id           String   @id @default(cuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String   // 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment'
+  type         String   // 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'report_new'
   actorId      String?
   actor        User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
   articleKey   String?
   articleUrl   String?
   articleTitle String?
   commentId    String?
+  // Set on 'report_new' only: which report in the moderation queue this alert
+  // is about, so the bell can open it directly. A plain string for the same
+  // reason commentId is — a notification must not hold a row hostage, and a
+  // report that is somehow gone should leave a dead link, not a failed delete.
+  reportId     String?
   read         Boolean  @default(false)
   createdAt    DateTime @default(now())
 
@@ -98,14 +193,42 @@ model Folder {
   name              String
   color             String
   position          Int
-  feedUrls          String[]      @default([])
   feedLastCheckedAt DateTime?
   backgroundImage   String?
   bookmarks         Bookmark[]
+  feeds             FolderFeed[]
   dismissedFeedItems DismissedFeedItem[]
   createdAt         DateTime      @default(now())
 
   @@index([userId])
+}
+
+// One feed subscribed to inside a folder. This replaced a bare
+// Folder.feedUrls String[]: a row of its own is what lets a subscription carry
+// a user-set name, be re-pointed at a different URL, and move between folders
+// while staying the same subscription. The Feed itself (and its items) is still
+// shared across every user — this is only the per-user reference to it.
+model FolderFeed {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  // Denormalised from the folder so ownership checks don't need a join, the
+  // same way Bookmark carries it.
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String
+  // User-set display name. "" means "derive it" — the matching bookmark's name,
+  // then the feed's own title, then the hostname.
+  name      String   @default("")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  // A folder subscribes to a given URL once. Note this is the literal URL, not
+  // canonicalFeedKey: two spellings of one feed dedupe at the Feed level, and
+  // blocking them here would reject a legitimate re-point to a moved URL.
+  @@unique([folderId, url])
+  @@index([userId])
+  @@index([folderId])
 }
 
 // Feeds and their items are shared across all users — one fetch per feed
@@ -317,6 +440,26 @@ model Image {
   @@index([userId, createdAt])
 }
 
+// A shelf in one person's Library. Deliberately parallel to Folder (the
+// bookmark one) rather than shared with it: the two organise different objects
+// and a bookmark folder carries feed subscriptions and a background image that
+// mean nothing to a saved article.
+//
+// Library folders are self-only. Nothing here is exposed on the public profile,
+// so there is no visibility column — the absence of one is the guarantee.
+model ReadingFolder {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String
+  position  Int
+  items     ReadingListItem[]
+  createdAt DateTime          @default(now())
+
+  @@index([userId])
+}
+
 model ReadingListItem {
   id       String   @id @default(cuid())
   userId   String
@@ -328,10 +471,18 @@ model ReadingListItem {
   tag      String
   notes    String   @default("")
   imageUrl String   @default("")
-  archived Boolean  @default(false)
+  // Moved out of the active reading list and into the Library. Was named
+  // `archived` until the Library replaced the archive drawer.
+  inLibrary Boolean @default(false)
+  // Which Library shelf this sits on. Null is a real state, not a missing
+  // value: it means Unsorted. Deleting a folder nulls this rather than
+  // cascading, so losing a shelf never loses the articles on it.
+  folderId String?
+  folder   ReadingFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   savedAt  DateTime @default(now())
 
   @@index([userId])
+  @@index([folderId])
 }
 
 // An append-only record of what an admin did to somebody else's account or

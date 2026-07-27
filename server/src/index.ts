@@ -9,6 +9,7 @@ import authRoutes from './routes/auth';
 import folderRoutes from './routes/folders';
 import bookmarkRoutes from './routes/bookmarks';
 import readingListRoutes from './routes/readingList';
+import readingFolderRoutes from './routes/readingFolders';
 import utilRoutes from './routes/util';
 import settingsRoutes from './routes/settings';
 import totpRoutes from './routes/totp';
@@ -22,6 +23,8 @@ import imageRoutes from './routes/images';
 import friendRoutes from './routes/friends';
 import profileRoutes from './routes/profiles';
 import notificationRoutes from './routes/notifications';
+import blockRoutes from './routes/blocks';
+import reportRoutes from './routes/reports';
 import { startFeedScheduler, stopFeedScheduler } from './lib/feedScheduler';
 
 const app = express();
@@ -67,6 +70,7 @@ app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/folders', apiLimiter, folderRoutes);
 app.use('/api/v1/bookmarks', apiLimiter, bookmarkRoutes);
 app.use('/api/v1/reading-list', apiLimiter, readingListRoutes);
+app.use('/api/v1/reading-folders', apiLimiter, readingFolderRoutes);
 app.use('/api/v1/util', apiLimiter, utilRoutes);
 app.use('/api/v1/settings', apiLimiter, settingsRoutes);
 app.use('/api/v1/totp', apiLimiter, totpRoutes);
@@ -80,6 +84,8 @@ app.use('/api/v1/images', apiLimiter, imageRoutes);
 app.use('/api/v1/friends', apiLimiter, friendRoutes);
 app.use('/api/v1/profiles', apiLimiter, profileRoutes);
 app.use('/api/v1/notifications', apiLimiter, notificationRoutes);
+app.use('/api/v1/blocks', apiLimiter, blockRoutes);
+app.use('/api/v1/reports', apiLimiter, reportRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
