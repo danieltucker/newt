@@ -2,11 +2,16 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiFetch } from '../services/api';
 import { FeedArticle, CommentPrefs } from '../types';
 import { faviconUrl } from '../utils/color';
+import { blogAuthorOfUrl } from '../utils/blogUrl';
+import { profilePathFor } from '../utils/profileUrl';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FilterDropdown from './FilterDropdown';
+import TagChip from './TagChip';
+import FavoritesControl from './FavoritesControl';
+import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
 import styles from './FolderArticles.module.css';
 
 export type RssLayout = 'list' | 'cards' | 'magazine';
@@ -38,6 +43,12 @@ interface Props {
   // Clears the folder's site badges once its articles have been marked read
   onFolderMarkedRead?: (folderId: string) => void;
   onViewProfile?: (username: string) => void;
+  /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
+  favoriteTags?: string[];
+  /** Star/unstar one tag, from a tag chip. */
+  onToggleFavoriteTag?: (tag: string) => void;
+  /** Replace the whole list, from the manager behind the Favorites chip. */
+  onSetFavoriteTags?: (tags: string[]) => void;
 }
 
 function relativeDate(s: string | null): string {
@@ -67,6 +78,13 @@ function domainOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
+// The site's front page, for the byline link on an external article: the story
+// itself is one click away on the title, so the source name should go where its
+// name points - the publication, not the article again.
+function siteHomeOf(url: string): string {
+  try { return new URL(url).origin; } catch { return ''; }
+}
+
 // ── Magazine layout variants ──────────────────────────────────────────
 type MagVariant = 'feature' | 'standard' | 'text' | 'brief';
 
@@ -85,7 +103,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   return articles.map(a => {
     const readTime = a.readTime ?? 0;
     const snippetLen = a.snippet?.length ?? 0;
-    // The snippet is essentially the whole piece — run it in full. The server
+    // The snippet is essentially the whole piece - run it in full. The server
     // truncates long content to ~200 chars ending in "…", so a trailing
     // ellipsis means there's more to read and it is NOT a brief.
     const complete = snippetLen > 0 && !/(…|\.\.\.)\s*$/.test(a.snippet!);
@@ -107,7 +125,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile }: Props) {
+export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const seededFolders = useRef<Set<string>>(new Set());
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
@@ -117,6 +135,23 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const [error, setError]               = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  // Tokenize the favorites once per change, not once per card.
+  const favorites = useMemo(() => prepareFavorites(favoriteTags), [favoriteTags]);
+
+  // Which favorites each article hits, keyed by id. Runs over the loaded page
+  // only - this decorates what's on screen and is not a way to rank the feed;
+  // articles on later pages haven't been fetched. See utils/favoriteTags.
+  const favHits = useMemo(() => {
+    const m = new Map<string, string[]>();
+    if (favorites.length === 0) return m;
+    for (const a of articles) {
+      const hits = favoritesFor(a.categories, favorites);
+      if (hits.length > 0) m.set(a.id, hits);
+    }
+    return m;
+  }, [articles, favorites]);
 
   const allCategories = useMemo(
     () => Array.from(new Set(articles.flatMap(a => a.categories))).sort(),
@@ -130,8 +165,15 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
 
   const displayed = articles.filter(a =>
     (!activeCategory || a.categories.includes(activeCategory)) &&
-    (!activeSource || a.source === activeSource)
+    (!activeSource || a.source === activeSource) &&
+    (!favoritesOnly || favHits.has(a.id))
   );
+
+  // The filter has to go when its last match does, or you're left staring at an
+  // empty feed with no obvious way out.
+  useEffect(() => {
+    if (favoritesOnly && favorites.length === 0) setFavoritesOnly(false);
+  }, [favoritesOnly, favorites.length]);
 
   const load = useCallback(async (offset = 0, existing: FeedArticle[] = []) => {
     offset === 0 ? setLoading(true) : setLoadingMore(true);
@@ -143,7 +185,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
       const merged = offset === 0 ? data.articles : [...existing, ...data.articles];
       setArticles(merged);
       setTotal(data.total);
-      // Union rather than replace — ids marked read locally this session may not
+      // Union rather than replace - ids marked read locally this session may not
       // have reached the server yet
       const serverRead = data.articles.filter(a => a.read).map(a => a.id);
       if (serverRead.length > 0) setReadIds(prev => new Set([...prev, ...serverRead]));
@@ -171,7 +213,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const seenRef    = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Set<string>>(new Set());
   const cardEls    = useRef<Map<string, HTMLElement>>(new Map());
-  // Mirrors readIds — the observer callback can't see fresh state through its closure
+  // Mirrors readIds - the observer callback can't see fresh state through its closure
   const readIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { readIdsRef.current = new Set(readIds); }, [readIds]);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,7 +233,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
       const data: { bookmarks: { id: string; unreadCount: number }[] } = await r.json();
       if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
     } catch {
-      // Read state is disposable — a failed flush just means it re-marks later
+      // Read state is disposable - a failed flush just means it re-marks later
     }
   }, [folderId, onUnreadCountsChange]);
 
@@ -207,7 +249,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         const id = (entry.target as HTMLElement).dataset.articleId;
         if (!id) continue;
         if (entry.isIntersecting) { seenRef.current.add(id); continue; }
-        // Only an exit past the top counts — leaving via the bottom means the
+        // Only an exit past the top counts - leaving via the bottom means the
         // card scrolled back down out of view, which isn't "read"
         const rootTop = entry.rootBounds?.top ?? 0;
         if (seenRef.current.has(id) && !readIdsRef.current.has(id) &&
@@ -257,7 +299,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     }
   }, []);
 
-  // Infinite scroll — when the sentinel below the list enters the viewport,
+  // Infinite scroll - when the sentinel below the list enters the viewport,
   // fetch the next page (the button remains as a manual fallback)
   const hasMore = articles.length < total;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -271,7 +313,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     return () => obs.disconnect();
   }, [hasMore, loading, loadingMore, articles, load]);
 
-  // Background load for search seeding — fires at most once per folder per session
+  // Background load for search seeding - fires at most once per folder per session
   useEffect(() => {
     if (!onArticlesLoaded || seededFolders.current.has(folderId)) return;
     seededFolders.current.add(folderId);
@@ -292,7 +334,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
 
   // ── Mark every article in this folder read ────────────────────────────
   // Covers the pages that haven't been scrolled to yet, which is the whole
-  // point — the server walks the folder's feeds rather than the loaded list.
+  // point - the server walks the folder's feeds rather than the loaded list.
   const [markingAll, setMarkingAll] = useState(false);
   const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id));
 
@@ -313,7 +355,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         onFolderMarkedRead?.(folderId);
       }
     } catch {
-      // Read state is disposable — scrolling will re-mark on the next pass
+      // Read state is disposable - scrolling will re-mark on the next pass
     } finally {
       setMarkingAll(false);
     }
@@ -351,7 +393,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   if (articles.length === 0) return (
     <div className={styles.wrap}>
       <div className={styles.sectionLabel}>Feed Articles</div>
-      <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet — feeds refresh every 30 minutes.</div>
+      <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
     </div>
   );
 
@@ -386,8 +428,23 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         </div>
       </div>
 
-      {(allCategories.length > 1 || allSources.length > 1) && (
+      {(allCategories.length > 1 || allSources.length > 1 || favHits.size > 0) && (
         <div className={styles.chips}>
+          {/* Shown whenever there's a list to manage, not only when something
+              matches - otherwise a favorite that has stopped matching becomes
+              unreachable from the page it's affecting. The filter button
+              disables itself at zero. */}
+          {onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) && (
+            <FavoritesControl
+              favorites={favoriteTags}
+              onChange={onSetFavoriteTags ?? (() => {})}
+              count={favHits.size}
+              filterOn={favoritesOnly}
+              onToggleFilter={() => setFavoritesOnly(v => !v)}
+              chipClassName={`${styles.chip} ${styles.favChip}`}
+              chipActiveClassName={styles.favChipActive}
+            />
+          )}
           {allCategories.length > 1 && (
             <button
               className={`${styles.chip} ${activeCategory === null ? styles.chipActive : ''}`}
@@ -441,6 +498,10 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
             onDismiss={() => handleDismiss(a.id)}
             commentCount={commentCounts[a.link] ?? 0}
             onOpenReader={() => setReading(a)}
+            onViewProfile={onViewProfile}
+            favHits={favHits.get(a.id)}
+            favoriteTags={favoriteTags}
+            onToggleFavoriteTag={onToggleFavoriteTag}
           />
         ))}
       </div>
@@ -486,18 +547,27 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   );
 }
 
-function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, commentCount, onOpenReader }: {
+function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   cardRef?: (el: HTMLDivElement | null, id: string) => void;
   onSave: () => void; onDismiss: () => void;
   commentCount: number;
   onOpenReader: () => void;
+  onViewProfile?: (username: string) => void;
+  /** Favorites this article matched, if any - the parent did the matching. */
+  favHits?: string[];
+  favoriteTags?: string[];
+  onToggleFavoriteTag?: (tag: string) => void;
 }) {
+  // A post written on this instance is credited to its author, not to the host
+  // every author here shares - and it needs no favicon, since that would be this
+  // site's own icon on every such card.
+  const blogAuthor = blogAuthorOfUrl(article.link);
   const domain = domainOf(article.link);
   const feedDomain = domainOf(article.feedUrl);
-  // Always derive from the domain (same as SiteTile) — stored bookmark favicon
+  // Always derive from the domain (same as SiteTile) - stored bookmark favicon
   // URLs can go stale when the API path changes.
-  const favicon = domain ? faviconUrl(domain) : feedDomain ? faviconUrl(feedDomain) : '';
+  const favicon = blogAuthor ? '' : domain ? faviconUrl(domain) : feedDomain ? faviconUrl(feedDomain) : '';
 
   const showImage = variant === 'feature' || variant === 'standard';
   // Magazine text variants always run their snippet; elsewhere keep the
@@ -514,6 +584,7 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
     variant === 'text' ? styles.textWrap : '',
     // No cover art → reserve top space so the floating controls push text down
     !hasHero ? styles.noHero : '',
+    favHits && favHits.length > 0 ? styles.favCard : '',
   ].filter(Boolean).join(' ');
 
   return (
@@ -531,9 +602,21 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
         )}
         {article.categories.length > 0 && (
           <div className={styles.cats}>
-            {article.categories.slice(0, 3).map(c => (
-              <span key={c} className={styles.cat}>{c}</span>
-            ))}
+            {article.categories.slice(0, 3).map(c => {
+              const covering = onToggleFavoriteTag ? coveringFavorites(favoriteTags, c) : [];
+              return onToggleFavoriteTag ? (
+                <TagChip
+                  key={c}
+                  tag={c}
+                  starred={covering.length > 0}
+                  coveredBy={covering[0]}
+                  onToggle={onToggleFavoriteTag}
+                  className={styles.cat}
+                />
+              ) : (
+                <span key={c} className={styles.cat}>{c}</span>
+              );
+            })}
           </div>
         )}
         <a href={article.link} target="_blank" rel="noopener noreferrer" className={styles.title}>
@@ -550,7 +633,30 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
         <div className={styles.cardBottom}>
           <div className={styles.meta}>
             {favicon && <img src={favicon} alt="" className={styles.favicon} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-            <span className={styles.domain}>{domain}</span>
+            {/* The byline is a link either way: an @handle opens that person's
+                profile in this app, a hostname opens that site. */}
+            {blogAuthor ? (
+              <a
+                className={styles.handle}
+                href={profilePathFor(blogAuthor)}
+                title={`View @${blogAuthor}’s profile`}
+                onClick={onViewProfile
+                  ? e => { e.preventDefault(); onViewProfile(blogAuthor); }
+                  : undefined}
+              >
+                @{blogAuthor}
+              </a>
+            ) : domain ? (
+              <a
+                className={styles.domain}
+                href={siteHomeOf(article.link) || `https://${domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Visit ${domain}`}
+              >
+                {domain}
+              </a>
+            ) : null}
           </div>
           <div className={styles.cardRight}>
             {isNew && <span className={styles.newDot} role="img" aria-label="Unread" title="Unread" />}
@@ -561,7 +667,7 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
         <div className={styles.commentRow}>
           <CommentBar count={commentCount} onClick={onOpenReader} />
         </div>
-        {/* Floating window-style controls — top-right, over the cover art */}
+        {/* Floating window-style controls - top-right, over the cover art */}
         <div className={styles.cardActions}>
           <button
             className={styles.actionBtn}

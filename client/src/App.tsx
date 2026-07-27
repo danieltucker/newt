@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import AuthPage from './pages/AuthPage';
-import NewTabPage from './pages/NewTabPage';
+import LandingPage from './pages/LandingPage';
+import NewTabPage, { ShellView } from './pages/NewTabPage';
 import ProfilePage from './pages/ProfilePage';
 import PublicArticlePage from './pages/PublicArticlePage';
 import BlogPostPage from './pages/BlogPostPage';
 import BlogEditorPage from './pages/BlogEditorPage';
-import MyBlogPage from './pages/MyBlogPage';
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
+
+// The two routes that render the sign-in form. Everything else a signed-out
+// visitor asks for is either a public page or the landing page.
+const AUTH_PATHS = ['/signin', '/signup'];
 
 export type ThemeSetting = 'dark' | 'light' | 'auto';
 export type ResolvedTheme = 'dark' | 'light';
@@ -30,17 +34,29 @@ export default function App() {
   const { accessToken, username, isAdmin, loading, login, register, logout, verifyTotp } = useAuth();
   const [themeSetting, setThemeSetting] = useState<ThemeSetting>(getInitialSetting);
 
-  // Lightweight client-side routing (no router dep — same pathname approach as
+  // Lightweight client-side routing (no router dep - same pathname approach as
   // the article deep links). `navigate` pushes history and re-renders in place.
+  // `path` stays pathname-only so every parse*Path helper can keep matching on
+  // it whole; the query string is tracked beside it for pages that read one.
   const [path, setPath] = useState(() => window.location.pathname);
+  const [search, setSearch] = useState(() => window.location.search);
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => {
+      setPath(window.location.pathname);
+      setSearch(window.location.search);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const navigate = useCallback((to: string) => {
-    if (to !== window.location.pathname) window.history.pushState({}, '', to);
-    setPath(to);
+    const q = to.indexOf('?');
+    const toPath = q === -1 ? to : to.slice(0, q);
+    const toSearch = q === -1 ? '' : to.slice(q);
+    if (toPath !== window.location.pathname || toSearch !== window.location.search) {
+      window.history.pushState({}, '', to);
+    }
+    setPath(toPath);
+    setSearch(toSearch);
   }, []);
   const viewProfile = useCallback((name: string) => navigate(profilePathFor(name)), [navigate]);
 
@@ -59,66 +75,96 @@ export default function App() {
     return () => mq.removeEventListener('change', handler);
   }, [themeSetting]);
 
+  // Signing in leaves the URL on the auth route. Put it back to the app root so
+  // a reload (or the back button) doesn't land on a sign-in form the visitor
+  // has already been through.
+  useEffect(() => {
+    if (accessToken && username && AUTH_PATHS.includes(path)) navigate('/');
+  }, [accessToken, username, path, navigate]);
+
   if (loading) return null;
 
-  // Blog posts are public — routed ahead of the login wall, and ahead of the
-  // profile route, since /u/<name>/<slug> sits under /u/<name>. (parseProfilePath
-  // only matches a single segment, so the two can't both claim a path, but the
-  // ordering makes the relationship obvious.)
+  // Blog posts are matched ahead of profiles, since /u/<name>/<slug> sits under
+  // /u/<name>. (parseProfilePath only matches a single segment, so the two can't
+  // both claim a path, but the ordering makes the relationship obvious.)
   const blogRef = parseBlogPath(path);
-  if (blogRef) {
-    return (
-      <BlogPostPage
-        username={blogRef.username}
-        slug={blogRef.slug}
-        accessToken={accessToken}
-        navigate={navigate}
-      />
-    );
-  }
+  const profileUsername = blogRef ? null : parseProfilePath(path);
+  // ?tab=<name> deep-links a profile tab. Validated by ProfilePage, which owns
+  // the list of tabs and which of them are self-only.
+  const profileTab = new URLSearchParams(search).get('tab');
 
-  // Profiles are public — routed ahead of the login wall so a shared /u/<name>
-  // link works for logged-out visitors too.
-  const profileUsername = parseProfilePath(path);
-  if (profileUsername) {
-    return (
-      <ProfilePage
-        username={profileUsername}
-        accessToken={accessToken}
-        currentUsername={username}
-        navigate={navigate}
-      />
-    );
-  }
-
-  // Shared thread links (/a/<id>) are public too: a logged-out visitor gets a
-  // read-only reader. Signed-in users fall through to the app shell, which opens
-  // the same reader over their tabs from the same path.
-  const articleUrl = parseArticlePath(path);
-  if (articleUrl && (!accessToken || !username)) {
-    return <PublicArticlePage url={articleUrl} navigate={navigate} />;
-  }
-
+  // Everything public, for a visitor who isn't signed in: a shared /u/<name>
+  // link, a post, or a thread link all open standalone. There is no app shell to
+  // put them in - no settings, no bookmarks, no notes - so these keep the
+  // self-contained layout they were built with.
   if (!accessToken || !username) {
-    return <AuthPage onLogin={login} onRegister={register} onTotpVerify={verifyTotp} />;
+    if (blogRef) {
+      return (
+        <BlogPostPage
+          username={blogRef.username}
+          slug={blogRef.slug}
+          accessToken={accessToken}
+          navigate={navigate}
+        />
+      );
+    }
+    if (profileUsername) {
+      return (
+        <ProfilePage
+          username={profileUsername}
+          accessToken={accessToken}
+          currentUsername={username}
+          navigate={navigate}
+          initialTab={profileTab}
+        />
+      );
+    }
+    const articleUrl = parseArticlePath(path);
+    if (articleUrl) return <PublicArticlePage url={articleUrl} navigate={navigate} />;
+
+    // The sign-in form is now a destination rather than the default: a visitor
+    // who has never been here gets told what this is first.
+    if (AUTH_PATHS.includes(path)) {
+      return (
+        <AuthPage
+          initialTab={path === '/signup' ? 'register' : 'login'}
+          onLogin={login}
+          onRegister={register}
+          onTotpVerify={verifyTotp}
+          navigate={navigate}
+        />
+      );
+    }
+
+    return <LandingPage navigate={navigate} />;
   }
 
-  // Authoring your own blog requires being signed in, so these sit below the
-  // login wall. '/blog/new' is a composer for a post that doesn't exist yet;
+  // Signed in from here down.
+  //
+  // The composer is the one authenticated page that stays standalone: it is a
+  // writing surface, and the shell's notes console and search bar would compete
+  // with it for keystrokes. '/blog/new' composes a post that doesn't exist yet;
   // '/blog/<id>' edits an existing one.
-  if (path === '/blog' || path === '/blog/') {
-    return <MyBlogPage accessToken={accessToken} username={username} navigate={navigate} />;
-  }
   const editId = parseBlogEditPath(path);
   if (editId) {
     return (
       <BlogEditorPage
         postId={editId === 'new' ? null : editId}
         username={username}
+        accessToken={accessToken}
         navigate={navigate}
       />
     );
   }
+
+  // Profiles, posts and the blog manager render *inside* the shell for a
+  // signed-in reader, so the header, search bar, command console and notes stay
+  // available wherever they navigate. Anything else is the new tab itself.
+  const view: ShellView | null =
+    blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
+    : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab }
+    : (path === '/blog' || path === '/blog/') ? { kind: 'myblog' }
+    : null;
 
   return (
     <NewTabPage
@@ -130,6 +176,8 @@ export default function App() {
       onSetTheme={setThemeSetting}
       onLogout={logout}
       onViewProfile={viewProfile}
+      navigate={navigate}
+      view={view}
     />
   );
 }

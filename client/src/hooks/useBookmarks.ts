@@ -49,7 +49,7 @@ export function useBookmarks(accessToken: string | null, folderId: string | null
     await apiPut('/api/v1/bookmarks/reorder', reordered.map((b, i) => ({ id: b.id, position: i })));
   }, []);
 
-  // Persist a new order without assuming it's the active folder — the inline
+  // Persist a new order without assuming it's the active folder - the inline
   // sidebar can reorder any expanded folder. The caller owns the display state.
   const persistBookmarkOrder = useCallback(async (reordered: Bookmark[]) => {
     await apiPut('/api/v1/bookmarks/reorder', reordered.map((b, i) => ({ id: b.id, position: i })));

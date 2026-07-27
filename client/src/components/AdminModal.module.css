@@ -141,7 +141,15 @@
   border-radius: 14px;
   background: var(--surface2);
   border: 1px solid var(--border);
+  /* One card is a <button> (Open reports jumps to the queue); these reset the
+     UA styles so it sits flush with the <div> cards beside it. */
+  font: inherit;
+  text-align: left;
+  color: inherit;
 }
+
+button.statCard { cursor: pointer; transition: border-color 0.12s; }
+button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
 
 .statValue {
   font-family: 'Bricolage Grotesque', sans-serif;
@@ -437,6 +445,395 @@
   text-align: center;
 }
 
+/* ── Reports ──────────────────────────────────────────────────────────────
+   Cards rather than table rows: each report carries a snapshot of the reported
+   content and the reporter's own words, neither of which survives being squeezed
+   into a cell. */
+
+.navBadge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+  background: #FF4500;
+}
+
+.filterRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.filterChip:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.filterChipActive {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+.filterCount {
+  padding: 0 5px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  background: #FF4500;
+}
+
+.reportList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reportCard {
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface2);
+}
+
+.reportHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.reportCategory {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.reportKind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+/* Loud on purpose - a repeat subject is the signal a queue exists to surface. */
+.reportRepeat {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #FF4500;
+  background: color-mix(in oklab, #FF4500 12%, transparent);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+.reportStatus {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+.reportUpheld {
+  color: #FF4500;
+  background: color-mix(in oklab, #FF4500 12%, transparent);
+}
+.reportDismissed {
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.reportWhen {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.reportTarget {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 7px;
+  word-break: break-word;
+}
+
+.reportLink { color: var(--accent); text-decoration: none; }
+.reportLink:hover { text-decoration: underline; }
+
+/* The content as it read when reported. Plain text, quoted - it is evidence,
+   not something to render as markup. */
+.reportSnapshot {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  padding: 8px 11px;
+  border-left: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reportNote {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 9px;
+  word-break: break-word;
+}
+
+.reportNoteLabel {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.reportFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.reportMeta { font-size: 11.5px; color: var(--muted); }
+
+.reportBtns { display: flex; gap: 6px; }
+
+/* Clicking a handle searches for it - the fastest way to see everything else
+   involving that person without leaving the queue. */
+.userLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 650;
+  color: var(--accent);
+  cursor: pointer;
+}
+.userLink:hover { text-decoration: underline; }
+
+/* ── Thread view ──────────────────────────────────────────────────────────
+   The conversation around a reported comment, expanded in place under the card
+   or table row that asked for it. Recessed rather than raised: it is context
+   for the thing above it, not a peer of it. */
+
+/* Inline-block (a button's default) so it shrinks to its label; the divs either
+   side of it put it on its own line without needing display: block. */
+.threadToggle {
+  margin-bottom: 9px;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--accent);
+  cursor: pointer;
+}
+.threadToggle:hover { text-decoration: underline; }
+
+.threadRow td {
+  padding: 0 0 12px;
+  background: transparent;
+}
+
+.thread {
+  margin-bottom: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg);
+}
+
+.threadHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 9px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.threadCount { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+
+.threadNote {
+  padding: 12px 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Replies indent by a fixed step (set inline, since depth is a runtime value),
+   with a rail so a deep exchange stays legible. */
+.threadItem { border-left: 1px solid transparent; }
+.threadItem .threadItem { border-left-color: var(--border); padding-left: 8px; }
+
+.threadComment {
+  padding: 8px 10px;
+  border-radius: 9px;
+  margin-bottom: 5px;
+  background: var(--surface2);
+}
+
+/* The comment the report is actually about. Ringed rather than filled, so the
+   body text stays as readable as every other comment around it. */
+.threadHighlight {
+  box-shadow: 0 0 0 2px #FF4500;
+  background: color-mix(in oklab, #FF4500 7%, var(--surface2));
+}
+
+.threadDeleted { opacity: 0.6; }
+
+.threadMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.threadWhen { margin-left: auto; white-space: nowrap; }
+
+.threadEdits {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.threadReported {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #FF4500;
+  background: color-mix(in oklab, #FF4500 14%, transparent);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+.threadRemove {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.75;
+}
+.threadRemove:hover:not(:disabled) { opacity: 1; color: #FF4500; }
+.threadRemove:disabled { opacity: 0.5; cursor: default; }
+
+.threadTitle {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+/* Author-written HTML, sanitized on write. Clamped so one long comment can't
+   push the rest of the conversation off the panel. */
+.threadBody {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  max-height: 190px;
+  overflow-y: auto;
+  overflow-wrap: break-word;
+}
+.threadBody :global(p) { margin: 0 0 6px; }
+.threadBody :global(p:last-child) { margin-bottom: 0; }
+.threadBody :global(img) { max-width: 100%; height: auto; border-radius: 6px; }
+.threadBody :global(a) { color: var(--accent); }
+.threadBody :global(blockquote) {
+  margin: 0 0 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.threadBody :global(pre) {
+  overflow-x: auto;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 11.5px;
+}
+
+.threadBodyGone {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.backToQueue {
+  display: block;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 9px;
+  padding: 6px 13px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.backToQueue:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+/* Sits beside a username that is already click-to-copy, so it needs its own
+   small target rather than wrapping the name. Faint until the row is hovered -
+   a column of arrows would fight the data for attention. */
+.profilePeek {
+  margin-left: 6px;
+  border: none;
+  background: none;
+  padding: 0 3px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+tr:hover .profilePeek { opacity: 0.7; }
+.profilePeek:hover { opacity: 1; color: var(--accent); }
+/* Keyboard users never hover, so focus has to reveal it too */
+.profilePeek:focus-visible { opacity: 1; color: var(--accent); }
+
 /* ── Click-to-copy cells ── */
 .copyable {
   cursor: pointer;
@@ -463,3 +860,177 @@
   padding: 1px 8px;
   animation: fade 0.15s ease;
 }
+
+/* ── Visibility (public / friends / private) ──
+   Each class only carries the hue as --vis; the chip, meter segment and legend
+   swatch all derive their own treatment from it, so a hue is defined once. */
+.visPublic  { --vis: #1DB954; }
+.visFriends { --vis: var(--accent); }
+.visPrivate { --vis: var(--muted); }
+
+.visChip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vis);
+  background: color-mix(in oklab, var(--vis) 14%, transparent);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+
+.meterBlock {
+  margin-top: 14px;
+}
+
+.meterTrack {
+  display: flex;
+  height: 8px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--muted) 18%, transparent);
+}
+
+.meterFill {
+  background: var(--vis);
+  min-width: 2px;
+}
+
+.meterEmpty {
+  flex: 1;
+}
+
+.meterLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.meterLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meterLegendItem strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.meterSwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--vis);
+}
+
+/* Supporting counts under a chart, e.g. "12 replies · 3 edits recorded" */
+.chartFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Comment / blog detail tables ── */
+.tableNote {
+  margin: 4px 0 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.snippetCell {
+  max-width: 340px;
+}
+
+.snippetTitle {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Clamped to two lines so one long comment can't stretch the row */
+.snippetBody {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted);
+}
+
+.mutedText {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.replyBadge {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: color-mix(in oklab, var(--muted) 14%, transparent);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+.link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Audit log ── */
+.auditAction {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+  background: var(--surface2);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+/* The two actions nothing can undo - worth spotting while scanning the column */
+.auditDestructive {
+  font-size: 12px;
+  font-weight: 650;
+  color: #e5484d;
+  background: color-mix(in oklab, #e5484d 12%, transparent);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.moreBtn {
+  align-self: flex-start;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.moreBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+.moreBtn:disabled { opacity: 0.6; cursor: default; }

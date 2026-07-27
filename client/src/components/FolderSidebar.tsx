@@ -9,7 +9,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import styles from './FolderSidebar.module.css';
 import { Folder, Bookmark } from '../types';
-import { faviconUrl } from '../utils/color';
+import { bookmarkHref, faviconUrl } from '../utils/color';
 
 type Layout = 'panel' | 'inline';
 
@@ -162,7 +162,7 @@ function SortableFolder({ folder, isActive, sites, expandable, expanded, onSelec
 }
 
 // A bookmark listed vertically under an expanded folder (inline layout).
-// Draggable within its folder — the drag listeners ride the link, so a click
+// Draggable within its folder - the drag listeners ride the link, so a click
 // still opens it (the 8px activation distance separates click from drag).
 function InlineBookmarkRow({ bookmark, openMode, onOpen, onEdit, onDelete, onPin }: {
   bookmark: Bookmark;
@@ -184,7 +184,7 @@ function InlineBookmarkRow({ bookmark, openMode, onOpen, onEdit, onDelete, onPin
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <a
-        href={`https://${bookmark.domain}`}
+        href={bookmarkHref(bookmark.domain)}
         className={styles.inlineLink}
         onClick={() => onOpen(bookmark.id)}
         {...(openMode === 'new-tab' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
@@ -323,7 +323,7 @@ function PinnedTile({ bookmark, openMode, onOpen, onEdit, onDelete, onUnpin }: {
   return (
     <div className={styles.pinTileWrap} ref={setNodeRef} style={style}>
       <a
-        href={`https://${bookmark.domain}`}
+        href={bookmarkHref(bookmark.domain)}
         className={styles.pinTile}
         onClick={() => onOpen(bookmark.id)}
         {...(openMode === 'new-tab' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
@@ -452,7 +452,7 @@ export default function FolderSidebar({
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Which folders are expanded in inline layout — persisted per user.
+  // Which folders are expanded in inline layout - persisted per user.
   const EXP_KEY = `sidebarExpanded_${username}`;
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
@@ -467,7 +467,7 @@ export default function FolderSidebar({
   function toggleExpanded(id: string) {
     setExpanded(prev => {
       const isOpen = prev.has(id);
-      // Mobile: accordion — collapse everything else when opening a folder.
+      // Mobile: accordion - collapse everything else when opening a folder.
       if (isMobile) return isOpen ? new Set() : new Set([id]);
       const next = new Set(prev);
       if (isOpen) next.delete(id); else next.add(id);

@@ -1,6 +1,33 @@
 node_modules/
 dist/
+build/
+
+# Env. The bare `.env` rule already covers server/.env and client/.env (a
+# pattern with no slash matches at every level), but it did NOT cover
+# .env.production or .env.test - the two most likely to hold real secrets.
+# Ignore every variant, then re-admit the committed examples by name.
 .env
-*.env.local
+.env.*
+!.env.example
+!.env.truenas.example
+
+# Test and tooling output
+coverage/
+playwright-report/
+test-results/
+*.log
+
+# Editor
+.vscode/
+.idea/
 .DS_Store
 .zshrc
+
+# NOTE: server/prisma/migrations/ is deliberately NOT ignored. Those .sql files
+# are schema history - `prisma migrate deploy` replays them to build the
+# database, so a checkout without them cannot be deployed. They contain DDL
+# only; no rows, no credentials.
+#
+# NOTE: client/public/shots/ is also deliberately NOT ignored - those are the
+# landing-page screenshots, meant to ship with the app. See its README for the
+# rule about scrubbing private content before committing one.

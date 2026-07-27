@@ -20,7 +20,7 @@ function drop(
   return computeDrop(flat, rows, notesById, folderSet, dragId, overId, offsetLeft);
 }
 
-describe('computeDrop — the reported cases', () => {
+describe('computeDrop - the reported cases', () => {
   it('drags a note above all folders', () => {
     const r = drop(['folder:F1', 'n1', 'l1'], [note('n1', 'F1'), note('l1')], ['F1'], 'l1', 'folder:F1', 0);
     expect(r?.flat).toEqual(['l1', 'folder:F1', 'n1']);
@@ -45,7 +45,7 @@ describe('computeDrop — the reported cases', () => {
   });
 });
 
-describe('computeDrop — filing in and out of folders', () => {
+describe('computeDrop - filing in and out of folders', () => {
   it('files a loose note into an empty folder with a rightward nudge', () => {
     const r = drop(['folder:F1', 'l1'], [note('l1')], ['F1'], 'l1', 'folder:F1', INDENT);
     expect(r?.flat).toEqual(['folder:F1', 'l1']);
@@ -74,7 +74,7 @@ describe('computeDrop — filing in and out of folders', () => {
   });
 });
 
-describe('computeDrop — loose note reordering', () => {
+describe('computeDrop - loose note reordering', () => {
   it('reorders loose notes among themselves', () => {
     const r = drop(['l1', 'l2', 'l3'], [note('l1'), note('l2'), note('l3')], [], 'l1', 'l3', 0);
     expect(r?.flat).toEqual(['l2', 'l3', 'l1']);

@@ -1,0 +1,52 @@
+/* ── Reference embeds, as they look where they are *read* ──
+   Not a CSS module: these class names are baked into saved note, post and
+   comment HTML, so they must never be hashed.
+
+   The embed's own styling lives in NotesConsole.module.css and is deliberately
+   hardcoded light - everywhere an embed is *edited* it sits on the editor's
+   white paper (the notes console and the blog composer both pin #fff for that
+   reason). A rendered post or comment is a themed surface instead, so it opts
+   into this skin by adding `note-embed-read` alongside its own body class.
+
+   Only surface colours are restated here. Layout, sizes and the three variants
+   still come from the one definition, so a change there reaches both. */
+
+.note-embed-read .note-embed[data-variant='small'] .note-embed-a,
+.note-embed-read .note-embed[data-variant='large'] .note-embed-a {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.note-embed-read .note-embed[data-variant='small']:hover .note-embed-a,
+.note-embed-read .note-embed[data-variant='large']:hover .note-embed-a {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--surface2);
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.note-embed-read .note-embed .note-embed-title { color: var(--text); }
+.note-embed-read .note-embed .note-embed-meta { color: var(--muted); }
+
+.note-embed-read .note-embed .note-embed-kicker,
+.note-embed-read .note-embed .note-embed-comments { color: var(--accent); }
+
+.note-embed-read .note-embed[data-variant='link'] .note-embed-a { color: var(--accent); }
+
+.note-embed-read .note-embed[data-variant='link'] .note-embed-title {
+  border-bottom-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.note-embed-read .note-embed[data-variant='link']:hover .note-embed-title {
+  border-bottom-color: var(--accent);
+}
+
+.note-embed-read .note-embed[data-variant='link']:hover .note-embed-a {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* Reading surfaces style their own embedded images (block, centred, rounded).
+   A card's artwork is not one of those: a cover is flush to the card edge and a
+   thumbnail sits inline beside the title. */
+.note-embed-read .note-embed img { margin: 0; }
+.note-embed-read .note-embed .note-embed-cover { border-radius: 0; }
+.note-embed-read .note-embed .note-embed-fav { display: inline-block; }

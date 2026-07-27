@@ -1,6 +1,6 @@
 // Deep-link helper for the article reader. The browser path becomes /a/<id>
 // while a reader is open, so the view is shareable and the back button closes it.
-// <id> is the article's URL, base64url-encoded — no server-side mapping needed;
+// <id> is the article's URL, base64url-encoded - no server-side mapping needed;
 // decoding it recovers the exact URL the reader and comments are keyed on.
 
 const PREFIX = '/a/';

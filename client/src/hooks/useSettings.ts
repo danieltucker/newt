@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPatch } from '../services/api';
 
-export interface ClockZone {
-  city: string;
-  zone: string;
-}
-
 export interface NoteDoc {
   id: string;
   title: string;
@@ -15,7 +10,7 @@ export interface NoteDoc {
   folderId?: string;   // which note folder it lives in; undefined = ungrouped
 }
 
-// One flat level of folders in the notes tree — named, colored, no nesting.
+// One flat level of folders in the notes tree - named, colored, no nesting.
 export interface NoteFolder {
   id: string;
   name: string;
@@ -28,8 +23,6 @@ export interface UserSettings {
   searchNewTab: boolean;
   theme: 'dark' | 'light' | 'auto';
   consoleEnabled: boolean;
-  weatherLocation: string;
-  weatherUnit: 'celsius' | 'fahrenheit';
   notes: string;
   noteDocs?: NoteDoc[];
   noteFolders?: NoteFolder[];
@@ -37,7 +30,6 @@ export interface UserSettings {
   // each ungrouped note, so folders and loose notes can be interleaved freely.
   noteTreeOrder?: string[];
   noteSidebarWidth?: number;   // width (px) of the notes console tree column
-  clockFormat: '12h' | '24h';
   articleOpenMode: 'new-tab' | 'same-tab' | 'iframe';
   readingListOpenMode?: 'new-tab' | 'same-tab' | 'reader';
   bookmarkOpenMode?: 'same-tab' | 'new-tab';
@@ -54,8 +46,10 @@ export interface UserSettings {
   commentsDefaultVisibility?: 'public' | 'friends' | 'private';
   commentsSort?: 'newest' | 'oldest';
   commentsAutoExpand?: boolean;
-  activeWidgets: string[];
-  worldClockZones: ClockZone[];
+  // Topics worth noticing. Stored as typed, matched by token - see
+  // utils/favoriteTags. Decoration only: it marks what's on screen, it does not
+  // reorder or filter the server's pages.
+  favoriteTags?: string[];
   rssFeedUrls: string[];
   rssFeedPageSize?: 5 | 10 | 20 | 50;
 }
@@ -65,14 +59,11 @@ const DEFAULTS: UserSettings = {
   searchNewTab: false,
   theme: 'dark',
   consoleEnabled: true,
-  weatherLocation: '',
-  weatherUnit: 'celsius',
   notes: '',
   noteDocs: [],
   noteFolders: [],
   noteTreeOrder: [],
   noteSidebarWidth: 210,
-  clockFormat: '12h',
   articleOpenMode: 'new-tab',
   readingListOpenMode: 'new-tab',
   bookmarkOpenMode: 'same-tab',
@@ -89,8 +80,7 @@ const DEFAULTS: UserSettings = {
   commentsDefaultVisibility: 'private',
   commentsSort: 'newest',
   commentsAutoExpand: false,
-  activeWidgets: ['weather', 'notes'],
-  worldClockZones: [],
+  favoriteTags: [],
   rssFeedUrls: [],
   rssFeedPageSize: 10,
 };

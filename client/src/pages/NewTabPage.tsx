@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import styles from './NewTabPage.module.css';
-import Header from '../components/Header';
+import ShellBar, { RAIL_NARROW } from '../components/ShellBar';
+import SiteFooter from '../components/SiteFooter';
+import { toggleFavorite } from '../utils/favoriteTags';
 import SearchBar from '../components/SearchBar';
 import FolderSidebar from '../components/FolderSidebar';
 import BookmarksGrid from '../components/BookmarksGrid';
@@ -17,14 +19,20 @@ import NotesConsole from '../components/NotesConsole';
 import FolderArticles from '../components/FolderArticles';
 import SaveArticleModal from '../components/SaveArticleModal';
 import AdminModal from '../components/AdminModal';
-import FriendsModal from '../components/FriendsModal';
+import NotificationsModal from '../components/NotificationsModal';
 import ArticleDetailModal from '../components/ArticleDetailModal';
+import ProfilePage from './ProfilePage';
+import BlogPostPage from './BlogPostPage';
+import MyBlogPage from './MyBlogPage';
 import { parseArticlePath } from '../utils/articleUrl';
+import { profilePathFor } from '../utils/profileUrl';
+import { articleEmbed } from '../utils/noteEmbed';
 import { useFolders } from '../hooks/useFolders';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
 import { useSettings } from '../hooks/useSettings';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
 import { Bookmark, Folder, FeedArticle, CommentPrefs } from '../types';
 import { ThemeSetting, ResolvedTheme } from '../App';
@@ -32,11 +40,25 @@ import { ThemeSetting, ResolvedTheme } from '../App';
 // Injected at build time from package.json (see vite.config.ts).
 declare const __APP_VERSION__: string;
 
-// Background depth — max px each blob leans as the cursor crosses the viewport.
+// Background depth - max px each blob leans as the cursor crosses the viewport.
 // The far layer leans opposite the near ones, which is what sells the depth.
 // The glow layer spans the whole page and scrolls with it (see .bgRoot), so the
-// only motion applied here is the pointer lean — there is no scroll parallax.
+// only motion applied here is the pointer lean - there is no scroll parallax.
 const BLOB_LEAN = [-18, 32, 56] as const;
+
+// A page that renders *inside* this shell instead of the new-tab body. Profiles
+// and blog posts are read while signed in, so they keep the header, the search
+// bar, the command console and the notes console rather than dropping the reader
+// onto a bare page that has none of them. Logged-out visitors still get those
+// same pages standalone - see App.tsx - since none of that chrome applies.
+//
+// The composer (/blog/<id>) is deliberately *not* in this list: it is a writing
+// surface, and neither a second editor sliding up from the bottom nor a search
+// box competing for keystrokes belongs over it.
+export type ShellView =
+  | { kind: 'profile'; username: string; tab?: string | null }
+  | { kind: 'post'; username: string; slug: string }
+  | { kind: 'myblog' };
 
 interface Props {
   accessToken: string;
@@ -47,9 +69,11 @@ interface Props {
   onSetTheme: (t: ThemeSetting) => void;
   onLogout: () => void;
   onViewProfile?: (username: string) => void;
+  navigate: (to: string) => void;
+  view?: ShellView | null;
 }
 
-// Bare-letter shortcuts must not fire while the user is typing — otherwise "n"
+// Bare-letter shortcuts must not fire while the user is typing - otherwise "n"
 // in a note or the search box would fling overlays open mid-sentence.
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -57,7 +81,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
 }
 
-export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile }: Props) {
+export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile, navigate, view }: Props) {
   const { settings, update: updateSetting, loaded: settingsLoaded } = useSettings(accessToken);
 
   // Sync theme setting from server on first load
@@ -71,7 +95,21 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     updateSetting({ theme: t });
   }
 
-  const { folders, createFolder, updateFolder, deleteFolder, reorderFolders } = useFolders(accessToken);
+  // Star or unstar a tag from wherever it's shown. The toggle rules - including
+  // what unstarring a tag covered by a broader favorite does - live in
+  // utils/favoriteTags, so every surface behaves the same.
+  const handleToggleFavoriteTag = useCallback((tag: string) => {
+    updateSetting({ favoriteTags: toggleFavorite(settings.favoriteTags ?? [], tag) });
+  }, [settings.favoriteTags, updateSetting]);
+
+  const handleSetFavoriteTags = useCallback((favoriteTags: string[]) => {
+    updateSetting({ favoriteTags });
+  }, [updateSetting]);
+
+  const {
+    folders, createFolder, updateFolder, deleteFolder, reorderFolders,
+    addFeed, updateFeed, deleteFeed,
+  } = useFolders(accessToken);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,19 +119,23 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   }, [folders, activeFolderId]);
 
   const { bookmarks, setBookmarks, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, markVisited } = useBookmarks(accessToken, activeFolderId);
-  const { items: readingList, saveItem, updateItem, archiveItem, removeItem } = useReadingList(accessToken);
+  // Held whole as well as destructured: the embedded ProfilePage takes the
+  // binding so its Library tab shares this exact list instead of loading a
+  // second copy that would drift from it.
+  const readingListBinding = useReadingList(accessToken);
+  const { items: readingList, saveItem, updateItem, setInLibrary, removeItem } = readingListBinding;
 
   const CACHE_KEY = `bfc_${username}`;
 
   const [bookmarksByFolder, setBookmarksByFolder] = useState<Record<string, Bookmark[]>>(() => {
-    // Serve from localStorage instantly — avoids the blank-grid flash on every new tab
+    // Serve from localStorage instantly - avoids the blank-grid flash on every new tab
     try {
       const raw = localStorage.getItem(CACHE_KEY);
       return raw ? (JSON.parse(raw) as Record<string, Bookmark[]>) : {};
     } catch { return {}; }
   });
 
-  // Folder-less bookmarks — "pinned" to the top of the sidebar. Cached in the
+  // Folder-less bookmarks - "pinned" to the top of the sidebar. Cached in the
   // same localStorage payload under a reserved key so they survive a reload.
   const PIN_CACHE_KEY = `bpc_${username}`;
   const [pinnedBookmarks, setPinnedBookmarks] = useState<Bookmark[]>(() => {
@@ -139,7 +181,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     }).catch(() => {});
   }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Background feed checking — on folder switch and every 30min while the tab stays open
+  // Background feed checking - on folder switch and every 30min while the tab stays open
   const bookmarksRef = useRef(bookmarks);
   useEffect(() => { bookmarksRef.current = bookmarks; }, [bookmarks]);
 
@@ -175,7 +217,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   type PendingSave = { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null; markSaved: () => void };
   const [savingArticle, setSavingArticle] = useState<PendingSave | null>(null);
 
-  // Bookmarklet mode — true when this window was opened by a bookmarklet
+  // Bookmarklet mode - true when this window was opened by a bookmarklet
   const bookmarkletModeRef = useRef(false);
   const [bookmarkletAddUrl, setBookmarkletAddUrl] = useState('');
 
@@ -185,8 +227,12 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   const [showAdmin, setShowAdmin] = useState(false);
+  // Set when the admin panel is opened from a report alert, so it lands on that
+  // report rather than the top of the queue. Cleared when the panel closes, or
+  // when the moderator steps back to the full queue.
+  const [focusReportId, setFocusReportId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
-  const [showFriends, setShowFriends] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
   // If the app was opened on a shared article link (/a/<id>), open that reader.
   const [deepLinkUrl, setDeepLinkUrl] = useState<string | null>(() => parseArticlePath(window.location.pathname));
@@ -213,7 +259,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const closeConsoleRef = useRef(closeConsole);
   closeConsoleRef.current = closeConsole;
 
-  // Notes console — slides up from the bottom, opened via the launcher button
+  // Notes console - slides up from the bottom, opened via the launcher button
   const [showNotes, setShowNotes] = useState(false);
   const showNotesRef = useRef(false);
   showNotesRef.current = showNotes;
@@ -236,11 +282,16 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     setShowNotes(true);
   }, []);
 
+  // What a note's /reference command can point at. Archived items stay on the
+  // list: having finished an article is a reason to write about it, not a
+  // reason to lose the ability to cite it.
+  const noteReferences = useMemo(() => readingList.map(articleEmbed), [readingList]);
+
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
 
   // Only one overlay at a time. Opening the notes console, the command console,
-  // or the new-bookmark dialog tears down every other dialog on screen —
+  // or the new-bookmark dialog tears down every other dialog on screen -
   // otherwise a console typed over a half-filled settings pane leaves two
   // surfaces fighting for Escape and for focus.
   type Overlay = 'notes' | 'console' | 'addLink';
@@ -296,7 +347,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     return () => document.removeEventListener('keydown', onKey);
   }, [settings.consoleEnabled]);
 
-  // "n" opens notes — the same letter the launcher button shows. Escape closes,
+  // "n" opens notes - the same letter the launcher button shows. Escape closes,
   // handled inside the console itself.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -360,21 +411,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
   const activeFolder = folders.find(f => f.id === activeFolderId) ?? null;
 
-  // The search bar is position:sticky. A zero-height sentinel just above it
-  // tells us when it has pinned to the top, so we can reveal the glass backdrop.
-  const [searchStuck, setSearchStuck] = useState(false);
-  const searchSentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = searchSentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setSearchStuck(!entry.isIntersecting),
-      { rootMargin: '-15px 0px 0px 0px', threshold: 0 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
   async function handleAddLink(payload: {
     folderId: string; domain: string; name: string; faviconUrl: string; color: string;
   }) {
@@ -395,7 +431,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     if (activeFolderId) {
       const bm = bookmarks.find(b => b.id === id);
       if (bm && bm.folderId !== updates.folderId) {
-        // moved to different folder — remove from current folder cache
+        // moved to different folder - remove from current folder cache
         setBookmarksByFolder(prev => ({
           ...prev,
           [activeFolderId]: prev[activeFolderId]?.filter(b => b.id !== id) ?? [],
@@ -408,7 +444,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         }));
       }
     }
-    // Keep the pinned list in sync — the edited bookmark may be a pinned one
+    // Keep the pinned list in sync - the edited bookmark may be a pinned one
     // (edited from the sidebar). Only drop it if it's no longer pinned.
     if (updated) {
       setPinnedBookmarks(prev => {
@@ -453,7 +489,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     });
   }
 
-  // Unpin: drop it from the pin grid. It remains in its folder — update in place.
+  // Unpin: drop it from the pin grid. It remains in its folder - update in place.
   async function handleUnpinBookmark(id: string) {
     const updated = await apiPost<Bookmark>(`/api/v1/bookmarks/${id}/unpin`, {});
     setPinnedBookmarks(prev => {
@@ -488,7 +524,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     await persistBookmarkOrder(reordered);
   }
 
-  async function handleSaveFolder(id: string, updates: { name: string; color: string; feedUrls: string[] }) {
+  async function handleSaveFolder(id: string, updates: { name: string; color: string }) {
     await updateFolder(id, updates);
   }
 
@@ -547,7 +583,63 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
   const blobWrapRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Background motion — the blobs lean gently toward the cursor. The pointer is
+  const bookmarkLayout = settings.bookmarkLayout ?? 'panel';
+
+  // Wide enough for two columns, or is the rail riding in the hamburger?
+  const railNarrow = useMediaQuery(RAIL_NARROW);
+
+  // The bookmarks rail. Built here - it needs every folder and bookmark handler
+  // on this page - but rendered either in the sticky left column or inside the
+  // shell bar's menu, never both. `close` is a no-op in the column and dismisses
+  // the menu in the hamburger, so anything that puts a dialog on screen (or, in
+  // panel layout, swaps the grid behind the menu) gets out of its own way.
+  const renderRail = (close: () => void) => (
+    <FolderSidebar
+      folders={folders}
+      activeFolderId={activeFolderId}
+      bookmarksByFolder={bookmarksByFolder}
+      pinnedBookmarks={pinnedBookmarks}
+      layout={bookmarkLayout}
+      username={username}
+      bookmarkOpenMode={settings.bookmarkOpenMode}
+      onSelectFolder={(id, el) => {
+        handleSelectFolder(id, el);
+        // Inline layout expands the folder in place - that's the result, and
+        // closing the menu would hide it. Panel layout renders the result
+        // behind the menu, so step aside.
+        if (bookmarkLayout === 'panel') close();
+      }}
+      onNewFolder={() => { close(); setShowNewFolder(true); }}
+      onNewBookmark={() => { close(); setShowAddLink(true); }}
+      onEditFolder={f => { close(); setEditingFolder(f); }}
+      onDeleteFolder={handleDeleteFolder}
+      onMarkFolderRead={handleMarkFolderRead}
+      onReorderFolders={reorderFolders}
+      onEditBookmark={b => { close(); setEditingBookmark(b); }}
+      onDeleteBookmark={handleDeleteBookmark}
+      onVisitBookmark={id => { close(); markVisited(id); }}
+      onPinBookmark={handlePinBookmark}
+      onUnpinBookmark={handleUnpinBookmark}
+      onReorderPinned={handleReorderPinned}
+      onReorderBookmarks={handleReorderBookmarksInFolder}
+      folderRefs={folderRefs}
+    />
+  );
+
+  // The app's one search box, handed to the bar that hosts it.
+  const searchEl = (
+    <SearchBar
+      searchEngine={settings.searchEngine}
+      searchNewTab={settings.searchNewTab}
+      bookmarks={[...Object.values(bookmarksByFolder).flat(), ...pinnedBookmarks]}
+      readingItems={readingList}
+      feedArticles={feedArticles.map(a => ({ id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories }))}
+      notes={(settings.noteDocs ?? []).filter(n => !n.deletedAt)}
+      onOpenNote={openNoteFromSearch}
+    />
+  );
+
+  // Background motion - the blobs lean gently toward the cursor. The pointer is
   // lerped in a single rAF loop so the motion glides instead of tracking 1:1
   // (transforms are compositor-only, so the per-frame cost is negligible).
   useEffect(() => {
@@ -588,7 +680,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   return (
     <>
       <div className={styles.root}>
-      {/* Background — spans the whole page, beneath all content (z-index 0) */}
+      {/* Background - spans the whole page, beneath all content (z-index 0) */}
       {bgKey && (
         <div className={styles.bgRoot}>
           <div className={styles.bgBase} />
@@ -605,107 +697,76 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         </div>
       )}
     <div className={styles.page}>
+      {/* One chrome for every page the shell hosts - the new tab, a profile, a
+          post, the blog manager. The bar carries the only search box in the
+          app, so it is never conditional. */}
+      <ShellBar
+        username={username}
+        avatar={profile?.avatar}
+        isAdmin={isAdmin}
+        path={window.location.pathname}
+        notifUnread={notifUnread}
+        navigate={navigate}
+        onOpenSettings={() => { setSettingsSection(undefined); setShowSettings(true); }}
+        onOpenAdmin={() => setShowAdmin(true)}
+        onOpenNotifications={() => setShowNotifications(true)}
+        onLogout={onLogout}
+        search={searchEl}
+        // A profile or a post takes the whole body and has no rail, so there is
+        // nothing to fold into the menu on those.
+        bookmarksRail={renderRail}
+      />
+
       <div className={styles.content}>
-      {/* Top-right bar: username + icon buttons */}
-      <div className={styles.topBar}>
-        <button
-          className={styles.userBtn}
-          onClick={() => onViewProfile?.(username)}
-          title="Your profile"
-        >
-          {profile?.avatar
-            ? <img src={profile.avatar} alt="" className={styles.userAvatar} />
-            : <span className={styles.userAvatarFallback}>{username.charAt(0).toUpperCase()}</span>}
-          <span className={styles.username}>{username}</span>
-        </button>
-        <button className={`${styles.iconBtn} ${notifUnread > 0 ? styles.iconBtnActive : ''}`} onClick={() => setShowFriends(true)} title="People & notifications">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          {notifUnread > 0 && (
-            <span className={styles.notifBadge}>{notifUnread > 9 ? '9+' : notifUnread}</span>
-          )}
-        </button>
-        {isAdmin && (
-          <button className={styles.iconBtn} onClick={() => setShowAdmin(true)} title="Admin">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-          </button>
-        )}
-        <button className={styles.iconBtn} onClick={() => { setSettingsSection(undefined); setShowSettings(true); }} title="Settings">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-        </button>
-        <button className={styles.iconBtn} onClick={onLogout} title="Sign out">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-        </button>
-      </div>
-
-        <div className={styles.header}>
-          <Header
-            weatherLocation={settings.weatherLocation}
-            weatherUnit={settings.weatherUnit}
-            onSetWeatherLocation={loc => updateSetting({ weatherLocation: loc })}
-            onSetWeatherUnit={unit => updateSetting({ weatherUnit: unit })}
-            clockZones={settings.worldClockZones ?? []}
-            onSetClockZones={zones => updateSetting({ worldClockZones: zones })}
-            clockFormat={settings.clockFormat ?? '12h'}
-          />
-        </div>
-        <div ref={searchSentinelRef} className={styles.searchSentinel} aria-hidden="true" />
-        <div className={`${styles.searchGlass} ${searchStuck ? styles.searchGlassStuck : ''}`} aria-hidden="true" />
-        <div className={styles.searchbar}>
-          <SearchBar
-            searchEngine={settings.searchEngine}
-            searchNewTab={settings.searchNewTab}
-            bookmarks={[...Object.values(bookmarksByFolder).flat(), ...pinnedBookmarks]}
-            readingItems={readingList}
-            feedArticles={feedArticles.map(a => ({ id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories }))}
-            notes={(settings.noteDocs ?? []).filter(n => !n.deletedAt)}
-            onOpenNote={openNoteFromSearch}
-          />
-        </div>
-
+        {/* One body shape for every page the shell hosts: the rail on the left,
+            whatever you came for on the right. The rail is chrome, not part of
+            the new tab - bookmarks are just as worth reaching from a profile or
+            a post as from the feed. Only the right-hand column changes. */}
         <div className={styles.bodyGrid}>
-          <div className={styles.leftCol}>
-            <FolderSidebar
-              folders={folders}
-              activeFolderId={activeFolderId}
-              bookmarksByFolder={bookmarksByFolder}
-              pinnedBookmarks={pinnedBookmarks}
-              layout={settings.bookmarkLayout ?? 'panel'}
-              username={username}
-              bookmarkOpenMode={settings.bookmarkOpenMode}
-              onSelectFolder={handleSelectFolder}
-              onNewFolder={() => setShowNewFolder(true)}
-              onNewBookmark={() => setShowAddLink(true)}
-              onEditFolder={setEditingFolder}
-              onDeleteFolder={handleDeleteFolder}
-              onMarkFolderRead={handleMarkFolderRead}
-              onReorderFolders={reorderFolders}
-              onEditBookmark={setEditingBookmark}
-              onDeleteBookmark={handleDeleteBookmark}
-              onVisitBookmark={markVisited}
-              onPinBookmark={handlePinBookmark}
-              onUnpinBookmark={handleUnpinBookmark}
-              onReorderPinned={handleReorderPinned}
-              onReorderBookmarks={handleReorderBookmarksInFolder}
-              folderRefs={folderRefs}
-            />
-          </div>
+          {/* The rail pins itself beside the body so bookmarks stay reachable
+              however far the page scrolls. Below RAIL_NARROW it isn't here at
+              all - the shell bar's menu has it. */}
+          {!railNarrow && (
+            <div className={styles.leftCol}>
+              {renderRail(() => {})}
+            </div>
+          )}
 
+        {view ? (
+          <div className={styles.viewBody}>
+            {view.kind === 'profile' && (
+              <ProfilePage
+                embedded
+                username={view.username}
+                accessToken={accessToken}
+                currentUsername={username}
+                navigate={navigate}
+                library={readingListBinding}
+                onOpenArticle={setArticleUrl}
+                initialTab={view.tab}
+              />
+            )}
+            {view.kind === 'post' && (
+              <BlogPostPage
+                embedded
+                username={view.username}
+                slug={view.slug}
+                accessToken={accessToken}
+                navigate={navigate}
+              />
+            )}
+            {view.kind === 'myblog' && (
+              <MyBlogPage
+                embedded
+                accessToken={accessToken}
+                username={username}
+                navigate={navigate}
+              />
+            )}
+          </div>
+        ) : (
           <div>
-            {(settings.bookmarkLayout ?? 'panel') === 'panel' && (
+            {bookmarkLayout === 'panel' && (
               <BookmarksGrid
                 folder={activeFolder}
                 bookmarks={activeFolderId ? (bookmarksByFolder[activeFolderId] ?? []) : []}
@@ -724,8 +785,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 items={readingList}
                 onSave={saveItem}
                 onUpdate={updateItem}
-                onArchive={archiveItem}
+                onAddToLibrary={setInLibrary}
                 onDelete={removeItem}
+                onOpenLibrary={() => navigate(`${profilePathFor(username)}?tab=library`)}
                 articleOpenMode={(() => {
                 const m = settings.readingListOpenMode ?? settings.articleOpenMode;
                 return m === 'reader' ? 'iframe' : m;
@@ -737,6 +799,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
                 commentPrefs={commentPrefs}
                 onViewProfile={onViewProfile}
+                favoriteTags={settings.favoriteTags ?? []}
+                onToggleFavoriteTag={handleToggleFavoriteTag}
+                onSetFavoriteTags={handleSetFavoriteTags}
               />
             </div>
             {settings.rssEnabled !== false && activeFolderId && (activeFolder?.feedUrls?.length ?? 0) > 0 && (
@@ -745,7 +810,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 folderId={activeFolderId}
                 onSaveArticle={async (a, markSaved) => {
                   if ((settings.saveArticleMode ?? 'dialog') === 'instant') {
-                    // Save with the article's own metadata — no dialog
+                    // Save with the article's own metadata - no dialog
                     try {
                       await saveItem({
                         url: a.url,
@@ -771,20 +836,23 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 commentPrefs={commentPrefs}
                 onFolderMarkedRead={handleMarkFolderRead}
                 onViewProfile={onViewProfile}
+                favoriteTags={settings.favoriteTags ?? []}
+                onToggleFavoriteTag={handleToggleFavoriteTag}
+                onSetFavoriteTags={handleSetFavoriteTags}
               />
             )}
           </div>
+        )}
         </div>
 
-        <footer className={styles.footer}>
-          <a href="https://github.com/danieltucker/newTab" target="_blank" rel="noopener noreferrer" className={styles.footerLink}>
-            v{__APP_VERSION__}
-          </a>
-        </footer>
-      </div>
       </div>
 
-      {/* Notes launcher — small round button, bottom-right */}
+      {/* Outside .content so the footer's hairline spans the page rather than
+          stopping at the body column's 32px gutters. */}
+      <SiteFooter />
+      </div>
+
+      {/* Notes launcher - small round button, bottom-right */}
       {!showNotes && (
         <button
           className={styles.notesLauncher}
@@ -830,10 +898,14 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       {editingFolder && (
         <EditFolderModal
           folder={editingFolder}
+          folders={folders}
           bookmarkFeeds={(bookmarksByFolder[editingFolder.id] ?? [])
             .filter(b => !!b.feedUrl)
             .map(b => ({ name: b.name, domain: b.domain, feedUrl: b.feedUrl! }))}
           onSave={handleSaveFolder}
+          onAddFeed={addFeed}
+          onUpdateFeed={updateFeed}
+          onDeleteFeed={deleteFeed}
           onDelete={handleDeleteFolder}
           onClose={() => setEditingFolder(null)}
         />
@@ -908,22 +980,34 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       )}
 
       {showAdmin && (
-        <AdminModal currentUsername={username} onClose={() => setShowAdmin(false)} />
+        <AdminModal
+          currentUsername={username}
+          onClose={() => { setShowAdmin(false); setFocusReportId(null); }}
+          // Every @handle in the admin tables routes to that person's profile.
+          // The panel has to close first - the profile renders in the shell
+          // underneath it.
+          onViewProfile={name => { setShowAdmin(false); onViewProfile?.(name); }}
+          focusReportId={focusReportId}
+          onClearFocusReport={() => setFocusReportId(null)}
+        />
       )}
 
-      {showFriends && (
-        <FriendsModal
+      {showNotifications && (
+        <NotificationsModal
           accessToken={accessToken}
           notifications={notifications}
           notifLoading={notifLoading}
           onLoadNotifications={loadNotifications}
           onMarkAllRead={markNotificationsRead}
-          onClose={() => setShowFriends(false)}
+          onClose={() => setShowNotifications(false)}
           onViewProfile={onViewProfile}
+          // Report alerts open the moderation queue. Offered only to admins -
+          // nobody else is ever sent one.
+          onOpenReport={isAdmin ? (id => { setFocusReportId(id); setShowAdmin(true); }) : undefined}
         />
       )}
 
-      {/* Reader opened from a shared /a/<id> link — resolves content by URL */}
+      {/* Reader opened from a shared /a/<id> link - resolves content by URL */}
       {deepLinkUrl && (
         <ArticleDetailModal
           url={deepLinkUrl}
@@ -960,6 +1044,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           onSave={(noteDocs, noteFolders, noteTreeOrder) => updateSetting({ noteDocs, noteFolders, noteTreeOrder })}
           initialNoteId={notesTarget?.id}
           initialQuery={notesTarget?.query}
+          references={noteReferences}
           closing={notesFading}
           onClose={closeNotes}
         />

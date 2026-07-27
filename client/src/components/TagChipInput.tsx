@@ -56,7 +56,7 @@ export default function TagChipInput({ tags, onChange, placeholder, inputValue, 
         onChange={e => onInputChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={commit}
-        placeholder={tags.length === 0 ? (placeholder ?? 'Tags — Tab or comma to add') : ''}
+        placeholder={tags.length === 0 ? (placeholder ?? 'Tags - Tab or comma to add') : ''}
         spellCheck={false}
         autoComplete="off"
       />

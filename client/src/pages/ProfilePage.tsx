@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './ProfilePage.module.css';
 import { apiFetch, apiGet, apiPost } from '../services/api';
 import {
@@ -10,18 +10,51 @@ import { articlePathFor } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
+import SiteFooter from '../components/SiteFooter';
+import FollowBlogButton from '../components/FollowBlogButton';
+import FriendsPanel from '../components/FriendsPanel';
+import LibraryPanel from '../components/LibraryPanel';
+import ReportModal from '../components/ReportModal';
+import { useBlocks } from '../hooks/useBlocks';
+import { useReadingList, ReadingListBinding } from '../hooks/useReadingList';
+import { coverStyle } from '../utils/coverGradient';
 
 interface Props {
   username: string;
   accessToken: string | null;
   currentUsername: string | null;
   navigate: (to: string) => void;
+  // Rendered inside the app shell (NewTabPage) rather than as its own page.
+  // Drops the full-height background and the "← New Tab" bar, because the shell
+  // already supplies both - the header, search and consoles stay on screen.
+  embedded?: boolean;
+  // Embedded in the app shell, the shell already owns the reading list - take
+  // its copy rather than opening a second one that drifts from it. Standalone,
+  // this is absent and the Library tab provisions its own.
+  library?: ReadingListBinding;
+  /** Open an article the way the shell does. Standalone falls back to a tab. */
+  onOpenArticle?: (url: string) => void;
+  /** Raw ?tab= value from the URL. Unrecognised values fall back to Content. */
+  initialTab?: string | null;
 }
 
-// Activity is the landing tab: what this person has put out, posts and shared
-// comments together — which is what a profile is for.
-type Tab = 'activity' | 'posts' | 'comments' | 'history';
+// Content is the landing tab: what this person has created or shared, posts and
+// shared comments together - which is what a profile is for. 'friends' and
+// 'library' are self-only: both are scoped to the authed user, so there is no
+// such thing as someone else's to show. The Library in particular is private by
+// design - it is never fetched for another user, not merely hidden.
+type Tab = 'content' | 'posts' | 'comments' | 'friends' | 'library' | 'history';
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
+
+const TABS: Tab[] = ['content', 'posts', 'comments', 'friends', 'library', 'history'];
+
+// A ?tab= value is whatever was in the URL, so it is checked against the real
+// list rather than cast. Self-only tabs need no special case here: the button
+// and the panel are both already gated on isSelf, so landing on ?tab=library
+// for someone else's profile just shows Content.
+function tabFromParam(raw: string | null | undefined): Tab {
+  return TABS.includes(raw as Tab) ? (raw as Tab) : 'content';
+}
 
 function initialOf(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
@@ -42,10 +75,30 @@ function Avatar({ user }: { user: Pick<ProfileUser, 'avatar' | 'displayName'> })
   return <span className={styles.avatarFallback}>{initialOf(user.displayName)}</span>;
 }
 
-export default function ProfilePage({ username, accessToken, currentUsername, navigate }: Props) {
+// Standalone, this page owns the viewport: full-height background and its own
+// padding. Embedded in the app shell, all of that is already on screen, so only
+// the centred column remains.
+// The footer rides along here rather than in the body: this runs for the
+// loading and error states too, and every one of them is a page that ends.
+// Embedded, the shell already has a footer of its own further down.
+function Shell({ embedded, children }: { embedded?: boolean; children: ReactNode }) {
+  const inner = <div className={styles.wrap}>{children}</div>;
+  return embedded ? inner : (
+    <div className={styles.page}>
+      {inner}
+      <SiteFooter />
+    </div>
+  );
+}
+
+export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, initialTab }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [profile, setProfile] = useState<ProfileUser | null>(null);
-  const [tab, setTab] = useState<Tab>('activity');
+  const [tab, setTab] = useState<Tab>(() => tabFromParam(initialTab));
+
+  // Following a ?tab= link while already on a profile changes the prop but not
+  // the mounted state, so the tab has to follow it.
+  useEffect(() => { setTab(tabFromParam(initialTab)); }, [initialTab, username]);
 
   // Load the profile header. Re-runs if the viewer's auth changes (a friend logging
   // in should reveal friends-only content and the relation control).
@@ -78,97 +131,173 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
   );
 
   if (state === 'loading') {
-    return <div className={styles.page}><div className={styles.centered}>Loading…</div></div>;
+    return <Shell embedded={embedded}><div className={styles.centered}>Loading…</div></Shell>;
   }
   if (state === 'notfound') {
     return (
-      <div className={styles.page}>
+      <Shell embedded={embedded}>
         <div className={styles.centered}>
           <div className={styles.big}>This profile doesn’t exist</div>
           <button className={styles.ghostBtn} onClick={() => navigate('/')}>Go home</button>
         </div>
-      </div>
+      </Shell>
     );
   }
   if (state === 'error' || !profile) {
     return (
-      <div className={styles.page}>
+      <Shell embedded={embedded}>
         <div className={styles.centered}>
           <div className={styles.big}>Couldn’t load this profile</div>
           <button className={styles.ghostBtn} onClick={() => navigate('/')}>Go home</button>
         </div>
-      </div>
+      </Shell>
     );
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.wrap}>
+    <Shell embedded={embedded}>
+      {/* The shell has its own way back (the logo, the search bar, the whole
+          new tab underneath), so this bar is only for the standalone page. */}
+      {!embedded && (
         <div className={styles.topbar}>
           <button className={styles.backBtn} onClick={() => navigate('/')}>
             {accessToken ? '← New Tab' : '← Sign in'}
           </button>
         </div>
+      )}
 
-        <ProfileHeader
-          profile={profile}
-          accessToken={accessToken}
-          navigate={navigate}
-          onRelationChange={rel => setProfile(p => (p ? { ...p, relation: rel } : p))}
-        />
+      <ProfileHeader
+        profile={profile}
+        accessToken={accessToken}
+        navigate={navigate}
+        onRelationChange={rel => setProfile(p => (p ? { ...p, relation: rel } : p))}
+        onBlockedChange={blocked => setProfile(p => (p ? { ...p, blocked, relation: 'none' } : p))}
+      />
 
-        <div className={styles.tabs} role="tablist">
-          <button role="tab" aria-selected={tab === 'activity'}
-            className={`${styles.tab} ${tab === 'activity' ? styles.tabActive : ''}`}
-            onClick={() => setTab('activity')}>
-            Activity
-          </button>
-          <button role="tab" aria-selected={tab === 'posts'}
-            className={`${styles.tab} ${tab === 'posts' ? styles.tabActive : ''}`}
-            onClick={() => setTab('posts')}>
-            Posts{profile.postCount > 0 && <span className={styles.tabCount}>{profile.postCount}</span>}
-          </button>
-          <button role="tab" aria-selected={tab === 'comments'}
-            className={`${styles.tab} ${tab === 'comments' ? styles.tabActive : ''}`}
-            onClick={() => setTab('comments')}>
-            Comments{profile.commentCount > 0 && <span className={styles.tabCount}>{profile.commentCount}</span>}
-          </button>
-          <button role="tab" aria-selected={tab === 'history'}
-            className={`${styles.tab} ${tab === 'history' ? styles.tabActive : ''}`}
-            onClick={() => setTab('history')}>
-            History
-          </button>
+      {/* A profile you blocked is a stub: identity, and the way back. Loading
+          the tabs would be pointless - every content endpoint answers empty for
+          this pair - and it would read as if the block hadn't taken. */}
+      {profile.blocked ? (
+        <div className={styles.centered}>
+          <div className={styles.big}>You blocked @{profile.username}</div>
+          <p className={styles.blockedExplainer}>
+            You can’t see each other’s posts or comments, and neither of you can send the other a
+            friend request. Unblock them to undo this - your old friendship isn’t restored.
+          </p>
         </div>
+      ) : (
+        <>
+          <div className={styles.tabs} role="tablist">
+            <button role="tab" aria-selected={tab === 'content'}
+              className={`${styles.tab} ${tab === 'content' ? styles.tabActive : ''}`}
+              onClick={() => setTab('content')}>
+              Content
+            </button>
+            <button role="tab" aria-selected={tab === 'posts'}
+              className={`${styles.tab} ${tab === 'posts' ? styles.tabActive : ''}`}
+              onClick={() => setTab('posts')}>
+              Posts{profile.postCount > 0 && <span className={styles.tabCount}>{profile.postCount}</span>}
+            </button>
+            <button role="tab" aria-selected={tab === 'comments'}
+              className={`${styles.tab} ${tab === 'comments' ? styles.tabActive : ''}`}
+              onClick={() => setTab('comments')}>
+              Comments{profile.commentCount > 0 && <span className={styles.tabCount}>{profile.commentCount}</span>}
+            </button>
+            {/* Self-only - see the Tab type */}
+            {profile.isSelf && (
+              <button role="tab" aria-selected={tab === 'friends'}
+                className={`${styles.tab} ${tab === 'friends' ? styles.tabActive : ''}`}
+                onClick={() => setTab('friends')}>
+                Friends
+              </button>
+            )}
+            {profile.isSelf && (
+              <button role="tab" aria-selected={tab === 'library'}
+                className={`${styles.tab} ${tab === 'library' ? styles.tabActive : ''}`}
+                onClick={() => setTab('library')}>
+                Library
+              </button>
+            )}
+            <button role="tab" aria-selected={tab === 'history'}
+              className={`${styles.tab} ${tab === 'history' ? styles.tabActive : ''}`}
+              onClick={() => setTab('history')}>
+              History
+            </button>
+          </div>
 
-        {tab === 'activity' && (
-          <ActivityTab username={profile.username} authKey={accessToken}
-            onOpenArticle={goArticle} onOpenPost={goPost} />
-        )}
-        {tab === 'posts' && (
-          <PostsTab username={profile.username} authKey={accessToken} onOpen={goPost} />
-        )}
-        {tab === 'comments' && (
-          <CommentsTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
-        )}
-        {tab === 'history' && (
-          <HistoryTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
-        )}
-      </div>
-    </div>
+          {tab === 'content' && (
+            <ContentTab username={profile.username} authKey={accessToken}
+              onOpenArticle={goArticle} onOpenPost={goPost} />
+          )}
+          {tab === 'posts' && (
+            <PostsTab username={profile.username} authKey={accessToken} onOpen={goPost} />
+          )}
+          {tab === 'comments' && (
+            <CommentsTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
+          )}
+          {tab === 'friends' && profile.isSelf && (
+            <FriendsPanel
+              accessToken={accessToken}
+              onViewProfile={name => navigate(profilePathFor(name))}
+            />
+          )}
+          {tab === 'library' && profile.isSelf && (
+            <LibraryTab
+              accessToken={accessToken}
+              binding={library}
+              onOpenArticle={onOpenArticle ?? (url => window.open(url, '_blank', 'noopener,noreferrer'))}
+            />
+          )}
+          {tab === 'history' && (
+            <HistoryTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
+          )}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+// ── Library tab ───────────────────────────────────────────────────────────────
+// Takes the shell's reading list when embedded so a Restore here shows up on the
+// New Tab page immediately. Standalone there is no shell, so it loads its own.
+function LibraryTab({ accessToken, binding, onOpenArticle }: {
+  accessToken: string | null;
+  binding?: ReadingListBinding;
+  onOpenArticle: (url: string) => void;
+}) {
+  // Hooks can't be called conditionally, so the fallback always runs - passing
+  // a null token when a binding exists keeps it from firing a duplicate fetch.
+  const own = useReadingList(binding ? null : accessToken);
+  const list = binding ?? own;
+
+  return (
+    <LibraryPanel
+      items={list.items}
+      accessToken={accessToken}
+      onMoveToFolder={list.moveToFolder}
+      onRestore={id => list.setInLibrary(id, false)}
+      onDelete={list.removeItem}
+      onFoldersDeleted={list.clearFolder}
+      onOpenArticle={onOpenArticle}
+    />
   );
 }
 
 // ── Header ────────────────────────────────────────────────────────────────
-function ProfileHeader({ profile, accessToken, navigate, onRelationChange }: {
+function ProfileHeader({ profile, accessToken, navigate, onRelationChange, onBlockedChange }: {
   profile: ProfileUser;
   accessToken: string | null;
   navigate: (to: string) => void;
   onRelationChange: (rel: FriendRelation) => void;
+  onBlockedChange: (blocked: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [feedCopied, setFeedCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [reporting, setReporting] = useState(false);
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
+  const { block, unblock } = useBlocks(accessToken);
 
   function copyLink() {
     const url = `${window.location.origin}${profilePathFor(profile.username)}`;
@@ -197,130 +326,210 @@ function ProfileHeader({ profile, accessToken, navigate, onRelationChange }: {
     }
   }
 
+  async function doBlock() {
+    setBusy(true); setErr(''); setConfirmingBlock(false);
+    const res = await block(profile.username);
+    if (res.ok) onBlockedChange(true);
+    else setErr(res.error ?? 'Couldn’t block this person');
+    setBusy(false);
+  }
+
+  async function doUnblock() {
+    setBusy(true); setErr('');
+    const res = await unblock(profile.id);
+    if (res.ok) onBlockedChange(false);
+    else setErr(res.error ?? 'Couldn’t unblock this person');
+    setBusy(false);
+  }
+
   return (
     <div className={styles.header}>
-      <Avatar user={profile} />
-      <div className={styles.identity}>
-        <div className={styles.displayName}>{profile.displayName}</div>
-        <div className={styles.handle}>@{profile.username}</div>
-        <div className={styles.meta}>
-          Member since {memberSince(profile.createdAt)} · {profile.commentCount} comment{profile.commentCount === 1 ? '' : 's'}
+      {/* A cover strip, tinted from the profile's own accent seed so two
+          profiles don't look like the same page with a different name on it. */}
+      <div className={styles.cover} style={coverStyle(profile.username)} aria-hidden />
+
+      <div className={styles.headerBody}>
+        <div className={styles.avatarSlot}>
+          <Avatar user={profile} />
         </div>
+
+        <div className={styles.identityRow}>
+          <div className={styles.identity}>
+            <div className={styles.displayName}>{profile.displayName}</div>
+            <div className={styles.handleRow}>
+              <span className={styles.handle}>@{profile.username}</span>
+              {profile.isSelf && <span className={styles.youTag}>You</span>}
+              {!profile.isSelf && relationTag(profile.relation, accessToken) && (
+                <span className={styles.relTag}>{relationTag(profile.relation, accessToken)}</span>
+              )}
+            </div>
+          </div>
+
+          {/* One primary action, everything else behind the overflow - the
+              stacked column of four equal-weight buttons was the ugly part. */}
+          <div className={styles.actions}>
+            {profile.isSelf ? (
+              <button className={styles.primaryBtn} onClick={() => navigate('/blog')}>My blog</button>
+            ) : profile.blocked ? (
+              // The only action left on a stub profile, and the reason the stub
+              // exists at all rather than a 404.
+              <button className={styles.primaryBtn} disabled={busy} onClick={doUnblock}>
+                {busy ? 'Unblocking…' : 'Unblock'}
+              </button>
+            ) : accessToken ? (
+              <>
+                <FollowBlogButton username={profile.username} />
+                {profile.relation === 'none' && (
+                  <button className={styles.primaryBtn} disabled={busy} onClick={addFriend}>
+                    Add friend
+                  </button>
+                )}
+              </>
+            ) : (
+              <button className={styles.primaryBtn} onClick={() => navigate('/')}>Sign in to add</button>
+            )}
+
+            <OverflowMenu
+              copied={copied}
+              feedCopied={feedCopied}
+              onCopyLink={copyLink}
+              onCopyFeed={copyFeed}
+              // Safety actions belong only on someone else's live profile, and
+              // only for a signed-in viewer: there is nobody to report to, and
+              // no account to hang a block on, otherwise.
+              canModerate={!profile.isSelf && !profile.blocked && !!accessToken}
+              onReport={() => setReporting(true)}
+              onBlock={() => setConfirmingBlock(true)}
+            />
+          </div>
+        </div>
+
+        <div className={styles.stats}>
+          <span className={styles.stat}>
+            <b>{profile.postCount}</b> post{profile.postCount === 1 ? '' : 's'}
+          </span>
+          <span className={styles.stat}>
+            <b>{profile.commentCount}</b> comment{profile.commentCount === 1 ? '' : 's'}
+          </span>
+          <span className={styles.stat}>since {memberSince(profile.createdAt)}</span>
+        </div>
+
+        {/* Blocking tears down a friendship and hides both people from each
+            other, so it asks once - inline rather than in a window.confirm,
+            which gives no room to say what it actually does. */}
+        {confirmingBlock && (
+          <div className={styles.confirmBar} role="alertdialog" aria-label={`Block @${profile.username}`}>
+            <span className={styles.confirmText}>
+              Block @{profile.username}? You’ll stop seeing each other entirely, and any friendship
+              between you ends. They aren’t told.
+            </span>
+            <button className={styles.dangerBtn} disabled={busy} onClick={doBlock}>
+              {busy ? 'Blocking…' : 'Block'}
+            </button>
+            <button className={styles.ghostBtn} onClick={() => setConfirmingBlock(false)}>Cancel</button>
+          </div>
+        )}
+
         {err && <div className={styles.error}>{err}</div>}
       </div>
-      <div className={styles.actions}>
-        <button className={styles.ghostBtn} onClick={copyLink}>{copied ? 'Copied!' : 'Copy link'}</button>
-        {/* The blog's RSS URL, for any reader — not just this app */}
-        <button className={styles.ghostBtn} onClick={copyFeed}>
-          {feedCopied ? 'Copied!' : 'Copy RSS'}
-        </button>
-        {profile.isSelf && (
-          <button className={styles.primaryBtn} onClick={() => navigate('/blog')}>My blog</button>
-        )}
-        {!profile.isSelf && accessToken && (
-          <FollowButton username={profile.username} />
-        )}
-        {profile.isSelf && <span className={styles.statusTag}>This is you</span>}
-        {!profile.isSelf && accessToken && (
-          profile.relation === 'friends' ? <span className={styles.statusTag}>Friends</span>
-          : profile.relation === 'outgoing' ? <span className={styles.statusTag}>Requested</span>
-          : profile.relation === 'incoming' ? <span className={styles.statusTag}>Wants to add you</span>
-          : <button className={styles.primaryBtn} disabled={busy} onClick={addFriend}>Add friend</button>
-        )}
-        {!profile.isSelf && !accessToken && (
-          <button className={styles.primaryBtn} onClick={() => navigate('/')}>Sign in to add</button>
-        )}
-      </div>
+
+      {reporting && (
+        <ReportModal
+          targetType="user"
+          targetId={profile.id}
+          subjectName={`@${profile.username}`}
+          onClose={() => setReporting(false)}
+        />
+      )}
     </div>
   );
 }
 
-// ── Follow ───────────────────────────────────────────────────────────────────
-// Subscribing to someone's blog is "bookmarking their profile": the server adds
-// their feed to a folder you choose (so their posts appear in that folder's
-// article list) and creates a sidebar tile for them, with the unread badge any
-// other site gets. Only public posts travel this way — friends-only posts are
-// read here on the profile, or through your personal feed.
-function FollowButton({ username }: { username: string }) {
-  const [following, setFollowing] = useState<boolean | null>(null);
-  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
-  const [picking, setPicking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
+// The relation between you and this person, as a short tag beside their handle.
+// Returns null when there's nothing to say (no relation, or you're signed out).
+function relationTag(relation: FriendRelation, accessToken: string | null): string | null {
+  if (!accessToken) return null;
+  switch (relation) {
+    case 'friends': return 'Friends';
+    case 'outgoing': return 'Requested';
+    case 'incoming': return 'Wants to add you';
+    default: return null;
+  }
+}
+
+// Secondary actions - the ones you reach for once, not every visit. Report and
+// Block sit at the bottom behind a divider: reached deliberately, never by a
+// slip of the mouse aimed at Copy link.
+function OverflowMenu({ copied, feedCopied, onCopyLink, onCopyFeed, canModerate, onReport, onBlock }: {
+  copied: boolean;
+  feedCopied: boolean;
+  onCopyLink: () => void;
+  onCopyFeed: () => void;
+  canModerate: boolean;
+  onReport: () => void;
+  onBlock: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    apiGet<{ following: boolean }>(`/api/v1/blogs/${encodeURIComponent(username)}/follow`)
-      .then(d => { if (!cancelled) setFollowing(d.following); })
-      .catch(() => { if (!cancelled) setFollowing(false); });
-    return () => { cancelled = true; };
-  }, [username]);
-
-  async function openPicker() {
-    setErr('');
-    try {
-      const list = await apiGet<{ id: string; name: string }[]>('/api/v1/folders');
-      if (list.length === 0) { setErr('Make a folder first'); return; }
-      // With one folder there is nothing to choose — just use it.
-      if (list.length === 1) { await follow(list[0].id); return; }
-      setFolders(list);
-      setPicking(true);
-    } catch {
-      setErr('Couldn’t load folders');
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     }
-  }
-
-  async function follow(folderId: string) {
-    setBusy(true); setErr('');
-    try {
-      await apiPost(`/api/v1/blogs/${encodeURIComponent(username)}/follow`, { folderId });
-      setFollowing(true);
-      setPicking(false);
-    } catch {
-      setErr('Couldn’t follow');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function unfollow() {
-    setBusy(true); setErr('');
-    try {
-      await apiFetch(`/api/v1/blogs/${encodeURIComponent(username)}/follow`, { method: 'DELETE' });
-      setFollowing(false);
-    } catch {
-      setErr('Couldn’t unfollow');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (following === null) return null;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   return (
-    <>
-      {picking ? (
-        <div className={styles.folderPick}>
-          <span className={styles.folderPickLabel}>Add to folder</span>
-          {folders.map(f => (
-            <button key={f.id} className={styles.folderOption} disabled={busy}
-              onClick={() => follow(f.id)}>
-              {f.name}
-            </button>
-          ))}
-          <button className={styles.ghostBtn} onClick={() => setPicking(false)}>Cancel</button>
+    <div className={styles.overflowWrap} ref={wrapRef}>
+      <button
+        className={styles.overflowBtn}
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="More"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+        </svg>
+      </button>
+      {open && (
+        <div className={styles.overflowMenu} role="menu">
+          <button role="menuitem" className={styles.overflowItem} onClick={onCopyLink}>
+            {copied ? 'Copied!' : 'Copy link'}
+          </button>
+          {/* The blog's RSS URL, for any reader - not just this app */}
+          <button role="menuitem" className={styles.overflowItem} onClick={onCopyFeed}>
+            {feedCopied ? 'Copied!' : 'Copy RSS'}
+          </button>
+          {canModerate && (
+            <>
+              <div className={styles.overflowDivider} role="separator" />
+              <button
+                role="menuitem"
+                className={styles.overflowItem}
+                onClick={() => { setOpen(false); onReport(); }}
+              >
+                Report this account
+              </button>
+              <button
+                role="menuitem"
+                className={`${styles.overflowItem} ${styles.overflowDanger}`}
+                onClick={() => { setOpen(false); onBlock(); }}
+              >
+                Block
+              </button>
+            </>
+          )}
         </div>
-      ) : following ? (
-        <button className={styles.ghostBtn} disabled={busy} onClick={unfollow}>
-          Following ✓
-        </button>
-      ) : (
-        <button className={styles.ghostBtn} disabled={busy} onClick={openPicker}>
-          Follow blog
-        </button>
       )}
-      {err && <div className={styles.error}>{err}</div>}
-    </>
+    </div>
   );
 }
 
@@ -328,6 +537,7 @@ function FollowButton({ username }: { username: string }) {
 function PostCard({ post, onOpen }: { post: BlogPostSummary; onOpen: (slug: string) => void }) {
   return (
     <button className={styles.postCard} onClick={() => onOpen(post.slug)}>
+      {post.heroImage && <img className={styles.postHero} src={post.heroImage} alt="" />}
       <div className={styles.commentTop}>
         <span className={styles.kindTag}>Post</span>
         {post.visibility !== 'public' && (
@@ -341,9 +551,10 @@ function PostCard({ post, onOpen }: { post: BlogPostSummary; onOpen: (slug: stri
   );
 }
 
-// ── Activity tab ─────────────────────────────────────────────────────────────
-// The profile's main page: blog posts and shared comments in one timeline.
-function ActivityTab({ username, authKey, onOpenArticle, onOpenPost }: {
+// ── Content tab ──────────────────────────────────────────────────────────────
+// The profile's main page: everything this person made or shared - blog posts
+// and shared comments - in one timeline. The API route is still /activity.
+function ContentTab({ username, authKey, onOpenArticle, onOpenPost }: {
   username: string;
   authKey: string | null;
   onOpenArticle: (url: string) => void;
@@ -439,7 +650,7 @@ function CommentCard({ comment: c, onOpen }: {
         {c.visibility === 'friends' && <span className={styles.chip}>Friends</span>}
       </div>
       {c.title && <div className={styles.commentTitle}>{c.title}</div>}
-      <div className={styles.commentBody} dangerouslySetInnerHTML={{ __html: c.body }} />
+      <div className={`${styles.commentBody} note-embed-read`} dangerouslySetInnerHTML={{ __html: c.body }} />
       <div className={styles.commentTime}>{relTime(c.createdAt)}</div>
     </button>
   );

@@ -13,28 +13,52 @@ export function useReadingList(accessToken: string | null) {
 
   useEffect(() => { load(); }, [load]);
 
-  const saveItem = useCallback(async (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'archived' | 'notes'>) => {
+  const saveItem = useCallback(async (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes'>) => {
     const created = await apiPost<ReadingListItem>('/api/v1/reading-list', item);
     setItems(prev => [created, ...prev]);
     return created;
   }, []);
 
-  const updateItem = useCallback(async (id: string, patch: Partial<Pick<ReadingListItem, 'archived' | 'title' | 'tag' | 'notes'>>) => {
+  const updateItem = useCallback(async (id: string, patch: Partial<Pick<ReadingListItem, 'inLibrary' | 'title' | 'tag' | 'notes'>>) => {
     const updated = await apiPatch<ReadingListItem>(`/api/v1/reading-list/${id}`, patch);
     setItems(prev => prev.map(i => i.id === id ? updated : i));
   }, []);
 
-  // Archive/remove update state first (so the UI can animate the change
+  // Library moves/removes update state first (so the UI can animate the change
   // synchronously) and reconcile with the server behind the scenes
-  const archiveItem = useCallback(async (id: string, archived: boolean) => {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, archived } : i));
+  const setInLibrary = useCallback(async (id: string, inLibrary: boolean) => {
+    // Mirrors the server rule: leaving the Library also leaves the shelf.
+    setItems(prev => prev.map(i => i.id === id
+      ? { ...i, inLibrary, folderId: inLibrary ? i.folderId : null }
+      : i));
     try {
-      const updated = await apiPatch<ReadingListItem>(`/api/v1/reading-list/${id}`, { archived });
+      const updated = await apiPatch<ReadingListItem>(`/api/v1/reading-list/${id}`, { inLibrary });
       setItems(prev => prev.map(i => i.id === id ? updated : i));
     } catch {
       load();
     }
   }, [load]);
+
+  // Filing onto a shelf implies the article is in the Library, so this is also
+  // how an article gets there from the reading list in one action.
+  const moveToFolder = useCallback(async (id: string, folderId: string | null) => {
+    setItems(prev => prev.map(i => i.id === id
+      ? { ...i, folderId, inLibrary: folderId ? true : i.inLibrary }
+      : i));
+    try {
+      const updated = await apiPatch<ReadingListItem>(`/api/v1/reading-list/${id}`, { folderId });
+      setItems(prev => prev.map(i => i.id === id ? updated : i));
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  // A deleted shelf drops its articles into Unsorted rather than deleting them.
+  const clearFolder = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const dropped = new Set(ids);
+    setItems(prev => prev.map(i => dropped.has(i.id) ? { ...i, folderId: null } : i));
+  }, []);
 
   const removeItem = useCallback(async (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
@@ -45,5 +69,11 @@ export function useReadingList(accessToken: string | null) {
     }
   }, [load]);
 
-  return { items, saveItem, updateItem, archiveItem, removeItem };
+  return { items, saveItem, updateItem, setInLibrary, moveToFolder, clearFolder, removeItem };
 }
+
+/**
+ * The hook's surface, so a parent that already owns a reading list can hand it
+ * to a child instead of the child opening a second copy that drifts from it.
+ */
+export type ReadingListBinding = ReturnType<typeof useReadingList>;

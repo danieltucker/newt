@@ -6,7 +6,7 @@ import styles from './PublicArticlePage.module.css';
 // Standalone, logged-out view of a shared thread link (/a/<id>). Reuses the
 // article reader in read-only mode: a visitor can read the article and its
 // public comments, but posting requires signing in. Signed-in users never land
-// here — App routes them into the app shell, which opens the same reader over
+// here - App routes them into the app shell, which opens the same reader over
 // their tabs.
 
 interface Props {

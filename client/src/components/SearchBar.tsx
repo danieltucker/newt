@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import styles from './SearchBar.module.css';
-import { faviconUrl } from '../utils/color';
+import { bookmarkHref, faviconUrl } from '../utils/color';
 import { noteText, noteSnippet } from '../utils/noteText';
 
-// Rotating placeholder hints — cycled with a per-letter flip animation
+// Rotating placeholder hints - cycled with a per-letter flip animation
 const HINTS = [
   'Search the web or enter an address',
   'Ask Claude anything with /c your question',
-  'Search your bookmarks, notes, feeds and reading list — try #tag',
+  'Search your bookmarks, notes, feeds and reading list - try #tag',
   '/g Google · /d DuckDuckGo · /b Bing · /br Brave',
   'Paste a URL to go straight there',
 ];
@@ -62,7 +62,7 @@ function tagsOf(a: ArticleHint): string[] {
 interface NoteHint {
   id: string;
   title: string;
-  body: string;   // editor HTML — searched as plain text
+  body: string;   // editor HTML - searched as plain text
 }
 
 type Suggestion =
@@ -206,11 +206,11 @@ export default function SearchBar({
       setOpen(false);
       setSelectedIndex(-1);
     } else if (item.kind === 'bookmark') {
-      navigate(`https://${item.domain}`);
+      navigate(bookmarkHref(item.domain));
     } else if (item.url) {
       navigate(item.url);
     }
-    // Bare shortcut prefix (no query yet) — nothing to open
+    // Bare shortcut prefix (no query yet) - nothing to open
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -222,7 +222,7 @@ export default function SearchBar({
     const q = value.trim();
     if (!q) return;
     // Check slash shortcuts on submit too (e.g. Enter pressed without selecting a suggestion)
-    if (SHORTCUTS.some(s => q === s.prefix)) return; // bare prefix — wait for a query
+    if (SHORTCUTS.some(s => q === s.prefix)) return; // bare prefix - wait for a query
     const shortcut = SHORTCUTS.find(s => q.startsWith(s.prefix + ' '));
     if (shortcut) {
       const query = q.slice(shortcut.prefix.length).trim();
@@ -290,8 +290,11 @@ export default function SearchBar({
   return (
     <div className={styles.container}>
       <form className={styles.wrap} onSubmit={handleSubmit}>
-        <svg className={styles.icon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        {/* A plain magnifier - the mark leads the bar a few pixels to the left,
+            and one glyph saying "Newt" per row is enough. */}
+        <svg className={styles.icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.35-4.35" />
         </svg>
         <div className={styles.inputWrap}>
           <input

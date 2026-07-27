@@ -1,0 +1,192 @@
+/* Sits inside the profile page's tab body, so there's no card chrome here -
+   the rows are the surface. Styles mirror the profile's own list vocabulary. */
+
+.wrap { display: flex; flex-direction: column; }
+
+.headRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.row:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.rowText { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text); }
+.rowText strong { font-weight: 650; }
+
+.personBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.personBtn:hover strong { text-decoration: underline; }
+
+.sub {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.rowBtns { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+.avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: block;
+}
+.avatarFallback {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface2));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  padding: 18px 2px 8px;
+}
+
+/* ── Blocked ── */
+.blockedNote {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  padding: 0 2px 10px;
+  max-width: 56ch;
+}
+
+/* Desaturated and dimmed: these rows are a record of a decision, not people
+   you're being invited to interact with. */
+.rowBlocked {
+  background: var(--surface2);
+  opacity: 0.78;
+}
+.rowBlocked:hover { opacity: 1; border-color: var(--border); }
+.rowBlocked .avatar, .rowBlocked .avatarFallback { filter: grayscale(1); }
+
+/* ── Find people ── */
+.addWrap {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+}
+.searchInput:focus { border-color: var(--accent); }
+.searchInput::placeholder { color: var(--muted); }
+
+.addWrap .list { margin-top: 10px; }
+
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  padding: 10px 2px 2px;
+}
+
+.error {
+  color: #e5484d;
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+
+/* ── Buttons ── */
+.primaryBtn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.primaryBtn:hover { filter: brightness(1.08); }
+
+.ghostBtn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.statusTag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface2);
+  white-space: nowrap;
+}
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 32px 12px;
+}

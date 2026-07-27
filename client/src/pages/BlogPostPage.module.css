@@ -45,12 +45,43 @@
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
+/* Borderless and dimmed, so it sits well below Follow in the top bar's
+   hierarchy - present for the rare reader who needs it, invisible otherwise. */
+.reportBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+.reportBtn:hover { opacity: 1; color: var(--text); background: var(--surface2); }
+
 /* ── Article ── */
 .article {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 32px;
+}
+
+/* Bleeds to the card's edges: the negative margins cancel .article's padding,
+   and the top corners are rounded to sit inside its 20px radius (less the 1px
+   border). Kept to a fixed banner ratio so a tall portrait upload can't push the
+   title below the fold. */
+.hero {
+  display: block;
+  width: calc(100% + 64px);
+  margin: -32px -32px 26px;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  border-radius: 19px 19px 0 0;
+  background: var(--surface2);
 }
 
 .title {
@@ -188,7 +219,7 @@
 }
 
 /* Embedded images. height:auto overrides the intrinsic height attribute once
-   the aspect ratio is known, so a downscaled image is never stretched — the
+   the aspect ratio is known, so a downscaled image is never stretched - the
    attributes are still what reserve the space before it loads. A remote image
    that fails to load leaves its alt text rather than a broken-icon gap. */
 .body img {
@@ -300,6 +331,7 @@
 
 @media (max-width: 560px) {
   .article { padding: 22px 18px; }
+  .hero { width: calc(100% + 36px); margin: -22px -18px 20px; }
   .title { font-size: 26px; }
   .body { font-size: 15.5px; }
   .commentsWrap { padding: 16px 14px; }

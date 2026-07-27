@@ -64,7 +64,7 @@
 .toggle input { accent-color: var(--accent); cursor: pointer; }
 .toggle:hover { color: var(--text); }
 
-/* Segmented visibility control — same shape as the comment composer's */
+/* Segmented visibility control - same shape as the comment composer's */
 .visSwitch {
   display: inline-flex;
   background: var(--surface2);
@@ -146,6 +146,71 @@
   margin-bottom: 14px;
 }
 
+/* ── Cover image ── */
+.heroBlock { margin-bottom: 16px; }
+
+/* The real control is the button beside it; the input only opens the picker. */
+.heroInput { display: none; }
+
+.heroEmpty {
+  width: 100%;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 18px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.heroEmpty:hover:not(:disabled) {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+.heroEmpty:disabled { cursor: default; opacity: 0.7; }
+
+.heroPreview {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+/* A banner crop rather than the image's own aspect ratio, so the editor shows
+   the same shape the post page and the feed card will give it. */
+.heroImg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  background: var(--surface2);
+}
+
+.heroActions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.heroBtn {
+  border: none;
+  background: color-mix(in oklab, #000 62%, transparent);
+  color: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.heroBtn:hover:not(:disabled) { background: color-mix(in oklab, #000 78%, transparent); }
+.heroBtn:disabled { cursor: default; opacity: 0.65; }
+
 .titleInput {
   width: 100%;
   border: none;
@@ -178,7 +243,7 @@
    The background is white in both themes on purpose: RichEditor borrows its
    styling from NotesConsole.module.css, where .editor hardcodes dark slate text
    and the toolbar uses light separators. The comment composer's .editorShell
-   pins #fff for the same reason — the editor is "paper" wherever it appears. */
+   pins #fff for the same reason - the editor is "paper" wherever it appears. */
 .editorShell {
   display: flex;
   flex-direction: column;

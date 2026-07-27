@@ -1,0 +1,335 @@
+/* The compact chrome for reading views. Same liquid-glass vocabulary as the
+   new tab's sticky search backdrop (NewTabPage .searchGlass) and the composer
+   toolbar - a frosted layer the page scrolls beneath, so it reads as one
+   surface across the app rather than three different bars. */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 78%, transparent),
+    color-mix(in oklab, var(--surface) 58%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 32px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* The two clusters claim equal shares of the leftover space, so search lands on
+   the viewport's true centre no matter that the brand block is wider than the
+   action row.
+
+   The floor matters as much as the share: a cluster's buttons have fixed
+   heights and nowrap labels, so they never shrink. Let the box go narrower than
+   they measure and they simply spill out of it - the hamburger rightward, the
+   action row leftward, since it packs to the end - and land on top of the
+   search box. max-content keeps each box at least as wide as what's inside it,
+   which turns search into the thing that gives when the row runs out of room.
+   (No overflow: hidden here - the dropdowns hang out of these boxes on
+   purpose.) */
+.left, .right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: max-content;
+}
+
+.right {
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.center {
+  flex: 0 1 620px;
+  min-width: 0;
+}
+
+/* ── Brand ──
+   Mark plus wordmark, leading the bar and doubling as the way home. Reads as
+   identity rather than a control, so it carries no chrome until hovered. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 8px 0 5px;
+  margin-right: 2px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.brand:hover {
+  background: var(--surface2);
+  border-color: var(--border);
+}
+
+.brandMark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.brandText {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+/* ── Buttons ── */
+.iconBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.iconBtn:hover, .iconBtnOpen {
+  background: var(--surface2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.iconBtnActive { color: var(--accent); }
+
+.notifBadge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.createBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 13px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.createBtn:hover {
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--text);
+}
+
+.avatarBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 6px 0 3px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.avatarBtn:hover, .avatarBtnOpen {
+  background: var(--surface2);
+  border-color: var(--border);
+}
+
+.avatarImg {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent) 24%, var(--surface2));
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.caret { color: var(--muted); opacity: 0.7; flex-shrink: 0; }
+
+/* ── Dropdown menus ── */
+.menuWrap { position: relative; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 208px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  box-shadow: 0 14px 36px var(--shadow);
+  z-index: var(--z-content-overlay);
+  animation: menuIn 0.13s ease;
+}
+.menuRight { left: auto; right: 0; }
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu { animation: none; }
+}
+
+.menuHead {
+  padding: 7px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.menuHandle {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.menuItem:hover { background: var(--surface2); }
+
+.menuLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.menuMark {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.menuItemCurrent { color: var(--accent); font-weight: 650; }
+.menuDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.menuItemDanger { color: var(--muted); }
+.menuItemDanger:hover { color: #e5484d; background: color-mix(in oklab, #e5484d 10%, transparent); }
+
+.menuSep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* The bookmarks rail when it has moved into the hamburger (see RAIL_NARROW in
+   ShellBar.tsx). It sets the menu's width - wider than a menu of labels needs
+   to be, because the rail carries a 3-up pin grid - and caps its own height so
+   the menu stays on screen however many folders there are. */
+.menuRailLabel {
+  padding: 5px 10px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.menuRail {
+  width: min(272px, calc(100vw - 44px));
+  max-height: 52vh;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.menuRail::-webkit-scrollbar { display: none; }
+
+/* ── Responsive ──
+   The equal-share centring above holds while there's room for a 620px search
+   box; below that the clusters sit at their max-content floor and search takes
+   whatever is left. That handover is the min-width's job, not a breakpoint's -
+   these only trim the chrome to buy search more of the leftover. */
+@media (max-width: 1000px) {
+  .inner { padding: 8px 20px; gap: 14px; }
+}
+
+@media (max-width: 820px) {
+  /* Create drops to its icon: it's the widest thing on the right, and by here
+     search is already living on the remainder. */
+  .createLabel { display: none; }
+  .createBtn { padding: 0 9px; }
+}
+
+@media (max-width: 560px) {
+  .inner { padding: 8px 12px; gap: 8px; }
+  .right { gap: 2px; }
+  /* The wordmark is the first thing to go - the mark alone still says whose
+     app this is, and search needs every pixel it can get down here. */
+  .brandText { display: none; }
+  .brand { padding: 0 4px; margin-right: 0; }
+  /* Create used to hide here and defer to a "Write a post" row in the
+     hamburger. That row is gone, so the button stays at every width - by this
+     point it's already icon-only (see 820px above) and costs ~33px. */
+  .createBtn { padding: 0 8px; }
+}

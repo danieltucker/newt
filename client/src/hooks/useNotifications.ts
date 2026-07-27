@@ -16,7 +16,7 @@ export function useNotifications(accessToken: string | null) {
     try {
       const data = await apiGet<{ unread: number }>('/api/v1/notifications/count');
       setUnread(data.unread ?? 0);
-    } catch { /* transient — next poll retries */ }
+    } catch { /* transient - next poll retries */ }
   }, [accessToken]);
 
   const loadList = useCallback(async () => {

@@ -31,7 +31,7 @@ export default function EditArticleModal({ item, onSave, onClose }: Props) {
       : tags;
     setSaving(true);
     try {
-      // notes is left out entirely so the server keeps whatever is stored —
+      // notes is left out entirely so the server keeps whatever is stored -
       // comments own that content now
       await onSave(item.id, {
         title: title.trim() || item.title,
@@ -80,7 +80,7 @@ export default function EditArticleModal({ item, onSave, onClose }: Props) {
           />
         </div>
 
-        {/* Notes became comments — write them on the card's comment thread,
+        {/* Notes became comments - write them on the card's comment thread,
             where they can be threaded, titled and optionally shared. */}
 
         <div className={styles.footer}>

@@ -1,13 +1,50 @@
+/* A column so the footer can sit at the bottom; the card centres itself in
+   whatever space is left over via `margin: auto` rather than the page
+   centring both of them together. */
 .page {
+  position: relative;   /* containing block for the "what is newt?" link */
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   background: var(--bg);
   animation: fade 0.3s ease;
 }
 
+/* The way back to the landing page, for a visitor who arrived at the form
+   before they knew what this was. Absolute so it doesn't take height from the
+   card's `margin: auto` centring. */
+.home {
+  position: absolute;
+  top: 20px;
+  left: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.home:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.homeMark { width: 20px; height: 20px; }
+
+@media (max-width: 560px) {
+  .home { top: 12px; left: 12px; }
+}
+
 .card {
+  margin: auto;   /* centres in the space above the footer */
   width: 400px;
   background: var(--surface);
   border: 1px solid var(--border);

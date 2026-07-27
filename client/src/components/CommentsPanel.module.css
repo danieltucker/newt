@@ -1,5 +1,5 @@
 /* Comment thread, always open, living at the foot of the article reader modal.
-   Cards carry only `.bar` — a quiet strip that opens that modal. */
+   Cards carry only `.bar` - a quiet strip that opens that modal. */
 
 /* ── Card strip ───────────────────────────────────────────────────────── */
 
@@ -89,7 +89,7 @@
   color: #e5484d;
 }
 
-/* Quiet placeholder while the thread loads — beats a bare "Loading…" string */
+/* Quiet placeholder while the thread loads - beats a bare "Loading…" string */
 .skeleton {
   display: flex;
   flex-direction: column;
@@ -464,6 +464,12 @@
 .actionBtn:disabled { opacity: 0.5; cursor: default; }
 .deleteAction:hover:not(:disabled) { color: #e5484d; }
 
+/* Report is available on every comment but wanted on almost none, so it stays
+   quieter than Reply until hovered. Not red like the moderator's Remove - this
+   one asks somebody to look, it doesn't destroy anything. */
+.reportAction { opacity: 0.62; }
+.reportAction:hover { opacity: 1; }
+
 /* Nested replies indent at every level via a clickable thread rail. The rail is
    the collapse target; a small per-level indent keeps deep threads readable
    without marching off the page, and collapsing folds a whole subtree. */
@@ -678,4 +684,59 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chevron, .toggle, .actionBtn, .visOption, .postBtn { transition: none; }
+}
+
+/* ── Moderation ──
+   Deliberately unlike the author's own Delete: this acts on somebody else's
+   words, so it carries the shield and sits in the destructive register even
+   before the confirm step. */
+.modAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #e5484d;
+}
+.modAction:hover {
+  color: #e5484d;
+  background: color-mix(in oklab, #e5484d 12%, transparent);
+}
+
+.modConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 4px 4px 10px;
+  border-radius: 9px;
+  background: color-mix(in oklab, #e5484d 10%, transparent);
+  border: 1px solid color-mix(in oklab, #e5484d 35%, transparent);
+}
+
+/* Says what will actually happen - a comment with replies is tombstoned, not
+   erased, and that difference matters before you click. */
+.modConfirmText {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.modConfirmBtn {
+  border: none;
+  background: #e5484d;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 4px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.modConfirmBtn:hover { filter: brightness(1.08); }
+.modConfirmBtn:disabled { opacity: 0.6; cursor: default; filter: none; }
+
+/* The author's handle, shown to moderators beside the display name */
+.modHandle {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
 }

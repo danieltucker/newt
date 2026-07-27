@@ -14,6 +14,8 @@ import { NoteDoc, NoteFolder } from '../hooks/useSettings';
 import { searchNotes } from '../utils/noteText';
 import { markdownToHtml } from '../utils/noteMigrate';
 import { uploadImage } from '../utils/imageUpload';
+import { EmbedData, embeddedUrls } from '../utils/noteEmbed';
+import { useCommentCounts } from '../hooks/useCommentCounts';
 import {
   INDENT, isFolderId, folderIdOf, sameOrder, buildRows, getProjection, computeDrop, reconcileFlat,
 } from '../utils/noteTree';
@@ -123,7 +125,7 @@ function DeleteBtn({ id, onDelete }: { id: string; onDelete: (id: string) => voi
   );
 }
 
-// Plain (non-draggable) row — used while a search filters the tree, since
+// Plain (non-draggable) row - used while a search filters the tree, since
 // dropping onto a filtered list can't express a position in the full order.
 function NoteRow({ doc, active, snippet, onSelect, onDelete }: NoteRowProps) {
   return (
@@ -289,7 +291,7 @@ interface FolderRowProps {
 }
 
 // A single flat, sortable folder-header row. Its notes are separate rows in the
-// same list (indented), not children here — that's what makes the whole tree one
+// same list (indented), not children here - that's what makes the whole tree one
 // uniform sortable surface.
 function SortableFolderRow({
   folder, count, open, editing, dropTarget,
@@ -302,7 +304,7 @@ function SortableFolderRow({
     <div
       className={styles.folderGroup}
       ref={setNodeRef}
-      // Translate only — CSS.Transform would add the strategy's scaleY, which
+      // Translate only - CSS.Transform would add the strategy's scaleY, which
       // stretches a folder to the height of whatever it's swapping with.
       style={{ transform: CSS.Translate.toString(transform), transition }}
     >
@@ -361,6 +363,8 @@ interface Props {
   onSidebarWidth?: (w: number) => void;        // persist a resize
   initialNoteId?: string;   // opened from a search hit in the main search bar
   initialQuery?: string;    // …and the term that found it, seeded into the filter
+  references?: EmbedData[]; // what /reference can embed - the saved articles
+
   closing?: boolean;
   onClose: () => void;
 }
@@ -373,7 +377,7 @@ const MAX_KEY = 'newt:notesMaximized';
 export default function NotesConsole({
   docs, folders: foldersProp, order: orderProp, legacyNotes, onSave,
   sidebarWidth: sidebarWidthProp = 210, onSidebarWidth,
-  initialNoteId, initialQuery = '', closing = false, onClose,
+  initialNoteId, initialQuery = '', references, closing = false, onClose,
 }: Props) {
   // Seed the working set once: existing docs → migrate legacy note → a blank
   // note. Anything that has outstayed its 15 days in Recently Deleted is purged
@@ -386,7 +390,7 @@ export default function NotesConsole({
         : [blankNote()];
     const kept = seed.filter(d => !d.deletedAt || Date.now() - d.deletedAt < TRASH_DAYS * DAY_MS);
     if (!kept.some(d => !d.deletedAt)) kept.unshift(blankNote());
-    // Identity is the signal that nothing had to change — the effect below
+    // Identity is the signal that nothing had to change - the effect below
     // persists the seed only when it isn't what's stored.
     return seed === docs && kept.length === seed.length ? docs : kept;
   });
@@ -436,10 +440,17 @@ export default function NotesConsole({
     | { kind: 'folder'; folder: NoteFolder }
     | null
   >(null);
-  // The console opens with nothing selected — the editor stays blank until a note
+  // The console opens with nothing selected - the editor stays blank until a note
   // is picked (unless it was opened straight onto a search hit).
   const [activeId, setActiveId] = useState<string | null>(
     () => (initialNoteId && initial.some(d => d.id === initialNoteId) ? initialNoteId : null)
+  );
+  // Narrow screens can't carry the tree and the editor at once - see the 720px
+  // block in the stylesheet, where these become two full-height views. This says
+  // which one is showing. Wide screens show both and ignore it entirely; it's
+  // still tracked there so the right view is up if the window is narrowed.
+  const [mobilePane, setMobilePane] = useState<'tree' | 'doc'>(
+    () => (initialNoteId ? 'doc' : 'tree')
   );
   const [saved, setSaved] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -479,7 +490,7 @@ export default function NotesConsole({
   }, [scheduleSave]);
 
   // The seed was rebuilt against stored notes (legacy migration or an expiry
-  // purge) — write it back so what's stored matches what's on screen. A first
+  // purge) - write it back so what's stored matches what's on screen. A first
   // blank note isn't worth a save: nothing has been written yet.
   useEffect(() => {
     if (initial !== docs && (docs?.length || legacyNotes.trim())) scheduleSave();
@@ -508,6 +519,17 @@ export default function NotesConsole({
   const active = activeId ? docsRef.current.find(d => d.id === activeId) : undefined;
   const activeTrashed = !!active?.deletedAt;
 
+  // Comment counts for the references embedded in the open note. Seeded from
+  // the saved body on every note switch - the editor is uncontrolled, so that
+  // is where the HTML lives - and topped up by the editor when a reference is
+  // added mid-session. The hook fetches each URL once and caches it, so moving
+  // between notes costs nothing.
+  const [embedUrls, setEmbedUrls] = useState<string[]>([]);
+  useEffect(() => {
+    setEmbedUrls(embeddedUrls(docsRef.current.find(d => d.id === activeId)?.body ?? ''));
+  }, [activeId]);
+  const { counts: commentCounts } = useCommentCounts(embedUrls);
+
   const liveDocs = useMemo(() => list.filter(d => !d.deletedAt), [list]);
   const trashDocs = useMemo(
     () => list.filter(d => d.deletedAt).sort((a, b) => b.deletedAt! - a.deletedAt!),
@@ -522,8 +544,8 @@ export default function NotesConsole({
     return m;
   }, [liveDocs, folderIdSet]);
 
-  // Keep the flat order in step with what exists — new folders/notes get a slot,
-  // deleted ones lose theirs, folder blocks stay contiguous — without disturbing
+  // Keep the flat order in step with what exists - new folders/notes get a slot,
+  // deleted ones lose theirs, folder blocks stay contiguous - without disturbing
   // the saved arrangement.
   useEffect(() => {
     const next = reconcileFlat(flatRef.current, folders, liveDocs);
@@ -548,7 +570,10 @@ export default function NotesConsole({
 
   // Opening a hit from the main search bar: jump to that note once it's known.
   useEffect(() => {
-    if (initialNoteId && docsRef.current.some(d => d.id === initialNoteId)) setActiveId(initialNoteId);
+    if (initialNoteId && docsRef.current.some(d => d.id === initialNoteId)) {
+      setActiveId(initialNoteId);
+      setMobilePane('doc');
+    }
   }, [initialNoteId]);
 
   // Body edits: write straight to the ref (no re-render) + debounce a save.
@@ -571,6 +596,7 @@ export default function NotesConsole({
     docsRef.current = [doc, ...docsRef.current];
     setList(docsRef.current);
     setActiveId(doc.id);
+    setMobilePane('doc');
     setQuery('');   // an empty new note would be hidden by an active filter
     commitFlat([doc.id, ...flatRef.current.filter(t => t !== doc.id)]);   // new loose note on top
   }
@@ -582,8 +608,9 @@ export default function NotesConsole({
     docsRef.current = next;
     setList(next);
     setArmEmpty(false);
-    // Leaving the open note returns to the blank state rather than jumping.
-    if (leaving && leaving === activeId) setActiveId(null);
+    // Leaving the open note returns to the blank state rather than jumping - and
+    // on a narrow screen, back to the tree, since an empty editor is not a view.
+    if (leaving && leaving === activeId) { setActiveId(null); setMobilePane('tree'); }
     scheduleSave();
   }
 
@@ -598,6 +625,7 @@ export default function NotesConsole({
   function restoreNote(id: string) {
     commit(docsRef.current.map(d => d.id === id ? { ...d, deletedAt: undefined } : d));
     setActiveId(id);
+    setMobilePane('doc');
   }
 
   function purgeNote(id: string) {
@@ -610,6 +638,9 @@ export default function NotesConsole({
   }
 
   function selectNote(id: string) {
+    // Picking a note is what opens the editor on a narrow screen, so this runs
+    // even when the note is already the active one.
+    setMobilePane('doc');
     if (id === activeId) return;
     // Body for the current note is already in docsRef; just switch.
     setActiveId(id);
@@ -626,7 +657,7 @@ export default function NotesConsole({
     commitFolders(foldersRef.current.map(f => f.id === id ? { ...f, collapsed: !f.collapsed } : f));
   }
 
-  // Ensure a folder is expanded (persisted) — used when something lands inside it.
+  // Ensure a folder is expanded (persisted) - used when something lands inside it.
   function openFolder(id: string) {
     if (foldersRef.current.some(f => f.id === id && f.collapsed)) {
       commitFolders(foldersRef.current.map(f => f.id === id ? { ...f, collapsed: false } : f));
@@ -666,7 +697,7 @@ export default function NotesConsole({
     commitFolders(foldersRef.current.map(f => f.id === id ? { ...f, color } : f));
   }
 
-  // Deleting a folder keeps its notes — they fall back to loose, sitting where
+  // Deleting a folder keeps its notes - they fall back to loose, sitting where
   // the folder was (reconcile turns the orphaned children into top-level notes).
   function deleteFolder(id: string) {
     docsRef.current = docsRef.current.map(d => d.folderId === id ? { ...d, folderId: undefined } : d);
@@ -680,6 +711,7 @@ export default function NotesConsole({
     docsRef.current = [doc, ...docsRef.current];
     setList(docsRef.current);
     setActiveId(doc.id);
+    setMobilePane('doc');
     setQuery('');
     openFolder(fid);
     // Slot the new note right after its folder header.
@@ -772,7 +804,7 @@ export default function NotesConsole({
                 <kbd>esc</kbd>close
               </span>
               <button
-                className={styles.closeBtn}
+                className={`${styles.closeBtn} ${styles.maxBtn}`}
                 onClick={toggleMaximize}
                 title={maximized ? 'Restore' : 'Maximize'}
                 aria-label={maximized ? 'Restore notes' : 'Maximize notes'}
@@ -795,7 +827,10 @@ export default function NotesConsole({
             </span>
           </div>
 
-          <div className={styles.body} style={{ '--tree-w': `${sidebarWidth}px` } as React.CSSProperties}>
+          <div
+            className={`${styles.body} ${mobilePane === 'doc' ? styles.bodyDoc : ''}`}
+            style={{ '--tree-w': `${sidebarWidth}px` } as React.CSSProperties}
+          >
             {/* ── Note tree ── */}
             <aside className={styles.tree}>
               {/* Drag the right edge to resize the tree column */}
@@ -990,6 +1025,14 @@ export default function NotesConsole({
 
             {/* ── Editor ── */}
             <div className={styles.docPane}>
+              {/* The way back to the tree. Only ever visible on the narrow
+                  layout, where the two panes take turns - see the stylesheet. */}
+              <button className={styles.backBtn} onClick={() => setMobilePane('tree')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                All notes
+              </button>
               {active ? (
                 <>
                   {activeTrashed && (
@@ -1017,13 +1060,16 @@ export default function NotesConsole({
                     readOnly={activeTrashed}
                   />
                   {/* The read-only surface is a different tree, so the key carries
-                      that state too — remounting is what re-renders the body. */}
+                      that state too - remounting is what re-renders the body. */}
                   <RichEditor
                     key={`${active.id}:${activeTrashed}`}
                     initialHtml={active.body}
                     onChange={handleBody}
                     readOnly={activeTrashed}
                     onUploadImage={uploadImage}
+                    references={references}
+                    commentCounts={commentCounts}
+                    onEmbedsChange={setEmbedUrls}
                   />
                 </>
               ) : (

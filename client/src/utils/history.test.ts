@@ -4,7 +4,7 @@ import { HistoryStack } from './history';
 // coalesceMs=400, echoMs=50 (defaults). Times passed explicitly for determinism.
 const mk = () => new HistoryStack<string>();
 
-describe('HistoryStack — recording', () => {
+describe('HistoryStack - recording', () => {
   it('coalesces rapid typing into one undo group', () => {
     const h = mk();
     expect(h.record('', 'type', 0)).toBe(true);        // first keystroke: pushes pre-state
@@ -35,7 +35,7 @@ describe('HistoryStack — recording', () => {
     const h = mk();
     h.record('s0', 'type', 0);       // typing group
     h.record('s1', 'type', 100);     // coalesced
-    h.record('s2', 'struct', 150);   // tab/indent — its own step, forces a boundary
+    h.record('s2', 'struct', 150);   // tab/indent - its own step, forces a boundary
     h.record('s3', 'type', 160);     // next typing must start fresh, not merge back
     // s3 within 50ms of the struct is treated as its execCommand echo → ignored,
     // so the typing group that follows is captured on the next keystroke.
@@ -56,7 +56,7 @@ describe('HistoryStack — recording', () => {
   });
 });
 
-describe('HistoryStack — undo/redo', () => {
+describe('HistoryStack - undo/redo', () => {
   it('round-trips undo then redo', () => {
     const h = mk();
     h.record('v0', 'struct', 0);

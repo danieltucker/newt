@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import styles from './SiteTile.module.css';
 import { Bookmark } from '../types';
-import { faviconUrl } from '../utils/color';
+import { bookmarkHref, faviconUrl } from '../utils/color';
 
 interface Props {
   bookmark: Bookmark;
@@ -71,7 +71,7 @@ export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVi
   return (
     <a
       ref={node => { setNodeRef(node); (tileRef as React.MutableRefObject<HTMLAnchorElement | null>).current = node; }}
-      href={`https://${bookmark.domain}`}
+      href={bookmarkHref(bookmark.domain)}
       className={styles.tile}
       style={style}
       onClick={handleClick}

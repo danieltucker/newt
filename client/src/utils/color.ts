@@ -9,7 +9,7 @@ export function deriveColor(domain: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
-// Host only — strips protocol, www, and any path/query. Used for favicons,
+// Host only - strips protocol, www, and any path/query. Used for favicons,
 // colour derivation, and anywhere we want to display just the site.
 export function parseDomain(input: string): string | null {
   let s = input.trim().toLowerCase();
@@ -19,7 +19,7 @@ export function parseDomain(input: string): string | null {
   return s;
 }
 
-// Full link target — host plus any path/query, so a bookmark can point at
+// Full link target - host plus any path/query, so a bookmark can point at
 // github.com/danieltucker, not only github.com. The host is lowercased (hosts
 // are case-insensitive) but the path is kept exactly as typed. Returns null when
 // there's no valid host.
@@ -35,6 +35,15 @@ export function parseLink(input: string): string | null {
 export function deriveName(domain: string): string {
   const label = domain.split('.')[0];
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+// Where a bookmark tile navigates. `domain` is normally scheme-less (parseLink
+// strips it), so https:// is prepended - but a few bookmarks are created by the
+// server rather than typed in, and those carry a full URL. Prefixing one of
+// those gave links like https://http//host/u/name, so pass an absolute URL
+// through untouched.
+export function bookmarkHref(domain: string): string {
+  return /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
 }
 
 export function faviconUrl(domain: string): string {

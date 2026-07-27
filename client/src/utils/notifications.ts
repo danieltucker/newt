@@ -1,16 +1,39 @@
 import { AppNotification } from '../types';
 
+// What the actor did, without naming them - the predicate of the sentence
+// notifText builds. Split out so the panel can render the name as a link to
+// their profile and this part as plain text, instead of string-matching a
+// prefix back out of a finished sentence.
+//
+// Returns '' when the type has nothing to add beyond the name, which is also
+// how a notification type this build doesn't know about degrades: the name
+// alone, rather than a blank row.
+export function notifAction(type: AppNotification['type']): string {
+  switch (type) {
+    case 'friend_request': return 'sent you a friend request';
+    case 'friend_accept':  return 'accepted your friend request';
+    case 'comment_reply':  return 'replied to your comment';
+    case 'friend_comment': return 'shared a comment with friends';
+    case 'friend_post':    return 'shared a blog post with friends';
+    // Moderator-only, and deliberately actorless: the subject is the report,
+    // not the person who filed it.
+    case 'report_new':     return 'was reported for review';
+    default:               return '';
+  }
+}
+
+// Who a notification is about, for display. Falls back when the actor is gone
+// (deleted account) or was never set.
+export function notifActor(n: Pick<AppNotification, 'type' | 'actor'>): string {
+  if (n.actor) return n.actor.displayName;
+  return n.type === 'report_new' ? 'Content' : 'Someone';
+}
+
 // Human-readable one-liner for a notification, given its type and actor.
 export function notifText(n: Pick<AppNotification, 'type' | 'actor'>): string {
-  const who = n.actor?.displayName ?? 'Someone';
-  switch (n.type) {
-    case 'friend_request': return `${who} sent you a friend request`;
-    case 'friend_accept':  return `${who} accepted your friend request`;
-    case 'comment_reply':  return `${who} replied to your comment`;
-    case 'friend_comment': return `${who} shared a comment with friends`;
-    case 'friend_post':    return `${who} shared a blog post with friends`;
-    default:               return who;
-  }
+  const who = notifActor(n);
+  const action = notifAction(n.type);
+  return action ? `${who} ${action}` : who;
 }
 
 // Compact relative time ("just now", "5m ago", "3d ago", or a date past a week).

@@ -17,7 +17,7 @@ export default function ArticleModal({ url, onClose }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Server-side header check — more reliable than client-side iframe probing
+  // Server-side header check - more reliable than client-side iframe probing
   useEffect(() => {
     setEmbeddable(null);
     apiFetch(`/api/v1/util/check-frame?url=${encodeURIComponent(url)}`)
@@ -30,7 +30,7 @@ export default function ArticleModal({ url, onClose }: Props) {
           setEmbeddable(true);
         }
       })
-      .catch(() => setEmbeddable(true)); // network error — try anyway
+      .catch(() => setEmbeddable(true)); // network error - try anyway
   }, [url]);
 
   const displayUrl = (() => {

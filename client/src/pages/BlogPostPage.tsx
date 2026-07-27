@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../services/api';
+import { useCommentCounts } from '../hooks/useCommentCounts';
+import { applyCommentCounts, embeddedUrls } from '../utils/noteEmbed';
 import { BlogPost, CommentPrefs } from '../types';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogEditPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
 import CommentsPanel from '../components/CommentsPanel';
+import FollowBlogButton from '../components/FollowBlogButton';
+import ReportModal from '../components/ReportModal';
+import SiteFooter from '../components/SiteFooter';
 import styles from './BlogPostPage.module.css';
 
 // A single blog post at /u/<username>/<slug>. Public posts open for logged-out
@@ -12,8 +17,8 @@ import styles from './BlogPostPage.module.css';
 // is resolved server-side per viewer and answers 404 when it isn't theirs to
 // read (so the page can't be used to discover that a draft exists).
 //
-// The comment thread hangs off post.url — the same canonical key the server
-// stored — so a comment left here and one left on the post's card in an RSS
+// The comment thread hangs off post.url - the same canonical key the server
+// stored - so a comment left here and one left on the post's card in an RSS
 // folder are the same conversation.
 
 interface Props {
@@ -21,6 +26,10 @@ interface Props {
   slug: string;
   accessToken: string | null;
   navigate: (to: string) => void;
+  // Rendered inside the app shell (NewTabPage) rather than as its own page -
+  // see ShellView. Drops the full-height background and the "← New Tab" bar,
+  // which the shell already provides.
+  embedded?: boolean;
 }
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
@@ -44,9 +53,25 @@ function initialOf(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
 
-export default function BlogPostPage({ username, slug, accessToken, navigate }: Props) {
+// Standalone, this page owns the viewport; embedded, the shell already supplies
+// the background and padding, so only the centred column remains.
+// The footer rides along here rather than in the body: this runs for the
+// loading and error states too, and every one of them is a page that ends.
+// Embedded, the shell already has a footer of its own further down.
+function Shell({ embedded, children }: { embedded?: boolean; children: ReactNode }) {
+  const inner = <div className={styles.wrap}>{children}</div>;
+  return embedded ? inner : (
+    <div className={styles.page}>
+      {inner}
+      <SiteFooter />
+    </div>
+  );
+}
+
+export default function BlogPostPage({ username, slug, accessToken, navigate, embedded }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [post, setPost] = useState<BlogPost | null>(null);
+  const [reporting, setReporting] = useState(false);
 
   // Refetch when auth changes: signing in can reveal a friends-only post that
   // 404'd a moment ago.
@@ -71,13 +96,26 @@ export default function BlogPostPage({ username, slug, accessToken, navigate }: 
     return () => { document.title = 'New Tab'; };
   }, [post]);
 
+  // References embedded in the post show how much conversation the thing they
+  // point at has drawn. The number is fetched per view rather than stored with
+  // the post - the server's allowlist refuses to carry it for exactly that
+  // reason - and it is visibility-filtered, so a stranger is only told about
+  // comments they could go and read.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const { counts } = useCommentCounts(
+    useMemo(() => embeddedUrls(post?.body ?? ''), [post?.body]),
+  );
+  useEffect(() => {
+    if (bodyRef.current) applyCommentCounts(bodyRef.current, counts);
+  }, [counts, post?.body]);
+
   if (state === 'loading') {
-    return <div className={styles.page}><div className={styles.centered}>Loading…</div></div>;
+    return <Shell embedded={embedded}><div className={styles.centered}>Loading…</div></Shell>;
   }
   if (state !== 'ready' || !post) {
     const missing = state === 'notfound';
     return (
-      <div className={styles.page}>
+      <Shell embedded={embedded}>
         <div className={styles.centered}>
           <div className={styles.big}>
             {missing ? 'This post isn’t available' : 'Couldn’t load this post'}
@@ -89,7 +127,7 @@ export default function BlogPostPage({ username, slug, accessToken, navigate }: 
             {accessToken ? 'Go home' : 'Sign in'}
           </button>
         </div>
-      </div>
+      </Shell>
     );
   }
 
@@ -97,61 +135,98 @@ export default function BlogPostPage({ username, slug, accessToken, navigate }: 
   const vis = POST_VIS_META[post.visibility];
 
   return (
-    <div className={styles.page}>
-      <div className={styles.wrap}>
-        <div className={styles.topbar}>
+    <Shell embedded={embedded}>
+      <div className={styles.topbar}>
+        {/* The shell supplies its own way back, so this is the standalone
+            page's only exit. */}
+        {!embedded && (
           <button className={styles.backBtn} onClick={() => navigate('/')}>
             {accessToken ? '← New Tab' : '← Sign in'}
           </button>
-          {post.isSelf && (
-            <button className={styles.ghostBtn} onClick={() => navigate(blogEditPathFor(post.id))}>
-              Edit post
+        )}
+        {post.isSelf && (
+          <button className={styles.ghostBtn} onClick={() => navigate(blogEditPathFor(post.id))}>
+            Edit post
+          </button>
+        )}
+        {/* A reader who landed straight on a post is the one most likely to
+            want the author's feed, so the subscribe control lives here too -
+            not only on the profile. Signed-in non-authors only: following
+            writes to the viewer's own folders. */}
+        {!post.isSelf && accessToken && author && (
+          <FollowBlogButton username={author.username} variant="primary" />
+        )}
+        {/* Reporting needs an account to attribute the report to, so it is
+            offered only to signed-in readers of somebody else's post. */}
+        {!post.isSelf && accessToken && (
+          <button className={styles.reportBtn} onClick={() => setReporting(true)}>
+            Report
+          </button>
+        )}
+      </div>
+
+      <article className={styles.article}>
+        {/* Server-validated to a site-relative /api/v1/images/<id> path, so
+            this can never point off-origin - see normalizeHeroImage. */}
+        {post.heroImage && (
+          <img className={styles.hero} src={post.heroImage} alt="" />
+        )}
+
+        <h1 className={styles.title}>{post.title}</h1>
+
+        <div className={styles.byline}>
+          {author && (
+            <button
+              className={styles.authorBtn}
+              onClick={() => navigate(profilePathFor(author.username))}
+            >
+              {author.avatar
+                ? <img className={styles.avatar} src={author.avatar} alt="" />
+                : <span className={styles.avatarFallback}>{initialOf(author.displayName)}</span>}
+              <span className={styles.authorName}>{author.displayName}</span>
             </button>
+          )}
+          <span className={styles.dot}>·</span>
+          <span className={styles.date}>{longDate(post.publishedAt)}</span>
+          {/* Only worth showing when it isn't the default - a public post
+              needs no badge saying so. */}
+          {post.visibility !== 'public' && (
+            <span className={styles.chip} title={vis.hint}>{vis.tag}</span>
           )}
         </div>
 
-        <article className={styles.article}>
-          <h1 className={styles.title}>{post.title}</h1>
+        {/* Sanitized server-side on write - see sanitizeBlogHtml */}
+        {/* note-embed-read is the themed skin for reference cards - see
+            styles/noteEmbed.css. Global, so it is not hashed. */}
+        <div
+          ref={bodyRef}
+          className={`${styles.body} note-embed-read`}
+          dangerouslySetInnerHTML={{ __html: post.body }}
+        />
+      </article>
 
-          <div className={styles.byline}>
-            {author && (
-              <button
-                className={styles.authorBtn}
-                onClick={() => navigate(profilePathFor(author.username))}
-              >
-                {author.avatar
-                  ? <img className={styles.avatar} src={author.avatar} alt="" />
-                  : <span className={styles.avatarFallback}>{initialOf(author.displayName)}</span>}
-                <span className={styles.authorName}>{author.displayName}</span>
-              </button>
-            )}
-            <span className={styles.dot}>·</span>
-            <span className={styles.date}>{longDate(post.publishedAt)}</span>
-            {/* Only worth showing when it isn't the default — a public post
-                needs no badge saying so. */}
-            {post.visibility !== 'public' && (
-              <span className={styles.chip} title={vis.hint}>{vis.tag}</span>
-            )}
-          </div>
+      {post.commentsEnabled ? (
+        <div className={styles.commentsWrap}>
+          <CommentsPanel
+            articleUrl={post.url}
+            articleTitle={post.title}
+            prefs={ANON_PREFS}
+            readOnly={!accessToken}
+            onViewProfile={name => navigate(profilePathFor(name))}
+          />
+        </div>
+      ) : (
+        <div className={styles.commentsOff}>Comments are turned off for this post.</div>
+      )}
 
-          {/* Sanitized server-side on write — see sanitizeBlogHtml */}
-          <div className={styles.body} dangerouslySetInnerHTML={{ __html: post.body }} />
-        </article>
-
-        {post.commentsEnabled ? (
-          <div className={styles.commentsWrap}>
-            <CommentsPanel
-              articleUrl={post.url}
-              articleTitle={post.title}
-              prefs={ANON_PREFS}
-              readOnly={!accessToken}
-              onViewProfile={name => navigate(profilePathFor(name))}
-            />
-          </div>
-        ) : (
-          <div className={styles.commentsOff}>Comments are turned off for this post.</div>
-        )}
-      </div>
-    </div>
+      {reporting && (
+        <ReportModal
+          targetType="blogPost"
+          targetId={post.id}
+          subjectName={author?.displayName ?? 'this author'}
+          onClose={() => setReporting(false)}
+        />
+      )}
+    </Shell>
   );
 }

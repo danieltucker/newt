@@ -5,75 +5,19 @@
   background: transparent;
 }
 
+/* The ShellBar above supplies the page's top chrome, so this only needs enough
+   breathing room to lift the body off the bar's lower edge. */
+/* No bottom padding: SiteFooter is the next sibling and brings its own top
+   margin, so anything here would stack on top of it. */
 .content {
   position: relative;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 28px 32px 64px;
-}
-
-.header {
-  animation: rise 0.48s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.searchbar {
-  /* Follows you down the page; content scrolls beneath it,
-     modals (--z-modal and up) cover it. top matches the console
-     overlay's 15px padding so both rest at the same height. */
-  position: sticky;
-  top: 15px;
-  z-index: var(--z-sticky);
-  animation: rise 0.48s 0.06s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-/* Observed only (via IntersectionObserver) to detect when .searchbar pins;
-   the negative margin keeps it out of the layout. */
-.searchSentinel {
-  height: 1px;
-  margin-bottom: -1px;
-  pointer-events: none;
-}
-
-/* Liquid-glass backdrop — a full-width layer pinned to the top, revealed once
-   the search bar floats. It frosts the content scrolling underneath; the mask
-   fades the whole layer (tint AND blur) from visible at the top to nothing at
-   the bottom, so there's no hard edge. Sits just under the bar (--z-sticky). */
-.searchGlass {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 150px;
-  z-index: calc(var(--z-sticky) - 1);
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--surface) 60%, transparent),
-    color-mix(in oklab, var(--surface) 30%, transparent)
-  );
-  backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
-          mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
-  opacity: 0;
-  transform: translateY(-12px);
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-  pointer-events: none;
-}
-
-.searchGlassStuck {
-  opacity: 1;
-  transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .searchGlass {
-    transform: none;
-    transition: opacity 0.2s ease;
-  }
+  padding: 4px 32px 0;
 }
 
 .bodyGrid {
-  margin-top: 28px;
+  margin-top: 24px;
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
   gap: 26px;
@@ -81,147 +25,59 @@
   animation: rise 0.48s 0.12s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* An embedded profile / blog page - the right-hand column when the shell is
+   hosting one. It sits in the same grid as the new tab's own body, so the top
+   spacing and the entrance animation come from .bodyGrid above; the pages bring
+   their own max-width wrapper, leaving nothing for this to do but refuse to
+   blow the column out. */
+.viewBody {
+  min-width: 0;
+}
+
+/* ── The bookmarks rail ──
+   Pinned to the viewport, so bookmarks stay reachable however far the feed
+   scrolls, and given its own frosted surface so it reads as a distinct region
+   rather than more page. Same glass vocabulary as the shell bar above it -
+   the two are meant to look like one continuous chrome wrapping the content.
+
+   `top` clears the bar, whose height ShellBar measures and publishes as
+   --shellbar-h (its breakpoints change it). The fallback matters only for the
+   frame before that first measurement lands. */
 .leftCol {
+  position: sticky;
+  top: calc(var(--shellbar-h, 56px) + 16px);
+  /* Taller than the viewport, and it scrolls internally instead of letting its
+     bottom disappear - the whole point of the rail is that it's always there. */
+  max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+  padding: 14px 12px;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 20px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 74%, transparent),
+    color-mix(in oklab, var(--surface) 54%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 55%, transparent);
+}
+
+.leftCol::-webkit-scrollbar {
+  display: none;
 }
 
 .bottomRow {
   margin-top: 26px;
 }
 
-/* Floats on the same row as the newt logo (34px tall, starting at the
-   content's 28px top padding) — buttons are 30px, so top centres them */
-.topBar {
-  position: absolute;
-  top: 30px;
-  right: 32px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.userBtn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 8px 3px 4px;
-  margin-right: 4px;
-  background: none;
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.userBtn:hover {
-  background: var(--surface2);
-}
-
-.userBtn:hover .username {
-  opacity: 1;
-  color: var(--text);
-}
-
-.userAvatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid var(--border);
-}
-
-.userAvatarFallback {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--accent) 16%, var(--surface2));
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.username {
-  font-size: 12px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  color: var(--muted);
-  opacity: 0.6;
-  user-select: none;
-  transition: opacity 0.15s, color 0.15s;
-}
-
-.iconBtn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  background: none;
-  border: none;
-  border-radius: 8px;
-  color: var(--muted);
-  cursor: pointer;
-  opacity: 0.4;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
-}
-
-/* Unread-notification count on the People button */
-.notifBadge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 9.5px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
-  box-shadow: 0 0 0 2px var(--bg, var(--surface));
-}
-
-.iconBtn:hover {
-  opacity: 1;
-  color: var(--text);
-  background: var(--surface2);
-}
-
-/* Draw attention while there are unread notifications so the badge isn't dimmed */
-.iconBtnActive {
-  opacity: 1;
-  color: var(--text);
-}
-
 /* ── Footer ── */
-.footer {
-  margin-top: 48px;
-  padding-bottom: 16px;
-  text-align: center;
-}
-
-.footerLink {
-  font-size: 11px;
-  color: var(--muted);
-  opacity: 0.35;
-  text-decoration: none;
-  transition: opacity 0.15s;
-  font-family: 'IBM Plex Mono', monospace;
-  letter-spacing: 0.04em;
-}
-
-.footerLink:hover {
-  opacity: 0.75;
-}
-
 /* ── Notes launcher ──
    Small off-white round button pinned to the bottom-right; opens the notes
    console (as does "/"). Sits below modal/console layers so it's covered when
@@ -282,11 +138,11 @@
 /* ── Ambient background ──
    Single-hue, luminance-based depth (tone-on-tone with the brand accent so
    the background never competes with colorful content). Layers, bottom → top:
-     1. bgBase — neutral vertical gradient, slightly darker at the bottom
-     2. blob1  — "key light": wide soft glow from above the viewport
-     3. blob2  — faint accent tint, upper-right
-     4. blob3  — even fainter depth tint, lower-left
-     5. bgGrain — fine film grain; hides banding and adds texture
+     1. bgBase - neutral vertical gradient, slightly darker at the bottom
+     2. blob1  - "key light": wide soft glow from above the viewport
+     3. blob2  - faint accent tint, upper-right
+     4. blob3  - even fainter depth tint, lower-left
+     5. bgGrain - fine film grain; hides banding and adds texture
    Blob wrappers are translated by JS (pointer lean + scroll parallax);
    the inner blob runs its own slow drift animation independently. */
 /* Positioning context for the page-tall background layer. */
@@ -304,7 +160,7 @@
   overflow: hidden;
 }
 
-/* The flat gradient and grain are uniform, so they stay pinned to the viewport —
+/* The flat gradient and grain are uniform, so they stay pinned to the viewport -
    cheap to paint and always covering, whatever the page height. */
 .bgBase {
   position: fixed;

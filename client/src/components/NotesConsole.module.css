@@ -7,7 +7,7 @@
   padding: 15px;
 }
 
-/* All motion lives on the shell as transform + opacity only — compositor-run,
+/* All motion lives on the shell as transform + opacity only - compositor-run,
    zero per-frame painting. Slides up from the bottom edge. */
 .shell {
   width: 100%;
@@ -22,7 +22,7 @@
 }
 
 /* Maximized: fill the overlay (viewport minus its 15px inset), so the rounded
-   border and drop shadow are kept — the console just grows to full height. */
+   border and drop shadow are kept - the console just grows to full height. */
 .shellMaximized {
   height: 100%;
 }
@@ -154,7 +154,7 @@
   border-right: 1px solid #ebedf1;
 }
 
-/* Draggable divider on the tree's right edge — a wide invisible hit area with a
+/* Draggable divider on the tree's right edge - a wide invisible hit area with a
    thin line that lights up on hover/drag. */
 .resizer {
   position: absolute;
@@ -385,7 +385,7 @@
   opacity: 0.55;
 }
 
-/* The copy that rides the cursor in the DragOverlay — lifted off the tree */
+/* The copy that rides the cursor in the DragOverlay - lifted off the tree */
 .dragOverlayItem {
   background: #ffffff;
   border: 1px solid #e6e7ec;
@@ -619,7 +619,7 @@
 .docTitle::placeholder { color: #cdd0d9; }
 
 /* ── Formatting toolbar (utility bar above the note, and the selection
-   bubble — they share button styling) ── */
+   bubble - they share button styling) ── */
 .toolbar {
   flex-shrink: 0;
   display: flex;
@@ -636,7 +636,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  /* Sized to its buttons — a fixed width clipped the last one. The exact width
+  /* Sized to its buttons - a fixed width clipped the last one. The exact width
      is measured after render to centre it over the selection. */
   width: max-content;
   max-width: calc(100vw - 16px);
@@ -684,7 +684,7 @@
   border-top: 1px solid #f1f2f6;
 }
 
-/* Spelled-out table actions — words, not 14px glyphs nobody can tell apart */
+/* Spelled-out table actions - words, not 14px glyphs nobody can tell apart */
 .tbWordBtn {
   display: inline-flex;
   align-items: center;
@@ -827,12 +827,12 @@
 
 /* ── List markers ──
    Drawn here rather than left to the browser. Native markers come from
-   ::marker, which some environments suppress outright — bullets and numbers
+   ::marker, which some environments suppress outright - bullets and numbers
    vanish while `list-style: decimal outside` and `display: list-item` both
    still compute correctly, so there is nothing to out-specify. ::before is
    ordinary content by comparison (it already draws the to-do checkbox), and
    counters number the items for us. Hence list-style: none plus our own marks:
-   don't "restore" the native ones — you'll get two markers where they work and
+   don't "restore" the native ones - you'll get two markers where they work and
    none where they don't. */
 .editor ul, .editor ol {
   list-style: none;
@@ -895,7 +895,7 @@
   background: currentColor;
 }
 
-/* Nested lists sit closer than the top level and drop their bottom gap —
+/* Nested lists sit closer than the top level and drop their bottom gap -
    they're part of the parent item, not a new block */
 .editor li ul, .editor li ol,
 .editor ul ul, .editor ul ol, .editor ol ul, .editor ol ol {
@@ -936,7 +936,7 @@
 
 .editor a { color: #5b5be6; text-decoration: underline; }
 
-/* Inline code span — distinct from the .editor pre block above */
+/* Inline code span - distinct from the .editor pre block above */
 .editor code {
   background: #f2f3f7;
   border: 1px solid #e6e7ec;
@@ -1024,6 +1024,206 @@
 }
 
 :global(table.note-table) p { margin: 0; }
+
+/* ── References (global classes: embedded in saved note HTML) ──
+   One wrapper, three sizes. Every element inside is inline (span / a / img) -
+   see utils/noteEmbed.ts for why a block tag here would not survive a reload -
+   so the sizes come from `display` rather than from different markup. Written
+   against the wrapper's data-variant, which is also what the editor's floating
+   bar switches. Same shape for whatever gets embedded next: only the body
+   renderer in noteEmbed.ts changes. */
+:global(.note-embed) {
+  user-select: none;      /* atomic: selected as a unit, never typed into */
+  cursor: pointer;
+}
+
+/* The selection ring is what says "the bar above belongs to this one" */
+:global(.note-embed)::selection,
+:global(.note-embed *)::selection { background: rgb(91 91 230 / 0.22); }
+
+:global(.note-embed .note-embed-a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+:global(.note-embed .note-embed-fav) {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+:global(.note-embed .note-embed-title) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: #1c2029;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+:global(.note-embed .note-embed-meta) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #9aa0b0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── Size: link ── a chip that flows in the sentence it was typed into ── */
+:global(.note-embed[data-variant='link']) { display: inline; }
+
+:global(.note-embed[data-variant='link'] .note-embed-a) {
+  display: inline;
+  color: #4b4bd8;
+  transition: background 0.12s;
+}
+
+:global(.note-embed[data-variant='link']:hover .note-embed-a) { background: #f2f2fe; }
+
+:global(.note-embed[data-variant='link'] .note-embed-fav) {
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+
+/* The rule sits under the title, not the whole anchor: carried on the anchor it
+   also runs under the favicon, which reads as a leading underscore whenever the
+   icon fails to load (a favicon service is a third party that can 404). */
+:global(.note-embed[data-variant='link'] .note-embed-title) {
+  display: inline;
+  font-weight: 500;
+  color: inherit;
+  border-bottom: 1px solid #d5d6f7;
+  transition: border-color 0.12s;
+}
+
+:global(.note-embed[data-variant='link']:hover .note-embed-title) { border-bottom-color: #5b5be6; }
+
+/* ── Size: small ── thumbnail beside the title, one line of provenance ── */
+:global(.note-embed[data-variant='small']) {
+  display: block;
+  margin: 8px 0;
+}
+
+:global(.note-embed[data-variant='small'] .note-embed-a) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e6e7ec;
+  border-radius: 10px;
+  background: #ffffff;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+:global(.note-embed[data-variant='small']:hover .note-embed-a) {
+  border-color: #c9c9f5;
+  background: #fbfbff;
+  box-shadow: 0 2px 10px rgba(91, 91, 230, 0.08);
+}
+
+:global(.note-embed .note-embed-thumb) {
+  width: 54px;
+  height: 54px;
+  margin: 0;
+  border-radius: 7px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+:global(.note-embed[data-variant='small'] .note-embed-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+:global(.note-embed[data-variant='small'] .note-embed-title) { font-size: 14px; }
+
+/* ── Size: large ── artwork leads, the way the reading list's features do ── */
+:global(.note-embed[data-variant='large']) {
+  display: block;
+  margin: 12px 0;
+}
+
+:global(.note-embed[data-variant='large'] .note-embed-a) {
+  display: block;
+  border: 1px solid #e6e7ec;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+:global(.note-embed[data-variant='large']:hover .note-embed-a) {
+  border-color: #c9c9f5;
+  box-shadow: 0 4px 16px rgba(91, 91, 230, 0.1);
+}
+
+:global(.note-embed .note-embed-cover) {
+  display: block;
+  width: 100%;
+  height: 168px;
+  margin: 0;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+:global(.note-embed[data-variant='large'] .note-embed-body) {
+  display: block;
+  padding: 12px 14px 14px;
+}
+
+:global(.note-embed .note-embed-kicker) {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #5b5be6;
+}
+
+:global(.note-embed[data-variant='large'] .note-embed-title) {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17px;
+  -webkit-line-clamp: 3;
+}
+
+:global(.note-embed[data-variant='large'] .note-embed-meta) { margin-top: 8px; }
+
+/* The live comment count. Its text comes from the data-comments attribute
+   rather than from the markup, because the number changes after the embed is
+   written - see applyCommentCounts. With no attribute the slot rests on the
+   neutral label: "not asked yet" must not read as "nobody has commented". */
+:global(.note-embed .note-embed-comments) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b5be6;
+}
+
+:global(.note-embed .note-embed-comments)::before {
+  content: '';
+  width: 13px;
+  height: 11px;
+  flex-shrink: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 3px 3px 3px 0;   /* the square corner reads as the tail */
+}
+
+:global(.note-embed .note-embed-comments)::after { content: 'Comments'; }
+:global(.note-embed .note-embed-comments[data-comments])::after { content: attr(data-comments); }
 
 /* Row/column controls in the utility bar, shown only inside a table */
 .tbGroupLabel {
@@ -1241,6 +1441,128 @@
 
 .linkRemove:hover { background: #fdeaea; }
 
+/* ── Reference picker ──
+   Same shell as the link dialog (overlay, card, action row), sized for a list
+   instead of two fields. */
+.refDialog {
+  composes: linkDialog;
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-height: min(560px, calc(100vh - 64px));
+}
+
+.refList {
+  flex: 1;
+  min-height: 120px;
+  margin-top: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d3d6de transparent;
+}
+
+.refList::-webkit-scrollbar { width: 8px; }
+.refList::-webkit-scrollbar-thumb { background: #d3d6de; border-radius: 4px; }
+
+.refEmpty {
+  padding: 26px 16px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #9aa0b0;
+  text-align: center;
+}
+
+.refItem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.refItemSel { background: #f2f3f7; border-color: #e2e3ee; }
+
+.refThumb,
+.refThumbBlank {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+/* Art-less items keep the same rhythm as the ones that have a thumbnail */
+.refThumbBlank {
+  background: repeating-linear-gradient(-45deg, #f2f3f7 0 6px, #eceef4 6px 12px);
+}
+
+.refText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.refTitle {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #2b2f3a;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.refMeta {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  color: #9aa0b0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.refSizes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #e6e7ec;
+  border-radius: 8px;
+  background: #f6f7fa;
+}
+
+.refSize {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  color: #6b7180;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.refSize:hover { color: #2b2f3a; }
+
+.refSizeOn {
+  background: #ffffff;
+  color: #5b5be6;
+  box-shadow: 0 1px 3px rgba(20, 22, 30, 0.1);
+}
+
 /* ── Recently deleted ── */
 .trashSection {
   border-top: 1px solid #ebedf1;
@@ -1385,14 +1707,58 @@
 .editorReadOnly::before { content: none; }
 
 /* ── Narrow screens: collapse the tree to a horizontal strip ── */
+/* The way back from a note to the tree. Hidden on the two-column layout, where
+   the tree never went anywhere. */
+.backBtn {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin: 8px 8px 0 10px;
+  padding: 7px 12px 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5b5be6;
+  cursor: pointer;
+}
+
+.backBtn:active { background: #eef0f4; }
+
+/* ── Narrow layout ──
+   A phone can't hold the tree and the editor side by side, and stacking them
+   gave the tree a strip too short to list anything. So they take turns: one
+   full-height view for getting around, one for writing, with .bodyDoc saying
+   which is up (NotesConsole.tsx owns that state). Both stay mounted - swapping
+   panes must not cost the editor its undo history or the tree its scroll. */
 @media (max-width: 720px) {
-  .body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .tree {
-    border-right: none;
-    border-bottom: 1px solid #ebedf1;
-    max-height: 128px;
-  }
-  .resizer { display: none; }   /* tree is a top strip here, not a column */
-  .docTitle { padding: 14px 18px 6px; font-size: 20px; }
+  /* Nothing to restore to at this size - the console already fills the screen. */
+  .overlay { padding: 8px; }
+  .shell, .shellMaximized { height: 100%; min-height: 0; }
+  .maxBtn { display: none; }
+  .headerHints { display: none; }
+
+  /* One cell, two occupants, one shown at a time. */
+  .body { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .tree, .docPane { grid-area: 1 / 1; min-width: 0; }
+  .tree { border-right: none; }
+  .docPane { display: none; }
+  .bodyDoc .tree { display: none; }
+  .bodyDoc .docPane { display: flex; }
+
+  .resizer { display: none; }   /* the tree owns the full width here */
+  .backBtn { display: flex; }
+
+  /* Rows are the whole navigation surface now, so they get thumb-sized. */
+  .treeItem, .folderHead, .trashHead { padding-top: 10px; padding-bottom: 10px; }
+  .treeHead { padding: 14px 12px 8px 16px; }
+  .addBtn { width: 30px; height: 30px; }
+
+  .docTitle { padding: 6px 18px 6px; font-size: 20px; }
+  .toolbar { padding: 6px 18px 8px; }
   .editor { padding: 4px 18px 32px; }
 }

@@ -1,14 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
 import styles from './AuthPage.module.css';
+import SiteFooter from '../components/SiteFooter';
+import NewtMark from '../components/NewtMark';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<{ requiresTotp: true; totpToken: string; username: string } | void>;
   onRegister: (username: string, password: string) => Promise<void>;
   onTotpVerify: (totpToken: string, code: string) => Promise<void>;
+  /** Which form to open on - /signin lands on one, /signup on the other. */
+  initialTab?: 'login' | 'register';
+  /** Absent when this page has nowhere to go back to. */
+  navigate?: (to: string) => void;
 }
 
-export default function AuthPage({ onLogin, onRegister, onTotpVerify }: Props) {
-  const [tab, setTab] = useState<'login' | 'register'>('login');
+export default function AuthPage({
+  onLogin, onRegister, onTotpVerify, initialTab = 'login', navigate,
+}: Props) {
+  const [tab, setTab] = useState<'login' | 'register'>(initialTab);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -113,12 +121,19 @@ export default function AuthPage({ onLogin, onRegister, onTotpVerify }: Props) {
             </p>
           </form>
         </div>
+        <SiteFooter />
       </div>
     );
   }
 
   return (
     <div className={styles.page}>
+      {navigate && (
+        <a className={styles.home} href="/" onClick={e => { e.preventDefault(); navigate('/'); }}>
+          <NewtMark className={styles.homeMark} />
+          What is newt?
+        </a>
+      )}
       <div className={styles.card}>
         <div className={styles.logo}>New Tab</div>
         <div className={styles.subtitle}>Your bookmarks and reading list, anywhere.</div>
@@ -185,6 +200,7 @@ export default function AuthPage({ onLogin, onRegister, onTotpVerify }: Props) {
           </p>
         </form>
       </div>
+      <SiteFooter />
     </div>
   );
 }

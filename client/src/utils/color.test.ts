@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDomain, parseLink, faviconUrl, deriveName, deriveColor } from './color';
+import { parseDomain, parseLink, bookmarkHref, faviconUrl, deriveName, deriveColor } from './color';
 
 describe('parseDomain (host only)', () => {
   it('returns a bare host', () => {
@@ -11,7 +11,7 @@ describe('parseDomain (host only)', () => {
     expect(parseDomain('http://www.github.com')).toBe('github.com');
   });
 
-  it('drops any path — host only', () => {
+  it('drops any path - host only', () => {
     expect(parseDomain('github.com/danieltucker')).toBe('github.com');
     expect(parseDomain('https://www.github.com/a/b?q=1')).toBe('github.com');
   });
@@ -58,6 +58,20 @@ describe('parseLink (host + path)', () => {
     expect(parseLink('')).toBeNull();
     expect(parseLink('ab')).toBeNull();
     expect(parseLink('localhost/foo')).toBeNull(); // host has no dot
+  });
+});
+
+describe('bookmarkHref', () => {
+  it('prepends https to a scheme-less bookmark', () => {
+    expect(bookmarkHref('github.com')).toBe('https://github.com');
+    expect(bookmarkHref('github.com/danieltucker')).toBe('https://github.com/danieltucker');
+  });
+
+  // Following a blog stores a full profile URL in `domain`. Prefixing that
+  // produced https://http//localhost:5173/u/name, which resolves nowhere.
+  it('leaves an absolute URL alone', () => {
+    expect(bookmarkHref('http://localhost:5173/u/ellis')).toBe('http://localhost:5173/u/ellis');
+    expect(bookmarkHref('https://example.com/u/ellis')).toBe('https://example.com/u/ellis');
   });
 });
 

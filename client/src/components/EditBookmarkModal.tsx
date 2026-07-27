@@ -39,7 +39,7 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
   const color = colorOverride ?? bookmark.color;
   const favicon = host ? faviconUrl(host) : null;
 
-  // Auto-derive name only when the host changes — editing just the path leaves
+  // Auto-derive name only when the host changes - editing just the path leaves
   // the name alone.
   useEffect(() => {
     setFaviconFailed(false);

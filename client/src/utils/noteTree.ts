@@ -8,7 +8,7 @@ import { NoteDoc, NoteFolder } from '../hooks/useSettings';
 // the sequence, with each folder's notes contiguous right after its header. How
 // far right you drag on a drop (`depth`) decides whether a note lands loose
 // (depth 0) or inside the folder above it (depth 1). This is the dnd-kit
-// "sortable tree" pattern, capped at one level of nesting — so every move (note
+// "sortable tree" pattern, capped at one level of nesting - so every move (note
 // to top, folder below notes, folder between folders, note into/out of a
 // folder) is the same operation.
 
@@ -24,7 +24,7 @@ export type Row =
   | { id: string; kind: 'note'; depth: 0 | 1; parentId: string | null };
 
 // Walk the persisted token order into the visible rows. Notes under a collapsed
-// folder — and, mid-drag, the children of the folder being dragged — are held
+// folder - and, mid-drag, the children of the folder being dragged - are held
 // back so a folder moves as one block.
 export function buildRows(
   flat: string[], folderSet: Set<string>, notesById: Map<string, NoteDoc>,
@@ -91,7 +91,7 @@ export function getProjection(
 
   const dragDepth = Math.round(offsetLeft / INDENT);
   // Hovering a folder header with any rightward intent files the note into that
-  // folder (as its first child) — this is how you reach an empty or collapsed
+  // folder (as its first child) - this is how you reach an empty or collapsed
   // folder. Without the rightward nudge it falls through and lands beside it.
   if (over.kind === 'folder' && active.depth + dragDepth >= 1) {
     return { depth: 1, parentId: over.fid, prevToken: over.id };
@@ -138,7 +138,7 @@ export function computeDrop(
   } else if (isFolderId(prevToken)) {
     at = skipFolderBlock(remaining, remaining.indexOf(prevToken), folderIdOf(prevToken), notesById);
   } else {
-    const pn = notesById.get(prevToken);                   // a note — clear its whole folder block
+    const pn = notesById.get(prevToken);                   // a note - clear its whole folder block
     if (pn?.folderId && folderSet.has(pn.folderId)) {
       const hi = remaining.indexOf(`folder:${pn.folderId}`);
       at = hi >= 0 ? skipFolderBlock(remaining, hi, pn.folderId, notesById) : remaining.indexOf(prevToken) + 1;
@@ -159,7 +159,7 @@ export function computeDrop(
 
 // Rebuild a well-formed flat order from whatever exists now, preserving the
 // previous ordering as far as possible. Guarantees every folder's notes sit
-// contiguously right after its header — the invariant the drop math relies on —
+// contiguously right after its header - the invariant the drop math relies on -
 // and drops tokens for anything deleted while appending anything new. Doubles as
 // the seed (pass the stored order as `prev`).
 export function reconcileFlat(prev: string[], folders: NoteFolder[], liveDocs: NoteDoc[]): string[] {

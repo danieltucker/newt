@@ -7,7 +7,7 @@ import CommentsPanel from './CommentsPanel';
 import styles from './ArticleDetailModal.module.css';
 
 // The article reader. Opened from a card's comment strip, it shows the full
-// text the feed shipped — images, categories and all — with the comment thread
+// text the feed shipped - images, categories and all - with the comment thread
 // underneath, where there is finally room to read and write.
 //
 // Content is fetched by canonical URL rather than passed in, so a reading-list
@@ -40,7 +40,7 @@ interface Props {
   onCountChange?: (url: string, next: number) => void;
   legacyNote?: string;
   onLegacyNoteMigrated?: () => void;
-  /** Caller-supplied buttons (Save, Dismiss, Archive…) — each list owns its own verbs */
+  /** Caller-supplied buttons (Save, Dismiss, Archive…) - each list owns its own verbs */
   actions?: ReactNode;
   onClose: () => void;
   onViewProfile?: (username: string) => void;
@@ -91,11 +91,11 @@ export default function ArticleDetailModal({
 
   // Reflect the open article in the browser URL (/a/<id>) so it's shareable and
   // the back button closes the reader. We push an entry on open (unless we were
-  // opened *from* that URL — a shared deep link) and undo it on close.
+  // opened *from* that URL - a shared deep link) and undo it on close.
   useEffect(() => {
     const targetPath = articlePathFor(url);
 
-    // A pending cleanup means this is a StrictMode re-mount — cancel it so we
+    // A pending cleanup means this is a StrictMode re-mount - cancel it so we
     // don't tear down the history entry we're about to keep using.
     if (pendingHistoryCleanup !== null) {
       clearTimeout(pendingHistoryCleanup);
@@ -114,7 +114,7 @@ export default function ArticleDetailModal({
       window.removeEventListener('popstate', onPop);
       pendingHistoryCleanup = setTimeout(() => {
         pendingHistoryCleanup = null;
-        // Closed via UI (Escape/backdrop/close) while still on our URL — undo it.
+        // Closed via UI (Escape/backdrop/close) while still on our URL - undo it.
         // Closed via Back navigation already moved us away, so this no-ops.
         if (readerActive && window.location.pathname === targetPath) {
           if (readerPushed) window.history.back();
@@ -218,7 +218,7 @@ export default function ArticleDetailModal({
                 <span className={`${styles.skelLine} ${styles.skelShort}`} />
               </div>
             ) : article?.content ? (
-              /* Sanitized server-side on ingest — see sanitizeFeedHtml */
+              /* Sanitized server-side on ingest - see sanitizeFeedHtml */
               <div className={styles.prose} dangerouslySetInnerHTML={{ __html: article.content }} />
             ) : (
               <div className={styles.noContent}>

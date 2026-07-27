@@ -4,7 +4,7 @@
   gap: 4px;
 }
 
-/* Inline (Arc-style) layout on desktop grows to fit its content — no inner
+/* Inline (Arc-style) layout on desktop grows to fit its content - no inner
    scrollbar, the page scrolls as a whole. */
 
 .folderGroup {
@@ -477,137 +477,20 @@
   transform: scale(0.985);
 }
 
-/* ── Responsive: horizontal strip on mobile ── */
+/* ── Responsive ──
+   At this width the rail has moved into the shell bar's hamburger (RAIL_NARROW
+   in ShellBar.tsx), which is a vertical dropdown - so the list keeps exactly
+   the shape it has on desktop. It used to flatten into a horizontal strip
+   here; that only made sense while the rail was stranded above the body.
+   The one real difference is touch: there is no hover, so the ··· menus have
+   to be visible to be reachable. */
 @media (max-width: 900px) {
-  .sidebar {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    gap: 8px;
-    scrollbar-width: none;
-  }
-
-  .sidebar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .folderItem {
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    padding: 8px 12px;
-    min-width: 70px;
-    width: auto;
-    flex-shrink: 0;
-    border-radius: 12px;
-  }
-
-  .preview {
-    display: none;
-  }
-
-  .folderText {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .folderNameRow {
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .colorDot {
-    width: 8px;
-    height: 8px;
-  }
-
-  .folderName {
-    font-size: 12px;
-    text-align: center;
-  }
-
-  .folderCount {
-    display: none;
-  }
-
   .menuWrap {
-    display: none;
-  }
-
-  .sidebarFooter {
-    flex-direction: column;
-    flex-shrink: 0;
-    margin-top: 0;
-    gap: 4px;
-  }
-
-  .newFolder {
-    flex-direction: column;
-    min-width: 60px;
-    width: auto;
-    flex-shrink: 0;
-    min-height: 52px;
-    padding: 8px 10px;
-    margin-top: 0;
-    justify-content: center;
-    align-items: center;
-    font-size: 11px;
-    text-align: center;
-  }
-
-  /* Inline layout stays a vertical list on mobile — the horizontal strip above
-     is panel-mode only, and an accordion only reads correctly stacked. */
-  .sidebar.inline {
-    flex-direction: column;
-    overflow-x: visible;
-    gap: 4px;
-  }
-
-  .sidebar.inline .folderItem {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    min-width: 0;
-    padding: 9px 11px;
-    border-radius: 13px;
-  }
-
-  .sidebar.inline .preview { display: grid; }
-
-  .sidebar.inline .folderText {
-    display: block;
-    flex: 1;
-  }
-
-  .sidebar.inline .folderNameRow {
-    flex-direction: row;
-    gap: 6px;
-  }
-
-  .sidebar.inline .folderName {
-    font-size: 14px;
-    text-align: left;
-  }
-
-  /* No hover on touch — keep the ··· menus visible and tappable. */
-  .sidebar.inline .menuWrap {
-    display: block;
     opacity: 1;
   }
 
-  .sidebar.inline .sidebarFooter {
-    flex-direction: column;
-    margin-top: 8px;
-  }
-
-  .sidebar.inline .newFolder {
-    flex-direction: row;
-    min-height: 42px;
-    padding: 9px 11px;
-    font-size: 13px;
-    justify-content: flex-start;
-    text-align: left;
+  /* The pin grid gets a little tighter inside the dropdown's narrower column. */
+  .pinGrid {
+    gap: 5px;
   }
 }

@@ -1,6 +1,8 @@
 # newTab
 
-A self-hosted browser new tab replacement that turns your new tab page into a personal productivity dashboard. Manage bookmarks, read RSS feeds, save articles, and access live widgets — all in one place.
+A browser new tab replacement that turns your new tab page into a personal productivity dashboard. Manage bookmarks, read RSS feeds, save articles, and keep notes — all in one place.
+
+**Just want to use it? [newt.page](https://newt.page) is the hosted version — sign up and point your new tab at it, nothing to install.** The rest of this README is for running your own instance.
 
 ![Tech Stack](https://img.shields.io/badge/React-18-blue) ![Node](https://img.shields.io/badge/Node.js-20-green) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue) ![Docker](https://img.shields.io/badge/Docker-ready-2496ED)
 
@@ -9,7 +11,8 @@ A self-hosted browser new tab replacement that turns your new tab page into a pe
 - **Bookmarks** — Organize into color-coded folders with drag-and-drop reordering. Import from an HTML bookmark file.
 - **RSS Feeds** — Auto-discover feeds from bookmarked sites and read articles per folder.
 - **Reading List** — Save articles with tags, notes, and estimated read time.
-- **Widgets** — Weather, world clock, notes card, and a terminal-style console.
+- **Favorite Tags** — Star a tag to have matching articles flagged in the feed and reading list. Matching is by whole word, so "Apple" catches "Apple News" and "apple-tv" but not "Snapple".
+- **Notes** — A notes console with folders, rich text, and recently deleted.
 - **Search** — Quick search bar supporting Google, DuckDuckGo, Bing, and Brave.
 - **Themes** — Dark, light, and auto (system) modes.
 - **2FA** — TOTP-based two-factor authentication with QR code enrollment.

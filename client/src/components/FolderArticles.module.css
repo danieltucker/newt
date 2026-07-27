@@ -113,13 +113,34 @@
   font-weight: 600;
 }
 
-/* ── Cards layout (default) — masonry, cols auto-size from container ── */
+/* The favorites filter - a different axis from the topic chips beside it, so it
+   wears the favorite colour rather than the accent. */
+.favChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fav);
+  border-color: color-mix(in oklab, var(--fav) 30%, transparent);
+}
+
+.favChip:hover {
+  border-color: var(--fav);
+  color: var(--fav);
+}
+
+.favChipActive {
+  background: color-mix(in oklab, var(--fav) 14%, var(--surface2));
+  border-color: color-mix(in oklab, var(--fav) 50%, transparent);
+  font-weight: 600;
+}
+
+/* ── Cards layout (default) - masonry, cols auto-size from container ── */
 .grid {
   column-width: 200px;
   column-gap: 12px;
 }
 
-/* ── List layout — single column of roomy rows, persistent inline actions ── */
+/* ── List layout - single column of roomy rows, persistent inline actions ── */
 .gridList {
   display: flex;
   flex-direction: column;
@@ -156,7 +177,7 @@
 
 .gridList .domain { max-width: 180px; }
 
-/* No cover art to float over in a row — drop the controls back into the flow
+/* No cover art to float over in a row - drop the controls back into the flow
    at the right end, but keep the grey-button look */
 .gridList .cardActions {
   position: static;
@@ -164,7 +185,7 @@
   opacity: 1;
 }
 
-/* ── Magazine layout — editorial grid: wide features, full-text briefs,
+/* ── Magazine layout - editorial grid: wide features, full-text briefs,
    and a mix of image/text cards. Rows stay aligned; meta anchors to the
    card bottom so stretched cards read as intentional. ── */
 .gridMagazine {
@@ -202,7 +223,7 @@
   -webkit-line-clamp: 3;
 }
 
-/* Feature — long reads with artwork span two columns under a wide banner */
+/* Feature - long reads with artwork span two columns under a wide banner */
 .featureWrap {
   grid-column: span 2;
 }
@@ -217,12 +238,12 @@
   -webkit-line-clamp: 3;
 }
 
-/* Text card — no artwork, so give the words more room */
+/* Text card - no artwork, so give the words more room */
 .textWrap .snippet {
   -webkit-line-clamp: 6;
 }
 
-/* Brief — the snippet is the whole piece: run it in full under an accent rule */
+/* Brief - the snippet is the whole piece: run it in full under an accent rule */
 .briefWrap .card {
   border-top: 2px solid color-mix(in oklab, var(--accent) 45%, transparent);
 }
@@ -238,7 +259,7 @@
   .featureWrap { grid-column: auto; }
 }
 
-/* Cover image — bleeds to the card edges above the text */
+/* Cover image - bleeds to the card edges above the text */
 .hero {
   width: calc(100% + 36px);
   margin: -16px -18px 2px;
@@ -248,7 +269,7 @@
   background: var(--surface2);
 }
 
-/* ── Card wrap — lifts on hover ── */
+/* ── Card wrap - lifts on hover ── */
 .cardWrap {
   position: relative;
   break-inside: avoid;
@@ -260,7 +281,7 @@
   transform: translateY(-3px);
 }
 
-/* ── Window-style controls — a cluster of grey buttons pinned to the card's
+/* ── Window-style controls - a cluster of grey buttons pinned to the card's
    top-right. Over cover art they float on top; on art-less cards the .noHero
    rule reserves top padding so they push the text down instead. ── */
 .cardActions {
@@ -343,6 +364,23 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
 }
 
+/* ── Matches a favorite tag ──
+   The unread treatment above, in gold. Nothing about the card's geometry
+   changes - which is the point: a leading-edge bar had to be either a real
+   border (narrowing the content box, so .hero's deliberate bleed past it hung
+   out the side) or an overlay (a 14px radius on a 3px-wide box, which browsers
+   collapse into a point that juts past the corner). An outline has neither
+   problem, and it's already the vocabulary this feed uses for "look here".
+
+   Must stay after .unread: equal specificity, so source order is what makes
+   gold win on a card that is both. The unread dot in the footer still marks it
+   as unread, so nothing is lost by the outline going gold. */
+.favCard .card {
+  border-color: color-mix(in oklab, var(--fav) 55%, transparent);
+  background: color-mix(in oklab, var(--fav) 5%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fav) 22%, transparent);
+}
+
 .newDot {
   width: 7px;
   height: 7px;
@@ -363,7 +401,10 @@
   gap: 4px;
 }
 
-.cat {
+/* Two-class selector on purpose: a tag renders as TagChip, whose reset lives in
+   another CSS module, and equal specificity would leave the winner up to bundle
+   order. `.cats .cat` outranks `.chip` whatever order they land in. */
+.cats .cat {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -377,6 +418,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+/* A favorited tag wears the favorite colour, so you can see which of the card's
+   tags earned it the marker. Keyed off aria-pressed rather than TagChip's own
+   class - that class is hashed into another module and isn't nameable here. */
+.cats .cat[aria-pressed='true'] {
+  color: var(--fav);
+  background: color-mix(in oklab, var(--fav) 12%, transparent);
+  border-color: color-mix(in oklab, var(--fav) 32%, transparent);
+}
+
+.cats .cat:hover {
+  border-color: color-mix(in oklab, var(--fav) 45%, transparent);
 }
 
 .title {
@@ -438,6 +492,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Both bylines are anchors, but they stay quiet until hovered - the title is
+   the card's link, and two competing ones would be noise. */
+.domain:hover {
+  opacity: 0.85;
+  text-decoration: underline;
+}
+
+/* An @handle where a hostname would otherwise sit. Carried at full opacity and
+   in the accent colour because, unlike a domain, it names a person - it is the
+   card's byline, not a technical footnote. */
+.handle {
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--accent) 85%, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.handle:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .cardRight {
@@ -511,7 +591,7 @@
   .grid { columns: 2; column-width: auto; }
 }
 
-/* Touch devices: hover never fires — keep actions fully visible.
+/* Touch devices: hover never fires - keep actions fully visible.
    Must stay after the dimmed base rule to outrank it. */
 @media (hover: none) {
   .cardActions { opacity: 1; }

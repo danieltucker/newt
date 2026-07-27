@@ -124,7 +124,7 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
           />
         </div>
 
-        {/* Name input — shown once a domain is recognised */}
+        {/* Name input - shown once a domain is recognised */}
         {domain && (
           <div className={styles.field}>
             <label className={styles.label}>Display name</label>

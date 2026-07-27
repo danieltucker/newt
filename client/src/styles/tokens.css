@@ -6,6 +6,9 @@
   --text: #ECEEF6;
   --muted: #828BA3;
   --accent: #8B8BFF;
+  /* Favorited tags. Deliberately not --accent: an unread card is already
+     accent-outlined, and a favorite has to be legible on top of that. */
+  --fav: #FFD470;
   --border: rgba(255, 255, 255, 0.08);
   --shadow: rgba(0, 0, 0, 0.4);
   --overlay: rgba(8, 9, 12, 0.62);
@@ -24,6 +27,9 @@
   --text: #14161E;
   --muted: #717A92;
   --accent: #5B5BE6;
+  /* Lighter than it wants to be would fail on white - this is about as bright
+     as the gold gets while the chip labels stay readable. */
+  --fav: #C68A15;
   --border: rgba(20, 22, 30, 0.09);
   --shadow: rgba(20, 22, 30, 0.10);
   --overlay: rgba(20, 22, 30, 0.35);
@@ -34,7 +40,7 @@
   --grain-opacity: 0.05;
 }
 
-/* Z-index scale — every overlay picks a band; never use raw numbers.
+/* Z-index scale - every overlay picks a band; never use raw numbers.
    background(0) < page(1) < sticky < content-overlay < modal < top */
 :root {
   --z-sticky: 40;           /* sticky search bar */
@@ -83,7 +89,7 @@ body {
   to   { opacity: 1; }
 }
 
-/* Background blob drift — slow breathing motion, alternate direction loops */
+/* Background blob drift - slow breathing motion, alternate direction loops */
 @keyframes bg-float-1 {
   0%   { transform: translate(0, 0) scale(1); }
   50%  { transform: translate(90px, -55px) scale(1.12); }

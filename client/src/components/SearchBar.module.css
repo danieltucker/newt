@@ -1,27 +1,33 @@
 .container {
   position: relative;
-  margin-top: 26px;
 }
 
+/* The app bar supplies the frosted surface and the elevation, so the search box
+   carries no shadow of its own - it's a recessed pill inside the bar rather
+   than a card floating over it. */
 .wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: var(--surface);
+  gap: 10px;
+  background: color-mix(in oklab, var(--surface2) 85%, transparent);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 16px 18px;
-  box-shadow: 0 8px 30px var(--shadow);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  border-radius: 999px;
+  padding: 6px 14px;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .wrap:focus-within {
+  background: var(--surface);
   border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  box-shadow: 0 8px 30px var(--shadow), 0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
+/* The magnifier. Sized to the input's cap height and kept in the muted
+   register - it labels the field, it isn't a control. */
 .icon {
   flex-shrink: 0;
+  width: 17px;
+  height: 17px;
   color: var(--muted);
 }
 
@@ -31,7 +37,7 @@
   border: none;
   outline: none;
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text);
 }
 

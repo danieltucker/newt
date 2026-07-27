@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { BlogPost, BlogPostSummary, CommentVisibility } from '../types';
 
-// Your own posts, for the manage list. Drafts (private posts) are included —
+// Your own posts, for the manage list. Drafts (private posts) are included -
 // this is the author's view, not the public one.
 export function useMyPosts(accessToken: string | null) {
   const [posts, setPosts] = useState<BlogPostSummary[]>([]);
@@ -42,6 +42,9 @@ export interface PostDraft {
   body: string;
   visibility: CommentVisibility;
   commentsEnabled: boolean;
+  // '' clears the hero - the server treats an empty string as "no cover image"
+  // rather than as an omitted field, so this must not be undefined to unset one.
+  heroImage: string;
 }
 
 export function createPost(draft: PostDraft): Promise<BlogPost> {

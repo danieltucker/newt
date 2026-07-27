@@ -1,11 +1,9 @@
 // Client-side routing helpers for blog posts, which live at
-// /u/<username>/<slug> — a sub-path of the profile route, so parseProfilePath
+// /u/<username>/<slug> - a sub-path of the profile route, so parseProfilePath
 // deliberately matches only a single segment and leaves these to us.
 //
-// The slug already carries the date ("hello-world-2026-07-24"), so a post URL is
-// readable and shareable on its own. Usernames aren't charset-restricted
-// server-side, so that segment is URL-encoded; the slug is generated ASCII and
-// needs no encoding.
+// Usernames aren't charset-restricted server-side, so that segment is
+// URL-encoded; the slug is generated ASCII and needs no encoding.
 
 const PREFIX = '/u/';
 
@@ -34,6 +32,26 @@ export function parseBlogPath(pathname: string): BlogRef | null {
     username = rawUser;
   }
   return { username, slug };
+}
+
+// The author's username when `raw` is a post hosted by *this* deployment, else
+// null. Feed items get labelled with their source, and for one of our own posts
+// a hostname is the least useful thing we could show - every author on the
+// instance shares it - so callers swap in "@username" when this returns one.
+//
+// The origin check is what makes that safe: a feed can carry any link at all,
+// and a lookalike /u/<name>/<slug> path on somebody else's host must never be
+// presented as one of our authors. A deployment whose browser origin differs
+// from the one post URLs were built with simply falls back to the hostname.
+export function blogAuthorOfUrl(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw, window.location.origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== window.location.origin) return null;
+  return parseBlogPath(url.pathname)?.username ?? null;
 }
 
 // The author's own editor route for a post. Kept here so every blog URL the

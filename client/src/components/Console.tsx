@@ -35,10 +35,10 @@ interface Ctx {
 
 type CmdFn = (args: string[], ctx: Ctx) => Promise<string | string[]> | string | string[];
 
-// desc — one-liner for `help` and the suggestion dropdown.
-// usage/help — shown by `help <command>`: usage is the signature, help is the
+// desc - one-liner for `help` and the suggestion dropdown.
+// usage/help - shown by `help <command>`: usage is the signature, help is the
 // detail block (parameters, notes, examples).
-// admin — command runs server work from the server's own network position
+// admin - command runs server work from the server's own network position
 // (feed fan-out, process spawn), so it's hidden from and denied to non-admins.
 interface Command {
   desc: string;
@@ -76,11 +76,11 @@ const COMMANDS: Record<string, Command> = {
       return [
         'Network',
         col('ip',        'Your public IP address and location'),
-        col('dns',       'dns <host> [A|AAAA|MX|TXT]  — DNS lookup'),
+        col('dns',       'dns <host> [A|AAAA|MX|TXT]  - DNS lookup'),
         col('speedtest', 'Latency, download & upload test'),
         ...(isAdmin ? [
-          col('ping',    'ping <host>  — ICMP ping (4 packets)'),
-          col('tracert', 'tracert <host>  — Trace route to host'),
+          col('ping',    'ping <host>  - ICMP ping (4 packets)'),
+          col('tracert', 'tracert <host>  - Trace route to host'),
           col('refresh', 'Force-refresh all RSS feeds'),
         ] : []),
         '',
@@ -88,14 +88,14 @@ const COMMANDS: Record<string, Command> = {
         col('add',       'add site <domain> …  ·  add folder <name> …'),
         '',
         'Navigation',
-        col('folder',    'folder <name>  — Switch to a folder'),
+        col('folder',    'folder <name>  - Switch to a folder'),
         '',
         'System',
-        col('theme',     'theme <dark|light|auto>  — Switch UI theme'),
-        col('cache',     'cache clear  — Clear local cache & reload'),
+        col('theme',     'theme <dark|light|auto>  - Switch UI theme'),
+        col('cache',     'cache clear  - Clear local cache & reload'),
         col('version',   'App version info'),
         col('clear',     'Clear the console'),
-        col('help',      'help [command]  — This list, or per-command detail'),
+        col('help',      'help [command]  - This list, or per-command detail'),
         '',
         'Tip: "help <command>" shows parameters and examples.',
       ];
@@ -123,9 +123,9 @@ const COMMANDS: Record<string, Command> = {
       '  add folder Reading List',
       '  add folder Design #A259FF',
       '',
-      'The "site" keyword is optional — "add example.com News" also works.',
+      'The "site" keyword is optional - "add example.com News" also works.',
     ],
-    // Intercepted in the component so it can prompt for missing details — this
+    // Intercepted in the component so it can prompt for missing details - this
     // usage line only shows if it is ever dispatched directly.
     run: () => 'Usage: add site <domain> [name] [folder]  |  add folder <name> [#color]',
   },
@@ -162,7 +162,7 @@ const COMMANDS: Record<string, Command> = {
         }
       } catch {}
       setTimeout(() => window.location.reload(), 300);
-      return 'Cleared local cache — reloading…';
+      return 'Cleared local cache - reloading…';
     },
   },
 
@@ -171,7 +171,7 @@ const COMMANDS: Record<string, Command> = {
     help: [
       'Shows your public IP address with its city/region/country and ISP.',
       'Looked up directly from your browser, so it reflects THIS device and',
-      'connection — handy for allow-lists. (The server never sees this request.)',
+      'connection - handy for allow-lists. (The server never sees this request.)',
     ],
     run: async () => {
       // Query the IP echo service from the browser so we get the user's own
@@ -267,7 +267,7 @@ const COMMANDS: Record<string, Command> = {
       const feedFolders = folders.filter(f => f.feedUrls && f.feedUrls.length > 0);
       if (feedFolders.length === 0) return 'No folders have RSS feeds configured.';
       const res = await apiFetch('/api/v1/folders/refresh-all', { method: 'POST' });
-      if (!res.ok) return 'Refresh failed — check server logs.';
+      if (!res.ok) return 'Refresh failed - check server logs.';
       const d = await res.json() as { refreshed: number };
       onRefreshFeeds();
       return `Refreshed ${d.refreshed} folder${d.refreshed === 1 ? '' : 's'}.`;
@@ -292,7 +292,7 @@ const COMMANDS: Record<string, Command> = {
       const CF = 'https://speed.cloudflare.com';
       let any = false;
 
-      // ── Latency — several tiny requests; report min/avg/jitter ──
+      // ── Latency - several tiny requests; report min/avg/jitter ──
       push('Measuring latency…', 'info');
       try {
         const pings: number[] = [];
@@ -308,7 +308,7 @@ const COMMANDS: Record<string, Command> = {
         any = true;
       } catch { push('Latency   failed', 'error'); }
 
-      // ── Download — warm up the connection, then time a real transfer ──
+      // ── Download - warm up the connection, then time a real transfer ──
       push('Measuring download…', 'info');
       try {
         await fetch(`${CF}/__down?bytes=1000000`, { cache: 'no-store' }).then(r => r.arrayBuffer()); // warm-up
@@ -319,7 +319,7 @@ const COMMANDS: Record<string, Command> = {
         any = true;
       } catch { push('Download  failed', 'error'); }
 
-      // ── Upload — POST a chunk of data and time it ──
+      // ── Upload - POST a chunk of data and time it ──
       push('Measuring upload…', 'info');
       try {
         const upBytes = 5_000_000;
@@ -330,7 +330,7 @@ const COMMANDS: Record<string, Command> = {
         any = true;
       } catch { push('Upload    failed', 'error'); }
 
-      return any ? 'Measured via speed.cloudflare.com' : 'Speed test failed — check your connection.';
+      return any ? 'Measured via speed.cloudflare.com' : 'Speed test failed - check your connection.';
     },
   },
 
@@ -453,7 +453,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
     [folders]
   );
 
-  // Prompt-side folder resolver — accepts a 1-based number, an exact name, or a
+  // Prompt-side folder resolver - accepts a 1-based number, an exact name, or a
   // unique name prefix
   const resolveFolder = useCallback((input: string): Folder | null => {
     const n = parseInt(input, 10);
@@ -479,7 +479,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
       });
       push(`Added ${d.domain} as "${name}" to ${folder.name}.`);
     } catch {
-      push('Could not add the site — try again.', 'error');
+      push('Could not add the site - try again.', 'error');
     } finally {
       setRunning(false);
     }
@@ -496,7 +496,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
   }, [finishAdd, folderLines, push]);
 
   const startAddSite = useCallback((args: string[]) => {
-    if (folders.length === 0) { push('No folders yet — use "add folder <name>" first.', 'error'); return; }
+    if (folders.length === 0) { push('No folders yet - use "add folder <name>" first.', 'error'); return; }
     // The domain is the first token that reads as one (has a dot, etc.)
     const domIdx = args.findIndex(a => parseDomain(a) !== null);
     let domain: string | undefined;
@@ -533,9 +533,9 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
     setRunning(true);
     try {
       await onCreateFolder(name, color ?? deriveColor(name));
-      push(`Created folder "${name}" — switched to it.`);
+      push(`Created folder "${name}" - switched to it.`);
     } catch {
-      push('Could not create the folder — try again.', 'error');
+      push('Could not create the folder - try again.', 'error');
     } finally {
       setRunning(false);
     }
@@ -558,7 +558,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
     if (p.awaiting === 'domain') {
       if (!ans) { setPending(null); push('Add cancelled.', 'info'); return; }
       const dom = parseDomain(ans);
-      if (!dom) { push(`"${ans}" doesn't look like a domain — try again, or type "cancel".`, 'error'); return; }
+      if (!dom) { push(`"${ans}" doesn't look like a domain - try again, or type "cancel".`, 'error'); return; }
       d.domain = dom;
     } else if (p.awaiting === 'name') {
       d.name = ans || deriveName(d.domain!);
@@ -631,7 +631,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
       } else if (suggestions.length > 1) {
         setInput(suggestions[0]);
       } else if (firstToken && CMD_NAMES.includes(firstToken)) {
-        // already a full command — do nothing
+        // already a full command - do nothing
       }
       return;
     }
@@ -653,7 +653,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
 
   return (
     <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      {/* The shell owns all motion (transform/opacity only — compositor-run,
+      {/* The shell owns all motion (transform/opacity only - compositor-run,
           zero per-frame painting); the console inside is visually static */}
       <div
         className={`${styles.shell} ${closing ? styles.shellClosing : ''}`}

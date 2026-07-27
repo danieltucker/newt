@@ -1,6 +1,6 @@
 // Serialize the caret position as a path of child indices from an editor root
 // down to the anchor node, plus the offset. Because a history snapshot restores
-// the exact same HTML, the same path resolves to the same spot — which is how
+// the exact same HTML, the same path resolves to the same spot - which is how
 // undo/redo puts the caret back where it was.
 
 export interface CaretPath {
@@ -29,7 +29,7 @@ export function setCaretPath(root: HTMLElement, caret: CaretPath | null): void {
   let node: Node = root;
   for (const i of caret.path) {
     const child = node.childNodes[i];
-    if (!child) break;   // structure diverged — land as close as we can
+    if (!child) break;   // structure diverged - land as close as we can
     node = child;
   }
   const doc = root.ownerDocument;
@@ -45,6 +45,6 @@ export function setCaretPath(root: HTMLElement, caret: CaretPath | null): void {
     sel.removeAllRanges();
     sel.addRange(range);
   } catch {
-    /* node was rewritten out from under us — leave the caret be */
+    /* node was rewritten out from under us - leave the caret be */
   }
 }

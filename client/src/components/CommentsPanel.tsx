@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { ArticleComment, CommentPrefs, CommentVisibility, CommentHistory } from '../types';
 import RichEditor from './RichEditor';
+import ReportModal from './ReportModal';
 import { uploadImage } from '../utils/imageUpload';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import styles from './CommentsPanel.module.css';
@@ -78,7 +79,7 @@ function initialOf(name: string): string {
 }
 
 // The three visibility tiers live in VisibilityMeta so the blog composer shows
-// the identical set — they write the same `visibility` values and are read
+// the identical set - they write the same `visibility` values and are read
 // through the same friendship rules.
 
 // ── The compact strip that sits on a card ────────────────────────────────
@@ -99,7 +100,7 @@ export function CommentBar({ count, onClick }: { count: number; onClick: () => v
 }
 
 // Comment images are capped at 320px tall so one screenshot can't push the rest
-// of the thread off-screen. Clicking opens the full size in a new tab — cheaper
+// of the thread off-screen. Clicking opens the full size in a new tab - cheaper
 // than a lightbox, and it works for remote images too.
 function openImageAt(e: React.MouseEvent) {
   const img = (e.target as HTMLElement).closest('img');
@@ -187,7 +188,7 @@ function Composer({
             type="button"
             className={styles.postBtn}
             disabled={empty || busy || tooLong}
-            title={tooLong ? `Comment is too long — keep it under ${MAX_COMMENT_TEXT.toLocaleString()} characters` : undefined}
+            title={tooLong ? `Comment is too long - keep it under ${MAX_COMMENT_TEXT.toLocaleString()} characters` : undefined}
             onClick={() => onSubmit({ title: title.trim(), body: bodyRef.current, visibility })}
           >
             {busy ? 'Saving…' : submitLabel}
@@ -201,7 +202,7 @@ function Composer({
 // ── One comment (and its replies) ────────────────────────────────────────
 function CommentItem({
   node, depth, prefs, busyId, replyTo, editing,
-  onReply, onEdit, onDelete, onSubmitReply, onSubmitEdit, onCancel, onViewProfile, readOnly,
+  onReply, onEdit, onDelete, onModerate, onSubmitReply, onSubmitEdit, onCancel, onViewProfile, readOnly,
 }: {
   node: ArticleComment;
   depth: number;
@@ -212,6 +213,7 @@ function CommentItem({
   onReply: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onModerate: (id: string) => void;
   onSubmitReply: (parentId: string, v: { body: string; visibility: CommentVisibility }) => void;
   onSubmitEdit: (id: string, v: { title: string; body: string; visibility: CommentVisibility }) => void;
   onCancel: () => void;
@@ -224,6 +226,8 @@ function CommentItem({
   const replyCount = countTree(node.replies);
 
   const [collapsed, setCollapsed] = useState(false);
+  const [confirmingMod, setConfirmingMod] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<CommentHistory | null>(null);
   const [histLoading, setHistLoading] = useState(false);
@@ -282,18 +286,24 @@ function CommentItem({
             type="button"
             className={`${styles.edited} ${showHistory ? styles.editedActive : ''}`}
             onClick={toggleHistory}
-            title={`Edited ${new Date(node.updatedAt).toLocaleString()} — click to view history`}
+            title={`Edited ${new Date(node.updatedAt).toLocaleString()} - click to view history`}
           >
             edited {commentDate(node.updatedAt)}
           </button>
         )}
         {/* Tag your own comments (all three tiers), and others' friends-only
             comments so it's clear why you can see them. Others' public comments
-            need no tag — public is the default read. */}
-        {!node.deleted && (node.mine || node.visibility === 'friends') && (
+            need no tag - public is the default read. A moderator sees the tier
+            on everything, because who can read a comment is half of whether it
+            needs acting on. */}
+        {!node.deleted && (node.mine || node.canModerate || node.visibility === 'friends') && (
           <span className={`${styles.visTag} ${styles[`visTag_${node.visibility}`]}`}>
             {VIS_META[node.visibility].tag}
           </span>
+        )}
+        {/* The handle, so a moderator can act on an author rather than a name */}
+        {!node.deleted && node.canModerate && node.author.username && (
+          <span className={styles.modHandle}>@{node.author.username}</span>
         )}
       </div>
 
@@ -313,9 +323,12 @@ function CommentItem({
       ) : (
         <>
           {node.title && <div className={styles.commentTitle}>{node.title}</div>}
-          {/* Sanitized server-side on write — see server/src/lib/comments.ts */}
+          {/* Sanitized server-side on write - see server/src/lib/comments.ts */}
+          {/* A comment can carry a reference card if one is pasted in - there
+              is no /reference command here, but the allowlist permits the
+              markup, so the themed skin has to be on. */}
           <div
-            className={styles.body}
+            className={`${styles.body} note-embed-read`}
             onClick={openImageAt}
             dangerouslySetInnerHTML={{ __html: node.body }}
           />
@@ -323,6 +336,13 @@ function CommentItem({
             <div className={styles.actions}>
               <button className={styles.actionBtn} onClick={() => onReply(node.id)}>Reply</button>
               {node.mine && <button className={styles.actionBtn} onClick={() => onEdit(node.id)}>Edit</button>}
+              {/* Somebody else's words, so there is something to report. Quiet
+                  by default - it earns attention only when it's needed. */}
+              {!node.mine && (
+                <button className={`${styles.actionBtn} ${styles.reportAction}`} onClick={() => setReporting(true)}>
+                  Report
+                </button>
+              )}
               {node.mine && (
                 <button
                   className={`${styles.actionBtn} ${styles.deleteAction}`}
@@ -332,10 +352,52 @@ function CommentItem({
                   Delete
                 </button>
               )}
+              {/* Moderation. Two-step, because it acts on somebody else's words
+                  and - when the comment has replies - reshapes a live thread. */}
+              {node.canModerate && (
+                confirmingMod ? (
+                  <span className={styles.modConfirm}>
+                    <span className={styles.modConfirmText}>
+                      {replyCount > 0
+                        ? `Remove the text? The ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'} below stay.`
+                        : 'Remove this comment permanently?'}
+                    </span>
+                    <button
+                      className={styles.modConfirmBtn}
+                      onClick={() => { setConfirmingMod(false); onModerate(node.id); }}
+                      disabled={busyId === node.id}
+                    >
+                      {busyId === node.id ? 'Removing…' : 'Remove'}
+                    </button>
+                    <button className={styles.actionBtn} onClick={() => setConfirmingMod(false)}>
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className={`${styles.actionBtn} ${styles.modAction}`}
+                    onClick={() => setConfirmingMod(true)}
+                    title={replyCount > 0
+                      ? 'Moderate: removes the content and keeps the thread below it'
+                      : 'Moderate: permanently removes this comment'}
+                  >
+                    <ShieldIcon />
+                    Remove
+                  </button>
+                )
+              )}
             </div>
           )}
           {showHistory && (
             <CommentHistoryPanel loading={histLoading} error={histError} history={history} />
+          )}
+          {reporting && (
+            <ReportModal
+              targetType="comment"
+              targetId={node.id}
+              subjectName={node.author.displayName}
+              onClose={() => setReporting(false)}
+            />
           )}
         </>
       )}
@@ -353,7 +415,7 @@ function CommentItem({
 
       {node.replies.length > 0 && (
         <div className={styles.replies}>
-          {/* Clicking the rail folds the whole subtree — the pressure valve for
+          {/* Clicking the rail folds the whole subtree - the pressure valve for
               deep threads, since replies now keep indenting at every level. */}
           <button
             className={styles.collapseRail}
@@ -380,6 +442,7 @@ function CommentItem({
                   onReply={onReply}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onModerate={onModerate}
                   onSubmitReply={onSubmitReply}
                   onSubmitEdit={onSubmitEdit}
                   onCancel={onCancel}
@@ -403,7 +466,7 @@ function CommentHistoryPanel({ loading, error, history }: {
   if (error) return <div className={styles.history}><div className={styles.historyEmpty}>Couldn’t load history.</div></div>;
   if (!history) return null;
 
-  // Nothing to compare against — the comment was edited before history tracking
+  // Nothing to compare against - the comment was edited before history tracking
   if (history.revisions.length === 0) {
     return (
       <div className={styles.history}>
@@ -502,7 +565,7 @@ export default function CommentsPanel({
           if (refreshed) tree = refreshed;
           done?.();
         } catch {
-          // Keeping the note on the item is the safe failure — it is not lost
+          // Keeping the note on the item is the safe failure - it is not lost
           migratedRef.current = false;
         }
       }
@@ -576,6 +639,21 @@ export default function CommentsPanel({
     }
   }
 
+  // Moderation goes through the admin endpoint, not the author's own delete -
+  // that route is what writes the AdminAction row, so removing a comment from
+  // here lands in the audit log exactly as it would from the admin panel.
+  async function moderate(id: string) {
+    setBusyId(id);
+    try {
+      await apiDelete(`/api/v1/admin/comments/${id}`);
+      await reload();
+    } catch {
+      setError('Could not remove comment');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   function cancelAll() {
     setReplyTo(null);
     setEditing(null);
@@ -609,7 +687,7 @@ export default function CommentsPanel({
       {!loading && comments.length === 0 && !composing && (
         <div className={styles.empty}>
           <CommentIcon />
-          <span>{readOnly ? 'No comments yet.' : 'No comments yet — start the thread.'}</span>
+          <span>{readOnly ? 'No comments yet.' : 'No comments yet - start the thread.'}</span>
         </div>
       )}
 
@@ -639,6 +717,7 @@ export default function CommentsPanel({
               onReply={id => { setEditing(null); setReplyTo(id); }}
               onEdit={id => { setReplyTo(null); setEditing(id); }}
               onDelete={remove}
+              onModerate={moderate}
               onSubmitReply={submitReply}
               onSubmitEdit={submitEdit}
               onCancel={cancelAll}
@@ -649,6 +728,16 @@ export default function CommentsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+// Marks an action as moderator-only, so it never reads as an ordinary control
+function ShieldIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
   );
 }
 

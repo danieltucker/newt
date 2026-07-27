@@ -1,7 +1,7 @@
 import { CommentVisibility } from '../types';
 
 // The three visibility tiers and how they are labelled, shared by everything
-// that lets you choose one — the comment composer and the blog post composer.
+// that lets you choose one - the comment composer and the blog post composer.
 // Both write to the same `visibility` vocabulary and are read through the same
 // friendship rules, so the wording must not drift between them.
 //
@@ -21,7 +21,7 @@ export interface VisMeta {
 export const VIS_META: Record<CommentVisibility, VisMeta> = {
   public:  { label: 'Public',        tag: 'Public',        hint: 'Anyone using this app can read this comment',        icon: <GlobeIcon /> },
   friends: { label: 'Friends',       tag: 'Friends',       hint: 'Only your accepted friends can read this comment',    icon: <FriendsIcon /> },
-  private: { label: 'Personal Note', tag: 'Personal Note', hint: 'Only you can read this — a private note to yourself', icon: <LockIcon /> },
+  private: { label: 'Personal Note', tag: 'Personal Note', hint: 'Only you can read this - a private note to yourself', icon: <LockIcon /> },
 };
 
 // Blog posts reuse the same tiers but read differently: they're published
@@ -29,7 +29,7 @@ export const VIS_META: Record<CommentVisibility, VisMeta> = {
 export const POST_VIS_META: Record<CommentVisibility, VisMeta> = {
   public:  { label: 'Public',  tag: 'Public',  hint: 'Anyone can read this post, including people who aren’t signed in', icon: <GlobeIcon /> },
   friends: { label: 'Friends', tag: 'Friends', hint: 'Only your accepted friends can read this post',                    icon: <FriendsIcon /> },
-  private: { label: 'Draft',   tag: 'Draft',   hint: 'Only you can read this — an unpublished draft',                    icon: <LockIcon /> },
+  private: { label: 'Draft',   tag: 'Draft',   hint: 'Only you can read this - an unpublished draft',                    icon: <LockIcon /> },
 };
 
 export function GlobeIcon() {

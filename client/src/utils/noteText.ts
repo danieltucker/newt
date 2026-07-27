@@ -11,7 +11,7 @@ export function noteText(html: string): string {
   if (hit !== undefined) return hit;
   const el = document.createElement('div');
   el.innerHTML = html;
-  // Block boundaries carry no whitespace of their own — without a separator
+  // Block boundaries carry no whitespace of their own - without a separator
   // "<p>one</p><p>two</p>" would read as "onetwo" and never match "one two".
   el.querySelectorAll('p, div, li, tr, br, h1, h2, h3, blockquote, pre')
     .forEach(n => n.after(document.createTextNode(' ')));

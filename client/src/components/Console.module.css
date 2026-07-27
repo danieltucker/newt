@@ -7,7 +7,7 @@
   padding: 15px;
 }
 
-/* All motion lives on the shell as transform + opacity only — the two
+/* All motion lives on the shell as transform + opacity only - the two
    properties Chromium/Edge animate entirely on the GPU compositor. The
    liquid feel comes from squash-and-stretch (scaleY overshoot and settle),
    not from morphing border-radius or clip-path: radius morphs repaint the

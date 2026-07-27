@@ -63,6 +63,17 @@
 }
 .row:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
+/* A cover image reduced to an identifying thumbnail - this list is for managing
+   posts, so the title and its draft/published chip stay the row's subject. */
+.rowThumb {
+  flex: none;
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
 .rowMain {
   flex: 1;
   min-width: 0;

@@ -1,0 +1,157 @@
+/* Full width explicitly: on a page that centres its children in a flex column
+   (AuthPage) the footer would otherwise shrink to its content and the hairline
+   would stop short of the edges. */
+.footer {
+  width: 100%;
+  margin-top: 56px;
+  padding-bottom: 22px;
+}
+
+/* The mark's own gradient, stretched flat. Fades to nothing at both ends so it
+   reads as a horizon line rather than a rule with two cut ends. */
+.rule {
+  height: 1px;
+  margin-bottom: 16px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, #9B8CFF 55%, transparent) 22%,
+    color-mix(in oklab, #5BC8E6 55%, transparent) 50%,
+    color-mix(in oklab, #36D6A6 55%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* ── Brand, and the trail that walks in behind it ── */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+  cursor: default;
+}
+
+.tracks {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 14px;
+}
+
+.track {
+  fill: var(--muted);
+  opacity: 0;
+}
+
+/* The trail arrives one print at a time, then the newt gives a little wag -
+   the delay on the wiggle is the length of the walk, so it lands as arrival
+   rather than two things moving at once. */
+.brand:hover .track {
+  animation: trackIn 0.9s ease forwards;
+}
+
+@keyframes trackIn {
+  0%   { opacity: 0; transform: translateY(3px) scale(0.7); }
+  25%  { opacity: 0.55; transform: translateY(0) scale(1); }
+  100% { opacity: 0.14; transform: translateY(0) scale(1); }
+}
+
+.mark {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  transform-origin: 60% 70%;
+}
+
+.brand:hover .mark {
+  animation: wag 0.75s 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes wag {
+  0%, 100% { transform: rotate(0deg); }
+  18%      { transform: rotate(-7deg) translateX(-1px); }
+  42%      { transform: rotate(6deg) translateX(1px); }
+  68%      { transform: rotate(-3deg); }
+}
+
+.wordmark {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* ── Credit ── */
+.credit {
+  margin: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* Bellingham gets the logo's greens - the one word in the line that's also the
+   reason there's a newt on the page at all. */
+.place {
+  font-weight: 600;
+  background: linear-gradient(92deg, #5BC8E6, #36D6A6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dot { margin: 0 7px; opacity: 0.5; }
+
+.link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--muted) 40%, transparent);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.link:hover {
+  color: #36D6A6;
+  border-bottom-color: #36D6A6;
+}
+
+/* ── Version ── */
+.version {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0.35;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.version:hover { opacity: 0.75; }
+
+/* Below this the three parts can't share a line without the credit wrapping
+   mid-sentence, so they stack and centre instead. */
+@media (max-width: 720px) {
+  .inner {
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand:hover .track { animation: none; opacity: 0.14; }
+  .brand:hover .mark { animation: none; }
+}

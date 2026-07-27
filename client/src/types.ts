@@ -1,8 +1,20 @@
+// One feed subscription inside a folder. It has an id of its own so it can be
+// renamed, re-pointed at a new URL, or moved to another folder and still be the
+// same subscription. `name` is "" when the user hasn't set one - see feedLabel.
+export interface FolderFeed {
+  id: string;
+  url: string;
+  name: string;
+  position: number;
+}
+
 export interface Folder {
   id: string;
   name: string;
   color: string;
   position: number;
+  feeds: FolderFeed[];
+  // Derived server-side from `feeds`, for the places that only want the URLs.
   feedUrls: string[];
   feedLastCheckedAt?: string | null;
 }
@@ -48,8 +60,21 @@ export interface ReadingListItem {
   tag: string;
   notes: string;
   imageUrl: string;
-  archived: boolean;
+  /** Moved out of the active reading list and onto a Library shelf. */
+  inLibrary: boolean;
+  /** Which Library shelf. Null means Unsorted, not "unknown". */
+  folderId: string | null;
   savedAt: string;
+}
+
+/** A shelf in the Library. Self-only - never rendered on a public profile. */
+export interface ReadingFolder {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  /** Library items on this shelf, computed server-side. */
+  itemCount: number;
 }
 
 export type CommentVisibility = 'public' | 'friends' | 'private';
@@ -66,6 +91,10 @@ export interface ArticleComment {
   createdAt: string;
   updatedAt: string;
   mine: boolean;
+  // Server-decided: true only when the viewer is an admin looking at someone
+  // else's live comment. The client never infers this - see toNode in
+  // server/src/routes/comments.ts.
+  canModerate?: boolean;
   author: { username: string; displayName: string; avatar: string | null };
   replies: ArticleComment[];
 }
@@ -116,7 +145,74 @@ export interface FriendSearchResult extends PublicUser {
   relation: FriendRelation;
 }
 
-export type NotificationType = 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'friend_post';
+// ── Blocking ───────────────────────────────────────────────────────────────
+// A block is a wall, not a mute: one row makes the pair mutually invisible.
+// Only your own side is ever listed - who has blocked *you* is deliberately
+// unknowable. See server/src/lib/blocks.ts.
+export interface BlockedUser extends PublicUser {
+  blockedAt: string;
+}
+
+// ── Reports ────────────────────────────────────────────────────────────────
+export type ReportCategory = 'spam' | 'harassment' | 'hate' | 'sexual' | 'violence' | 'other';
+export type ReportTargetType = 'comment' | 'blogPost' | 'user';
+export type ReportStatus = 'open' | 'resolved' | 'dismissed';
+
+// What a moderator sees in the queue. `snapshot` is the content as it read when
+// reported, so the report survives the author editing or deleting it.
+export interface ModerationReport {
+  id: string;
+  reporter: string;
+  reporterExists: boolean;
+  subject: string;
+  subjectExists: boolean;
+  targetType: ReportTargetType;
+  targetId: string;
+  targetLabel: string;
+  targetUrl: string | null;
+  snapshot: string;
+  category: ReportCategory;
+  categoryLabel: string;
+  note: string;
+  status: ReportStatus;
+  resolvedBy: string | null;
+  resolutionNote: string | null;
+  resolvedAt: string | null;
+  // Total reports naming this person, this one included - so the smallest is 1.
+  reportsAgainstSubject: number;
+  createdAt: string;
+}
+
+// One comment in the moderator's thread view: the whole conversation around a
+// reported comment, unfiltered by visibility. Unlike ArticleComment a tombstone
+// keeps its author here - who wrote the removed comment is what a moderator is
+// usually looking for.
+export interface AdminThreadComment {
+  id: string;
+  parentId: string | null;
+  author: string;
+  title: string | null;
+  body: string;
+  visibility: CommentVisibility;
+  deleted: boolean;
+  edits: number;
+  createdAt: string;
+  updatedAt: string;
+  replies: AdminThreadComment[];
+}
+
+export interface AdminThread {
+  articleTitle: string;
+  articleUrl: string;
+  total: number;
+  comments: AdminThreadComment[];
+}
+
+export type NotificationType =
+  | 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'friend_post'
+  // Moderator-only: a user filed a report. Carries no actor - see
+  // notifyAdminsOfReport in server/src/routes/reports.ts.
+  | 'report_new';
 
 export interface AppNotification {
   id: string;
@@ -125,6 +221,9 @@ export interface AppNotification {
   articleUrl: string | null;
   articleTitle: string | null;
   commentId: string | null;
+  // Set on 'report_new' only: which report the alert opens in the moderation
+  // queue. Null on every other type.
+  reportId: string | null;
   read: boolean;
   createdAt: string;
 }
@@ -136,6 +235,9 @@ export interface AuthState {
 
 // ── Public profiles (/u/<username>) ────────────────────────────────────────
 export interface ProfileUser {
+  // Sent by toPublicUser server-side. Needed because unblocking is keyed on the
+  // user id, not the username.
+  id: string;
   username: string;
   displayName: string;
   avatar: string | null;
@@ -144,7 +246,11 @@ export interface ProfileUser {
   postCount: number;
   isSelf: boolean;
   relation: FriendRelation;
-  // RSS URL for this person's public posts — offered for copying, and what the
+  // True only on the *blocker's* view of someone they blocked: a stub profile
+  // with no content and an Unblock button. Someone who was blocked gets a 404
+  // instead, so this never tells anyone they've been blocked.
+  blocked: boolean;
+  // RSS URL for this person's public posts - offered for copying, and what the
   // Follow button subscribes a folder to.
   blogFeedUrl: string;
 }
@@ -171,7 +277,7 @@ export interface ProfileArticle {
 
 // ── Blog posts (/u/<username>/<slug>) ──────────────────────────────────────
 // Visibility reuses the comment tiers exactly, and 'private' doubles as the
-// draft state — publishing is just widening it.
+// draft state - publishing is just widening it.
 
 // List-view shape: everything but the body.
 export interface BlogPostSummary {
@@ -179,6 +285,8 @@ export interface BlogPostSummary {
   title: string;
   slug: string;
   excerpt: string;
+  // Cover image as a site-relative /api/v1/images/<id> path, '' for none.
+  heroImage: string;
   visibility: CommentVisibility;
   commentsEnabled: boolean;
   // Absolute canonical URL. Also the key its comment thread hangs on, so it is

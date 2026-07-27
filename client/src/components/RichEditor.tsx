@@ -4,8 +4,12 @@ import styles from './NotesConsole.module.css';
 import { getCaretPath, setCaretPath, CaretPath } from '../utils/caret';
 import { HistoryStack, EditKind } from '../utils/history';
 import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
+import {
+  EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
+  embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
+} from '../utils/noteEmbed';
 
-// A Confluence-style block editor. There is no separate "edit mode" — the
+// A Confluence-style block editor. There is no separate "edit mode" - the
 // surface is always a contentEditable that renders its content live. Typing "/"
 // at the start of an empty block opens a command menu that transforms the
 // current block (heading, list, to-do, quote, code, divider).
@@ -20,9 +24,10 @@ import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 const TODO_CLASS = 'note-todo';
 const TABLE_CLASS = 'note-table';
 
-// 'image' is grouped with the blocks in the menu but is not a block transform —
-// it opens a file picker, so applyCmd intercepts it before applyBlock.
-type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image';
+// 'image' and 'reference' are grouped with the blocks in the menu but are not
+// block transforms - they open a picker, so applyCmd intercepts them before
+// applyBlock.
+type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image' | 'reference';
 type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear';
 
 interface Cmd {
@@ -31,7 +36,7 @@ interface Cmd {
   label: string;
   badge: string;
   hint: string;
-  // Extra search terms, including the markdown that produces the same thing —
+  // Extra search terms, including the markdown that produces the same thing -
   // a plain label match can't find "Heading 2" from "h2" or "##".
   keys: string[];
 }
@@ -46,12 +51,13 @@ const CMDS: Cmd[] = [
   { id: 'todo',  kind: 'block', label: 'To-do',       badge: '☐',  hint: 'or type [] + space',    keys: ['todo', 'task', 'check', 'checkbox', 'checklist', '[]'] },
   { id: 'quote', kind: 'block', label: 'Quote',       badge: '"',  hint: 'or type > + space',     keys: ['quote', 'blockquote', 'cite', '>'] },
   { id: 'code',  kind: 'block', label: 'Code block',  badge: '<>', hint: 'or type ```',           keys: ['code', 'codeblock', 'pre', 'snippet', '```'] },
-  { id: 'table', kind: 'block', label: 'Table',       badge: '⊞',  hint: '3×3 — Tab moves cell',  keys: ['table', 'grid', 'tbl', 'rows', 'columns', '|'] },
-  { id: 'hr',    kind: 'block', label: 'Divider',     badge: '—',  hint: 'or type ---',           keys: ['hr', 'divider', 'rule', 'line', 'separator', '---'] },
+  { id: 'table', kind: 'block', label: 'Table',       badge: '⊞',  hint: '3×3 - Tab moves cell',  keys: ['table', 'grid', 'tbl', 'rows', 'columns', '|'] },
+  { id: 'hr',    kind: 'block', label: 'Divider',     badge: '-',  hint: 'or type ---',           keys: ['hr', 'divider', 'rule', 'line', 'separator', '---'] },
   { id: 'image', kind: 'block', label: 'Image',       badge: '🖼', hint: 'or paste / drop a file', keys: ['image', 'img', 'picture', 'photo', 'screenshot', 'upload'] },
+  { id: 'reference', kind: 'block', label: 'Reference', badge: '🔖', hint: 'Embed a saved article', keys: ['reference', 'ref', 'article', 'saved', 'reading', 'embed', 'cite', 'card'] },
 
-  { id: 'bold',       kind: 'inline', label: 'Bold',          badge: 'B',  hint: 'Ctrl+B — **text**',  keys: ['bold', 'b', 'strong', '**'] },
-  { id: 'italic',     kind: 'inline', label: 'Italic',        badge: 'I',  hint: 'Ctrl+I — *text*',    keys: ['italic', 'i', 'em', 'emphasis', '*', '_'] },
+  { id: 'bold',       kind: 'inline', label: 'Bold',          badge: 'B',  hint: 'Ctrl+B - **text**',  keys: ['bold', 'b', 'strong', '**'] },
+  { id: 'italic',     kind: 'inline', label: 'Italic',        badge: 'I',  hint: 'Ctrl+I - *text*',    keys: ['italic', 'i', 'em', 'emphasis', '*', '_'] },
   { id: 'underline',  kind: 'inline', label: 'Underline',     badge: 'U',  hint: 'Ctrl+U',             keys: ['underline', 'u'] },
   { id: 'strike',     kind: 'inline', label: 'Strikethrough', badge: 'S',  hint: '~~text~~',           keys: ['strike', 'strikethrough', 's', 'del', 'cross', '~~'] },
   { id: 'inlinecode', kind: 'inline', label: 'Inline code',   badge: '`',  hint: 'Monospace `text`',   keys: ['inlinecode', 'mono', 'monospace', 'codespan', '`'] },
@@ -63,7 +69,7 @@ const CMDS: Cmd[] = [
 // slash menu's aliases have always promised. The trailing space is part of the
 // trigger, so "1." on its own stays text; Chrome writes that space as a
 // non-breaking one, hence the alternative in each character class. Dividers and
-// code fences fire on their last character — there's no space to wait for.
+// code fences fire on their last character - there's no space to wait for.
 const MD_RULES: { re: RegExp; id: BlockId }[] = [
   { re: /^#[ \u00a0]$/,            id: 'h1' },
   { re: /^##[ \u00a0]$/,           id: 'h2' },
@@ -77,7 +83,7 @@ const MD_RULES: { re: RegExp; id: BlockId }[] = [
 ];
 
 // ── List repair ───────────────────────────────────────────────────────
-// execCommand can leave a list holding raw text instead of <li> children —
+// execCommand can leave a list holding raw text instead of <li> children -
 // typically after emptying a list and making a new one over the remains. Such
 // a list renders with no bullet or number at all and Enter inside it produces
 // sibling lists rather than items, which reads as "lists are broken". Notes
@@ -86,7 +92,7 @@ const MD_RULES: { re: RegExp; id: BlockId }[] = [
 function normalizeLists(editor: HTMLElement) {
   // Re-parenting an item drops the caret where it was rather than carrying it
   // along, so the typing that follows an outdent would land in the wrong item.
-  // The nodes themselves survive the repair — only their parents change — so
+  // The nodes themselves survive the repair - only their parents change - so
   // the caret can be put back exactly where the user left it.
   const sel = window.getSelection();
   const mark = sel && sel.rangeCount && editor.contains(sel.anchorNode)
@@ -164,7 +170,7 @@ function normalizeLists(editor: HTMLElement) {
       caret.collapse(true);
       sel.removeAllRanges();
       sel.addRange(caret);
-    } catch { /* the node was rewritten out from under us — leave the caret be */ }
+    } catch { /* the node was rewritten out from under us - leave the caret be */ }
   }
 }
 
@@ -188,14 +194,14 @@ function cmdMatches(cmd: Cmd, query: string): boolean {
   return cmd.keys.some(k => k.includes(q));
 }
 
-// Toolbar glyphs. Stroke-based 24-viewBox icons, matching the rest of the app —
+// Toolbar glyphs. Stroke-based 24-viewBox icons, matching the rest of the app -
 // the letter/punctuation stand-ins read poorly at button size.
 const icon = (paths: React.ReactNode) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths}</svg>
 );
 
-// A quote bar beside indented lines — reads as "blockquote" rather than as a
+// A quote bar beside indented lines - reads as "blockquote" rather than as a
 // stray punctuation mark
 const QuoteIcon = () => icon(<>
   <path d="M4 5v14" />
@@ -206,7 +212,7 @@ const CodeIcon = () => icon(<>
   <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
 </>);
 
-// Eraser — the conventional "remove formatting" mark
+// Eraser - the conventional "remove formatting" mark
 const ClearIcon = () => icon(<>
   <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
   <path d="M22 21H7" /><path d="m5 11 9 9" />
@@ -230,11 +236,29 @@ const LinkIcon = () => icon(<>
   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
 </>);
 
-// Framed picture — a sun and a hill, the usual shorthand for a photo
+// Framed picture - a sun and a hill, the usual shorthand for a photo
 const ImageIcon = () => icon(<>
   <rect x="3" y="3" width="18" height="18" rx="2" />
   <circle cx="8.5" cy="8.5" r="1.5" />
   <path d="m21 15-4.35-4.35a2 2 0 0 0-2.83 0L3 21" />
+</>);
+
+// A bookmark - what the saved articles /reference points at already look like
+// everywhere else in the app
+const ReferenceIcon = () => icon(<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />);
+
+// The three embed sizes, drawn as what they lay out: a line of text, a card
+// with its thumbnail beside the title, a card led by full-width artwork.
+const SmallCardIcon = () => icon(<>
+  <rect x="2.5" y="6" width="19" height="12" rx="2" />
+  <rect x="5.5" y="9" width="6" height="6" rx="1" />
+  <path d="M14.5 10.5h4M14.5 14h4" />
+</>);
+
+const LargeCardIcon = () => icon(<>
+  <rect x="2.5" y="4" width="19" height="16" rx="2" />
+  <path d="M2.5 13.5h19" />
+  <path d="M6 16.8h8" />
 </>);
 
 // ── Tables ────────────────────────────────────────────────────────────
@@ -278,7 +302,7 @@ function cellAtCaret(editor: HTMLElement): HTMLTableCellElement | null {
 }
 
 // Move the caret into a cell: after existing text (so Tab lands where you'd
-// keep typing), but *before* the filler <br> of an empty cell — after it would
+// keep typing), but *before* the filler <br> of an empty cell - after it would
 // leave the caret stranded on a phantom second line.
 function focusCell(cell: HTMLTableCellElement) {
   placeCaret(cell, !(cell.textContent ?? '').trim());
@@ -317,7 +341,7 @@ function rangeFromPoint(x: number, y: number): Range | null {
 }
 
 // ── Links ─────────────────────────────────────────────────────────────
-// What the user types in the link dialog is rarely a full URL — "example.com"
+// What the user types in the link dialog is rarely a full URL - "example.com"
 // is the common case, so a bare host gets https://. Anything that already names
 // a scheme, an anchor or a site-root path is left alone; the script-bearing
 // schemes are refused outright rather than rewritten.
@@ -329,7 +353,7 @@ function normalizeUrl(raw: string): string {
   return `https://${s}`;
 }
 
-// The <a> the caret sits in (or that the selection lies within), if any — an
+// The <a> the caret sits in (or that the selection lies within), if any - an
 // existing link is edited in place rather than nested inside a new one.
 function anchorAt(editor: HTMLElement): HTMLAnchorElement | null {
   const sel = window.getSelection();
@@ -353,9 +377,23 @@ interface Props {
   onChange: (html: string) => void;
   readOnly?: boolean;   // notes in Recently Deleted are shown, not edited
   // Supplied by whichever surface embeds the editor. Its absence is what hides
-  // the image affordances entirely — the editor itself knows nothing about how
+  // the image affordances entirely - the editor itself knows nothing about how
   // or where an image is stored, only how to ask for a URL and insert it.
   onUploadImage?: (file: File) => Promise<{ url: string; width: number; height: number }>;
+  // What /reference can point at, already reduced to the embed shape. Absent
+  // hides the command, exactly as onUploadImage gates the image one. The editor
+  // never learns what a reading list is - a tweet or an external link would
+  // arrive here as more entries of a different `kind`.
+  references?: EmbedData[];
+  // Live comment counts by article URL, for the large card. Never stored - see
+  // applyCommentCounts. The embedding surface fetches them because it is the
+  // one that knows whether the viewer is signed in.
+  commentCounts?: Record<string, number>;
+  // Fired when a reference is added, so the surface above can fetch a count for
+  // it. Deliberately not fired on removal: a URL that lingers in the fetch list
+  // costs one unused number, whereas checking after every keystroke would cost
+  // a DOM walk on every keystroke.
+  onEmbedsChange?: (urls: string[]) => void;
 }
 
 interface MenuPos { left: number; top: number | null; bottom: number | null; maxHeight: number; }
@@ -364,7 +402,7 @@ interface MenuPos { left: number; top: number | null; bottom: number | null; max
 interface Marks { bold: boolean; italic: boolean; underline: boolean; strike: boolean; }
 const NO_MARKS: Marks = { bold: false, italic: false, underline: false, strike: false };
 
-// First-paint estimate only — the bubble sizes to its content, so the real
+// First-paint estimate only - the bubble sizes to its content, so the real
 // width is measured after render and the position corrected before paint.
 const BUBBLE_EST_W = 250;
 const BUBBLE_M = 8;
@@ -372,7 +410,7 @@ const BUBBLE_M = 8;
 interface BubblePos { anchorX: number; left: number; top: number; }
 
 // Centre the bubble over the selection. `boundsTop` is the top of the editor's
-// scroll area — selecting on the first line would otherwise float the bubble up
+// scroll area - selecting on the first line would otherwise float the bubble up
 // over the utility bar, so in that case it flips below the selection instead.
 function computeBubblePos(r: DOMRect, boundsTop: number): BubblePos {
   const anchorX = r.left + r.width / 2;
@@ -486,10 +524,39 @@ function currentLineEmpty(): boolean {
 // no text, and the placeholder would sit on top of them.
 function isBlank(el: HTMLElement): boolean {
   if ((el.textContent ?? '').trim()) return false;
-  return !el.querySelector(`hr, img, pre, blockquote, ul, ol, h1, h2, h3, table, .${TODO_CLASS}`);
+  return !el.querySelector(
+    `hr, img, pre, blockquote, ul, ol, h1, h2, h3, table, .${TODO_CLASS}, .${EMBED_CLASS}`);
 }
 
-export default function RichEditor({ initialHtml, onChange, readOnly = false, onUploadImage }: Props) {
+// Select an atomic island (an embed) as a unit: the browser highlights it, and
+// Backspace then removes the whole thing rather than putting a caret inside a
+// node that cannot hold one.
+function selectNode(node: Node) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const r = document.createRange();
+  r.selectNode(node);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+// The embed a selection covers. Clicking an atomic island brackets it rather
+// than landing inside it, so the single-node case is checked before the usual
+// ancestor walk.
+function embedInSelection(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const r = sel.getRangeAt(0);
+  const bracketed = r.startContainer === r.endContainer && r.endOffset === r.startOffset + 1
+    ? r.startContainer.childNodes[r.startOffset]
+    : null;
+  return embedAt(bracketed ?? null, root) ?? embedAt(r.commonAncestorContainer, root);
+}
+
+export default function RichEditor({
+  initialHtml, onChange, readOnly = false, onUploadImage, references, commentCounts,
+  onEmbedsChange,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -500,6 +567,14 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState<LinkForm | null>(null);
+  // /reference: the picker, and where its result goes. The range is stashed for
+  // the same reason the image one is - the search field takes focus, which
+  // collapses whatever the caret was on.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const embedRange = useRef<Range | null>(null);
+  // The embed the selection is on, if any. It is what turns the floating bar
+  // from a formatting bubble into the embed's own controls.
+  const [embedEl, setEmbedEl] = useState<HTMLElement | null>(null);
   // The selection the dialog was opened on. Focusing an input collapses it, so
   // it's restored before the link is written back.
   const linkRange = useRef<Range | null>(null);
@@ -590,12 +665,23 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     // and numbers missing; put them right on the way in.
     const beforeRepair = el.innerHTML;
     normalizeLists(el);
+    // Blog bodies come back from the server sanitizer stripped of the attribute
+    // that makes an embed atomic, so put it back before the caret can wander in.
+    hydrateEmbeds(el);
     el.classList.toggle('note-empty', isBlank(el));
     if (el.innerHTML !== beforeRepair && !readOnly) onChange(el.innerHTML);   // persist the repair
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Insert-image is only offered where the embedding surface can store one
-  const available = onUploadImage ? CMDS : CMDS.filter(c => c.id !== 'image');
+  // Live counts land straight on the DOM rather than going through onChange -
+  // they are display, not content, and must never reach what gets saved.
+  useEffect(() => {
+    if (ref.current && commentCounts) applyCommentCounts(ref.current, commentCounts);
+  }, [commentCounts]);
+
+  // Both pickers are only offered where the embedding surface can serve them:
+  // no uploader, no image; nothing to reference, no /reference.
+  const available = CMDS.filter(c =>
+    (c.id !== 'image' || !!onUploadImage) && (c.id !== 'reference' || !!references));
   const filtered = slashQuery ? available.filter(c => cmdMatches(c, slashQuery)) : available;
 
   function emit() {
@@ -637,7 +723,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
 
   // ── Link dialog ───────────────────────────────────────────────────────
   // Links are composed in the console itself (text + URL), not in a browser
-  // prompt. Opening stashes the selection — the fields take focus away from the
+  // prompt. Opening stashes the selection - the fields take focus away from the
   // editor, and the range is what Apply writes into.
   function applyLink() {
     const editor = ref.current;
@@ -646,7 +732,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
 
     const existing = anchorAt(editor);
     if (existing) {
-      // Select the anchor itself, not its contents — Apply replaces the whole
+      // Select the anchor itself, not its contents - Apply replaces the whole
       // element, so an edited link can't end up nested inside the old one.
       const r = document.createRange();
       r.selectNode(existing);
@@ -690,7 +776,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     record('struct');
     const label = form.text.trim();
 
-    // Linking the selection as it stands keeps whatever formatting it holds —
+    // Linking the selection as it stands keeps whatever formatting it holds -
     // only a changed (or absent) label has to be written as fresh markup.
     if (form.editing) {
       document.execCommand('insertHTML', false,
@@ -717,7 +803,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
   }
 
   // ── Images ────────────────────────────────────────────────────────────
-  // Three ways in — the toolbar/slash command, paste, and drop — all funnel
+  // Three ways in - the toolbar/slash command, paste, and drop - all funnel
   // through insertImages so they behave identically.
   function pickImage() {
     const sel = window.getSelection();
@@ -726,16 +812,17 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     fileRef.current?.click();
   }
 
-  // Restore the stashed caret if we have one; otherwise fall back to the end of
-  // the note, which is where a drop with no prior selection belongs.
-  function restoreImageRange() {
+  // Restore a stashed caret if we still have a usable one; otherwise fall back
+  // to the end of the note, which is where an insertion with no prior selection
+  // belongs. Shared by the image upload and the /reference picker - both hand
+  // focus away and come back to a collapsed, worthless selection.
+  function restoreRange(saved: Range | null) {
     const editor = ref.current;
     const sel = window.getSelection();
     if (!editor || !sel) return;
     editor.focus();
-    const saved = imageRange.current;
-    // A stashed range is only usable if it still points inside this editor —
-    // the DOM may have changed while the upload was in flight.
+    // A stashed range is only usable if it still points inside this editor -
+    // the DOM may have changed while the upload/picker was up.
     if (saved && editor.contains(saved.commonAncestorContainer)) {
       sel.removeAllRanges();
       sel.addRange(saved);
@@ -746,6 +833,10 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     r.collapse(false);
     sel.removeAllRanges();
     sel.addRange(r);
+  }
+
+  function restoreImageRange() {
+    restoreRange(imageRange.current);
   }
 
   async function insertImages(files: File[]) {
@@ -801,11 +892,104 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     const files = Array.from(e.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
     e.preventDefault();
-    // Drop puts the caret where the pointer is, which is what we want — but the
+    // Drop puts the caret where the pointer is, which is what we want - but the
     // browser only moves it as part of its own default handling, which we just
     // cancelled. Take the position from the drop point instead.
     imageRange.current = rangeFromPoint(e.clientX, e.clientY);
     void insertImages(files);
+  }
+
+  // ── References ────────────────────────────────────────────────────────
+  // An embed is an atomic island in the note: contenteditable="false" markup
+  // that carries everything it renders on itself. Clicking one selects it and
+  // the floating bar becomes its controls, where the three sizes live.
+  // A card that has just appeared (inserted, or switched up to the large size)
+  // wants its count now, not on the next counts fetch.
+  function refreshCounts() {
+    if (ref.current && commentCounts) applyCommentCounts(ref.current, commentCounts);
+  }
+
+  function openPicker() {
+    const sel = window.getSelection();
+    embedRange.current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    setPickerOpen(true);
+  }
+
+  function insertEmbed(data: EmbedData, variant: EmbedVariant) {
+    const editor = ref.current;
+    setPickerOpen(false);
+    if (!editor) return;
+    restoreRange(embedRange.current);
+    embedRange.current = null;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    record('struct');
+    repairBlankBlock(editor);
+
+    const node = createEmbed(data, variant);
+    const r = sel.getRangeAt(0);
+    r.deleteContents();
+    r.insertNode(node);
+    // Somewhere to carry on typing: an atomic node cannot hold a caret, so a
+    // trailing embed would otherwise be impossible to get past.
+    const after = document.createTextNode('\u00a0');   // a plain space here would collapse away
+    node.after(after);
+    // An empty block was given a filler <br> on the way in (repairBlankBlock).
+    // With the embed and that space either side of it, it now draws nothing but
+    // a blank line under the card.
+    const trailing = after.nextSibling;
+    if (trailing && trailing.nodeName === 'BR' && !trailing.nextSibling) trailing.remove();
+
+    const caret = document.createRange();
+    caret.setStart(after, 1);
+    caret.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(caret);
+    emit();
+    onEmbedsChange?.(embedUrlsIn(editor));
+    refreshCounts();
+  }
+
+  // Sizes are a re-render from the stored data, not a transform of the markup,
+  // so switching back and forth is lossless.
+  function setEmbedVariant(variant: EmbedVariant) {
+    const data = embedEl && readEmbed(embedEl);
+    if (!embedEl || !data) return;
+    record('struct');
+    const next = createEmbed(data, variant);
+    embedEl.replaceWith(next);
+    setEmbedEl(next);
+    selectNode(next);
+    emit();
+    refreshCounts();
+  }
+
+  function removeEmbed() {
+    const editor = ref.current;
+    if (!editor || !embedEl) return;
+    record('struct');
+    const block = embedEl.parentElement;
+    const caret = document.createRange();
+    caret.setStartAfter(embedEl);
+    caret.collapse(true);
+    embedEl.remove();
+    // A block left holding nothing renders as a collapsed line the caret can't
+    // enter, so give it the usual filler.
+    if (block && block !== editor && !block.firstChild) block.appendChild(document.createElement('br'));
+    const sel = window.getSelection();
+    if (sel && editor.contains(caret.commonAncestorContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(caret);
+    }
+    setEmbedEl(null);
+    setBubble(null);
+    editor.focus();
+    emit();
+  }
+
+  function openEmbed() {
+    const a = embedEl?.querySelector('a');
+    if (a) openLinkAt(a);
   }
 
   // Track the selection to light up the active marks and raise the bubble.
@@ -814,11 +998,20 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       const el = ref.current;
       const sel = window.getSelection();
       if (readOnly) { setBubble(null); return; }
-      if (!el || !sel || sel.rangeCount === 0) { setBubble(null); return; }
+      if (!el || !sel || sel.rangeCount === 0) { setBubble(null); setEmbedEl(null); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
       setMarks(readMarks());
       setInTable(!!cellAtCaret(el));
+      // An embed takes the bar over: formatting means nothing inside an atomic
+      // island, and its own controls are what the selection is asking for.
+      const embed = embedInSelection(el);
+      setEmbedEl(embed);
+      if (embed) {
+        const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
+        setBubble(computeBubblePos(embed.getBoundingClientRect(), boundsTop));
+        return;
+      }
       if (sel.isCollapsed || !sel.toString().trim()) { setBubble(null); return; }
       const r = range.getBoundingClientRect();
       if (!r || (!r.width && !r.height)) { setBubble(null); return; }
@@ -918,7 +1111,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       del.deleteContents();
     } catch { return; }
     // deleteContents collapses the range to its start and re-homes the boundary
-    // if the text node was removed entirely (empty line) — so use the range's
+    // if the text node was removed entirely (empty line) - so use the range's
     // own (now-valid) boundary rather than the possibly-detached stored node.
     sel.removeAllRanges();
     const c = document.createRange();
@@ -955,7 +1148,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       else editor.appendChild(table);
     }
 
-    // Always leave somewhere to type after the table — a trailing table is
+    // Always leave somewhere to type after the table - a trailing table is
     // otherwise impossible to escape with the caret.
     if (!table.nextElementSibling) {
       const p = document.createElement('p');
@@ -978,7 +1171,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     const i = cells.indexOf(cell);
     const next = cells[i + delta];
     if (next) { focusCell(next); return; }
-    if (delta < 0) return; // at the very first cell — stay put
+    if (delta < 0) return; // at the very first cell - stay put
     const tbody = table.tBodies[0] ?? table;
     const row = buildRow(columnCount(table), 'td');
     tbody.appendChild(row);
@@ -994,7 +1187,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
     const table = cell.closest(`table.${TABLE_CLASS}`) as HTMLTableElement;
     const tr = cell.parentElement as HTMLTableRowElement;
     const row = buildRow(columnCount(table), 'td');
-    // A row can't be added above the header — it would become the new header
+    // A row can't be added above the header - it would become the new header
     // row visually while still holding <td>s, so it lands below instead.
     const inHead = tr.parentElement === table.tHead;
     if (after || inHead) {
@@ -1074,7 +1267,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
 
   function applyCmd(cmd: Cmd) {
     // Insert-image opens a file picker rather than transforming a block. The
-    // "/image" text has to be cleared here, before the picker takes focus —
+    // "/image" text has to be cleared here, before the picker takes focus -
     // once it has, there is no selection left to strip.
     if (cmd.id === 'image') {
       ref.current?.focus();
@@ -1082,6 +1275,16 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       closeSlash();
       emit();
       pickImage();
+      return;
+    }
+    // Same story for /reference: the picker's search field takes focus, so the
+    // "/reference" text has to go before it opens.
+    if (cmd.id === 'reference') {
+      ref.current?.focus();
+      if (slashInfo.current) stripSlash();
+      closeSlash();
+      emit();
+      openPicker();
       return;
     }
     if (cmd.kind === 'inline') applyInline(cmd.id as InlineId);
@@ -1152,12 +1355,12 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       case 'h3':    document.execCommand('formatBlock', false, '<H3>'); break;
       case 'ul':
       case 'ol': {
-        // Clear out any malformed list left over from earlier editing first —
+        // Clear out any malformed list left over from earlier editing first -
         // running the command over one is what produces text-in-a-list.
         normalizeLists(editor);
         // A to-do is a block in its own right: turning one into a list has to
         // replace it, or the list ends up inside the to-do div and inherits its
-        // `list-style: none` — indented, but with no bullet in sight.
+        // `list-style: none` - indented, but with no bullet in sight.
         if (block?.classList.contains(TODO_CLASS)) {
           const p = document.createElement('p');
           while (block.firstChild) p.appendChild(block.firstChild);
@@ -1166,7 +1369,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
           placeCaret(p, false);
         }
         document.execCommand(id === 'ul' ? 'insertUnorderedList' : 'insertOrderedList');
-        // Chrome leaves the new list nested inside the block it replaced — a
+        // Chrome leaves the new list nested inside the block it replaced - a
         // <p>, or the bare <div> it drops when you exit a previous list. That
         // renders, but re-parsing the saved HTML hoists the list out and
         // strands an empty block, so unwrap it now.
@@ -1210,7 +1413,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIdx(i => (i + 1) % Math.max(filtered.length, 1)); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); setSlashIdx(i => (i - 1 + filtered.length) % Math.max(filtered.length, 1)); return; }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (filtered[slashIdx]) applyCmd(filtered[slashIdx]); return; }
-      // stopPropagation keeps the console's Escape-to-close from also firing —
+      // stopPropagation keeps the console's Escape-to-close from also firing -
       // the first Escape should only dismiss this menu
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
       if (e.key === 'Backspace') {
@@ -1223,7 +1426,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       return;
     }
 
-    // Undo/redo — driven by our own history so the editor's DOM edits (indent,
+    // Undo/redo - driven by our own history so the editor's DOM edits (indent,
     // to-do splits, table ops) are undoable, which native contentEditable can't.
     const mod = e.ctrlKey || e.metaKey;
     if (mod && (e.key === 'z' || e.key === 'Z')) {
@@ -1354,6 +1557,11 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if ((e.metaKey || e.ctrlKey) && openLinkAt(target)) { e.preventDefault(); return; }
+    // An embed's anchor would otherwise navigate the whole app out from under
+    // the note. A plain click selects it - the bar's Open (or Ctrl-click, just
+    // handled) is how you follow it.
+    const embed = embedAt(target, ref.current!);
+    if (embed) { e.preventDefault(); selectNode(embed); return; }
     const todo = target.closest(`.${TODO_CLASS}`) as HTMLElement | null;
     if (!todo) return;
     const rect = todo.getBoundingClientRect();
@@ -1381,15 +1589,32 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       <TBtn title="Add link" onRun={applyLink}><LinkIcon /></TBtn>
       {onUploadImage && (
         <TBtn
-          title={uploading ? 'Uploading…' : 'Insert image — or paste and drop one'}
+          title={uploading ? 'Uploading…' : 'Insert image - or paste and drop one'}
           onRun={pickImage}
           disabled={uploading}
         >
           <ImageIcon />
         </TBtn>
       )}
+      {references && (
+        <TBtn title="Reference a saved article" onRun={openPicker}><ReferenceIcon /></TBtn>
+      )}
       <TBtn title="Divider" onRun={() => applyBlock('hr')}><DividerIcon /></TBtn>
       <TBtn title="Clear formatting" onRun={() => execInline('removeFormat')}><ClearIcon /></TBtn>
+    </>
+  );
+
+  // What the floating bar offers when the selection is an embed: the three
+  // sizes, then the two things you can do with the thing itself.
+  const embedBtns = embedEl && (
+    <>
+      <span className={styles.tbGroupLabel}>Size</span>
+      <TBtn title="Just a link"  active={variantOf(embedEl) === 'link'}  onRun={() => setEmbedVariant('link')}><LinkIcon /></TBtn>
+      <TBtn title="Small card"   active={variantOf(embedEl) === 'small'} onRun={() => setEmbedVariant('small')}><SmallCardIcon /></TBtn>
+      <TBtn title="Large card"   active={variantOf(embedEl) === 'large'} onRun={() => setEmbedVariant('large')}><LargeCardIcon /></TBtn>
+      <span className={styles.tbSep} />
+      <WordBtn title="Open this reference" onRun={openEmbed}>Open</WordBtn>
+      <WordBtn title="Remove this reference" onRun={removeEmbed} danger>Remove</WordBtn>
     </>
   );
 
@@ -1432,7 +1657,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
         {linkBtns}
 
         {/* Row/column controls appear only while the caret is in a table. They
-            take a row of their own — spelled out they'd wrap raggedly into the
+            take a row of their own - spelled out they'd wrap raggedly into the
             formatting buttons, and the caret can only ever be in one table. */}
         {inTable && (
           <div className={styles.tbTableRow}>
@@ -1448,15 +1673,21 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
         )}
       </div>
 
-      {/* ── Selection bubble ── */}
+      {/* ── Selection bubble ──
+          One bar, two jobs: formatting for a run of text, and the embed's own
+          controls when the selection is an atomic island instead. */}
       {bubble && createPortal(
         <div ref={bubbleRef} className={styles.bubble} style={{ left: bubble.left, top: bubble.top }}>
-          {inlineBtns}
-          <span className={styles.tbSep} />
-          <TBtn title="Heading 2" onRun={() => applyBlock('h2')}>H2</TBtn>
-          <TBtn title="Quote" onRun={() => applyBlock('quote')}><QuoteIcon /></TBtn>
-          <span className={styles.tbSep} />
-          {linkBtns}
+          {embedBtns || (
+            <>
+              {inlineBtns}
+              <span className={styles.tbSep} />
+              <TBtn title="Heading 2" onRun={() => applyBlock('h2')}>H2</TBtn>
+              <TBtn title="Quote" onRun={() => applyBlock('quote')}><QuoteIcon /></TBtn>
+              <span className={styles.tbSep} />
+              {linkBtns}
+            </>
+          )}
         </div>,
         document.body
       )}
@@ -1502,7 +1733,7 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       )}
 
       {/* Portaled to <body> so its position:fixed resolves against the viewport
-          — the console shell keeps a transform (animation fill), which would
+          - the console shell keeps a transform (animation fill), which would
           otherwise become the containing block and mis-place the menu. */}
       {slashOpen && createPortal(
         <div
@@ -1549,12 +1780,141 @@ export default function RichEditor({ initialHtml, onChange, readOnly = false, on
       />,
       document.body
     )}
+
+    {pickerOpen && references && createPortal(
+      <ReferencePicker
+        items={references}
+        onPick={insertEmbed}
+        onCancel={() => { setPickerOpen(false); restoreRange(embedRange.current); }}
+      />,
+      document.body
+    )}
     </>
   );
 }
 
+// ── Reference picker ────────────────────────────────────────────────────
+// Search the saved articles and choose one. The size chosen here is only the
+// starting point - selecting the embed afterwards switches between the three
+// without losing anything, so this defaults to the middle one and gets out of
+// the way. Escape is swallowed so it dismisses the picker, not the console.
+function ReferencePicker({ items, onPick, onCancel }: {
+  items: EmbedData[];
+  onPick: (data: EmbedData, variant: EmbedVariant) => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [idx, setIdx] = useState(0);
+  const [variant, setVariant] = useState<EmbedVariant>('small');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const results = items.filter(d => embedMatches(d, query));
+  // A filter that drops the highlighted row would otherwise leave the selection
+  // pointing past the end, and Enter would insert nothing.
+  const sel = Math.min(idx, Math.max(results.length - 1, 0));
+
+  // Keep the keyboard cursor in view - the list scrolls well past the dialog.
+  useEffect(() => {
+    listRef.current?.querySelector('[data-sel="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [sel, query]);
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); onCancel(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, results.length - 1)); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); return; }
+    if (e.key === 'Enter' && results[sel]) { e.preventDefault(); onPick(results[sel], variant); }
+  }
+
+  return (
+    <div className={styles.linkOverlay} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className={styles.refDialog} onKeyDown={onKeyDown} role="dialog" aria-label="Reference a saved article">
+        <div className={styles.linkTitle}>Reference</div>
+
+        <input
+          ref={inputRef}
+          className={styles.linkInput}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setIdx(0); }}
+          placeholder="Search saved articles"
+          spellCheck={false}
+          autoComplete="off"
+          aria-label="Search saved articles"
+        />
+
+        <div className={styles.refList} ref={listRef}>
+          {results.length === 0 && (
+            <div className={styles.refEmpty}>
+              {items.length === 0
+                ? 'Nothing saved to reference yet - add an article to your reading list first.'
+                : `No saved article matches “${query.trim()}”`}
+            </div>
+          )}
+          {results.map((d, i) => (
+            <button
+              key={d.href}
+              data-sel={i === sel}
+              className={`${styles.refItem} ${i === sel ? styles.refItemSel : ''}`}
+              onMouseEnter={() => setIdx(i)}
+              onClick={() => onPick(d, variant)}
+            >
+              {d.image
+                ? <img className={styles.refThumb} src={d.image} alt="" loading="lazy" />
+                : <span className={styles.refThumbBlank} aria-hidden="true" />}
+              <span className={styles.refText}>
+                <span className={styles.refTitle}>{d.title}</span>
+                <span className={styles.refMeta}>
+                  {[d.source, d.meta].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.linkActions}>
+          <span className={styles.linkLabel}>Show as</span>
+          <div className={styles.refSizes} role="group" aria-label="Embed size">
+            <SizeBtn label="Link"  on={variant === 'link'}  onRun={() => setVariant('link')}><LinkIcon /></SizeBtn>
+            <SizeBtn label="Small" on={variant === 'small'} onRun={() => setVariant('small')}><SmallCardIcon /></SizeBtn>
+            <SizeBtn label="Large" on={variant === 'large'} onRun={() => setVariant('large')}><LargeCardIcon /></SizeBtn>
+          </div>
+          <span className={styles.linkSpacer} />
+          <button className={styles.linkCancel} onClick={onCancel}>Cancel</button>
+          <button
+            className={styles.linkApply}
+            onClick={() => results[sel] && onPick(results[sel], variant)}
+            disabled={!results[sel]}
+          >
+            Insert
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Segmented size choice in the picker - spelled out, since this is where the
+// three sizes are met for the first time.
+function SizeBtn({ label, on, onRun, children }: {
+  label: string; on: boolean; onRun: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${styles.refSize} ${on ? styles.refSizeOn : ''}`}
+      aria-pressed={on}
+      onClick={onRun}
+    >
+      {children}{label}
+    </button>
+  );
+}
+
 // ── Link dialog ─────────────────────────────────────────────────────────
-// Text and URL together, inside the console — Escape is swallowed here so it
+// Text and URL together, inside the console - Escape is swallowed here so it
 // dismisses the dialog rather than the whole notes window behind it.
 function LinkDialog({ form, onChange, onSubmit, onRemove, onCancel }: {
   form: LinkForm;

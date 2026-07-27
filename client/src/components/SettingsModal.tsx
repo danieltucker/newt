@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import styles from './SettingsModal.module.css';
 import { UserSettings } from '../hooks/useSettings';
+import { tagKey, hasFavorite } from '../utils/favoriteTags';
 import { apiFetch, apiGet, apiPatch, apiPost } from '../services/api';
 
 export interface UserProfile {
@@ -22,7 +23,7 @@ interface Props {
 
 export type Section = 'account' | 'search' | 'appearance' | 'reading' | 'advanced' | 'integrations';
 
-// Downscale the chosen image to a small square data URL client-side —
+// Downscale the chosen image to a small square data URL client-side -
 // keeps uploads tiny and avoids any server-side image processing.
 const AVATAR_SIZE = 128;
 function fileToAvatar(file: File): Promise<string> {
@@ -92,7 +93,7 @@ function BookmarkletRow({ label, href }: { label: string; href: string }) {
 
 // Your personal blog feed: one URL that aggregates your friends' posts,
 // including the friends-only ones. Because it carries content narrower than
-// public, the URL itself is the credential — hence the warning and the rotate.
+// public, the URL itself is the credential - hence the warning and the rotate.
 function PersonalFeedPanel() {
   const [url, setUrl] = useState('');
   const [copied, setCopied] = useState(false);
@@ -132,7 +133,7 @@ function PersonalFeedPanel() {
         A private RSS feed of blog posts from you and your friends, including
         friends-only posts. Add it to a folder’s feeds, or any RSS reader.
         <br />
-        <strong>Treat this link like a password</strong> — anyone who has it can
+        <strong>Treat this link like a password</strong> - anyone who has it can
         read your friends’ friends-only posts. Rotate it to revoke a link you’ve shared.
       </div>
       <div className={styles.row}>
@@ -151,6 +152,73 @@ function PersonalFeedPanel() {
         <button className={styles.enableBtn} onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
         <button className={styles.enableBtn} disabled={busy} onClick={rotate}>
           {busy ? 'Rotating…' : 'Rotate'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The favorites list, for review and removal. Adding is possible here but isn't
+// the main way in - starring a real tag in the feed or reading list is, since
+// that guarantees the stored label is one that actually occurs. This is where
+// you come when a favorite turns out to be too broad and is lighting up half
+// the feed.
+function FavoriteTagsBlock({ favorites, onChange }: {
+  favorites: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  function add() {
+    const tag = draft.trim();
+    if (!tag || !tagKey(tag)) { setDraft(''); return; }
+    if (hasFavorite(favorites, tag)) { setDraft(''); return; }
+    onChange([...favorites, tag]);
+    setDraft('');
+  }
+
+  return (
+    <div className={styles.sectionBlock}>
+      <div className={styles.rowLabel}>Favorite tags</div>
+      <div className={styles.rowHint}>
+        Articles tagged with one of these get a marker so they stand out. Matching is
+        by whole word, so “Apple” also catches “Apple News” and “apple-tv” - but not
+        “Snapple”. Star a tag on any article to add it here.
+      </div>
+
+      <div className={styles.favTagList}>
+        {favorites.length === 0 && (
+          <span className={styles.favTagEmpty}>No favorites yet.</span>
+        )}
+        {favorites.map(t => (
+          <span key={t} className={styles.favTagItem}>
+            {t}
+            <button
+              className={styles.favTagRemove}
+              onClick={() => onChange(favorites.filter(f => f !== t))}
+              title={`Remove “${t}”`}
+              aria-label={`Remove ${t}`}
+            >
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M1 1l10 10M11 1L1 11" />
+              </svg>
+            </button>
+          </span>
+        ))}
+      </div>
+
+      <div className={styles.favTagAdd}>
+        <input
+          className={styles.favTagInput}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Add a tag…"
+          spellCheck={false}
+          aria-label="Add a favorite tag"
+        />
+        <button className={styles.favTagAddBtn} onClick={add} disabled={!draft.trim()}>
+          Add
         </button>
       </div>
     </div>
@@ -204,7 +272,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (e) {
-      // apiPatch throws with the raw response body — surface the server's message
+      // apiPatch throws with the raw response body - surface the server's message
       let msg = 'Could not save profile';
       if (e instanceof Error) { try { msg = JSON.parse(e.message).error ?? msg; } catch {} }
       setProfileError(msg);
@@ -445,26 +513,6 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                 <div className={styles.sectionBlock}>
                   <div className={styles.row}>
                     <div>
-                      <div className={styles.rowLabel}>Clock format</div>
-                      <div className={styles.rowHint}>How the header clock and clock widgets display time</div>
-                    </div>
-                    <div className={styles.themePicker}>
-                      {(['12h', '24h'] as const).map(f => (
-                        <button
-                          key={f}
-                          className={`${styles.themeOption} ${settings.clockFormat === f ? styles.themeOptionActive : ''}`}
-                          onClick={() => onUpdate({ clockFormat: f })}
-                        >
-                          {f === '12h' ? '12h' : '24h'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className={styles.sectionBlock}>
-                  <div className={styles.row}>
-                    <div>
                       <div className={styles.rowLabel}>Bookmark layout</div>
                       <div className={styles.rowHint}>Panel shows a folder’s bookmarks in the grid on the right. Inline expands folders in the sidebar, Arc-style.</div>
                     </div>
@@ -512,6 +560,11 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
             {section === 'reading' && (
               <>
+                <FavoriteTagsBlock
+                  favorites={settings.favoriteTags ?? []}
+                  onChange={favoriteTags => onUpdate({ favoriteTags })}
+                />
+
                 <div className={styles.sectionBlock}>
                   <div className={styles.row}>
                     <div>
@@ -572,7 +625,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                     {([
                       { value: 'public',  label: 'Public',        hint: 'Anyone using this app can read it' },
                       { value: 'friends', label: 'Friends',       hint: 'Only your accepted friends can read it' },
-                      { value: 'private', label: 'Personal Note', hint: 'Only you can read it — a private note' },
+                      { value: 'private', label: 'Personal Note', hint: 'Only you can read it - a private note' },
                     ] as const).map(opt => {
                       const cur = settings.commentsDefaultVisibility
                         ?? (settings.commentsDefaultPublic ? 'public' : 'private');
@@ -636,7 +689,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   <div className={styles.openModeList}>
                     {([
                       { value: 'dialog',  label: 'Review before saving', hint: 'Opens a dialog to edit the title, tags, and read time first' },
-                      { value: 'instant', label: 'Save instantly',       hint: 'Saves with the article’s own title and tags — you can edit later from the card' },
+                      { value: 'instant', label: 'Save instantly',       hint: 'Saves with the article’s own title and tags - you can edit later from the card' },
                     ] as const).map(opt => {
                       const active = (settings.saveArticleMode ?? 'dialog') === opt.value;
                       return (
@@ -664,7 +717,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                     {([
                       { value: 'same-tab', label: 'Same tab',       hint: 'Opens saved articles in the current tab' },
                       { value: 'new-tab',  label: 'New tab',        hint: 'Opens saved articles in a new browser tab' },
-                      { value: 'reader',   label: 'Reader overlay', hint: 'Shows a 90% overlay — close to come back. Sites that block embedding open in a new tab.' },
+                      { value: 'reader',   label: 'Reader overlay', hint: 'Shows a 90% overlay - close to come back. Sites that block embedding open in a new tab.' },
                     ] as const).map(opt => {
                       const cur = settings.readingListOpenMode ?? settings.articleOpenMode;
                       const active = cur === opt.value || (opt.value === 'reader' && cur === 'iframe');
@@ -797,7 +850,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                       placeholder="Confirm new password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
                   </div>
                   <div className={styles.saveRow}>
-                    {pwSuccess && <span className={styles.successMsg}>Password updated — other devices were signed out</span>}
+                    {pwSuccess && <span className={styles.successMsg}>Password updated - other devices were signed out</span>}
                     <button
                       className={styles.enableBtn}
                       onClick={changePassword}

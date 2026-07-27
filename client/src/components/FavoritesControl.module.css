@@ -1,0 +1,197 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The pill keeps whatever look the surface passed in; these rules only strip
+   the two inner buttons back to text so it still reads as one control.
+
+   Two-class selector on purpose: the surface's own chip class lives in another
+   CSS module and sets padding too, so at equal specificity the winner would be
+   decided by bundle order. `.wrap .chip` outranks it either way. */
+.wrap .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+}
+
+.filterBtn,
+.caretBtn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.filterBtn {
+  gap: 5px;
+  padding: 3px 7px 3px 10px;
+}
+
+.filterBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.star { color: var(--fav); flex-shrink: 0; }
+
+.count {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+.caretBtn {
+  padding: 3px 9px 3px 5px;
+  opacity: 0.7;
+  transition: opacity 0.12s;
+}
+
+.caretBtn:hover { opacity: 1; }
+
+/* ── The manager ── */
+.menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: var(--z-content-overlay);
+  width: 272px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: 0 14px 36px var(--shadow);
+  animation: menuIn 0.13s ease;
+  cursor: default;
+}
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu { animation: none; }
+}
+
+.menuHead {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.menuHint {
+  margin: 5px 0 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.empty {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 4px 3px 8px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in oklab, var(--fav) 40%, transparent);
+  background: color-mix(in oklab, var(--fav) 12%, transparent);
+  color: var(--fav);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.itemStar { flex-shrink: 0; }
+
+.itemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.remove:hover {
+  opacity: 1;
+  background: color-mix(in oklab, var(--fav) 24%, transparent);
+}
+
+.addRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.input:focus { border-color: var(--accent); }
+
+.addBtn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.addBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.addBtn:disabled { opacity: 0.45; cursor: default; }

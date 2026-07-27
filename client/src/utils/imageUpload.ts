@@ -6,7 +6,7 @@ import { apiFetch } from '../services/api';
 export const MAX_UPLOAD_DIMENSION = 1600;
 
 // What the file picker will consider. Deliberately no image/svg+xml: an SVG is a
-// scriptable document, and the server rejects it too — this only spares the user
+// scriptable document, and the server rejects it too - this only spares the user
 // picking a file that would fail.
 export const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/gif,image/webp';
 
@@ -30,7 +30,7 @@ export type UploadedImage = {
 
 // Scale a box down to fit within `max` on its longest edge, preserving aspect
 // ratio. Anything already small enough is returned untouched rather than being
-// resampled — upscaling a small image would only blur it.
+// resampled - upscaling a small image would only blur it.
 export function fitDimensions(
   width: number,
   height: number,
@@ -57,8 +57,8 @@ function loadBitmap(file: Blob): Promise<HTMLImageElement> {
 }
 
 // Re-encode through a canvas at no more than MAX_UPLOAD_DIMENSION. A useful side
-// effect: the canvas copies pixels only, so EXIF metadata — including any GPS
-// coordinates the camera wrote — does not survive into the upload.
+// effect: the canvas copies pixels only, so EXIF metadata - including any GPS
+// coordinates the camera wrote - does not survive into the upload.
 async function downscale(file: File): Promise<Blob> {
   const img = await loadBitmap(file);
   const { width, height } = fitDimensions(img.naturalWidth, img.naturalHeight);
@@ -76,7 +76,7 @@ async function downscale(file: File): Promise<Blob> {
     canvas.toBlob(resolve, 'image/webp', 0.85));
   if (!blob) throw new Error('Your browser could not process that image');
 
-  // Re-encoding is not guaranteed to win — a flat graphic can come out larger
+  // Re-encoding is not guaranteed to win - a flat graphic can come out larger
   // than a well-optimised original. Keep whichever is smaller, as long as the
   // original was not itself oversized.
   if (blob.size >= file.size && file.size <= MAX_UPLOAD_BYTES) return file;
@@ -89,7 +89,7 @@ export async function uploadImage(file: File): Promise<UploadedImage> {
   const body = PASS_THROUGH.has(file.type) ? file : await downscale(file);
 
   if (body.size > MAX_UPLOAD_BYTES) {
-    throw new Error('That image is too large — try one under 4 MB');
+    throw new Error('That image is too large - try one under 4 MB');
   }
 
   // Raw bytes rather than base64 in JSON: base64 inflates by a third and the
@@ -106,7 +106,7 @@ export async function uploadImage(file: File): Promise<UploadedImage> {
       const data = await res.json();
       if (typeof data?.error === 'string') message = data.error;
     } catch {
-      // Non-JSON error (a proxy's own 413 page, say) — keep the generic message
+      // Non-JSON error (a proxy's own 413 page, say) - keep the generic message
     }
     throw new Error(message);
   }

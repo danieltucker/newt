@@ -8,6 +8,11 @@ import { useCommentCounts } from '../hooks/useCommentCounts';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
 import TagChipInput from './TagChipInput';
+import { StarIcon } from './TagChip';
+import FavoritesControl from './FavoritesControl';
+import {
+  prepareFavorites, favoritesFor, isFavoriteTag, coveringFavorites, PreparedFavorite,
+} from '../utils/favoriteTags';
 import EditArticleModal from './EditArticleModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FilterDropdown from './FilterDropdown';
@@ -84,10 +89,10 @@ function formatDuration(mins: number): string {
   return m ? `${hours} ${m} min` : hours;
 }
 
-// Same nudge all day, a different one tomorrow — so it doesn't read like a
+// Same nudge all day, a different one tomorrow - so it doesn't read like a
 // static label but also doesn't reshuffle under you mid-session
 const NUDGES: ((d: React.ReactNode, n: number) => React.ReactNode)[] = [
-  d => <>You have about {d} of reading saved up — good time to start one.</>,
+  d => <>You have about {d} of reading saved up - good time to start one.</>,
   (d, n) => <>{d} across {n} saved article{n === 1 ? '' : 's'}. Pick one off the pile?</>,
   d => <>That's roughly {d} of articles waiting on you.</>,
   d => <>About {d} of saved reading. Now's as good a time as any.</>,
@@ -111,10 +116,12 @@ function ClockIcon() {
 
 interface Props {
   items: ReadingListItem[];
-  onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'archived' | 'notes'>) => Promise<unknown>;
+  onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes'>) => Promise<unknown>;
   onUpdate: (id: string, patch: Partial<Pick<ReadingListItem, 'title' | 'tag' | 'notes'>>) => Promise<void>;
   onDelete: (id: string) => void;
-  onArchive: (id: string, archived: boolean) => Promise<void>;
+  onAddToLibrary: (id: string, inLibrary: boolean) => Promise<void>;
+  /** Open the Library (the profile tab). Without it the count renders inert. */
+  onOpenLibrary?: () => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
   onOpenArticle?: (url: string) => void;
   layout?: ReadingListLayout;
@@ -123,24 +130,31 @@ interface Props {
   onCollapsedChange?: (collapsed: boolean) => void;
   commentPrefs: CommentPrefs;
   onViewProfile?: (username: string) => void;
+  /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
+  favoriteTags?: string[];
+  /** Star/unstar one tag, from a tag chip. */
+  onToggleFavoriteTag?: (tag: string) => void;
+  /** Replace the whole list, from the manager behind the Favorites chip. */
+  onSetFavoriteTags?: (tags: string[]) => void;
 }
 
 function parseTags(tag: string): string[] {
   return tag.split(',').map(t => t.trim()).filter(Boolean);
 }
 
-function ArchiveIcon() {
+function LibraryIcon() {
+  // Books on a shelf - a place things live, not a box they get buried in
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="1" y="1" width="10" height="3" rx="0.75"/>
-      <path d="M2 4v6.25C2 10.66 2.34 11 2.75 11h6.5c.41 0 .75-.34.75-.75V4"/>
-      <path d="M4.5 7l1.5 1.5L7.5 7"/><path d="M6 5.5v3"/>
+      <path d="M2 1.75h1.75v8.5H2z"/>
+      <path d="M5 1.75h1.75v8.5H5z"/>
+      <path d="M8.15 2.1l1.7.45-2.1 7.9-1.7-.45z"/>
     </svg>
   );
 }
 
 function RestoreIcon() {
-  // Arrow lifting out of an open tray — clearly "move back", not "archive again"
+  // Arrow lifting out of an open tray - clearly "move back", not "shelve again"
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 7.5v2.75c0 .41.34.75.75.75h6.5c.41 0 .75-.34.75-.75V7.5"/>
@@ -163,20 +177,23 @@ interface CardProps {
   variant?: MagVariant;
   isPendingDelete?: boolean;
   isPostRead?: boolean;
-  onPostReadAction?: (action: 'archive' | 'delete') => void;
+  onPostReadAction?: (action: 'library' | 'delete') => void;
   onPostReadDismiss?: () => void;
   onOpened?: (id: string) => void;
   onDelete: (id: string) => void;
   onUndo: (id: string) => void;
-  onArchive: (id: string, archived: boolean) => void;
+  onAddToLibrary: (id: string, inLibrary: boolean) => void;
   onEdit: (item: ReadingListItem) => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
   onOpenArticle?: (url: string) => void;
   commentCount: number;
   onOpenReader: () => void;
+  /** Favorites this item matched - the list did the matching. */
+  favHits?: string[];
+  favorites?: PreparedFavorite[];
 }
 
-function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, onArchive, onEdit, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader }: CardProps) {
+function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, onAddToLibrary, onEdit, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [] }: CardProps) {
   const tags = parseTags(item.tag);
 
   // Magazine text/brief variants stay type-only; everything else shows art when it exists
@@ -187,12 +204,13 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
     styles.cardWrap,
     variant === 'feature' ? styles.featureWrap : '',
     variant === 'brief' ? styles.briefWrap : '',
-    item.archived ? styles.archivedCard : '',
+    item.inLibrary ? styles.libraryCard : '',
     isPendingDelete ? styles.pendingDelete : '',
     isPostRead ? styles.postReadCard : '',
     // No cover art → reserve top space so the floating controls push text down
     // instead of overlapping it
     !showImage ? styles.noHero : '',
+    favHits && favHits.length > 0 ? styles.favCard : '',
   ].filter(Boolean).join(' ');
 
   // Unique name lets view transitions track this card across reflows
@@ -236,7 +254,18 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
         )}
         {tags.length > 0 && (
           <div className={styles.tagRow}>
-            {tags.map(t => <span key={t} className={styles.tag}>{t}</span>)}
+            {/* Display only. The whole card is one <a>, so a button in here
+                would be interactive content nested in a link - favoriting from
+                the reading list lives on the filter chips above instead. */}
+            {tags.map(t => {
+              const starred = isFavoriteTag(t, favorites);
+              return (
+                <span key={t} className={`${styles.tag} ${starred ? styles.tagFav : ''}`}>
+                  {starred && <StarIcon filled className={styles.tagStar} />}
+                  {t}
+                </span>
+              );
+            })}
           </div>
         )}
         <div className={styles.title}>{item.title}</div>
@@ -254,23 +283,23 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
         </div>
       </div>
 
-      {/* Outside the card's <a> — a button must not nest inside a link */}
+      {/* Outside the card's <a> - a button must not nest inside a link */}
       {!isPendingDelete && (
         <div className={styles.commentRow}>
           <CommentBar count={commentCount} onClick={onOpenReader} />
         </div>
       )}
 
-      {/* Floating window-style controls — top-right, over the cover art */}
+      {/* Floating window-style controls - top-right, over the cover art */}
       {!isPendingDelete && (
         <div className={styles.cardActions}>
           <button
             className={styles.actionBtn}
-            aria-label={item.archived ? 'Restore to reading list' : 'Archive'}
-            title={item.archived ? 'Restore to reading list' : 'Archive'}
-            onClick={() => onArchive(item.id, !item.archived)}
+            aria-label={item.inLibrary ? 'Restore to reading list' : 'Add to Library'}
+            title={item.inLibrary ? 'Restore to reading list' : 'Add to Library'}
+            onClick={() => onAddToLibrary(item.id, !item.inLibrary)}
           >
-            {item.archived ? <RestoreIcon /> : <ArchiveIcon />}
+            {item.inLibrary ? <RestoreIcon /> : <LibraryIcon />}
           </button>
           <button
             className={styles.actionBtn}
@@ -309,15 +338,15 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
             Are you done with <span className={styles.postReadItemTitle}>{item.title}</span>?
           </div>
           <div className={styles.postReadBtns}>
-            <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('archive')}>
-              Archive
+            <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('library')}>
+              Add to Library
             </button>
             <button className={styles.postReadRemoveBtn} onClick={() => onPostReadAction?.('delete')}>
               Remove
             </button>
           </div>
           {/* Drains left-to-right; hovering the overlay pauses it (see CSS), and
-              the animation ending — not a JS timer — is what dismisses it, so the
+              the animation ending - not a JS timer - is what dismisses it, so the
               bar can never disagree with the countdown it's drawing. */}
           <div className={styles.postReadCountdown} onAnimationEnd={onPostReadDismiss} />
         </div>
@@ -328,7 +357,7 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
 
 const DELETE_DELAY = 3000;
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchive, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddToLibrary, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const timerMap = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -336,7 +365,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     useMemo(() => items.map(i => i.url), [items])
   );
 
-  // A pre-comments note has been folded into the thread — drop it from the item
+  // A pre-comments note has been folded into the thread - drop it from the item
   // so it can't be migrated twice
   const handleNoteMigrated = useCallback((id: string) => {
     onUpdate(id, { notes: '' }).catch(() => {});
@@ -357,12 +386,12 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     }, DELETE_DELAY);
   }
 
-  function handleArchive(id: string, archived: boolean) {
-    withViewTransition(() => { onArchive(id, archived); });
+  function handleAddToLibrary(id: string, inLibrary: boolean) {
+    withViewTransition(() => { onAddToLibrary(id, inLibrary); });
   }
 
   // ── Post-read overlay: when you come back from an article you opened,
-  // that card offers big Archive/Remove actions, then drains away ──
+  // that card offers big Library/Remove actions, then drains away ──
   const [postRead, setPostRead] = useState<string | null>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -380,8 +409,8 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
       try { sessionStorage.removeItem('rl-post-read'); } catch {}
       try {
         const { id, ts } = JSON.parse(raw) as { id: string; ts: number };
-        // Only for recent reads on articles that still exist and aren't archived
-        if (Date.now() - ts < 60 * 60 * 1000 && itemsRef.current.some(i => i.id === id && !i.archived)) {
+        // Only for recent reads on articles that still exist and aren't shelved
+        if (Date.now() - ts < 60 * 60 * 1000 && itemsRef.current.some(i => i.id === id && !i.inLibrary)) {
           setPostRead(id);
         }
       } catch {}
@@ -399,17 +428,17 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     };
   }, []);
 
-  // Dismissal is driven by the countdown bar in the overlay itself — it runs
+  // Dismissal is driven by the countdown bar in the overlay itself - it runs
   // down while the overlay is ignored and pauses under the pointer, so leaving
   // the cursor on the prompt keeps it around for as long as you're reading it.
   // It goes the moment it's dismissed; no exit animation to sit through.
   const dismissPostRead = useCallback(() => setPostRead(null), []);
 
-  function postReadAction(action: 'archive' | 'delete') {
+  function postReadAction(action: 'library' | 'delete') {
     const id = postRead;
     if (!id) return;
     setPostRead(null);
-    if (action === 'archive') handleArchive(id, true);
+    if (action === 'library') handleAddToLibrary(id, true);
     else requestDelete(id);
   }
 
@@ -431,19 +460,49 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [editingItem, setEditingItem] = useState<ReadingListItem | null>(null);
 
-  const active = items.filter(i => !i.archived);
-  const archived = items.filter(i => i.archived);
+  const active = items.filter(i => !i.inLibrary);
+  // Not rendered here any more - the Library has its own home on the profile.
+  // Only the count is needed, to label the link.
+  const libraryCount = items.length - active.length;
 
   // All unique tags from active items
   const allTags = Array.from(new Set(active.flatMap(i => parseTags(i.tag))));
-  const filtered = activeTag ? active.filter(i => parseTags(i.tag).includes(activeTag)) : active;
+
+  // Tokenize the favorites once per change, not once per card.
+  const favorites = useMemo(() => prepareFavorites(favoriteTags), [favoriteTags]);
+
+  // Which favorites each item hits, keyed by id. Unlike the feed, the whole
+  // reading list is in memory, so this covers everything - but it is still only
+  // used to decorate and filter, never to reorder.
+  const favHits = useMemo(() => {
+    const m = new Map<string, string[]>();
+    if (favorites.length === 0) return m;
+    for (const i of items) {
+      const hits = favoritesFor(parseTags(i.tag), favorites);
+      if (hits.length > 0) m.set(i.id, hits);
+    }
+    return m;
+  }, [items, favorites]);
+
+  const activeFavCount = active.filter(i => favHits.has(i.id)).length;
+
+  const filtered = active.filter(i =>
+    (!activeTag || parseTags(i.tag).includes(activeTag)) &&
+    (!favoritesOnly || favHits.has(i.id))
+  );
 
   useEffect(() => {
     if (activeTag && !allTags.includes(activeTag)) setActiveTag(null);
   }, [allTags, activeTag]);
+
+  // The filter has to go when its last match does, or you're left staring at an
+  // empty list with no obvious way out.
+  useEffect(() => {
+    if (favoritesOnly && activeFavCount === 0) setFavoritesOnly(false);
+  }, [favoritesOnly, activeFavCount]);
 
   const savedMinutes = totalMinutes(filtered);
   const nudge = useMemo(
@@ -456,7 +515,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     : styles.grid;
 
   const variants = layout === 'magazine' ? magazineVariants(filtered) : null;
-  const archivedVariants = layout === 'magazine' ? magazineVariants(archived) : null;
 
   // Auto-fetch page title when URL settles
   useEffect(() => {
@@ -502,7 +560,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
     }
   }
 
-  // Collapsing takes the add form down with it — a half-typed article hidden
+  // Collapsing takes the add form down with it - a half-typed article hidden
   // behind a chevron would come back as a surprise on the next expand.
   function toggleCollapsed() {
     if (!collapsed) handleCancel();
@@ -549,7 +607,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
         )}
       </div>
 
-      {/* Collapsed keeps only the heading — chips, form, cards and archive all go */}
+      {/* Collapsed keeps only the heading - chips, form, cards and archive all go */}
       {!collapsed && <>
 
       {allTags.length > 0 && (
@@ -560,16 +618,52 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
           >
             All
           </button>
+          {onToggleFavoriteTag && (favoriteTags.length > 0 || activeFavCount > 0) && (
+            <FavoritesControl
+              favorites={favoriteTags}
+              onChange={onSetFavoriteTags ?? (() => {})}
+              count={activeFavCount}
+              filterOn={favoritesOnly}
+              onToggleFilter={() => setFavoritesOnly(v => !v)}
+              chipClassName={`${styles.chip} ${styles.favChip}`}
+              chipActiveClassName={styles.favChipActive}
+            />
+          )}
           {allTags.length <= MAX_TAG_CHIPS ? (
-            allTags.map(t => (
-              <button
-                key={t}
-                className={`${styles.chip} ${activeTag === t ? styles.chipActive : ''}`}
-                onClick={() => setActiveTag(activeTag === t ? null : t)}
-              >
-                {t}
-              </button>
-            ))
+            // Two buttons in one pill: the star favorites the tag, the label
+            // filters by it. This is the reading list's favoriting surface -
+            // the tags on a card can't be buttons (see ReadingCard).
+            allTags.map(t => {
+              const covering = onToggleFavoriteTag ? coveringFavorites(favoriteTags, t) : [];
+              const starred = covering.length > 0;
+              return (
+                <span
+                  key={t}
+                  className={`${styles.chip} ${styles.tagChip} ${activeTag === t ? styles.chipActive : ''} ${starred ? styles.tagChipFav : ''}`}
+                >
+                  {onToggleFavoriteTag && (
+                    <button
+                      className={styles.tagChipStar}
+                      onClick={() => onToggleFavoriteTag(t)}
+                      aria-pressed={starred}
+                      title={starred
+                        ? (covering[0].toLowerCase() !== t.toLowerCase()
+                            ? `Matched by your favorite “${covering[0]}” - click to remove it`
+                            : `Remove “${t}” from favorites`)
+                        : `Favorite “${t}” - articles tagged this way get flagged`}
+                    >
+                      <StarIcon filled={starred} />
+                    </button>
+                  )}
+                  <button
+                    className={styles.tagChipLabel}
+                    onClick={() => setActiveTag(activeTag === t ? null : t)}
+                  >
+                    {t}
+                  </button>
+                </span>
+              );
+            })
           ) : (
             <FilterDropdown
               label="Topics"
@@ -626,7 +720,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
       <div className={gridClass}>
         {filtered.length === 0 && !expanded ? (
           <div className={styles.empty}>
-            {activeTag ? `No articles tagged "${activeTag}".` : 'No saved articles yet.'}
+            {favoritesOnly ? 'No saved articles match your favorite tags.'
+              : activeTag ? `No articles tagged "${activeTag}".`
+              : 'No saved articles yet.'}
           </div>
         ) : filtered.map((item, i) => (
           <ReadingCard
@@ -640,46 +736,27 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
             onOpened={markOpened}
             onDelete={requestDelete}
             onUndo={undoDelete}
-            onArchive={handleArchive}
+            onAddToLibrary={handleAddToLibrary}
             onEdit={setEditingItem}
             articleOpenMode={articleOpenMode}
             onOpenArticle={onOpenArticle}
             commentCount={commentCounts[item.url] ?? 0}
             onOpenReader={() => setReading(item)}
+            favHits={favHits.get(item.id)}
+            favorites={favorites}
           />
         ))}
       </div>
 
-      {archived.length > 0 && (
-        <div className={styles.archivedSection}>
-          <button
-            className={styles.archivedToggle}
-            onClick={() => setShowArchived(v => !v)}
-          >
-            <span className={`${styles.chevron} ${showArchived ? styles.chevronOpen : ''}`}>▶</span>
-            Archived ({archived.length})
-          </button>
-          {showArchived && (
-            <div className={`${gridClass} ${styles.archivedGrid}`}>
-              {archived.map((item, i) => (
-                <ReadingCard
-                  key={item.id}
-                  item={item}
-                  variant={archivedVariants?.[i]}
-                  isPendingDelete={pendingDeletes.has(item.id)}
-                  onDelete={requestDelete}
-                  onUndo={undoDelete}
-                  onArchive={handleArchive}
-                  onEdit={setEditingItem}
-                  articleOpenMode={articleOpenMode}
-                  onOpenArticle={onOpenArticle}
-                  commentCount={commentCounts[item.url] ?? 0}
-                  onOpenReader={() => setReading(item)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+      {/* The Library used to expand inline here. It has folders and a page of
+          its own now, so this is a doorway rather than a drawer. */}
+      {libraryCount > 0 && onOpenLibrary && (
+        <button className={styles.libraryLink} onClick={onOpenLibrary}>
+          <LibraryIcon />
+          <span>Library</span>
+          <span className={styles.libraryCount}>{libraryCount}</span>
+          <span className={styles.libraryArrow} aria-hidden="true">→</span>
+        </button>
       )}
 
       </>}
@@ -709,8 +786,8 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onArchi
           onViewProfile={onViewProfile}
           actions={
             <>
-              <button onClick={() => { handleArchive(reading.id, !reading.archived); setReading(null); }}>
-                {reading.archived ? 'Restore' : 'Archive'}
+              <button onClick={() => { handleAddToLibrary(reading.id, !reading.inLibrary); setReading(null); }}>
+                {reading.inLibrary ? 'Restore' : 'Add to Library'}
               </button>
               <button onClick={() => { setReading(null); setEditingItem(reading); }}>
                 Edit

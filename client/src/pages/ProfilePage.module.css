@@ -27,55 +27,208 @@
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
-/* ── Header ── */
+/* ── Header ──
+   A cover strip with the avatar straddling its lower edge. The identity, the
+   one primary action and the stats then read top-to-bottom in that order,
+   instead of the old three-column split that left a stack of four equal-weight
+   buttons hanging off the right. */
 .header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 22px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
+  overflow: hidden;
 }
 
-.identity { flex: 1; min-width: 0; }
+.cover {
+  height: 104px;
+  /* The gradient itself is inline (derived per-username); this only softens it
+     so the strip frames the card rather than shouting from the top of it. */
+  opacity: 0.82;
+  position: relative;
+}
+/* Fades the strip into the card below, so the avatar isn't cut by a hard line */
+.cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, color-mix(in oklab, var(--surface) 55%, transparent));
+}
+
+.headerBody {
+  padding: 0 22px 20px;
+}
+
+/* Pulls the avatar up over the cover's lower edge. Positioned so it stacks
+   above .cover::after - that fade is a positioned pseudo-element, and without
+   a stacking context here it paints straight over the avatar. */
+.avatarSlot {
+  position: relative;
+  z-index: 1;
+  margin-top: -40px;
+  margin-bottom: 10px;
+  width: max-content;
+}
+
+.identityRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.identity { min-width: 0; }
 
 .displayName {
   font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 650;
   color: var(--text);
-  line-height: 1.2;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.handleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  flex-wrap: wrap;
 }
 
 .handle {
   font-size: 13.5px;
   color: var(--muted);
-  margin-top: 2px;
 }
 
-.meta {
-  font-size: 12.5px;
+/* "You" and the friend-relation state are facts about the profile, not buttons
+   to press - so they sit inline with the handle rather than in the action row. */
+.youTag {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.relTag {
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--muted);
-  margin-top: 8px;
+  background: var(--surface2);
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
+/* ── Stats ── */
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.stat b {
+  color: var(--text);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+/* ── Overflow menu ── */
+.overflowWrap { position: relative; }
+
+.overflowBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.overflowBtn:hover {
+  color: var(--text);
+  background: var(--surface2);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+.overflowMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 168px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px var(--shadow);
+  z-index: var(--z-content-overlay);
+}
+
+.overflowItem {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+.overflowItem:hover { background: var(--surface2); }
+
+/* Separates the safety actions from the everyday ones, so Block is never the
+   thing you hit reaching for Copy link. */
+.overflowDivider {
+  height: 1px;
+  margin: 5px 2px;
+  background: var(--border);
+}
+
+.overflowDanger { color: #e5484d; }
+.overflowDanger:hover { background: color-mix(in oklab, #e5484d 12%, transparent); }
+
 .avatar {
-  width: 64px; height: 64px;
+  width: 84px; height: 84px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  /* Rings the avatar in the card colour so it reads as sitting *on* the cover */
+  border: 4px solid var(--surface);
+  background: var(--surface);
+  display: block;
 }
 .avatarFallback {
-  width: 64px; height: 64px;
+  width: 84px; height: 84px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -83,8 +236,9 @@
   background: color-mix(in oklab, var(--accent) 22%, var(--surface2));
   color: var(--text);
   font-weight: 700;
-  font-size: 26px;
+  font-size: 32px;
   flex-shrink: 0;
+  border: 4px solid var(--surface);
 }
 
 /* ── Tabs ── */
@@ -198,11 +352,25 @@
   cursor: pointer;
   font: inherit;
   color: var(--text);
-  /* A post is the substantial thing on a profile — give it a visible spine
+  /* A post is the substantial thing on a profile - give it a visible spine
      so it reads as more than another comment in the timeline. */
   border-left: 3px solid color-mix(in oklab, var(--accent) 55%, transparent);
 }
 .postCard:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+/* Inset rather than bleeding to the card edge: .postCard's accent spine is a
+   left border, and a full-bleed image would have to sit on top of it. A shallow
+   banner ratio keeps a post card from towering over the comment cards it shares
+   the timeline with. */
+.postHero {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  object-fit: cover;
+  border-radius: 9px;
+  margin-bottom: 12px;
+  background: var(--surface2);
+}
 
 .kindTag {
   font-size: 10px;
@@ -234,34 +402,8 @@
 }
 
 /* ── Folder picker (Follow blog) ── */
-.folderPick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 320px;
-}
-.folderPickLabel {
-  font-size: 11.5px;
-  color: var(--muted);
-  width: 100%;
-  text-align: right;
-}
-.folderOption {
-  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 11px;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.folderOption:hover { background: color-mix(in oklab, var(--accent) 18%, transparent); }
-.folderOption:disabled { opacity: 0.6; cursor: default; }
+/* The follow control and its folder chooser moved to FollowBlogButton, which
+   carries its own copy of these styles - the post page needs them too. */
 
 /* ── History rows ── */
 .historyRow {
@@ -334,17 +476,53 @@
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
-.statusTag {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: var(--surface2);
-  white-space: nowrap;
+.error { color: #e5484d; font-size: 12.5px; margin-top: 6px; }
+
+/* ── Blocking ── */
+/* Inline confirmation, tinted as a warning. Sits under the identity row rather
+   than in a dialog: what it's about is already on screen. */
+.confirmBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, #e5484d 35%, transparent);
+  background: color-mix(in oklab, #e5484d 8%, transparent);
 }
 
-.error { color: #e5484d; font-size: 12.5px; margin-top: 6px; }
+.confirmText {
+  flex: 1;
+  min-width: 220px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.dangerBtn {
+  border: none;
+  background: #e5484d;
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dangerBtn:hover:not(:disabled) { filter: brightness(1.08); }
+.dangerBtn:disabled { opacity: 0.55; cursor: default; }
+
+.blockedExplainer {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
 
 .centered {
   display: flex;
@@ -364,6 +542,12 @@
 }
 
 @media (max-width: 520px) {
-  .header { flex-wrap: wrap; }
-  .actions { flex-direction: row; align-items: center; width: 100%; }
+  .cover { height: 82px; }
+  .headerBody { padding: 0 16px 18px; }
+  .avatarSlot { margin-top: -32px; }
+  .avatar, .avatarFallback { width: 68px; height: 68px; }
+  .avatarFallback { font-size: 26px; }
+  /* The action row drops below the name rather than squeezing beside it */
+  .identityRow { flex-direction: column; align-items: stretch; gap: 12px; }
+  .displayName { font-size: 21px; }
 }

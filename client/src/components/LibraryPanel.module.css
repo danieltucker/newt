@@ -1,0 +1,366 @@
+.panel {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Stack on narrow screens - the rail becomes a header strip rather than a
+   column, so the articles keep the full width. Browser zoom shrinks the CSS
+   viewport, so this fires on a zoomed-in desktop too; nothing inside the rail
+   may be sized as a fraction of its width or it balloons when that happens. */
+@media (max-width: 620px) {
+  .panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Shelf rail ── */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shelfRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The 3px inset bar is transparent until the shelf is active, so selecting one
+   doesn't shift the label - and the folder's own colour, not a generic accent,
+   is what marks it. That makes the colour a label you navigate by rather than
+   decoration. */
+.shelf {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  box-shadow: inset 3px 0 0 transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.shelf:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.shelfActive {
+  background: color-mix(in oklab, var(--shelf) 12%, var(--surface2));
+  box-shadow: inset 3px 0 0 var(--shelf);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Unsorted isn't a folder anyone chose a colour for, so it gets a ring rather
+   than a filled dot - present in the same slot, clearly not one of the shelves. */
+.dotHollow {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+.shelfName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shelfCount {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only surfaces on hover of the row: two controls sitting permanently next to
+   every folder is a lot of visual noise for two rare actions. */
+.shelfIcon {
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.shelfRow:hover .shelfIcon,
+.shelfIcon:focus-visible {
+  opacity: 1;
+}
+
+.shelfIcon:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.shelfDelete:hover {
+  color: var(--danger, #E5484D);
+}
+
+.addShelf {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.addShelf:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* Sits in the dot column so the row lines up with the shelves above it */
+.addPlus {
+  width: 9px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.createBox {
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
+.createTop {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.nameInput {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+}
+
+.nameInput:focus {
+  outline: none;
+  border-color: var(--accent, #5E6AD2);
+}
+
+/* Fixed-size swatches on a wrapping flex row. The previous version sized them
+   as fractions of a 6-column grid, so when the rail went full-width (narrow
+   viewport, or any browser zoom) each circle inflated to ~200px. Nothing here
+   scales with the container. */
+.colorRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 10px 0;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--swatch);
+  cursor: pointer;
+  /* Ring drawn outside the circle so selecting doesn't resize or nudge it */
+  box-shadow: 0 0 0 0 var(--swatch);
+  transition: box-shadow 0.12s, transform 0.12s;
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatchOn {
+  box-shadow:
+    0 0 0 2px var(--surface2),
+    0 0 0 3.5px var(--swatch);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.createBtns {
+  display: flex;
+  gap: 6px;
+}
+
+.primaryBtn,
+.ghostBtn,
+.smallBtn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.primaryBtn {
+  background: var(--accent, #5E6AD2);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ghostBtn,
+.smallBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.ghostBtn:hover,
+.smallBtn:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.dangerBtn:hover {
+  color: var(--danger, #e5484d);
+  border-color: var(--danger, #e5484d);
+}
+
+/* ── Articles ── */
+.articles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface2);
+  min-width: 0;
+}
+
+.cardMain {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.thumb {
+  width: 52px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.cardText {
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardHost {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.cardActions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.moveSelect {
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+}
+
+/* The action row wraps under the title on narrow screens instead of squeezing
+   the title into nothing. */
+@media (max-width: 560px) {
+  .card {
+    flex-wrap: wrap;
+  }
+
+  .cardActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

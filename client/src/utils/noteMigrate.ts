@@ -1,7 +1,7 @@
 // One-time migration of the old single markdown note (settings.notes) into the
 // rich editor's HTML. Covers the block types the old slash menu produced;
 // inline markdown is left as literal text. Runs once, on first open of a console
-// that still has legacy content, so correctness here matters — a bug rewrites
+// that still has legacy content, so correctness here matters - a bug rewrites
 // real note content with no undo.
 
 function esc(s: string): string {

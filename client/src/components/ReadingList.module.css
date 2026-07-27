@@ -183,6 +183,94 @@
   color: var(--accent);
 }
 
+/* ── Favorites ──
+   The filter chip. A different axis from the tag chips beside it - it wears the
+   favorite colour so the two don't read as the same kind of control. */
+.favChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fav);
+  border-color: color-mix(in oklab, var(--fav) 30%, transparent);
+}
+
+.favChip:hover {
+  border-color: var(--fav);
+  color: var(--fav);
+}
+
+.favChipActive {
+  background: color-mix(in oklab, var(--fav) 12%, transparent);
+  border-color: var(--fav);
+  font-weight: 600;
+}
+
+/* A tag chip carries two actions in one pill: the star favorites the tag, the
+   label filters by it. The pill keeps .chip's look; these strip the buttons back
+   to text so it still reads as a single control. */
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;   /* the inner buttons carry the padding, so both are full-height */
+}
+
+.tagChipStar,
+.tagChipLabel {
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 3px 0;
+}
+
+/* Same behaviour as the tags on a feed card: an unstarred chip is only as wide
+   as its label, and the star grows in when you point at it. */
+.tagChipStar {
+  display: inline-flex;
+  align-items: center;
+  width: 0;
+  padding-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 0.13s ease, padding-left 0.13s ease, opacity 0.13s ease;
+}
+
+.tagChip:hover .tagChipStar,
+.tagChip:focus-within .tagChipStar {
+  width: 10px;
+  padding-left: 8px;
+  opacity: 0.7;
+}
+
+.tagChipStar[aria-pressed='true'],
+.tagChip:hover .tagChipStar[aria-pressed='true'] {
+  width: 10px;
+  padding-left: 8px;
+  opacity: 1;
+  color: var(--fav);
+}
+
+.tagChipLabel { padding-right: 10px; padding-left: 10px; }
+
+/* The label carries the pill's left padding until the star claims that space. */
+.tagChip:hover .tagChipLabel,
+.tagChip:focus-within .tagChipLabel,
+.tagChipFav .tagChipLabel { padding-left: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tagChipStar { transition: none; }
+}
+
+/* Favorited tags keep their colour whether or not the filter is on them. */
+.tagChipFav {
+  border-color: color-mix(in oklab, var(--fav) 40%, transparent);
+  color: var(--fav);
+}
+
+.tagChipFav:hover { border-color: var(--fav); color: var(--fav); }
+
 /* ── "You have N minutes saved" nudge, sitting on top of the list ── */
 .timeBanner {
   display: flex;
@@ -210,17 +298,19 @@
   font-weight: 600;
 }
 
-/* ── Archive section ── */
-.archivedSection {
-  margin-top: 20px;
-}
-
-.archivedToggle {
+/* ── Library doorway ──
+   Replaced the inline archive expander: the Library lives on the profile now,
+   so this is a link out rather than a section that unfolds in place. */
+.libraryLink {
   display: flex;
   align-items: center;
-  gap: 7px;
-  background: none;
-  border: none;
+  gap: 8px;
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
@@ -228,30 +318,36 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   cursor: pointer;
-  padding: 4px 0;
-  margin-bottom: 10px;
-  transition: color 0.12s;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
-.archivedToggle:hover {
+.libraryLink:hover {
   color: var(--text);
+  border-color: var(--muted);
+  background: var(--surface);
 }
 
-.chevron {
-  font-size: 9px;
-  transition: transform 0.15s;
-  display: inline-block;
+.libraryCount {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
-.chevronOpen {
-  transform: rotate(90deg);
+/* Pushed to the far edge so the row reads as "go here", not a label */
+.libraryArrow {
+  margin-left: auto;
+  font-size: 13px;
+  transition: transform 0.12s;
 }
 
-.archivedGrid {
-  opacity: 0.6;
+.libraryLink:hover .libraryArrow {
+  transform: translateX(2px);
 }
 
-.archivedCard {
+.libraryCard {
   border-style: dashed;
 }
 
@@ -328,7 +424,7 @@
   to   { transform: scaleX(0); }
 }
 
-/* ── Card footer — source meta anchored at the bottom ── */
+/* ── Card footer - source meta anchored at the bottom ── */
 .cardFooter {
   display: flex;
   align-items: center;
@@ -345,7 +441,7 @@
   border-top: 1px solid var(--border);
 }
 
-/* ── Window-style controls — a cluster of grey buttons pinned to the card's
+/* ── Window-style controls - a cluster of grey buttons pinned to the card's
    top-right. Over cover art they float on top; on art-less cards the .noHero
    rule reserves top padding so they push the text down instead. ── */
 .cardActions {
@@ -401,7 +497,7 @@
   padding-top: 42px;
 }
 
-/* ── Post-read overlay — offered when you return from an article ── */
+/* ── Post-read overlay - offered when you return from an article ── */
 .postReadCard {
   border-color: color-mix(in oklab, var(--accent) 55%, transparent);
   box-shadow:
@@ -477,7 +573,7 @@
   filter: saturate(1.15) brightness(1.06);
 }
 
-/* Dismiss — sits above the card's own controls, which the overlay covers */
+/* Dismiss - sits above the card's own controls, which the overlay covers */
 .postReadCloseBtn {
   position: absolute;
   top: 6px;
@@ -503,7 +599,7 @@
   color: var(--text);
 }
 
-/* Reverse loading bar — empties over the life of the prompt and dismisses it.
+/* Reverse loading bar - empties over the life of the prompt and dismisses it.
    Pausing on hover is what makes "if you don't interact with it" literal. */
 .postReadCountdown {
   position: absolute;
@@ -547,14 +643,14 @@
 }
 
 /* Real grid (not column masonry) so removing a card shifts its neighbors
-   left — the direction the eye expects — instead of reflowing columns */
+   left - the direction the eye expects - instead of reflowing columns */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
 
-/* ── Magazine layout — editorial grid; saved articles have no artwork, so
+/* ── Magazine layout - editorial grid; saved articles have no artwork, so
    features are big text cards and briefs run their notes in full ── */
 .gridMagazine {
   display: grid;
@@ -577,7 +673,7 @@
   -webkit-line-clamp: 4;
 }
 
-/* Feature — spans two columns with headline-sized type */
+/* Feature - spans two columns with headline-sized type */
 .featureWrap {
   grid-column: span 2;
 }
@@ -592,7 +688,7 @@
   -webkit-line-clamp: 6;
 }
 
-/* Brief — short notes run in full under an accent rule */
+/* Brief - short notes run in full under an accent rule */
 .briefWrap {
   border-top: 2px solid color-mix(in oklab, var(--accent) 45%, transparent);
 }
@@ -608,7 +704,7 @@
   .featureWrap { grid-column: auto; }
 }
 
-/* ── List layout — single column of roomy rows, persistent inline actions ── */
+/* ── List layout - single column of roomy rows, persistent inline actions ── */
 .gridList {
   display: flex;
   flex-direction: column;
@@ -657,7 +753,7 @@
   gap: 14px;
 }
 
-/* No cover art to float over in a row — drop the controls back into the flow
+/* No cover art to float over in a row - drop the controls back into the flow
    at the right end, but keep the grey-button look */
 .gridList .cardActions {
   position: static;
@@ -666,7 +762,7 @@
   opacity: 1;
 }
 
-/* The wrap is the card surface — content link on top, footer row below,
+/* The wrap is the card surface - content link on top, footer row below,
    so actions get real layout space instead of overlaying content */
 .cardWrap {
   position: relative;
@@ -693,7 +789,7 @@
   cursor: pointer;
 }
 
-/* Cover image — bleeds to the card edges above the text */
+/* Cover image - bleeds to the card edges above the text */
 .hero {
   width: calc(100% + 32px);
   margin: -16px -16px 4px;
@@ -730,6 +826,35 @@
   border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
   border-radius: 6px;
   padding: 2px 7px;
+}
+
+/* Matched a favorite. Display only - see ReadingCard for why the tags on a card
+   aren't buttons. */
+.tagFav {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fav);
+  border-color: color-mix(in oklab, var(--fav) 45%, transparent);
+  background: color-mix(in oklab, var(--fav) 10%, transparent);
+}
+
+.tagStar { color: var(--fav); flex-shrink: 0; }
+
+/* Matched a favorite tag: a gold outline and a wash, the same shape the feed
+   uses. It recolours the border the card already has rather than adding one, so
+   .hero's bleed to the card edges is untouched. */
+.favCard {
+  border-color: color-mix(in oklab, var(--fav) 55%, transparent);
+  background: color-mix(in oklab, var(--fav) 5%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fav) 22%, transparent);
+}
+
+/* Restate the lift, or this rule's box-shadow would replace it on hover. */
+.favCard:hover {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--fav) 22%, transparent),
+    0 12px 28px var(--shadow);
 }
 
 .notes {
@@ -777,7 +902,7 @@
   .grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Touch devices: hover never fires — keep actions fully visible.
+/* Touch devices: hover never fires - keep actions fully visible.
    Must stay at the end of the file to outrank the dimmed base rule. */
 @media (hover: none) {
   .cardActions { opacity: 1; }

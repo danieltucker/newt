@@ -1,0 +1,58 @@
+/* The chip is a button wearing whatever the surface passes in - the feed's
+   uppercase pills and the reading list's lowercase tags both route through
+   here, so this file supplies only the reset and the star. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An unstarred tag takes up no more room than its label - the star grows in
+   from nothing when you point at it, so a resting tag row carries no dead
+   space. The chip widens by ~13px on hover; the transition is what keeps that
+   reading as an affordance appearing rather than the row twitching. */
+.star {
+  flex-shrink: 0;
+  width: 0;
+  margin-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 0.13s ease, margin-right 0.13s ease, opacity 0.13s ease;
+}
+
+.chip:hover .star,
+.chip:focus-visible .star {
+  width: 10px;
+  margin-right: 3px;
+  opacity: 0.65;
+}
+
+/* Favorited: the star is the marker, so it's always out and never fades. */
+.starOn,
+.chip:hover .starOn,
+.chip:focus-visible .starOn {
+  width: 10px;
+  margin-right: 3px;
+  opacity: 1;
+  color: var(--fav);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star { transition: none; }
+}
+
+.chipStarred {
+  color: var(--fav);
+}

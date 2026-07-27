@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { markdownToHtml } from './noteMigrate';
 
-describe('markdownToHtml — block types', () => {
+describe('markdownToHtml - block types', () => {
   it('empty input yields a single empty paragraph', () => {
     expect(markdownToHtml('')).toBe('<p><br></p>');
   });
@@ -10,7 +10,7 @@ describe('markdownToHtml — block types', () => {
     expect(markdownToHtml('# One')).toBe('<h1>One</h1>');
     expect(markdownToHtml('## Two')).toBe('<h2>Two</h2>');
     expect(markdownToHtml('### Three')).toBe('<h3>Three</h3>');
-    // 4+ hashes are not a heading — falls through to a paragraph
+    // 4+ hashes are not a heading - falls through to a paragraph
     expect(markdownToHtml('#### Four')).toBe('<p>#### Four</p>');
   });
 
@@ -60,7 +60,7 @@ describe('markdownToHtml — block types', () => {
   });
 });
 
-describe('markdownToHtml — escaping', () => {
+describe('markdownToHtml - escaping', () => {
   it('escapes &, < and > in paragraph text', () => {
     expect(markdownToHtml('a < b & c > d')).toBe('<p>a &lt; b &amp; c &gt; d</p>');
   });
@@ -71,7 +71,7 @@ describe('markdownToHtml — escaping', () => {
   });
 });
 
-describe('markdownToHtml — mixed document', () => {
+describe('markdownToHtml - mixed document', () => {
   it('preserves block order across a mixed note', () => {
     const md = '# Title\n\nintro line\n\n- one\n- two\n\n> note';
     expect(markdownToHtml(md)).toBe(
