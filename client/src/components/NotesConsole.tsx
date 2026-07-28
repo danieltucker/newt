@@ -14,6 +14,7 @@ import { NoteDoc, NoteFolder } from '../hooks/useSettings';
 import { searchNotes } from '../utils/noteText';
 import { markdownToHtml } from '../utils/noteMigrate';
 import { uploadImage } from '../utils/imageUpload';
+import { fetchPageMeta } from '../utils/pageMeta';
 import { EmbedData, embeddedUrls } from '../utils/noteEmbed';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { modLabel } from '../utils/platform';
@@ -1070,6 +1071,7 @@ export default function NotesConsole({
                     onChange={handleBody}
                     readOnly={activeTrashed}
                     onUploadImage={uploadImage}
+                    onFetchPageMeta={fetchPageMeta}
                     references={references}
                     commentCounts={commentCounts}
                     onEmbedsChange={setEmbedUrls}

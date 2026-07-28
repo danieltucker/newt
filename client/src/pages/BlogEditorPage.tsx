@@ -5,6 +5,7 @@ import { BlogPost, CommentVisibility } from '../types';
 import { createPost, updatePost, loadOwnPost } from '../hooks/useBlog';
 import { blogPathFor } from '../utils/blogUrl';
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
+import { fetchPageMeta } from '../utils/pageMeta';
 import { articleEmbed, embeddedUrls } from '../utils/noteEmbed';
 import { takeRepost, clearRepost, repostBody } from '../utils/repost';
 import { useReadingList } from '../hooks/useReadingList';
@@ -364,6 +365,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
             initialHtml={post?.body ?? seed?.body ?? ''}
             onChange={handleBody}
             onUploadImage={uploadImage}
+            onFetchPageMeta={fetchPageMeta}
             references={references}
             commentCounts={commentCounts}
             onEmbedsChange={setEmbedUrls}

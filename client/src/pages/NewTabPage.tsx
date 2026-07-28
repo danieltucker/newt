@@ -37,9 +37,6 @@ import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
 import { Bookmark, Folder, FeedArticle, CommentPrefs } from '../types';
 import { ThemeSetting, ResolvedTheme } from '../App';
 
-// Injected at build time from package.json (see vite.config.ts).
-declare const __APP_VERSION__: string;
-
 // Background depth - max px each blob leans as the cursor crosses the viewport.
 // The far layer leans opposite the near ones, which is what sells the depth.
 // The glow layer spans the whole page and scrolls with it (see .bgRoot), so the

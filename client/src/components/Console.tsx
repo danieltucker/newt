@@ -19,9 +19,6 @@ interface Line {
   text: string;
 }
 
-// Injected at build time from client/package.json (see vite.config.ts)
-declare const __APP_VERSION__: string;
-
 interface Ctx {
   folders: Folder[];
   theme: 'dark' | 'light';

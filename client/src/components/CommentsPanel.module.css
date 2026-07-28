@@ -529,29 +529,75 @@
 
 /* ── Composer ────────────────────────────────────────────────────────── */
 
-.addBtn {
+.readOnlyHint {
   flex-shrink: 0;
-  padding: 6px 12px;
-  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Compose prompt ──
+   The resting state of the composer: a field you can click straight into and a
+   button that says what happens next. It replaces a lone "Add comment" button,
+   which asked the reader to find an action before it would show them a place to
+   write. Clicking either half opens the real composer.
+
+   It looks like an input but is a button, because that is what it does - a real
+   <input> here would take a keystroke and then have to hand it over to a
+   different editor mid-word. */
+.promptRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.promptField {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: text;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promptField:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: var(--surface);
+}
+
+.promptField:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.promptBtn {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border-radius: 9px;
   border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
   background: color-mix(in oklab, var(--accent) 10%, transparent);
   color: var(--accent);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.addBtn:hover {
+.promptBtn:hover {
   background: color-mix(in oklab, var(--accent) 18%, transparent);
   border-color: var(--accent);
 }
 
-.readOnlyHint {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--muted);
+/* On a phone the button keeps its label but stops crowding the field */
+@media (max-width: 520px) {
+  .promptField { padding: 8px 10px; }
+  .promptBtn { padding: 8px 12px; }
 }
 
 .composer {

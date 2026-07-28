@@ -6,6 +6,7 @@ import { HistoryStack, EditKind } from '../utils/history';
 import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/noteFind';
 import { modLabel } from '../utils/platform';
+import { PageMeta, pageEmbed, isBareUrl } from '../utils/pageMeta';
 import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
@@ -372,7 +373,18 @@ interface LinkForm {
   text: string;
   selected: string;    // text the selection covered when the dialog opened
   editing: boolean;    // an existing link is being changed
+  // How the link should render. 'link' is the plain anchor this dialog has
+  // always produced; the two card sizes reuse the reference embed, so a link
+  // and a saved article look the same at the same size.
+  variant: EmbedVariant;
 }
+
+// What each link size is called in the dialog, and the one-liner under it.
+const LINK_SIZES: { id: EmbedVariant; label: string; hint: string }[] = [
+  { id: 'link',  label: 'Text',       hint: 'Inline, in the sentence' },
+  { id: 'small', label: 'Small card', hint: 'Thumbnail and title' },
+  { id: 'large', label: 'Large card', hint: 'Full-width artwork' },
+];
 
 interface Props {
   initialHtml: string;
@@ -401,6 +413,15 @@ interface Props {
   // document (notes, posts), wrong in a short composer, where the reader almost
   // certainly means to search the page around it rather than their own draft.
   findable?: boolean;
+  // Put the caret in the editor as soon as it mounts. For surfaces that appear
+  // *because* the user asked to write - a reply, a new comment - where landing
+  // anywhere else means a wasted click.
+  autoFocus?: boolean;
+  // Reads a URL's title and artwork, so a link can be inserted as a card.
+  // Injected for the same reason onUploadImage is: the editor knows how to
+  // render a card, not how this app talks to its server. Absent, the link
+  // dialog offers plain text only.
+  onFetchPageMeta?: (url: string) => Promise<PageMeta>;
 }
 
 // ── CSS Custom Highlight API ──
@@ -586,7 +607,7 @@ function embedInSelection(root: HTMLElement): HTMLElement | null {
 
 export default function RichEditor({
   initialHtml, onChange, readOnly = false, onUploadImage, references, commentCounts,
-  onEmbedsChange, findable = false,
+  onEmbedsChange, findable = false, autoFocus = false, onFetchPageMeta,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -598,6 +619,8 @@ export default function RichEditor({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState<LinkForm | null>(null);
+  // A card has to go and read the page first, which is slow enough to say so.
+  const [linkBusy, setLinkBusy] = useState(false);
   // /reference: the picker, and where its result goes. The range is stashed for
   // the same reason the image one is - the search field takes focus, which
   // collapses whatever the caret was on.
@@ -606,6 +629,16 @@ export default function RichEditor({
   // The embed the selection is on, if any. It is what turns the floating bar
   // from a formatting bubble into the embed's own controls.
   const [embedEl, setEmbedEl] = useState<HTMLElement | null>(null);
+  // The plain <a> the caret is sitting in. It gets the same floating bar an
+  // embed does - a link is an object you can resize too, not just styled text.
+  const [linkEl, setLinkEl] = useState<HTMLAnchorElement | null>(null);
+  // Non-null while the bar's inline "edit text" field is open, holding its
+  // draft. Null means the bar is showing its buttons.
+  const [linkTextDraft, setLinkTextDraft] = useState<string | null>(null);
+  // The selectionchange listener is registered once, so it would close over a
+  // stale linkEl. Mirrored the way slashOpenRef and queryRef are.
+  const linkElRef = useRef<HTMLAnchorElement | null>(null);
+  linkElRef.current = linkEl;
   // The selection the dialog was opened on. Focusing an input collapses it, so
   // it's restored before the link is written back.
   const linkRange = useRef<Range | null>(null);
@@ -889,6 +922,13 @@ export default function RichEditor({
     hydrateEmbeds(el);
     el.classList.toggle('note-empty', isBlank(el));
     if (el.innerHTML !== beforeRepair && !readOnly) onChange(el.innerHTML);   // persist the repair
+    // Caret to the end, not the start: an edit surface seeded with existing
+    // text should continue it rather than type in front of it.
+    if (autoFocus && !readOnly) {
+      el.focus();
+      const last = el.lastElementChild;
+      if (last) placeCaret(last, false);
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live counts land straight on the DOM rather than going through onChange -
@@ -965,11 +1005,12 @@ export default function RichEditor({
         text: existing.textContent ?? '',
         selected: existing.textContent ?? '',
         editing: true,
+        variant: 'link',
       });
     } else {
       linkRange.current = sel.getRangeAt(0).cloneRange();
       const selected = sel.isCollapsed ? '' : sel.toString();
-      setLinkForm({ url: '', text: selected, selected, editing: false });
+      setLinkForm({ url: '', text: selected, selected, editing: false, variant: 'link' });
     }
     setBubble(null);
   }
@@ -991,9 +1032,31 @@ export default function RichEditor({
     linkRange.current = null;
   }
 
-  function submitLink(form: LinkForm) {
+  async function submitLink(form: LinkForm) {
     const href = normalizeUrl(form.url);
     if (!href) return;
+
+    // A card is an embed, not an anchor: fetch what the page calls itself, then
+    // hand it to the same writer the reference picker uses. The fetch happens
+    // before the selection is restored because it is the slow part, and the
+    // dialog stays up saying so.
+    if (form.variant !== 'link' && onFetchPageMeta) {
+      setLinkBusy(true);
+      let meta: PageMeta = { title: null, image: null };
+      try {
+        meta = await onFetchPageMeta(href);
+      } catch {
+        // A card with the host as its title is still better than nothing, and
+        // is what pageEmbed falls back to.
+      }
+      setLinkBusy(false);
+      if (!restoreLinkRange()) { closeLink(); return; }
+      record('struct');
+      writeEmbedAtSelection(pageEmbed(href, meta, form.text), form.variant);
+      closeLink();
+      return;
+    }
+
     const sel = restoreLinkRange();
     if (!sel) { closeLink(); return; }
     record('struct');
@@ -1103,11 +1166,55 @@ export default function RichEditor({
   // Pasting an image gives a file on the clipboard; everything else falls
   // through to the browser's own paste handling.
   function handlePaste(e: React.ClipboardEvent) {
-    if (!onUploadImage) return;
     const files = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    e.preventDefault();
-    void insertImages(files);
+    if (onUploadImage && files.length > 0) {
+      e.preventDefault();
+      void insertImages(files);
+      return;
+    }
+    if (pasteUrl(e)) e.preventDefault();
+  }
+
+  /**
+   * A pasted URL becomes a link there and then, and raises the link bar so the
+   * size can be changed without going anywhere. Returns whether it handled the
+   * paste.
+   *
+   * The link is written immediately rather than opening a dialog: pasting is a
+   * fast gesture, and the common case - a URL dropped into a sentence - should
+   * cost nothing. The bar is an offer, not a question; ignore it and keep typing.
+   */
+  function pasteUrl(e: React.ClipboardEvent): boolean {
+    const editor = ref.current;
+    const text = e.clipboardData?.getData('text/plain')?.trim();
+    if (!editor || !text || !isBareUrl(text)) return false;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+
+    record('struct');
+    const href = normalizeUrl(text);
+    // Pasting a URL over selected words links those words, which is the one
+    // thing every editor agrees on. With nothing selected the URL is its own
+    // label, and the bar's "edit text" is how that gets a friendlier name.
+    const selected = sel.isCollapsed ? '' : sel.toString();
+    if (selected) {
+      document.execCommand('createLink', false, href);
+    } else {
+      document.execCommand('insertHTML', false,
+        `<a href="${escapeHtml(href)}">${escapeHtml(text)}</a>`);
+    }
+    emit();
+
+    // Find what was just written and put the bar on it. The caret lands at the
+    // end of the new link, so the usual lookup finds it.
+    const anchor = anchorAt(editor);
+    if (anchor) {
+      setLinkEl(anchor);
+      setLinkTextDraft(null);
+      const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
+      setBubble(computeBubblePos(anchor.getBoundingClientRect(), boundsTop));
+    }
+    return true;
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -1144,9 +1251,20 @@ export default function RichEditor({
     if (!editor) return;
     restoreRange(embedRange.current);
     embedRange.current = null;
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
     record('struct');
+    writeEmbedAtSelection(data, variant);
+  }
+
+  /**
+   * Drop an embed where the selection currently is, replacing whatever it
+   * covers. The caller is responsible for restoring the selection and for
+   * recording history first - both the reference picker and the link dialog
+   * come through here, and they stash their range in different places.
+   */
+  function writeEmbedAtSelection(data: EmbedData, variant: EmbedVariant) {
+    const editor = ref.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return;
     repairBlankBlock(editor);
 
     const node = createEmbed(data, variant);
@@ -1215,13 +1333,97 @@ export default function RichEditor({
     if (a) openLinkAt(a);
   }
 
+  // ── The link bar ──────────────────────────────────────────────────────
+  // A plain <a> and a 'page' card are two renderings of one thing: a URL the
+  // writer pointed at. These convert between them, so the size switch on the
+  // bar means the same for a link as it does for a reference.
+
+  function closeLinkBar() {
+    setLinkEl(null);
+    setLinkTextDraft(null);
+  }
+
+  /** Replace the anchor the bar is on with a card of the given size. */
+  async function linkToCard(variant: EmbedVariant) {
+    const a = linkEl;
+    const href = a?.getAttribute('href');
+    if (!a || !href || !onFetchPageMeta) return;
+    // The visible text is worth carrying over as the card's title - unless it is
+    // just the URL again, which is what a bare paste leaves behind and would
+    // make for a card titled with its own address.
+    const text = (a.textContent ?? '').trim();
+    const typed = text && text !== href && text !== href.replace(/^https?:\/\//, '') ? text : '';
+
+    setLinkBusy(true);
+    let meta: PageMeta = { title: null, image: null };
+    try {
+      meta = await onFetchPageMeta(href);
+    } catch { /* the host fallback in pageEmbed covers this */ }
+    setLinkBusy(false);
+
+    // The anchor may have been edited away while the fetch was out.
+    if (!a.isConnected) { closeLinkBar(); return; }
+    record('struct');
+    selectNode(a);
+    writeEmbedAtSelection(pageEmbed(href, meta, typed), variant);
+    closeLinkBar();
+  }
+
+  /** Turn a card back into the plain anchor it came from. */
+  function cardToLink() {
+    const data = embedEl && readEmbed(embedEl);
+    if (!embedEl || !data) return;
+    record('struct');
+    const a = document.createElement('a');
+    a.setAttribute('href', data.href || data.url);
+    a.textContent = data.title || data.url;
+    embedEl.replaceWith(a);
+    setEmbedEl(null);
+    setBubble(null);
+    // Caret after the link, so typing carries on from it rather than inside it.
+    const caret = document.createRange();
+    caret.setStartAfter(a);
+    caret.collapse(true);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(caret); }
+    ref.current?.focus();
+    emit();
+  }
+
+  /** Commit the inline text field on the link bar. */
+  function applyLinkText() {
+    const a = linkEl;
+    if (!a || linkTextDraft === null) return;
+    const next = linkTextDraft.trim();
+    // An empty label would leave an invisible link nobody could click or find.
+    if (next && next !== a.textContent) {
+      record('struct');
+      a.textContent = next;
+      emit();
+    }
+    setLinkTextDraft(null);
+    ref.current?.focus();
+  }
+
+  function removeLinkAt() {
+    const a = linkEl;
+    if (!a) return;
+    record('struct');
+    // Unwrap rather than delete: removing a link should leave the words behind.
+    a.replaceWith(...Array.from(a.childNodes));
+    closeLinkBar();
+    setBubble(null);
+    ref.current?.focus();
+    emit();
+  }
+
   // Track the selection to light up the active marks and raise the bubble.
   useEffect(() => {
     function onSelectionChange() {
       const el = ref.current;
       const sel = window.getSelection();
       if (readOnly) { setBubble(null); return; }
-      if (!el || !sel || sel.rangeCount === 0) { setBubble(null); setEmbedEl(null); return; }
+      if (!el || !sel || sel.rangeCount === 0) { setBubble(null); setEmbedEl(null); closeLinkBar(); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
       setMarks(readMarks());
@@ -1231,10 +1433,25 @@ export default function RichEditor({
       const embed = embedInSelection(el);
       setEmbedEl(embed);
       if (embed) {
+        closeLinkBar();
         const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
         setBubble(computeBubblePos(embed.getBoundingClientRect(), boundsTop));
         return;
       }
+      // A caret resting in a link raises that link's own bar. Only when nothing
+      // is selected: a selection that happens to cross a link is a request to
+      // format the words, and the formatting bar is what answers it.
+      const anchor = sel.isCollapsed ? anchorAt(el) : null;
+      if (anchor && !embedAt(anchor, el)) {
+        // The field is per-link, so moving to a different one closes it rather
+        // than carrying a half-typed label across.
+        if (anchor !== linkElRef.current) setLinkTextDraft(null);
+        setLinkEl(anchor);
+        const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
+        setBubble(computeBubblePos(anchor.getBoundingClientRect(), boundsTop));
+        return;
+      }
+      closeLinkBar();
       if (sel.isCollapsed || !sel.toString().trim()) { setBubble(null); return; }
       const r = range.getBoundingClientRect();
       if (!r || (!r.width && !r.height)) { setBubble(null); return; }
@@ -1859,16 +2076,79 @@ export default function RichEditor({
 
   // What the floating bar offers when the selection is an embed: the three
   // sizes, then the two things you can do with the thing itself.
+  //
+  // A 'page' card is a link the writer chose to show large, so its smallest
+  // size is a real anchor rather than the inline chip a reference uses - three
+  // states for a URL, matching the link dialog exactly. The library kinds keep
+  // the chip, which is a reference to something, not a sentence to read.
+  const isPageCard = !!embedEl && readEmbed(embedEl)?.kind === 'page';
   const embedBtns = embedEl && (
     <>
       <span className={styles.tbGroupLabel}>Size</span>
-      <TBtn title="Just a link"  active={variantOf(embedEl) === 'link'}  onRun={() => setEmbedVariant('link')}><LinkIcon /></TBtn>
+      {isPageCard ? (
+        <TBtn title="Text - a plain link in the sentence" onRun={cardToLink}><LinkIcon /></TBtn>
+      ) : (
+        <TBtn title="Just a link" active={variantOf(embedEl) === 'link'} onRun={() => setEmbedVariant('link')}><LinkIcon /></TBtn>
+      )}
       <TBtn title="Small card"   active={variantOf(embedEl) === 'small'} onRun={() => setEmbedVariant('small')}><SmallCardIcon /></TBtn>
       <TBtn title="Large card"   active={variantOf(embedEl) === 'large'} onRun={() => setEmbedVariant('large')}><LargeCardIcon /></TBtn>
       <span className={styles.tbSep} />
-      <WordBtn title="Open this reference" onRun={openEmbed}>Open</WordBtn>
-      <WordBtn title="Remove this reference" onRun={removeEmbed} danger>Remove</WordBtn>
+      <WordBtn title={isPageCard ? 'Open this link' : 'Open this reference'} onRun={openEmbed}>Open</WordBtn>
+      <WordBtn title={isPageCard ? 'Remove this card' : 'Remove this reference'} onRun={removeEmbed} danger>Remove</WordBtn>
     </>
+  );
+
+  // ── The link bar ──
+  // The same shape as the embed bar above, because a link is the same kind of
+  // object: something with a size and a label. Editing the label happens in
+  // place - a dialog for one field is a lot of ceremony for renaming a link.
+  const linkBarBtns = !embedEl && linkEl && (
+    linkTextDraft !== null ? (
+      <>
+        <input
+          className={styles.linkTextInput}
+          value={linkTextDraft}
+          autoFocus
+          onChange={ev => setLinkTextDraft(ev.target.value)}
+          onKeyDown={ev => {
+            ev.stopPropagation();   // the console's Escape must not close the note
+            if (ev.key === 'Enter') { ev.preventDefault(); applyLinkText(); }
+            if (ev.key === 'Escape') { ev.preventDefault(); setLinkTextDraft(null); }
+          }}
+          placeholder="Link text"
+          aria-label="Link text"
+          spellCheck={false}
+        />
+        <WordBtn title="Save this text (Enter)" onRun={applyLinkText}>Save</WordBtn>
+        <WordBtn title="Discard (Esc)" onRun={() => setLinkTextDraft(null)}>Cancel</WordBtn>
+      </>
+    ) : (
+      <>
+        <span className={styles.tbGroupLabel}>Size</span>
+        <TBtn title="Text - a plain link in the sentence" active onRun={() => { /* already text */ }}>
+          <LinkIcon />
+        </TBtn>
+        {onFetchPageMeta && (
+          <>
+            <TBtn title={linkBusy ? 'Reading page…' : 'Small card'} disabled={linkBusy} onRun={() => void linkToCard('small')}>
+              <SmallCardIcon />
+            </TBtn>
+            <TBtn title={linkBusy ? 'Reading page…' : 'Large card'} disabled={linkBusy} onRun={() => void linkToCard('large')}>
+              <LargeCardIcon />
+            </TBtn>
+          </>
+        )}
+        <span className={styles.tbSep} />
+        <WordBtn
+          title="Change the words this link shows"
+          onRun={() => setLinkTextDraft(linkEl.textContent ?? '')}
+        >
+          Edit text
+        </WordBtn>
+        <WordBtn title="Change the address" onRun={applyLink}>Edit link</WordBtn>
+        <WordBtn title="Unlink - keeps the words" onRun={removeLinkAt} danger>Remove</WordBtn>
+      </>
+    )
   );
 
   // A trashed note is shown as it was written: no toolbars, no command menu,
@@ -2058,7 +2338,7 @@ export default function RichEditor({
           controls when the selection is an atomic island instead. */}
       {bubble && createPortal(
         <div ref={bubbleRef} className={styles.bubble} style={{ left: bubble.left, top: bubble.top }}>
-          {embedBtns || (
+          {embedBtns || linkBarBtns || (
             <>
               {inlineBtns}
               <span className={styles.tbSep} />
@@ -2153,6 +2433,8 @@ export default function RichEditor({
     {linkForm && createPortal(
       <LinkDialog
         form={linkForm}
+        canCard={!!onFetchPageMeta}
+        busy={linkBusy}
         onChange={setLinkForm}
         onSubmit={submitLink}
         onRemove={removeLink}
@@ -2296,8 +2578,10 @@ function SizeBtn({ label, on, onRun, children }: {
 // ── Link dialog ─────────────────────────────────────────────────────────
 // Text and URL together, inside the console - Escape is swallowed here so it
 // dismisses the dialog rather than the whole notes window behind it.
-function LinkDialog({ form, onChange, onSubmit, onRemove, onCancel }: {
+function LinkDialog({ form, canCard, busy, onChange, onSubmit, onRemove, onCancel }: {
   form: LinkForm;
+  canCard: boolean;   // the host supplied a metadata reader, so cards are possible
+  busy: boolean;
   onChange: (f: LinkForm) => void;
   onSubmit: (f: LinkForm) => void;
   onRemove: () => void;
@@ -2305,6 +2589,7 @@ function LinkDialog({ form, onChange, onSubmit, onRemove, onCancel }: {
 }) {
   const urlRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLInputElement>(null);
+  const isCard = form.variant !== 'link';
 
   // Land on the field that still needs filling in
   useEffect(() => {
@@ -2327,13 +2612,15 @@ function LinkDialog({ form, onChange, onSubmit, onRemove, onCancel }: {
         <div className={styles.linkTitle}>{form.editing ? 'Edit link' : 'Add link'}</div>
 
         <label className={styles.linkField}>
-          <span className={styles.linkLabel}>Text</span>
+          {/* A card carries a heading rather than a run of link text, and it
+              falls back to the page's own title, so the field says so. */}
+          <span className={styles.linkLabel}>{isCard ? 'Title' : 'Text'}</span>
           <input
             ref={textRef}
             className={styles.linkInput}
             value={form.text}
             onChange={e => onChange({ ...form, text: e.target.value })}
-            placeholder="Link text"
+            placeholder={isCard ? "Leave blank to use the page's own title" : 'Link text'}
             spellCheck={false}
           />
         </label>
@@ -2351,14 +2638,39 @@ function LinkDialog({ form, onChange, onSubmit, onRemove, onCancel }: {
           />
         </label>
 
+        {/* How it renders. The same three sizes a saved reference offers, so a
+            link and an article look alike at the same size. Only shown where the
+            host can actually read a page - without that a card would be an
+            untitled box. */}
+        {canCard && (
+          <div className={styles.linkField}>
+            <span className={styles.linkLabel}>Show as</span>
+            <div className={styles.linkSizes} role="radiogroup" aria-label="Link appearance">
+              {LINK_SIZES.map(size => (
+                <button
+                  key={size.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.variant === size.id}
+                  className={`${styles.linkSize} ${form.variant === size.id ? styles.linkSizeOn : ''}`}
+                  onClick={() => onChange({ ...form, variant: size.id })}
+                  title={size.hint}
+                >
+                  {size.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className={styles.linkActions}>
           {form.editing && (
-            <button className={styles.linkRemove} onClick={onRemove}>Remove link</button>
+            <button className={styles.linkRemove} onClick={onRemove} disabled={busy}>Remove link</button>
           )}
           <span className={styles.linkSpacer} />
-          <button className={styles.linkCancel} onClick={onCancel}>Cancel</button>
-          <button className={styles.linkApply} onClick={() => onSubmit(form)} disabled={!valid}>
-            {form.editing ? 'Save' : 'Add link'}
+          <button className={styles.linkCancel} onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className={styles.linkApply} onClick={() => onSubmit(form)} disabled={!valid || busy}>
+            {busy ? 'Reading page…' : form.editing ? 'Save' : isCard ? 'Add card' : 'Add link'}
           </button>
         </div>
       </div>

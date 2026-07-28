@@ -20,7 +20,11 @@ import { blogPathFor } from './blogUrl';
 // CSS-module hash could change and orphan every embed already written.
 export const EMBED_CLASS = 'note-embed';
 
-export type EmbedKind = 'article' | 'post';
+// 'page' is any URL the writer pasted into the link dialog and asked to render
+// as a card, rather than something already in their library. Its title and
+// artwork come from the page itself (see utils/pageMeta), so it is the one kind
+// whose data is not already on hand when the embed is built.
+export type EmbedKind = 'article' | 'post' | 'page';
 export type EmbedVariant = 'link' | 'small' | 'large';
 
 export const VARIANTS: EmbedVariant[] = ['link', 'small', 'large'];
@@ -44,9 +48,21 @@ export interface EmbedData {
 const KIND_LABEL: Record<EmbedKind, string> = {
   article: 'Saved article',
   post: 'Blog post',
+  page: 'Link',
 };
 
 const DEFAULT_VARIANT: EmbedVariant = 'small';
+
+// Kinds whose target has a conversation of its own. An article and a post are
+// both threaded on their canonical URL - the same key `url` already holds - so
+// one lookup serves both. A 'page' is any URL on the open web: there is no Newt
+// thread on it, so a large card must not grow a comments row it can never fill.
+// A future kind that is nothing to comment on simply stays off this list.
+const THREADED_KINDS: EmbedKind[] = ['article', 'post'];
+
+export function hasThread(kind: EmbedKind): boolean {
+  return THREADED_KINDS.includes(kind);
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -172,8 +188,11 @@ function innerHtml(data: EmbedData, variant: EmbedVariant): string {
         metaLine(data) +
         // Deliberately empty: the count is live, and is written in as
         // data-comments by applyCommentCounts. Storing a number here would bake
-        // in whatever it happened to be the day the embed was made.
-        '<span class="note-embed-comments"></span>' +
+        // in whatever it happened to be the day the embed was made. Only for
+        // kinds that have a thread at all - on anything else the slot would
+        // rest on its "Comments" placeholder forever, promising a conversation
+        // that does not exist.
+        (hasThread(data.kind) ? '<span class="note-embed-comments"></span>' : '') +
       '</span>';
   }
 
@@ -213,7 +232,7 @@ export function createEmbed(data: EmbedData, variant: EmbedVariant): HTMLElement
 }
 
 function isKind(v: string): v is EmbedKind {
-  return v === 'article' || v === 'post';
+  return v === 'article' || v === 'post' || v === 'page';
 }
 
 export function isVariant(v: string): v is EmbedVariant {
@@ -260,11 +279,7 @@ export function embedAt(node: Node | null, root: HTMLElement): HTMLElement | nul
 
 const COMMENTS_ATTR = 'data-comments';
 
-// Kinds whose target has a conversation of its own. An article and a post are
-// both threaded on their canonical URL - the same key `url` already holds - so
-// one lookup serves both. A future kind that is nothing to comment on simply
-// stays off this list.
-const THREADED = (['article', 'post'] as EmbedKind[])
+const THREADED = THREADED_KINDS
   .map(kind => `.${EMBED_CLASS}[data-embed="${kind}"]`)
   .join(', ');
 

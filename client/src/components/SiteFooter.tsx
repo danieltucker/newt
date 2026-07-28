@@ -1,9 +1,6 @@
 import NewtMark from './NewtMark';
 import styles from './SiteFooter.module.css';
 
-// Injected at build time from package.json (see vite.config.ts).
-declare const __APP_VERSION__: string;
-
 // The footer, on every page that has a bottom.
 //
 // Themed off the mark rather than decorated at random: the hairline above it is

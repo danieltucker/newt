@@ -3,8 +3,9 @@ import { describe, it, expect } from 'vitest';
 import {
   EMBED_CLASS, EmbedData, applyCommentCounts, articleEmbed, buildEmbedHtml, commentLabel,
   createEmbed, embedAt, embedMatches, embeddedUrls, hydrateEmbeds, postEmbed, readEmbed,
-  variantOf,
+  variantOf, hasThread,
 } from './noteEmbed';
+import { pageEmbed } from './pageMeta';
 import { parseArticlePath } from './articleUrl';
 import { ReadingListItem } from '../types';
 
@@ -166,6 +167,56 @@ describe('changing size', () => {
     const back = createEmbed(readEmbed(large)!, 'small');
     expect(readEmbed(back)).toEqual(data);
     expect(back.outerHTML).toBe(small.outerHTML);
+  });
+});
+
+describe('page embeds (a plain URL rendered as a card)', () => {
+  const meta = { title: 'Fetched Title', image: 'https://cdn.example.com/og.png' };
+
+  it('takes its title from the page when the writer typed none', () => {
+    const data = pageEmbed('https://example.com/post', meta);
+    expect(data.title).toBe('Fetched Title');
+    expect(data.kind).toBe('page');
+  });
+
+  it('prefers a title the writer typed over the page\'s own', () => {
+    expect(pageEmbed('https://example.com/post', meta, 'My Heading').title).toBe('My Heading');
+    // Blank and whitespace-only both mean "no title", not an empty heading
+    expect(pageEmbed('https://example.com/post', meta, '   ').title).toBe('Fetched Title');
+  });
+
+  it('falls back to the host when the page yields nothing', () => {
+    const data = pageEmbed('https://www.example.com/x', { title: null, image: null });
+    expect(data.title).toBe('example.com');
+    expect(data.source).toBe('example.com');
+    expect(data.image).toBeUndefined();
+  });
+
+  it('survives a size change like any other embed', () => {
+    const data = pageEmbed('https://example.com/post', meta);
+    const large = createEmbed(data, 'large');
+    expect(readEmbed(large)).toEqual(data);
+  });
+
+  it('grows no comments row - there is no thread on an arbitrary URL', () => {
+    const page = createEmbed(pageEmbed('https://example.com/post', meta), 'large');
+    expect(page.querySelector('.note-embed-comments')).toBeNull();
+    // …whereas the kinds that do have a thread still get their slot
+    const article = createEmbed(articleEmbed(item()), 'large');
+    expect(article.querySelector('.note-embed-comments')).not.toBeNull();
+  });
+
+  it('knows which kinds carry a thread of their own', () => {
+    expect(hasThread('article')).toBe(true);
+    expect(hasThread('post')).toBe(true);
+    expect(hasThread('page')).toBe(false);
+  });
+
+  it('is left alone by applyCommentCounts', () => {
+    const root = document.createElement('div');
+    root.appendChild(createEmbed(pageEmbed('https://example.com/post', meta), 'large'));
+    applyCommentCounts(root, { 'https://example.com/post': 7 });
+    expect(root.textContent).not.toContain('7');
   });
 });
 

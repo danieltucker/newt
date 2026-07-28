@@ -4,6 +4,7 @@ import { ArticleComment, CommentPrefs, CommentVisibility, CommentHistory } from 
 import RichEditor from './RichEditor';
 import ReportModal from './ReportModal';
 import { uploadImage } from '../utils/imageUpload';
+import { fetchPageMeta } from '../utils/pageMeta';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import styles from './CommentsPanel.module.css';
 
@@ -115,14 +116,16 @@ function openImageAt(e: React.MouseEvent) {
 // flip needs a render, to enable the Post button.
 function Composer({
   allowTitle, initialTitle = '', initialBody = '', defaultVisibility, submitLabel,
-  autoFocusTitle, busy, onSubmit, onCancel,
+  autoFocusBody, busy, onSubmit, onCancel,
 }: {
   allowTitle: boolean;
   initialTitle?: string;
   initialBody?: string;
   defaultVisibility: CommentVisibility;
   submitLabel: string;
-  autoFocusTitle?: boolean;
+  // The body, not the title: the title is optional and the reader opened this
+  // to write a comment, so that is where the caret belongs.
+  autoFocusBody?: boolean;
   busy: boolean;
   onSubmit: (v: { title: string; body: string; visibility: CommentVisibility }) => void;
   onCancel?: () => void;
@@ -150,11 +153,16 @@ function Composer({
           onChange={e => setTitle(e.target.value)}
           placeholder="Add a title (optional)"
           maxLength={200}
-          autoFocus={autoFocusTitle}
         />
       )}
       <div className={styles.editorShell}>
-        <RichEditor initialHtml={initialBody} onChange={handleChange} onUploadImage={uploadImage} />
+        <RichEditor
+          initialHtml={initialBody}
+          onChange={handleChange}
+          onUploadImage={uploadImage}
+          onFetchPageMeta={fetchPageMeta}
+          autoFocus={autoFocusBody}
+        />
       </div>
       <div className={styles.composerFoot}>
         <div className={styles.visSwitch} role="radiogroup" aria-label="Who can see this comment">
@@ -405,6 +413,7 @@ function CommentItem({
       {isReplying && (
         <Composer
           allowTitle={false}
+          autoFocusBody
           defaultVisibility={prefs.defaultVisibility}
           submitLabel="Reply"
           busy={busyId === node.id}
@@ -668,13 +677,31 @@ export default function CommentsPanel({
           Comments
           {total > 0 && <span className={styles.panelCount}>{total}</span>}
         </h2>
-        {!composing && !loading && !readOnly && (
-          <button className={styles.addBtn} onClick={() => setComposing(true)}>
-            Add comment
-          </button>
-        )}
         {readOnly && <span className={styles.readOnlyHint}>Sign in to join the conversation</span>}
       </div>
+
+      {/* The resting composer. A field to click into and a button that names the
+          action, rather than an "Add comment" button that hid the writing
+          surface behind a step. Both halves do the same thing - the field is
+          what a reader aims at, the button is what they look for. */}
+      {!composing && !loading && !readOnly && (
+        <div className={styles.promptRow}>
+          <button
+            type="button"
+            className={styles.promptField}
+            onClick={() => setComposing(true)}
+          >
+            Add a comment…
+          </button>
+          <button
+            type="button"
+            className={styles.promptBtn}
+            onClick={() => setComposing(true)}
+          >
+            Comment
+          </button>
+        </div>
+      )}
 
       {loading && (
         <div className={styles.skeleton}>
@@ -687,14 +714,16 @@ export default function CommentsPanel({
       {!loading && comments.length === 0 && !composing && (
         <div className={styles.empty}>
           <CommentIcon />
-          <span>{readOnly ? 'No comments yet.' : 'No comments yet - start the thread.'}</span>
+          {/* The invitation to write now lives in the prompt above, so this
+              says only what it knows. */}
+          <span>No comments yet.</span>
         </div>
       )}
 
       {composing && (
         <Composer
           allowTitle
-          autoFocusTitle
+          autoFocusBody
           defaultVisibility={prefs.defaultVisibility}
           submitLabel="Post comment"
           busy={busyId === 'new'}
