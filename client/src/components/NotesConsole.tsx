@@ -16,6 +16,7 @@ import { markdownToHtml } from '../utils/noteMigrate';
 import { uploadImage } from '../utils/imageUpload';
 import { EmbedData, embeddedUrls } from '../utils/noteEmbed';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { modLabel } from '../utils/platform';
 import {
   INDENT, isFolderId, folderIdOf, sameOrder, buildRows, getProjection, computeDrop, reconcileFlat,
 } from '../utils/noteTree';
@@ -799,6 +800,8 @@ export default function NotesConsole({
               <span className={styles.headerHints}>
                 <kbd>/</kbd>commands
                 <span className={styles.dot}>·</span>
+                <kbd>{modLabel('F')}</kbd>find
+                <span className={styles.dot}>·</span>
                 <kbd>tab</kbd>indent
                 <span className={styles.dot}>·</span>
                 <kbd>esc</kbd>close
@@ -1070,6 +1073,7 @@ export default function NotesConsole({
                     references={references}
                     commentCounts={commentCounts}
                     onEmbedsChange={setEmbedUrls}
+                    findable
                   />
                 </>
               ) : (

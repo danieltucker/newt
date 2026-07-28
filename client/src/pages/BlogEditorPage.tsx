@@ -367,6 +367,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
             references={references}
             commentCounts={commentCounts}
             onEmbedsChange={setEmbedUrls}
+            findable
           />
         </div>
 

@@ -240,10 +240,10 @@
 .urlNote { opacity: 0.85; }
 
 /* RichEditor scrolls inside this box, so it needs a definite height.
-   The background is white in both themes on purpose: RichEditor borrows its
-   styling from NotesConsole.module.css, where .editor hardcodes dark slate text
-   and the toolbar uses light separators. The comment composer's .editorShell
-   pins #fff for the same reason - the editor is "paper" wherever it appears. */
+   The background is white in both themes on purpose: RichEditor.module.css
+   hardcodes dark slate text on .editor and light separators on the toolbar. The
+   comment composer's .editorShell pins #fff for the same reason - the editor is
+   "paper" wherever it appears. */
 .editorShell {
   display: flex;
   flex-direction: column;

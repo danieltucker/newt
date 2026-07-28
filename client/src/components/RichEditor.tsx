@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import styles from './NotesConsole.module.css';
+import styles from './RichEditor.module.css';
 import { getCaretPath, setCaretPath, CaretPath } from '../utils/caret';
 import { HistoryStack, EditKind } from '../utils/history';
 import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
+import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/noteFind';
+import { modLabel } from '../utils/platform';
 import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
@@ -394,7 +396,36 @@ interface Props {
   // costs one unused number, whereas checking after every keystroke would cost
   // a DOM walk on every keystroke.
   onEmbedsChange?: (urls: string[]) => void;
+  // Whether Ctrl/Cmd+F opens find & replace over this surface. Off by default
+  // because it is a claim on a key the browser already owns: worth it in a
+  // document (notes, posts), wrong in a short composer, where the reader almost
+  // certainly means to search the page around it rather than their own draft.
+  findable?: boolean;
 }
+
+// ── CSS Custom Highlight API ──
+// Newer than the DOM typings this project builds against, so it is reached
+// through a narrow local declaration rather than by widening the whole lib.
+type HighlightCtor = new (...ranges: Range[]) => object;
+interface HighlightRegistry {
+  set(name: string, highlight: object): void;
+  delete(name: string): void;
+}
+
+const HIGHLIGHTS: HighlightRegistry | null =
+  typeof CSS !== 'undefined' && 'highlights' in CSS
+    ? (CSS as unknown as { highlights: HighlightRegistry }).highlights
+    : null;
+
+const Highlight: HighlightCtor | null =
+  typeof window !== 'undefined' && typeof (window as unknown as { Highlight?: HighlightCtor }).Highlight === 'function'
+    ? (window as unknown as { Highlight: HighlightCtor }).Highlight
+    : null;
+
+// Every match, and the one the user is standing on. Two registries so the
+// current hit can be painted differently without re-splitting the list.
+const HL_ALL = 'note-find';
+const HL_CURRENT = 'note-find-current';
 
 interface MenuPos { left: number; top: number | null; bottom: number | null; maxHeight: number; }
 
@@ -555,7 +586,7 @@ function embedInSelection(root: HTMLElement): HTMLElement | null {
 
 export default function RichEditor({
   initialHtml, onChange, readOnly = false, onUploadImage, references, commentCounts,
-  onEmbedsChange,
+  onEmbedsChange, findable = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -637,6 +668,194 @@ export default function RichEditor({
     if (next) restore(next);
   }
 
+  // ── Find & replace ─────────────────────────────────────────────────────
+  // Hits are painted with the CSS Custom Highlight API, which draws over live
+  // Ranges without touching the DOM. That matters more here than it looks: the
+  // editor is uncontrolled and every mutation flows out through onChange, so
+  // wrapping hits in <mark> would save highlight markup into the document and
+  // push junk onto the undo stack. Searching has to be free of side effects.
+  const [findOpen, setFindOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [replaceWith, setReplaceWith] = useState('');
+  const [findOpts, setFindOpts] = useState<FindOptions>({ caseSensitive: false, wholeWord: false });
+  // Match count and cursor are state (they are rendered); the Ranges themselves
+  // are a ref - they are recomputed constantly and nothing renders from them.
+  const [findHits, setFindHits] = useState({ count: 0, index: 0 });
+  const hitsRef = useRef<Range[]>([]);
+  const findIdxRef = useRef(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+
+  function clearHighlights() {
+    HIGHLIGHTS?.delete(HL_ALL);
+    HIGHLIGHTS?.delete(HL_CURRENT);
+  }
+
+  function paintHighlights(ranges: Range[], index: number) {
+    const current = ranges[index];
+    // Without the highlight API there is nothing to paint over, so fall back to
+    // the one selection the browser will draw for us. It marks the current hit
+    // only - the others stay invisible - which is why this is the fallback and
+    // not the design: focus stays in the find field, so it renders as an
+    // inactive selection rather than stealing the caret.
+    if (!HIGHLIGHTS || !Highlight) {
+      if (!current) return;
+      const sel = window.getSelection();
+      if (!sel) return;
+      sel.removeAllRanges();
+      sel.addRange(current.cloneRange());
+      return;
+    }
+    const rest = ranges.filter((_, i) => i !== index);
+    HIGHLIGHTS.set(HL_ALL, new Highlight(...rest));
+    if (current) HIGHLIGHTS.set(HL_CURRENT, new Highlight(current));
+    else HIGHLIGHTS.delete(HL_CURRENT);
+  }
+
+  // Bring a match into view without stealing focus from the find field - the
+  // scroller is nudged just far enough, so the page doesn't jump on every step.
+  function revealMatch(range: Range) {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const r = range.getBoundingClientRect();
+    if (!r.height && !r.width) return;   // collapsed or detached
+    const box = scroller.getBoundingClientRect();
+    const margin = 48;
+    if (r.top < box.top + margin) scroller.scrollTop -= box.top + margin - r.top;
+    else if (r.bottom > box.bottom - margin) scroller.scrollTop += r.bottom - (box.bottom - margin);
+  }
+
+  /**
+   * Recompute the hit list against the document as it stands. `keepIndex` holds
+   * the user's place across an edit; otherwise the cursor returns to the first
+   * hit, which is what a changed query means.
+   */
+  function refreshFind(keepIndex = true) {
+    const el = ref.current;
+    if (!el || !findOpen || !findQuery) {
+      hitsRef.current = [];
+      findIdxRef.current = 0;
+      clearHighlights();
+      setFindHits({ count: 0, index: 0 });
+      return;
+    }
+    const ranges = findRanges(el, findQuery, findOpts);
+    const index = ranges.length
+      ? Math.min(keepIndex ? findIdxRef.current : 0, ranges.length - 1)
+      : 0;
+    hitsRef.current = ranges;
+    findIdxRef.current = index;
+    paintHighlights(ranges, index);
+    setFindHits({ count: ranges.length, index });
+  }
+
+  function gotoMatch(delta: number) {
+    const ranges = hitsRef.current;
+    if (!ranges.length) return;
+    // Wraps in both directions: reaching the end and carrying on is how every
+    // find bar behaves, and stopping dead reads as a broken button.
+    const next = (findIdxRef.current + delta + ranges.length) % ranges.length;
+    findIdxRef.current = next;
+    paintHighlights(ranges, next);
+    setFindHits({ count: ranges.length, index: next });
+    revealMatch(ranges[next]);
+  }
+
+  function openFind(withReplace = false) {
+    if (!findable) return;
+    setFindOpen(true);
+    if (withReplace) setReplaceOpen(true);
+    // Opening on a selection searches for it, the way every editor does.
+    const sel = window.getSelection();
+    const picked = sel && !sel.isCollapsed && ref.current?.contains(sel.anchorNode)
+      ? sel.toString().trim()
+      : '';
+    if (picked && !picked.includes('\n')) setFindQuery(picked);
+    // The field may be mounting this same tick, so focus after paint.
+    requestAnimationFrame(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    });
+  }
+
+  // Keys while focus is in one of the find fields. The bar is outside the
+  // editor's own keydown handler, so it repeats the bindings it needs.
+  function handleFindKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (e.key === 'Escape') {
+      // Stop the host (the notes console) from also acting on this Escape.
+      e.preventDefault();
+      e.stopPropagation();
+      closeFind();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Enter in the replace field replaces; in the find field it steps on.
+      if (e.currentTarget.getAttribute('aria-label') === 'Replace with' && !e.shiftKey) replaceCurrent();
+      else gotoMatch(e.shiftKey ? -1 : 1);
+      return;
+    }
+    // Pressing the open-find chord again re-selects the query, so a second
+    // Ctrl+F is "search for something else" rather than a no-op.
+    if (mod && (e.code === 'KeyF' || e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+      return;
+    }
+    if (e.key === 'F3' || (mod && (e.code === 'KeyG' || e.key === 'g' || e.key === 'G'))) {
+      e.preventDefault();
+      gotoMatch(e.shiftKey ? -1 : 1);
+    }
+  }
+
+  function closeFind() {
+    setFindOpen(false);
+    setReplaceOpen(false);
+    hitsRef.current = [];
+    findIdxRef.current = 0;
+    clearHighlights();
+    setFindHits({ count: 0, index: 0 });
+    ref.current?.focus();
+  }
+
+  // Replacing is a document edit like any other, so it goes through the same
+  // history and save path the toolbar commands use - one entry for one action,
+  // which is what makes Ctrl+Z after "Replace all" put everything back at once.
+  function replaceCurrent() {
+    const range = hitsRef.current[findIdxRef.current];
+    if (!range || readOnly) return;
+    record('struct');
+    replaceRange(range, replaceWith);
+    ref.current?.normalize();
+    emit();
+    // The replacement may itself contain the query ("cat" → "cats"), so stay
+    // where we are rather than advancing past a hit that just appeared.
+    refreshFind();
+  }
+
+  function replaceEvery() {
+    const el = ref.current;
+    if (!el || readOnly || !findQuery) return;
+    record('struct');
+    const n = replaceAll(el, findQuery, replaceWith, findOpts);
+    if (!n) return;
+    emit();
+    findIdxRef.current = 0;
+    refreshFind(false);
+  }
+
+  // Re-run the search whenever the query, the flags, or the open state change.
+  useEffect(() => {
+    refreshFind(false);
+    if (findOpen && findQuery && hitsRef.current.length) revealMatch(hitsRef.current[0]);
+  }, [findQuery, findOpts, findOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Highlights are registered on the document, not on this element, so an
+  // unmount that skipped closeFind would leave them painted over nothing.
+  useEffect(() => clearHighlights, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Typing/paste/delete: snapshot the pre-change state (native beforeinput fires
   // before the DOM mutates), coalesced into word-level groups.
   useEffect(() => {
@@ -689,6 +908,10 @@ export default function RichEditor({
     if (!el) return;
     el.classList.toggle('note-empty', isBlank(el));
     onChange(el.innerHTML);
+    // Editing moves the text the highlights are painted over, so the hit list
+    // is stale the moment the document changes. Only costs a walk while the
+    // find bar is actually open with something in it.
+    if (findOpen && findQuery) refreshFind();
   }
 
   function closeSlash() {
@@ -1436,6 +1659,36 @@ export default function RichEditor({
     }
     if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
 
+    // Find & replace. Both modifiers are accepted, as everywhere else here, but
+    // e.code carries the physical key: on a Mac, Option+F types "ƒ", so the
+    // Find-and-replace chord (⌥⌘F) would otherwise not be recognisable.
+    if (findable && mod && (e.code === 'KeyF' || e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      openFind(e.altKey);   // ⌥⌘F is the macOS chord for find *and replace*
+      return;
+    }
+    if (findable && mod && (e.code === 'KeyH' || e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();   // Ctrl+H is the Windows/Linux one
+      openFind(true);
+      return;
+    }
+    // With the bar open, Escape belongs to it before it belongs to whatever is
+    // hosting the editor - the notes console closes on Escape, and dismissing
+    // the search should not also close the note. Same claim the slash menu makes.
+    if (findOpen && e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFind();
+      return;
+    }
+    // Step through hits without going back to the field (F3 is the native
+    // binding; Ctrl/Cmd+G is the one Mac and most editors use).
+    if (findOpen && (e.key === 'F3' || (mod && (e.code === 'KeyG' || e.key === 'g' || e.key === 'G')))) {
+      e.preventDefault();
+      gotoMatch(e.shiftKey ? -1 : 1);
+      return;
+    }
+
     const editor = ref.current!;
 
     // Inside a table: Tab walks cells, Enter stays in the cell as a line break
@@ -1672,6 +1925,133 @@ export default function RichEditor({
           </div>
         )}
       </div>
+
+      {/* ── Find & replace ──
+          Sits under the toolbar rather than floating over the text: it is open
+          for as long as a search lasts, and a panel that covers the words being
+          searched is its own obstacle. */}
+      {findOpen && (
+        <div className={styles.findBar} role="search" aria-label="Find and replace">
+          <button
+            className={styles.findToggle}
+            onClick={() => setReplaceOpen(o => !o)}
+            title={replaceOpen ? 'Hide replace' : 'Show replace'}
+            aria-expanded={replaceOpen}
+            aria-label={replaceOpen ? 'Hide replace' : 'Show replace'}
+          >
+            <svg
+              className={`${styles.findToggleIcon} ${replaceOpen ? styles.findToggleIconOpen : ''}`}
+              width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+
+          <div className={styles.findFields}>
+            <div className={styles.findRow}>
+              <span className={styles.findInputWrap}>
+                <input
+                  ref={findInputRef}
+                  className={`${styles.findInput} ${findQuery && !findHits.count ? styles.findInputEmpty : ''}`}
+                  value={findQuery}
+                  onChange={e => setFindQuery(e.target.value)}
+                  onKeyDown={handleFindKey}
+                  placeholder="Find"
+                  aria-label="Find"
+                  spellCheck={false}
+                />
+                <span className={styles.findCount} aria-live="polite">
+                  {findQuery ? `${findHits.count ? findHits.index + 1 : 0}/${findHits.count}` : ''}
+                </span>
+              </span>
+
+              <button
+                className={styles.findBtn}
+                onClick={() => gotoMatch(-1)}
+                disabled={!findHits.count}
+                title="Previous match (Shift+Enter)"
+                aria-label="Previous match"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 15l-6-6-6 6" />
+                </svg>
+              </button>
+              <button
+                className={styles.findBtn}
+                onClick={() => gotoMatch(1)}
+                disabled={!findHits.count}
+                title="Next match (Enter)"
+                aria-label="Next match"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+
+              <button
+                className={`${styles.findBtn} ${styles.findFlag} ${findOpts.caseSensitive ? styles.findFlagOn : ''}`}
+                onClick={() => setFindOpts(o => ({ ...o, caseSensitive: !o.caseSensitive }))}
+                title="Match case"
+                aria-pressed={!!findOpts.caseSensitive}
+              >
+                Aa
+              </button>
+              <button
+                className={`${styles.findBtn} ${styles.findFlag} ${findOpts.wholeWord ? styles.findFlagOn : ''}`}
+                onClick={() => setFindOpts(o => ({ ...o, wholeWord: !o.wholeWord }))}
+                title="Whole word only"
+                aria-pressed={!!findOpts.wholeWord}
+              >
+                ab|
+              </button>
+            </div>
+
+            {replaceOpen && (
+              <div className={styles.findRow}>
+                <span className={styles.findInputWrap}>
+                  <input
+                    className={styles.findInput}
+                    value={replaceWith}
+                    onChange={e => setReplaceWith(e.target.value)}
+                    onKeyDown={handleFindKey}
+                    placeholder="Replace with"
+                    aria-label="Replace with"
+                    spellCheck={false}
+                  />
+                </span>
+                <button
+                  className={styles.findBtn}
+                  onClick={replaceCurrent}
+                  disabled={!findHits.count}
+                  title="Replace this match"
+                >
+                  Replace
+                </button>
+                <button
+                  className={styles.findBtn}
+                  onClick={replaceEvery}
+                  disabled={!findHits.count}
+                  title="Replace every match - one undo puts them all back"
+                >
+                  All
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            className={styles.findClose}
+            onClick={closeFind}
+            title="Close find (Esc)"
+            aria-label="Close find"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* ── Selection bubble ──
           One bar, two jobs: formatting for a run of text, and the embed's own
