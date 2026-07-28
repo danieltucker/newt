@@ -7,9 +7,12 @@ import ProfilePage from './pages/ProfilePage';
 import PublicArticlePage from './pages/PublicArticlePage';
 import BlogPostPage from './pages/BlogPostPage';
 import BlogEditorPage from './pages/BlogEditorPage';
+import FeaturePage from './pages/FeaturePage';
+import SelfHostPage from './pages/SelfHostPage';
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
+import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -92,6 +95,20 @@ export default function App() {
   // ?tab=<name> deep-links a profile tab. Validated by ProfilePage, which owns
   // the list of tabs and which of them are self-only.
   const profileTab = new URLSearchParams(search).get('tab');
+
+  // The marketing pages are matched before the auth split, because they're the
+  // same page either way: a signed-in visitor following a link to
+  // /features/notes should read it, not be bounced to their new tab. All they
+  // change is the nav, which offers a way back into the app instead of the two
+  // sign-in buttons.
+  const signedIn = Boolean(accessToken && username);
+  const featureSection = parseFeaturePath(path);
+  if (featureSection) {
+    return <FeaturePage section={featureSection} navigate={navigate} signedIn={signedIn} />;
+  }
+  if (isSelfHostPath(path)) {
+    return <SelfHostPage navigate={navigate} signedIn={signedIn} />;
+  }
 
   // Everything public, for a visitor who isn't signed in: a shared /u/<name>
   // link, a post, or a thread link all open standalone. There is no app shell to

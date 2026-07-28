@@ -1,0 +1,294 @@
+/* The self-hosting page. Bands, buttons and type come from
+   marketing/chrome.module.css; this is its own furniture - the terminal in the
+   hero, the stack cards, the command list, and the comparison table.
+
+   --tint here is steel rather than one of the six section colours, so the page
+   reads as a different kind of question rather than a seventh feature. */
+
+/* ── Hero ──
+   Scoped through .heroBand (the <section>) so the padding override beats
+   .bandInner's without depending on stylesheet order in the bundle. */
+.heroBand .hero {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  align-items: center;
+  gap: clamp(32px, 5vw, 60px);
+  padding-top: clamp(44px, 6vw, 76px);
+}
+
+.heroText { animation: rise 0.55s ease both; }
+
+.back {
+  display: inline-block;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.back:hover { color: var(--text); }
+
+.heroKicker { display: block; margin-top: 22px; }
+
+.h1 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: clamp(34px, 5vw, 54px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  color: var(--text);
+  margin: 12px 0 0;
+}
+
+.lede {
+  max-width: 54ch;
+  margin-top: 20px;
+  font-size: 17px;
+  line-height: 1.72;
+  color: var(--muted);
+}
+
+/* The "you don't have to" caveat, set apart so it isn't read as more of the
+   pitch: newt.page is still the way in for almost everyone. */
+.ledeNote {
+  max-width: 54ch;
+  margin-top: 16px;
+  padding-left: 16px;
+  border-left: 2px solid color-mix(in oklab, var(--tint) 45%, transparent);
+  font-size: 14.5px;
+  line-height: 1.66;
+  color: var(--muted);
+}
+
+.heroCta { margin-top: 28px; }
+
+/* ── The terminal in the hero ──
+   Always dark, in both themes: a terminal that follows the light theme looks
+   like a text box. */
+.terminal {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0b0c13;
+  box-shadow: 0 24px 70px var(--shadow);
+  animation: rise 0.7s 0.12s ease both;
+}
+
+.terminalBar {
+  display: flex;
+  gap: 7px;
+  padding: 11px 14px;
+  background: #14161e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.terminalBody {
+  margin: 0;
+  padding: 18px 20px 22px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.95;
+  color: #ECEEF6;
+  overflow-x: auto;
+}
+
+.prompt { color: #36D6A6; margin-right: 8px; }
+.out { color: #828BA3; }
+
+/* ── The stack ── */
+.stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 18px;
+  margin-top: 48px;
+}
+
+.stackCard {
+  padding: 26px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--surface) 62%, transparent);
+}
+
+.stackName {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--tint) 18%, transparent);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--tint);
+}
+
+.stackRole {
+  margin-top: 16px;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.stackNote { margin-top: 8px; font-size: 14px; line-height: 1.62; color: var(--muted); }
+
+/* ── Commands ── */
+.steps {
+  list-style: none;
+  max-width: 720px;
+  margin-top: 40px;
+}
+
+.steps > li + li { margin-top: 2px; }
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+}
+
+.stepNum {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--tint) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tint) 34%, transparent);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tint);
+}
+
+.stepCmd {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.stepBody { margin-top: 8px; font-size: 14.5px; line-height: 1.66; color: var(--muted); }
+
+.footnote {
+  max-width: 68ch;
+  margin-top: 32px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ── What becomes yours ── */
+.yours {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 18px;
+  margin-top: 44px;
+}
+
+.yoursCard {
+  position: relative;
+  padding: 26px 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+}
+
+.yoursTitle {
+  position: relative;
+  padding-left: 18px;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+/* A small hollow square rather than a tick: these are open items, not features */
+.yoursTitle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.36em;
+  width: 9px;
+  height: 9px;
+  border: 1.6px solid color-mix(in oklab, var(--tint) 65%, transparent);
+  border-radius: 2px;
+}
+
+.yoursBody { margin-top: 10px; font-size: 14.5px; line-height: 1.68; color: var(--muted); }
+
+/* ── Comparison ── */
+.tableWrap {
+  margin-top: 40px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow-x: auto;   /* a table is the one thing here that may not fit */
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+}
+
+.table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+
+.table th,
+.table td {
+  padding: 16px 22px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table thead th {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The hosted column is the recommendation, so it gets the tint and the weight */
+.table thead th:nth-child(2) { color: var(--tint); }
+
+.table tbody th {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.table tbody td { color: var(--muted); line-height: 1.55; }
+.table tbody tr + tr th,
+.table tbody tr + tr td { border-top: 1px solid var(--border); }
+.table tbody td:first-of-type { color: var(--text); }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Narrow screens ── */
+@media (max-width: 900px) {
+  .heroBand .hero { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroText, .terminal { animation: none; }
+}

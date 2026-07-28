@@ -1,157 +1,14 @@
-/* The signed-out front door. Themed off the same tokens as the app, so signing
-   in is a continuation rather than a scene change.
-
-   The logo's own gradient (violet → cyan → green) is the page's one accent
-   flourish; it appears on the headline word, the section kickers and the CTA,
-   and nowhere else. Everything structural stays on --surface / --border. */
-
-.root {
-  position: relative;
-  min-height: 100vh;
-  overflow-x: clip;   /* the trails and blobs overhang; the page must not scroll sideways */
-}
-
-/* ── Ambient background ──
-   Lifted from the app's own layering (NewTabPage): flat gradient, three slow
-   drifting blobs, fine grain over the top. No pointer/parallax JS here - the
-   landing page scrolls a long way and the drift alone carries it. */
-.bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.bgBase { position: fixed; inset: 0; background: var(--bg-gradient, var(--bg)); }
-.blobWrap { position: absolute; will-change: transform; }
-.blobWrap1 { width: 130%; height: 700px; top: -300px; left: -15%; }
-.blobWrap2 { width: 820px; height: 820px; top: 34%; right: -280px; }
-.blobWrap3 { width: 880px; height: 880px; top: 72%; left: -300px; }
-
-.blob { width: 100%; height: 100%; border-radius: 50%; filter: blur(130px); will-change: transform; }
-.blob1 { background: var(--blob1-color); animation: bg-float-1 36s ease-in-out infinite alternate; }
-.blob2 { background: var(--blob2-color); animation: bg-float-2 29s -8s ease-in-out infinite alternate; }
-.blob3 { background: var(--blob3-color); animation: bg-float-3 42s -20s ease-in-out infinite alternate; }
-
-.bgGrain {
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  opacity: var(--grain-opacity, 0.05);
-}
-
-/* Everything above the background */
-.root > *:not(.bg) { position: relative; z-index: 1; }
-
-/* ── Nav ── */
-/* Full-bleed, so the glass runs edge to edge instead of floating as a slab with
-   visible corners; the row inside is what's held to the page's column width. */
-.nav {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  backdrop-filter: blur(14px);
-  background: color-mix(in oklab, var(--bg) 72%, transparent);
-  border-bottom: 1px solid var(--border);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  .nav { background: var(--bg); }
-}
-
-.navInner {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 14px 24px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  text-decoration: none;
-  margin-right: auto;
-}
-
-.brandMark { width: 30px; height: 30px; }
-
-.brandName {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-
-.navLinks { display: flex; gap: 26px; }
-
-.navLinks a {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--muted);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.navLinks a:hover { color: var(--text); }
-
-.navCta { display: flex; align-items: center; gap: 10px; }
-
-/* ── Buttons ── */
-.ghostBtn,
-.solidBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px;
-  padding: 9px 18px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: transform 0.14s, border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.2s;
-}
-
-.ghostBtn {
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--surface) 70%, transparent);
-  color: var(--text);
-}
-
-.ghostBtn:hover {
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  transform: translateY(-1px);
-}
-
-/* The one saturated thing on the page, so the eye always finds it */
-.solidBtn {
-  border: 1px solid transparent;
-  background: linear-gradient(115deg, #9B8CFF, #5BC8E6 55%, #36D6A6);
-  color: #0a0b12;
-  box-shadow: 0 6px 20px color-mix(in oklab, var(--accent) 32%, transparent);
-}
-
-.solidBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px color-mix(in oklab, var(--accent) 42%, transparent);
-}
-
-.bigBtn { padding: 14px 26px; font-size: 15.5px; border-radius: 13px; }
+/* Layouts that only the landing page has. The backdrop, nav, bands, buttons,
+   type scale, screenshot frames and cross-link strips all come from
+   marketing/chrome.module.css - what's left here is the hero, the dark
+   "why bother" band, the feature stripes, the console and the small-card grid. */
 
 /* ── Hero ── */
-.hero {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 64px 24px 0;
-  text-align: center;
-}
+/* Scoped through .heroBand (the <section>) rather than written flat, so the
+   padding beats .bandInner's without depending on which stylesheet the bundler
+   happens to emit second. Every band-inner override here does the same. */
+.heroBand { text-align: center; }
+.heroBand .hero { padding-top: 64px; padding-bottom: 0; }
 
 .eyebrow {
   display: inline-flex;
@@ -194,8 +51,8 @@
   animation: rise 0.6s 0.05s ease both;
 }
 
-/* The headline's second line carries the logo gradient, animated slowly so it
-   drifts the way the mark's own colours do. */
+/* The logo gradient on a run of type, animated slowly so it drifts the way the
+   mark's own colours do. Used twice: the headline, and the dark band below it. */
 .grad {
   background: linear-gradient(100deg, #9B8CFF, #5BC8E6 40%, #36D6A6 70%, #9B8CFF);
   background-size: 250% 100%;
@@ -219,14 +76,7 @@
   animation: rise 0.6s 0.12s ease both;
 }
 
-.heroCta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 32px;
-  animation: rise 0.6s 0.18s ease both;
-}
+.heroCta { margin-top: 32px; animation: rise 0.6s 0.18s ease both; }
 
 .microCopy {
   margin-top: 16px;
@@ -252,164 +102,85 @@
 
 .heroShot:hover > * { transform: rotateX(0deg); }
 
-/* ── Screenshot frames ── */
-.shot {
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--surface);
-  box-shadow: 0 24px 70px var(--shadow), 0 2px 8px var(--shadow);
-}
+/* ── "Why bother": the dark band ──
+   The one place on the page that raises its voice. Wider measure, bigger type,
+   and a pull quote at the bottom that is the whole pitch in one line. */
+.creedHead { max-width: 760px; text-align: center; margin: 0 auto; }
 
-.chrome {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 10px 14px;
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-}
-
-.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.dotR { background: #ff5f57; }
-.dotY { background: #febc2e; }
-.dotG { background: #28c840; }
-
-.chromeBar {
-  flex: 1;
-  margin-left: 8px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--bg) 60%, transparent);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.shotImg { display: block; width: 100%; height: auto; }
-
-/* The empty state, which is the useful state until the images exist: it says
-   which file it is waiting for and what has to be in frame. */
-.placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 300px;
-  padding: 26px;
-  text-align: left;   /* the hero centres its text; a spec sheet is not prose */
-  background:
-    repeating-linear-gradient(-45deg,
-      transparent 0 12px,
-      color-mix(in oklab, var(--accent) 5%, transparent) 12px 24px);
-}
-
-.shotTall .placeholder { min-height: 440px; }
-
-.phHead { display: flex; align-items: center; gap: 14px; }
-.phMark { width: 34px; height: 34px; flex-shrink: 0; }
-
-.phTitle {
+.creedTitle {
   font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: clamp(32px, 5.2vw, 58px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
   color: var(--text);
+  margin: 14px 0 0;
 }
 
-.phMeta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-
-.phMeta code {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11.5px;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--surface2);
-  color: var(--accent);
-}
-
-.phList {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 16px 18px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--surface) 75%, transparent);
-}
-
-.phList li {
-  position: relative;
-  padding-left: 20px;
-  font-size: 13.5px;
-  line-height: 1.5;
+.creedLede {
+  max-width: 620px;
+  margin: 20px auto 0;
+  font-size: 16.5px;
+  line-height: 1.7;
   color: var(--muted);
 }
 
-/* An empty checkbox: each line is a thing still to do */
-.phList li::before {
+.creed {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  margin-top: 54px;
+}
+
+.creedCard {
+  position: relative;
+  padding: 26px 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+}
+
+/* A short rule in the logo's first colour, like a paragraph mark */
+.creedCard::before {
   content: '';
   position: absolute;
+  top: 26px;
   left: 0;
-  top: 0.34em;
-  width: 11px;
-  height: 11px;
-  border: 1.5px solid color-mix(in oklab, var(--accent) 55%, transparent);
-  border-radius: 3px;
+  width: 3px;
+  height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #9B8CFF, #5BC8E6);
 }
 
-/* ── Newt tracks, as a section divider ── */
-.trail {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 22px;
-  padding: 60px 24px;
-}
-
-.print {
-  fill: color-mix(in oklab, var(--accent) 42%, transparent);
-  opacity: 0;
-}
-
-/* Each print appears in turn once the trail scrolls into view, so the newt
-   walks across the divider rather than the whole trail flicking on at once. */
-.trail[data-shown] .print { animation: step 0.5s ease both; }
-
-@keyframes step {
-  from { opacity: 0; transform: translateY(6px) scale(0.7); }
-  to   { opacity: 1; }
-}
-
-/* ── The four "no"s ── */
-.nots {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 2px;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 0 24px;
-  border-radius: 20px;
-  overflow: hidden;
-}
-
-.not {
-  padding: 30px 26px;
-  background: color-mix(in oklab, var(--surface) 55%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-}
-
-.notBig {
+.creedCardTitle {
   font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--text);
 }
 
-.notSmall { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.creedCardBody { margin-top: 10px; font-size: 14.5px; line-height: 1.65; color: var(--muted); }
+
+.pull {
+  max-width: 780px;
+  margin: 54px auto 0;
+  text-align: center;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: clamp(21px, 2.9vw, 31px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  color: var(--text);
+}
+
+.pull em {
+  font-style: normal;
+  background: linear-gradient(100deg, #9B8CFF, #5BC8E6 55%, #36D6A6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 
 /* ── Feature stripes ── */
 .feature {
@@ -417,9 +188,6 @@
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   align-items: center;
   gap: clamp(32px, 6vw, 76px);
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 72px 24px;
 }
 
 /* Swap the columns without reordering the DOM, so the reading order stays
@@ -427,72 +195,24 @@
 .featureFlip .featureText { order: 2; }
 .featureFlip .featureShot { order: 1; }
 
-.kicker {
+.featureLink {
   display: inline-block;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  background: linear-gradient(100deg, #9B8CFF, #5BC8E6 60%, #36D6A6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  margin-top: 24px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--tint);
+  text-decoration: none;
+  transition: opacity 0.15s;
 }
 
-.h2 {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: clamp(27px, 3.4vw, 38px);
-  font-weight: 650;
-  line-height: 1.12;
-  letter-spacing: -0.03em;
-  color: var(--text);
-  margin: 12px 0 0;
-}
-
-.body {
-  margin-top: 16px;
-  font-size: 16px;
-  line-height: 1.7;
-  color: var(--muted);
-}
-
-.points {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  margin-top: 22px;
-}
-
-.points li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.points svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: #36D6A6;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.featureLink:hover { opacity: 0.75; text-decoration: underline; }
 
 /* ── Small-feature cards ── */
-.grid { max-width: 1180px; margin: 0 auto; padding: 40px 24px 0; }
-.gridHead { text-align: center; margin-bottom: 44px; }
-
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 18px;
+  margin-top: 44px;
 }
 
 .card {
@@ -538,9 +258,6 @@
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   align-items: center;
   gap: clamp(32px, 6vw, 76px);
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 92px 24px;
 }
 
 .kbd {
@@ -606,24 +323,24 @@
 
 @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 
-/* ── Self-hosting ──
-   An aside, not a pillar. One inset strip, smaller type than a feature stripe,
-   no screenshot - present for the people who came looking for it, easy to
-   scroll past for everyone else. */
-.selfhost {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+/* ── Self-hosting, as an aside ──
+   One strip, small type, no screenshot: present for the people who came looking
+   for it, easy to scroll past for everyone else. The real page is /self-hosting. */
+.aside {
+  display: flex;
   align-items: center;
-  gap: clamp(24px, 4vw, 48px);
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
   max-width: 980px;
   margin: 0 auto;
-  padding: 30px 32px;
+  padding: 26px 30px;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: color-mix(in oklab, var(--surface) 45%, transparent);
 }
 
-.selfhostTitle {
+.asideTitle {
   font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 21px;
   font-weight: 640;
@@ -632,131 +349,35 @@
   margin-top: 10px;
 }
 
-.selfhostBody { margin-top: 10px; font-size: 14.5px; line-height: 1.65; color: var(--muted); }
-
-.selfhostAside { display: flex; flex-direction: column; gap: 12px; }
-
-.code {
-  margin: 0;
-  padding: 15px 17px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--bg) 55%, transparent);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11.8px;
-  line-height: 1.85;
+.asideBody {
+  max-width: 52ch;
+  margin-top: 8px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted);
-  overflow-x: auto;
 }
-
-.sourceLink {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.sourceLink:hover { text-decoration: underline; }
-
-/* The domain, wherever it appears in running copy */
-.domain {
-  font-weight: 650;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-/* Inline command names in prose (the console section names `help`) */
-.body code {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--surface2);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.86em;
-  color: var(--accent);
-}
-
-/* ── Closer ── */
-.closer {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 72px 24px 110px;
-  text-align: center;
-}
-
-.closerMark { width: 62px; height: 62px; margin-bottom: 8px; }
-
-.closerTitle {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: clamp(34px, 5.5vw, 54px);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
-  color: var(--text);
-}
-
-.closerBody { margin-top: 14px; font-size: 16.5px; line-height: 1.6; color: var(--muted); }
-.closer .heroCta { animation: none; }
-
-/* ── Reveal on scroll ──
-   Set by the IntersectionObserver in LandingPage.tsx. Anything marked
-   data-reveal starts folded down and rises once as it enters the viewport. */
-[data-reveal] {
-  opacity: 0;
-  transform: translateY(22px);
-  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.3, 1);
-}
-
-[data-reveal][data-shown] { opacity: 1; transform: none; }
-
-/* Cards in a row arrive in sequence rather than as a block */
-.cards [data-reveal]:nth-child(2) { transition-delay: 60ms; }
-.cards [data-reveal]:nth-child(3) { transition-delay: 120ms; }
-.cards [data-reveal]:nth-child(4) { transition-delay: 180ms; }
-.cards [data-reveal]:nth-child(5) { transition-delay: 240ms; }
-.cards [data-reveal]:nth-child(6) { transition-delay: 300ms; }
 
 /* ── Narrow screens ── */
 @media (max-width: 900px) {
-  .navLinks { display: none; }   /* the CTAs are what matter at this width */
-
   .feature,
-  .consoleWrap {
-    grid-template-columns: 1fr;
-    padding-top: 56px;
-    padding-bottom: 56px;
-  }
-
-  .selfhost { grid-template-columns: 1fr; margin: 0 16px; }
+  .consoleWrap { grid-template-columns: 1fr; }
 
   /* Text before picture on every stripe once they stack */
   .featureFlip .featureText,
   .featureFlip .featureShot { order: 0; }
 
   .heroShot > * { transform: none; }
-  .trail { gap: 14px; padding: 40px 24px; }
-  .hero { padding-top: 40px; }
+  .heroBand .hero { padding-top: 40px; }
 }
 
 @media (max-width: 560px) {
-  .navInner { padding: 12px 16px; gap: 10px; }
-  .hero, .feature, .grid, .consoleWrap, .nots, .closer { padding-left: 16px; padding-right: 16px; }
-  .selfhost { padding: 24px 20px; }
-  .heroCta .bigBtn { width: 100%; }
-  .print:nth-child(n + 6) { display: none; }
+  .aside { padding: 24px 20px; }
 }
 
 /* Motion is decoration here; none of it carries meaning that would be lost. */
 @media (prefers-reduced-motion: reduce) {
-  .blob1, .blob2, .blob3,
-  .grad, .eyebrowDot, .caret,
-  .trail[data-shown] .print { animation: none; }
-
-  .print { opacity: 1; }
+  .grad, .pull em, .eyebrowDot, .caret { animation: none; }
   .heroShot > * { transform: none; transition: none; }
-
-  [data-reveal] { opacity: 1; transform: none; transition: none; }
-
-  .hero *,
-  .card, .ghostBtn, .solidBtn { animation: none !important; }
-  .card:hover, .ghostBtn:hover, .solidBtn:hover { transform: none; }
+  .hero *, .card { animation: none !important; }
+  .card:hover { transform: none; }
 }

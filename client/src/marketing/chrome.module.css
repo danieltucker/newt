@@ -1,0 +1,673 @@
+/* The furniture every marketing page is built from: the ambient backdrop, the
+   nav, the button set, the type scale, the screenshot frame, and - the piece
+   that carries the most weight - the band system.
+
+   A band is a full-bleed horizontal slab with a *tone*. Tones are how the page
+   changes temperature as the subject changes: a manifesto sits on near-black, a
+   feature stripe floats on the ambient page, an index of pages sits on a raised
+   surface. Each tone redefines the theme tokens it needs, so anything dropped
+   inside a band picks up the right text, border and surface colours without
+   knowing which band it landed in.
+
+   The logo's gradient (violet -> cyan -> green) is the site's one accent
+   flourish. Individual sections may set --tint to a colour of their own; when
+   they don't, --tint falls back to the brand violet. */
+
+.root {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: clip;   /* trails, auras and blobs overhang; the page must not scroll sideways */
+  --brand-a: #9B8CFF;
+  --brand-b: #5BC8E6;
+  --brand-c: #36D6A6;
+  --tint: var(--brand-a);
+  --col: 1180px;      /* the page's one column width */
+}
+
+/* ── Ambient background ──
+   Lifted from the app's own layering (NewTabPage): flat gradient, three slow
+   drifting blobs, fine grain over the top. */
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bgBase { position: fixed; inset: 0; background: var(--bg-gradient, var(--bg)); }
+.blobWrap { position: absolute; will-change: transform; }
+.blobWrap1 { width: 130%; height: 700px; top: -300px; left: -15%; }
+.blobWrap2 { width: 820px; height: 820px; top: 34%; right: -280px; }
+.blobWrap3 { width: 880px; height: 880px; top: 72%; left: -300px; }
+
+.blob { width: 100%; height: 100%; border-radius: 50%; filter: blur(130px); will-change: transform; }
+.blob1 { background: var(--blob1-color); animation: bg-float-1 36s ease-in-out infinite alternate; }
+.blob2 { background: var(--blob2-color); animation: bg-float-2 29s -8s ease-in-out infinite alternate; }
+.blob3 { background: var(--blob3-color); animation: bg-float-3 42s -20s ease-in-out infinite alternate; }
+
+.bgGrain {
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  opacity: var(--grain-opacity, 0.05);
+}
+
+/* Everything above the background */
+.root > *:not(.bg) { position: relative; z-index: 1; }
+
+/* ══ Bands ══════════════════════════════════════════════════════════════ */
+
+.band { position: relative; width: 100%; }
+
+.bandInner {
+  position: relative;
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: clamp(64px, 9vw, 116px) 24px;
+}
+
+.bandTight .bandInner { padding-top: clamp(36px, 5vw, 60px); padding-bottom: clamp(36px, 5vw, 60px); }
+
+/* --- air: nothing at all. The ambient page shows through. ------------- */
+.toneAir { background: transparent; }
+
+/* --- soft: a raised sheet of the page's own surface, hairlined top and
+   bottom, with a whisper of tint bleeding down from the top edge. -------- */
+.toneSoft {
+  background:
+    radial-gradient(120% 70% at 50% 0%, color-mix(in oklab, var(--tint) 9%, transparent), transparent 70%),
+    color-mix(in oklab, var(--surface) 50%, transparent);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- deep: a near-black slab, the same in either theme. Used where the
+   subject is a statement or a terminal - the page goes quiet and the type does
+   the talking. Redefines the tokens so children need no special casing. ---- */
+.toneDeep {
+  --bg: #07080D;
+  --surface: #12141D;
+  --surface2: #191C27;
+  --text: #F2F4FB;
+  --muted: #8B93AC;
+  --border: rgba(255, 255, 255, 0.09);
+  --shadow: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  background:
+    radial-gradient(90% 120% at 50% -10%, color-mix(in oklab, var(--tint) 22%, transparent), transparent 62%),
+    linear-gradient(180deg, #0A0B12, #06070C);
+  isolation: isolate;
+}
+
+/* A fine graph-paper grid, faded out at the edges so the slab has no seams */
+.toneDeep::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(120% 100% at 50% 0%, #000 20%, transparent 78%);
+}
+
+/* --- canvas: paper. A flat, quiet, borderless sheet, warmer and more solid
+   than `soft`, for long-form reading sections. ------------------------- */
+.toneCanvas {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 88%, transparent),
+    color-mix(in oklab, var(--surface2) 92%, transparent)
+  );
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- glow: no slab, just light. The tint pools in the middle of the band
+   and dissolves outward. Used to close a page. ------------------------- */
+.toneGlow {
+  background: radial-gradient(
+    70% 60% at 50% 55%,
+    color-mix(in oklab, var(--tint) 16%, transparent),
+    transparent 72%
+  );
+}
+
+/* An optional hairline of the logo gradient across a band's top edge - the same
+   horizon line the footer uses, and the strongest "new chapter" signal here. */
+.edge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--brand-a) 60%, transparent) 22%,
+    color-mix(in oklab, var(--brand-b) 60%, transparent) 50%,
+    color-mix(in oklab, var(--brand-c) 60%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+/* ══ Nav ════════════════════════════════════════════════════════════════ */
+/* Full-bleed, so the glass runs edge to edge instead of floating as a slab with
+   visible corners; the row inside is what's held to the page's column width. */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  backdrop-filter: blur(14px);
+  background: color-mix(in oklab, var(--bg) 72%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nav { background: var(--bg); }
+}
+
+.navInner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: 14px 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  margin-right: auto;
+}
+
+.brandMark { width: 30px; height: 30px; }
+
+.brandName {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.navLinks { display: flex; align-items: center; gap: 4px; }
+
+.navLink {
+  position: relative;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.navLink:hover { color: var(--text); background: color-mix(in oklab, var(--surface) 80%, transparent); }
+.navLinkOn { color: var(--text); }
+
+.navCta { display: flex; align-items: center; gap: 10px; }
+
+/* ── The features menu ──
+   Six pages is too many for a nav row, and burying them under a single
+   "Features" link would hide the thing we most want read. A hover/focus panel
+   keeps one word in the bar and all six one movement away. */
+.menu { position: relative; }
+
+.menuBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.menuBtn:hover, .menuOpen .menuBtn { color: var(--text); background: color-mix(in oklab, var(--surface) 80%, transparent); }
+
+.menuCaret { width: 13px; height: 13px; transition: transform 0.2s; }
+.menuOpen .menuCaret { transform: rotate(180deg); }
+
+.menuPanel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  translate: -50% 0;
+  z-index: var(--z-content-overlay);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  width: 460px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--surface) 96%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.16s, transform 0.16s, visibility 0.16s;
+}
+
+.menuOpen .menuPanel { opacity: 1; visibility: visible; transform: none; }
+
+.menuItem {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 11px;
+  text-decoration: none;
+  transition: background 0.14s;
+}
+
+.menuItem:hover { background: color-mix(in oklab, var(--tint) 12%, transparent); }
+
+.menuItemTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--text);
+}
+
+/* The section's own colour, as a single dot - enough to make the six pages feel
+   like six places rather than six links. */
+.menuDot { width: 7px; height: 7px; border-radius: 50%; background: var(--tint); flex-shrink: 0; }
+.menuItemBody { margin-top: 3px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+
+/* ══ Buttons ════════════════════════════════════════════════════════════ */
+.ghostBtn,
+.solidBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 11px;
+  padding: 9px 18px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.14s, border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.2s;
+}
+
+.ghostBtn {
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+  color: var(--text);
+}
+
+.ghostBtn:hover {
+  border-color: color-mix(in oklab, var(--tint) 55%, transparent);
+  transform: translateY(-1px);
+}
+
+/* The one saturated thing on the page, so the eye always finds it */
+.solidBtn {
+  border: 1px solid transparent;
+  background: linear-gradient(115deg, #9B8CFF, #5BC8E6 55%, #36D6A6);
+  color: #0a0b12;
+  box-shadow: 0 6px 20px color-mix(in oklab, var(--accent) 32%, transparent);
+}
+
+.solidBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px color-mix(in oklab, var(--accent) 42%, transparent);
+}
+
+.bigBtn { padding: 14px 26px; font-size: 15.5px; border-radius: 13px; }
+
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ctaCentre { justify-content: center; }
+
+/* ══ Type ═══════════════════════════════════════════════════════════════ */
+.kicker {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: linear-gradient(100deg, var(--brand-a), var(--brand-b) 60%, var(--brand-c));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* On a page with its own colour, the kicker wears it instead of the logo ramp */
+.kickerTint {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--tint);
+}
+
+.h2 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: clamp(27px, 3.4vw, 38px);
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  margin: 12px 0 0;
+}
+
+.body {
+  margin-top: 16px;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.body code,
+.inlineCode {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.86em;
+  color: var(--accent);
+}
+
+/* The domain, wherever it appears in running copy */
+.domain {
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.sectionHead { max-width: 640px; }
+.sectionHeadCentre { margin-left: auto; margin-right: auto; text-align: center; }
+
+/* ══ Screenshot frames ══════════════════════════════════════════════════ */
+.shot {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 24px 70px var(--shadow), 0 2px 8px var(--shadow);
+}
+
+/* The section's colour, pooled behind its screenshot. This is most of what
+   makes a stripe feel like it belongs to Feeds rather than to Notes. */
+.aura {
+  position: absolute;
+  inset: -14% -8%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--tint) 30%, transparent), transparent);
+  filter: blur(46px);
+  pointer-events: none;
+}
+
+.shotWrap { position: relative; }
+.shotWrap > .shot { position: relative; z-index: 1; }
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dotR { background: #ff5f57; }
+.dotY { background: #febc2e; }
+.dotG { background: #28c840; }
+
+.chromeBar {
+  flex: 1;
+  margin-left: 8px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--bg) 60%, transparent);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.shotImg { display: block; width: 100%; height: auto; }
+
+/* The empty state, which is the useful state until the images exist: it says
+   which file it is waiting for and what has to be in frame. */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 300px;
+  padding: 26px;
+  text-align: left;   /* a hero centres its text; a spec sheet is not prose */
+  background:
+    repeating-linear-gradient(-45deg,
+      transparent 0 12px,
+      color-mix(in oklab, var(--tint) 6%, transparent) 12px 24px);
+}
+
+.shotTall .placeholder { min-height: 440px; }
+
+.phHead { display: flex; align-items: center; gap: 14px; }
+.phMark { width: 34px; height: 34px; flex-shrink: 0; }
+
+.phTitle {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.phMeta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.phMeta code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface2);
+  color: var(--tint);
+}
+
+.phList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface) 75%, transparent);
+}
+
+.phList li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* An empty checkbox: each line is a thing still to do */
+.phList li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.34em;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid color-mix(in oklab, var(--tint) 60%, transparent);
+  border-radius: 3px;
+}
+
+/* ══ Newt tracks, as a section divider ══════════════════════════════════ */
+.trail {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  padding: 60px 24px;
+}
+
+.print {
+  fill: color-mix(in oklab, var(--tint) 45%, transparent);
+  opacity: 0;
+}
+
+/* Each print appears in turn once the trail scrolls into view, so the newt
+   walks across the divider rather than the whole trail flicking on at once. */
+.trail[data-shown] .print { animation: step 0.5s ease both; }
+
+@keyframes step {
+  from { opacity: 0; transform: translateY(6px) scale(0.7); }
+  to   { opacity: 1; }
+}
+
+/* ══ Tick list ══════════════════════════════════════════════════════════ */
+.points {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 22px;
+}
+
+.points li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.points svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--tint);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ══ Cross-links: the six sections, as a strip ══════════════════════════ */
+.pageLinks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.pageLink {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 20px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+  text-decoration: none;
+  transition: transform 0.18s, border-color 0.18s, background 0.18s;
+}
+
+/* The section's colour, as a bar along the top edge - visible at rest,
+   full-width on hover, so the strip animates toward the one you're aiming at */
+.pageLink::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  height: 2px;
+  background: var(--tint);
+  transition: width 0.24s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.pageLink:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in oklab, var(--tint) 45%, transparent);
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+}
+
+.pageLink:hover::before { width: 100%; }
+
+.pageLinkTitle {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 16.5px;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.pageLinkBody { margin-top: 6px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+.pageLinkGo {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tint);
+}
+
+/* ══ Closer ═════════════════════════════════════════════════════════════ */
+.closer { max-width: 720px; margin: 0 auto; text-align: center; }
+.closerMark { width: 62px; height: 62px; margin-bottom: 8px; }
+
+.closerTitle {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: clamp(34px, 5.5vw, 54px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.closerBody { margin-top: 14px; font-size: 16.5px; line-height: 1.6; color: var(--muted); }
+.closer .ctaRow { justify-content: center; margin-top: 30px; }
+
+/* ══ Narrow screens ═════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .navLinks { display: none; }   /* the CTAs are what matter at this width */
+  .trail { gap: 14px; padding: 40px 24px; }
+}
+
+@media (max-width: 560px) {
+  .navInner { padding: 12px 16px; gap: 10px; }
+  .bandInner { padding-left: 16px; padding-right: 16px; }
+  .ctaRow .bigBtn { width: 100%; }
+  .print:nth-child(n + 6) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob1, .blob2, .blob3,
+  .trail[data-shown] .print { animation: none; }
+
+  .print { opacity: 1; }
+  .ghostBtn, .solidBtn, .pageLink { animation: none !important; }
+  .ghostBtn:hover, .solidBtn:hover, .pageLink:hover { transform: none; }
+}
