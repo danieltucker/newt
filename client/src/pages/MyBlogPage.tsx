@@ -23,6 +23,10 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // 'private' is the draft state - see POST_VIS_META.
+  const drafts = posts.filter(p => p.visibility === 'private').length;
+  const published = posts.length - drafts;
+
   async function handleDelete(post: BlogPostSummary) {
     setBusyId(post.id);
     try {
@@ -43,9 +47,18 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
 
       <header className={styles.header}>
         <div>
-          <h1 className={styles.heading}>My blog</h1>
+          <h1 className={styles.heading}>My posts</h1>
           <p className={styles.sub}>
-            {posts.length === 0 ? 'Nothing written yet.' : `${posts.length} post${posts.length === 1 ? '' : 's'}`}
+            {posts.length === 0 ? 'Nothing written yet.' : (
+              <>
+                {published} published
+                {/* Counted separately because this is the only page that shows
+                    drafts at all - they are kept off the profile entirely. */}
+                {drafts > 0 && (
+                  <> · <span className={styles.subDraft}>{drafts} draft{drafts === 1 ? '' : 's'}</span></>
+                )}
+              </>
+            )}
           </p>
         </div>
         <button className={styles.primaryBtn} onClick={() => navigate('/blog/new')}>New post</button>
@@ -67,19 +80,30 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
         <div className={styles.list}>
           {posts.map(p => {
             const vis = POST_VIS_META[p.visibility];
+            const isDraft = p.visibility === 'private';
             return (
-              <div key={p.id} className={styles.row}>
+              <div key={p.id} className={`${styles.row} ${isDraft ? styles.rowDraft : ''}`}>
                 {p.heroImage && <img className={styles.rowThumb} src={p.heroImage} alt="" />}
                 <button className={styles.rowMain} onClick={() => navigate(blogEditPathFor(p.id))}>
                   <div className={styles.rowTop}>
                     <span className={styles.rowTitle}>{p.title}</span>
-                    <span className={`${styles.chip} ${p.visibility === 'private' ? styles.chipDraft : ''}`}>
+                    {/* A draft is the one state worth spotting from across the
+                        list: it is the reason this page exists, and it is the
+                        only thing here that nobody else can see. It gets the
+                        icon, the amber and the row's dashed edge; the published
+                        tiers stay quiet. */}
+                    <span className={`${styles.chip} ${isDraft ? styles.chipDraft : ''}`}>
+                      {isDraft && vis.icon}
                       {vis.tag}
                     </span>
                     {!p.commentsEnabled && <span className={styles.mutedChip}>Comments off</span>}
                   </div>
                   {p.excerpt && <div className={styles.excerpt}>{p.excerpt}</div>}
-                  <div className={styles.rowMeta}>{relTime(p.publishedAt)}</div>
+                  <div className={styles.rowMeta}>
+                    {isDraft
+                      ? <>Not published · edited {relTime(p.updatedAt)}</>
+                      : relTime(p.publishedAt)}
+                  </div>
                 </button>
 
                 <div className={styles.rowActions}>

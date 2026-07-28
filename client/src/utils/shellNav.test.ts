@@ -12,6 +12,12 @@ describe('navMenuItems', () => {
     expect(home).toMatchObject({ id: 'home', label: 'Newt', to: '/' });
   });
 
+  // The route stayed /blog so nobody's saved link broke; only the word changed.
+  it('calls the section Posts, whatever the route is still called', () => {
+    const item = navMenuItems({ username: 'sam', path: '/' }).find(i => i.id === 'myblog');
+    expect(item).toMatchObject({ label: 'My posts', to: '/blog' });
+  });
+
   it('points the profile entry at the signed-in user', () => {
     const items = navMenuItems({ username: 'sam', path: '/' });
     expect(items.find(i => i.id === 'profile')?.to).toBe('/u/sam');
@@ -29,6 +35,14 @@ describe('navMenuItems', () => {
     expect(current('/')).toEqual(['home']);
     expect(current('/blog')).toEqual(['myblog']);
     expect(current('/u/sam')).toEqual(['profile']);
+  });
+
+  it('keeps the blog marked while writing - the composer is part of that section', () => {
+    const current = (path: string) =>
+      navMenuItems({ username: 'sam', path }).filter(i => i.current).map(i => i.id);
+
+    expect(current('/blog/new')).toEqual(['myblog']);
+    expect(current('/blog/abc123')).toEqual(['myblog']);
   });
 
   it('treats a trailing slash as the same page', () => {

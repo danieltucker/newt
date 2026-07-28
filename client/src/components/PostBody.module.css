@@ -1,0 +1,214 @@
+/* ── Post body ──
+   The one place a published post's markup is styled, shared by the post page
+   and the profile's post list so a post reads the same wherever it is met.
+
+   The same block styling the note editor and comment bodies use, scaled up for
+   long-form reading. The markup is sanitized server-side before it is stored,
+   and includes the editor's own .note-todo / .note-table classes. */
+
+.body {
+  font-size: 16px;
+  line-height: 1.72;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.body > * { margin: 0 0 14px; }
+.body > *:last-child { margin-bottom: 0; }
+
+.body h1, .body h2, .body h3 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 620;
+  line-height: 1.25;
+  margin: 30px 0 10px;
+}
+
+.body h1 { font-size: 25px; }
+.body h2 { font-size: 21px; }
+.body h3 { font-size: 17.5px; }
+
+.body ul, .body ol { padding-left: 24px; }
+.body li { margin: 5px 0; }
+
+.body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.body blockquote {
+  margin-left: 0;
+  padding: 4px 0 4px 16px;
+  border-left: 3px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--muted);
+  font-size: 16.5px;
+}
+
+.body pre {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+}
+
+.body :not(pre) > code {
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: var(--surface2);
+}
+
+.body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 28px 0;
+}
+
+/* Embedded images. height:auto overrides the intrinsic height attribute once
+   the aspect ratio is known, so a downscaled image is never stretched - the
+   attributes are still what reserve the space before it loads. A remote image
+   that fails to load leaves its alt text rather than a broken-icon gap. */
+.body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 22px auto;
+  /* Every image in a body opens full size on click - see PostBody. */
+  cursor: zoom-in;
+}
+
+.body img:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Images that go somewhere instead of opening: a reference card's own artwork,
+   and anything the author wrapped in a link. Both must stop promising a zoom
+   they will not perform - see `zoomable` in PostBody, which excludes exactly
+   these two. */
+.body :global(.note-embed) img {
+  cursor: inherit;
+}
+
+.body a img {
+  cursor: pointer;
+}
+
+/* Wide tables scroll inside the article rather than widening the page */
+.body :global(table.note-table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+}
+
+.body :global(table.note-table) th,
+.body :global(table.note-table) td {
+  border: 1px solid var(--border);
+  padding: 7px 11px;
+  text-align: left;
+}
+
+.body :global(table.note-table) th {
+  background: var(--surface2);
+  font-weight: 650;
+}
+
+/* To-do blocks keep their checkbox gutter, read-only here */
+.body :global(.note-todo) {
+  position: relative;
+  padding-left: 28px;
+}
+
+.body :global(.note-todo)::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.4em;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid color-mix(in oklab, var(--muted) 60%, transparent);
+}
+
+.body :global(.note-todo[data-checked='true'])::before {
+  content: '✓';
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.body :global(.note-todo[data-checked='true']) {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* Indented blocks, as produced by Tab in the editor */
+.body :global([data-indent='1']) { margin-left: 24px; }
+.body :global([data-indent='2']) { margin-left: 48px; }
+.body :global([data-indent='3']) { margin-left: 72px; }
+.body :global([data-indent='4']) { margin-left: 96px; }
+.body :global([data-indent='5']) { margin-left: 120px; }
+
+/* ── Clamping ──
+   A list that shows posts in full still has to stay scannable, so a long one is
+   cut off at a screen's worth with a way to open it. The cut is only applied
+   once the body is measured to actually overflow - a short post gets no fade
+   and no "Continue reading", because there is nothing being kept from anyone. */
+.clampWrap {
+  position: relative;
+}
+
+/* Roughly a screen of reading. Set high enough that an ordinary post - a few
+   hundred words with a list and a quote in it - is shown whole and the link
+   never appears; the cut is for the genuinely long ones. */
+.clamped {
+  max-height: var(--post-clamp, 44rem);
+  overflow: hidden;
+}
+
+/* Fades the last couple of lines into the page rather than guillotining a line
+   of text in half, which is what tells the reader there is more. */
+.fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 96px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--surface) 88%);
+}
+
+.moreRow {
+  display: flex;
+  margin-top: 14px;
+}
+
+.moreBtn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 7px 15px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.moreBtn:hover {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}

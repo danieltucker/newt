@@ -24,9 +24,11 @@ import ArticleDetailModal from '../components/ArticleDetailModal';
 import ProfilePage from './ProfilePage';
 import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
+import BlogEditorPage from './BlogEditorPage';
 import { parseArticlePath } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { articleEmbed } from '../utils/noteEmbed';
+import { stashSeed } from '../utils/composerSeed';
 import { useFolders } from '../hooks/useFolders';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
@@ -49,13 +51,16 @@ const BLOB_LEAN = [-18, 32, 56] as const;
 // onto a bare page that has none of them. Logged-out visitors still get those
 // same pages standalone - see App.tsx - since none of that chrome applies.
 //
-// The composer (/blog/<id>) is deliberately *not* in this list: it is a writing
-// surface, and neither a second editor sliding up from the bottom nor a search
-// box competing for keystrokes belongs over it.
+// The composer is in this list too. It is a writing surface, so the instinct is
+// to strip the chrome away from it - but notes are the thing you write *from*,
+// and sending an author back to the new tab to reread one is worse than a bar
+// across the top. The bare-letter shortcuts below already stand down inside a
+// text field, so nothing here steals a keystroke from the editor.
 export type ShellView =
   | { kind: 'profile'; username: string; tab?: string | null }
   | { kind: 'post'; username: string; slug: string }
-  | { kind: 'myblog' };
+  | { kind: 'myblog' }
+  | { kind: 'editor'; postId: string | null };
 
 interface Props {
   accessToken: string;
@@ -278,6 +283,19 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     setNotesTarget({ id, query });
     setShowNotes(true);
   }, []);
+
+  // Publishing a note: hand the composer a copy and go there. The console owns
+  // no routing of its own, so the trip is made from here - and since the
+  // composer now lives in this shell, it is an ordinary navigation rather than
+  // the document load startRepost still has to make from a standalone page.
+  //
+  // The console is dismissed on the way out: it slides over the bottom of the
+  // page, and it would otherwise be sitting on top of the post it just seeded.
+  const handleTurnNoteIntoPost = useCallback((title: string, body: string) => {
+    stashSeed({ title, body });
+    closeNotes();
+    navigate('/blog/new');
+  }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What a note's /reference command can point at. Archived items stay on the
   // list: having finished an article is a reason to write about it, not a
@@ -760,6 +778,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 navigate={navigate}
               />
             )}
+            {view.kind === 'editor' && (
+              // Keyed on the post so switching between two of them remounts the
+              // composer: RichEditor reads its HTML on mount only, and the
+              // autosave timers belong to the draft that started them.
+              <BlogEditorPage
+                key={view.postId ?? 'new'}
+                postId={view.postId}
+                accessToken={accessToken}
+                username={username}
+                navigate={navigate}
+              />
+            )}
           </div>
         ) : (
           <div>
@@ -1042,6 +1072,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           initialNoteId={notesTarget?.id}
           initialQuery={notesTarget?.query}
           references={noteReferences}
+          onTurnIntoPost={handleTurnNoteIntoPost}
           closing={notesFading}
           onClose={closeNotes}
         />

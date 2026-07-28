@@ -367,6 +367,13 @@ interface Props {
   initialQuery?: string;    // …and the term that found it, seeded into the filter
   references?: EmbedData[]; // what /reference can embed - the saved articles
 
+  /**
+   * Open the post composer on a copy of the open note. Omitted when there is
+   * nowhere to open it - the console is handed this by the app shell, which owns
+   * routing; it does not navigate on its own.
+   */
+  onTurnIntoPost?: (title: string, body: string) => void;
+
   closing?: boolean;
   onClose: () => void;
 }
@@ -379,7 +386,8 @@ const MAX_KEY = 'newt:notesMaximized';
 export default function NotesConsole({
   docs, folders: foldersProp, order: orderProp, legacyNotes, onSave,
   sidebarWidth: sidebarWidthProp = 210, onSidebarWidth,
-  initialNoteId, initialQuery = '', references, closing = false, onClose,
+  initialNoteId, initialQuery = '', references, onTurnIntoPost,
+  closing = false, onClose,
 }: Props) {
   // Seed the working set once: existing docs → migrate legacy note → a blank
   // note. Anything that has outstayed its 15 days in Recently Deleted is purged
@@ -586,6 +594,22 @@ export default function NotesConsole({
     doc.updatedAt = Date.now();
     scheduleSave();
   }, [activeId, scheduleSave]);
+
+  // Publish a copy of the open note. Two things have to be true first:
+  //
+  //  - the body has to come from the ref, not from what this render is holding.
+  //    Body edits are written straight into docsRef without a re-render (see
+  //    handleBody), so `active.body` can be several sentences behind the screen.
+  //  - the note has to be saved. Saves are debounced by 700ms and there is no
+  //    flush on unmount, so leaving for the composer would otherwise drop the
+  //    last thing typed - from the note, while the post kept it.
+  function turnIntoPost() {
+    if (!onTurnIntoPost || !activeId) return;
+    const doc = docsRef.current.find(d => d.id === activeId);
+    if (!doc) return;
+    flush();
+    onTurnIntoPost(doc.title, doc.body);
+  }
 
   function handleTitle(v: string) {
     docsRef.current = docsRef.current.map(d => d.id === activeId ? { ...d, title: v, updatedAt: Date.now() } : d);
@@ -1055,14 +1079,36 @@ export default function NotesConsole({
                       </button>
                     </div>
                   )}
-                  <input
-                    className={styles.docTitle}
-                    value={active.title}
-                    onChange={e => handleTitle(e.target.value)}
-                    placeholder="Untitled"
-                    spellCheck={false}
-                    readOnly={activeTrashed}
-                  />
+                  <div className={styles.docHead}>
+                    <input
+                      className={styles.docTitle}
+                      value={active.title}
+                      onChange={e => handleTitle(e.target.value)}
+                      placeholder="Untitled"
+                      spellCheck={false}
+                      readOnly={activeTrashed}
+                    />
+                    {/* A note and a post are the same markup from the same
+                        editor, so publishing one is a copy into the composer -
+                        not a move. The note stays exactly where it was: having
+                        published a thought is no reason to lose the notebook it
+                        was worked out in. Not offered for a trashed note, which
+                        is on its way out rather than on its way to a reader. */}
+                    {onTurnIntoPost && !activeTrashed && (
+                      <button
+                        className={styles.docHeadBtn}
+                        onClick={turnIntoPost}
+                        title="Open the post composer on a copy of this note"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 19H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6" />
+                          <path d="M7 7h6M7 11h6M7 15h3" />
+                          <path d="M16 19h6M19 16v6" />
+                        </svg>
+                        Turn into a post
+                      </button>
+                    )}
+                  </div>
                   {/* The read-only surface is a different tree, so the key carries
                       that state too - remounting is what re-renders the body. */}
                   <RichEditor

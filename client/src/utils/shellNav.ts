@@ -32,12 +32,17 @@ export function navMenuItems(opts: { username: string; path: string }): ShellMen
     return norm(path) === norm(to);
   };
 
+  // The composer lives under /blog too, and it is reached *from* the blog
+  // manager - so while you are writing, "My blog" is still the section you are
+  // in. Matching the prefix rather than the exact path keeps the marker on.
+  const inBlog = path === '/blog' || path.startsWith('/blog/');
+
   return [
     // Labelled with the product name, not the route - ShellBar pairs it with
     // the mark, and "Newt" beside the logo reads as home in a way "New tab"
     // (which is also a browser action) does not.
     { id: 'home', label: 'Newt', to: '/', current: here('/') },
-    { id: 'myblog', label: 'My blog', to: '/blog', current: here('/blog') },
+    { id: 'myblog', label: 'My posts', to: '/blog', current: inBlog },
     { id: 'profile', label: 'My profile', to: profile, current: here(profile) },
   ];
 }

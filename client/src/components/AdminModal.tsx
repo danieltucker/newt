@@ -116,7 +116,7 @@ const TAB_TITLES: Record<Tab, string> = {
   users: 'Users',
   reports: 'Reports',
   comments: 'Comments',
-  blog: 'Blog posts',
+  blog: 'Posts',
   audit: 'Audit log',
 };
 
@@ -725,7 +725,7 @@ export default function AdminModal({
       setLoadedPosts(true);
       apiGet<AdminBlogPost[]>('/api/v1/admin/blog-posts')
         .then(setPosts)
-        .catch(() => setError('Could not load blog posts'));
+        .catch(() => setError('Could not load posts'));
     }
     if (tab === 'audit' && !loadedAudit) {
       setLoadedAudit(true);
@@ -948,7 +948,7 @@ export default function AdminModal({
             Comments
           </button>
           <button className={`${styles.navItem} ${tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
-            Blog posts
+            Posts
           </button>
           <button className={`${styles.navItem} ${tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
             Audit log
@@ -996,7 +996,7 @@ export default function AdminModal({
                 </div>
                 <div className={styles.statCard}>
                   <span className={styles.statValue}>{stats.totals.blogPosts}</span>
-                  <span className={styles.statLabel}>Blog posts</span>
+                  <span className={styles.statLabel}>Posts</span>
                 </div>
                 <div className={styles.statCard}>
                   <span className={styles.statValue}>{stats.totals.friendships}</span>
@@ -1059,7 +1059,7 @@ export default function AdminModal({
 
               <div className={styles.chartBlock}>
                 <div className={styles.chartTitle}>
-                  Total blog posts - last 90 days
+                  Total posts - last 90 days
                   <TrendBadge points={stats.history.blogPosts} />
                 </div>
                 <LineChart points={stats.history.blogPosts} gradientId="admin-blog-grad" />
@@ -1262,7 +1262,7 @@ export default function AdminModal({
               <div className={styles.tableNote}>
                 Closing a report records your judgement and nothing else. To act on the content
                 itself - remove a comment, unpublish a post, ban an account - use the Comments,
-                Blog posts or Users tab; each writes its own entry in the audit log.
+                Posts or Users tab; each writes its own entry in the audit log.
               </div>
 
               <div className={styles.reportList}>
@@ -1475,7 +1475,7 @@ export default function AdminModal({
               </table>
               {filteredPosts.length === 0 && (
                 <div className={styles.emptyResult}>
-                  {query ? `No posts match "${query}"` : 'No blog posts yet'}
+                  {query ? `No posts match "${query}"` : 'No posts yet'}
                 </div>
               )}
             </div>

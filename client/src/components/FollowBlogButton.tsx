@@ -95,13 +95,13 @@ export default function FollowBlogButton({ username, variant = 'ghost' }: Props)
         </div>
       ) : following ? (
         <button className={styles.ghostBtn} disabled={busy} onClick={unfollow}
-          title="Remove this blog from your feeds">
+          title="Stop following this author’s posts">
           Following ✓
         </button>
       ) : (
         <button className={followClass} disabled={busy} onClick={openPicker}
-          title="Add this blog to one of your RSS folders">
-          Follow blog
+          title="Follow this author’s posts in one of your RSS folders">
+          Follow posts
         </button>
       )}
       {err && <div className={styles.error}>{err}</div>}

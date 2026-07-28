@@ -3,13 +3,14 @@ import styles from './ProfilePage.module.css';
 import { apiFetch, apiGet, apiPost } from '../services/api';
 import {
   ProfileUser, ProfileComment, FriendRelation,
-  BlogPostSummary, ProfileActivityItem,
+  BlogPost, BlogPostSummary, ProfileActivityItem,
 } from '../types';
 import { relTime } from '../utils/notifications';
 import { articlePathFor } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
+import PostBody from '../components/PostBody';
 import SiteFooter from '../components/SiteFooter';
 import FollowBlogButton from '../components/FollowBlogButton';
 import FriendsPanel from '../components/FriendsPanel';
@@ -368,7 +369,7 @@ function ProfileHeader({ profile, accessToken, navigate, onRelationChange, onBlo
               stacked column of four equal-weight buttons was the ugly part. */}
           <div className={styles.actions}>
             {profile.isSelf ? (
-              <button className={styles.primaryBtn} onClick={() => navigate('/blog')}>My blog</button>
+              <button className={styles.primaryBtn} onClick={() => navigate('/blog')}>My posts</button>
             ) : profile.blocked ? (
               // The only action left on a stub profile, and the reason the stub
               // exists at all rather than a 404.
@@ -588,13 +589,46 @@ function HistoryTab({ username, authKey, onOpenArticle, onOpenPost }: {
   );
 }
 
+// ── One post, in full ────────────────────────────────────────────────────────
+// The Posts tab is the author's index: their writing, newest first, each piece
+// whole rather than reduced to a title and a line of stripped text. A post is
+// formatted work - headings, quotes, images, reference cards - and an excerpt
+// throws all of that away, which left this tab looking like a list of links to
+// the thing you were already looking at.
+//
+// Long posts are clamped to a screen's worth so the tab stays scannable; the
+// permalink is where you go to read one properly and to reply to it.
+function PostArticle({ post, onOpen }: { post: BlogPost; onOpen: (slug: string) => void }) {
+  return (
+    <article className={styles.postFull}>
+      {post.heroImage && <img className={styles.postFullHero} src={post.heroImage} alt="" />}
+
+      <div className={styles.commentTop}>
+        <span className={styles.kindTag}>Post</span>
+        {post.visibility !== 'public' && (
+          <span className={styles.chip}>{POST_VIS_META[post.visibility].tag}</span>
+        )}
+        <span className={styles.commentTime}>{relTime(post.publishedAt)}</span>
+      </div>
+
+      {/* The title is the way in, so it is the link - the body below carries
+          its own markup and must not be wrapped in a button. */}
+      <button className={styles.postFullTitle} onClick={() => onOpen(post.slug)}>
+        {post.title}
+      </button>
+
+      <PostBody html={post.body} clamp onExpand={() => onOpen(post.slug)} />
+    </article>
+  );
+}
+
 // ── Posts tab ────────────────────────────────────────────────────────────────
 function PostsTab({ username, authKey, onOpen }: {
   username: string;
   authKey: string | null;
   onOpen: (slug: string) => void;
 }) {
-  const [posts, setPosts] = useState<BlogPostSummary[]>([]);
+  const [posts, setPosts] = useState<BlogPost[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -604,7 +638,7 @@ function PostsTab({ username, authKey, onOpen }: {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    apiGet<{ posts: BlogPostSummary[]; nextCursor: string | null }>(base)
+    apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(base)
       .then(d => { if (!cancelled) { setPosts(d.posts); setCursor(d.nextCursor); } })
       .catch(() => { if (!cancelled) setPosts([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -615,7 +649,7 @@ function PostsTab({ username, authKey, onOpen }: {
     if (!cursor) return;
     setLoadingMore(true);
     try {
-      const d = await apiGet<{ posts: BlogPostSummary[]; nextCursor: string | null }>(
+      const d = await apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(
         `${base}?cursor=${encodeURIComponent(cursor)}`);
       setPosts(prev => [...prev, ...d.posts]);
       setCursor(d.nextCursor);
@@ -628,7 +662,7 @@ function PostsTab({ username, authKey, onOpen }: {
 
   return (
     <div className={styles.list}>
-      {posts.map(p => <PostCard key={p.id} post={p} onOpen={onOpen} />)}
+      {posts.map(p => <PostArticle key={p.id} post={p} onOpen={onOpen} />)}
       {cursor && (
         <button className={styles.moreBtn} disabled={loadingMore} onClick={loadMore}>
           {loadingMore ? 'Loading…' : 'Load more'}

@@ -6,7 +6,6 @@ import NewTabPage, { ShellView } from './pages/NewTabPage';
 import ProfilePage from './pages/ProfilePage';
 import PublicArticlePage from './pages/PublicArticlePage';
 import BlogPostPage from './pages/BlogPostPage';
-import BlogEditorPage from './pages/BlogEditorPage';
 import FeaturePage from './pages/FeaturePage';
 import SelfHostPage from './pages/SelfHostPage';
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
@@ -158,27 +157,20 @@ export default function App() {
 
   // Signed in from here down.
   //
-  // The composer is the one authenticated page that stays standalone: it is a
-  // writing surface, and the shell's notes console and search bar would compete
-  // with it for keystrokes. '/blog/new' composes a post that doesn't exist yet;
-  // '/blog/<id>' edits an existing one.
+  // Profiles, posts, the blog manager and the composer all render *inside* the
+  // shell, so the header, search bar, command console and notes stay available
+  // wherever they navigate. Anything else is the new tab itself.
+  //
+  // '/blog/new' composes a post that doesn't exist yet; '/blog/<id>' edits an
+  // existing one. The composer used to stand alone, on the grounds that a
+  // writing surface shouldn't share keystrokes - but notes are what you write
+  // *from*, and having to leave the post to read one was the worse trade. The
+  // bare-letter shortcuts already stand down inside a text field (see
+  // isTypingTarget), so they never fire mid-sentence.
   const editId = parseBlogEditPath(path);
-  if (editId) {
-    return (
-      <BlogEditorPage
-        postId={editId === 'new' ? null : editId}
-        username={username}
-        accessToken={accessToken}
-        navigate={navigate}
-      />
-    );
-  }
-
-  // Profiles, posts and the blog manager render *inside* the shell for a
-  // signed-in reader, so the header, search bar, command console and notes stay
-  // available wherever they navigate. Anything else is the new tab itself.
   const view: ShellView | null =
-    blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
+    editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
+    : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab }
     : (path === '/blog' || path === '/blog/') ? { kind: 'myblog' }
     : null;

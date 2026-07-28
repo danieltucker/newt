@@ -446,8 +446,8 @@ export const SECTIONS: Section[] = [
           problem:
             'The idea arrives mid-browse, and by the time a document is open it has gone.',
           answer:
-            'One keystroke, a heading, three lines. Later it becomes a blog post without ' +
-            'leaving Newt - the reference cards come with it.',
+            'One keystroke, a heading, three lines. Later, one button turns it into a post ' +
+            'without leaving Newt - the reference cards come with it, and the note stays put.',
         },
         {
           who: 'The reluctant deleter',
@@ -490,27 +490,36 @@ export const SECTIONS: Section[] = [
     },
   },
 
-  // ── Blog ────────────────────────────────────────────────────────────
+  // ── Posts ───────────────────────────────────────────────────────────
+  // Called "Posts" throughout the app, and here. The word "blog" still earns its
+  // place on this page and nowhere else: it is the fastest way to tell a visitor
+  // what they are looking at, and what they get is a blog in every respect that
+  // matters - an address, an archive, followers, an RSS feed.
+  //
+  // The slug stays 'blog'. /features/blog is a public URL that has been linked
+  // to; renaming it would break those links to buy nothing a visitor can see.
   {
     slug: 'blog',
-    nav: 'Blog',
-    kicker: 'Blogging',
+    nav: 'Posts',
+    kicker: 'Posting',
     tint: '#E88BC8',
     blurb: 'A place to publish that’s yours, at your own address.',
     landing: {
       title: 'Publish, or just think out loud',
       body:
-        'Every account comes with a blog. Posts can be public, friends-only, or private - and ' +
-        'private doubles as your drafts folder, so there is no separate place for the half-' +
-        'finished ones. Readers can follow you, and every post carries its own comment thread.',
+        'Every account can post. It works the way a blog does - your own address, an archive, ' +
+        'readers who follow you - and posts can be public, friends-only, or private, where ' +
+        'private doubles as your drafts folder. Every post carries its own comment thread.',
       points: ['Public, friends-only, private', 'Drafts are just private posts', 'Cover images', 'Followers'],
     },
     page: {
-      title: 'Everyone gets a blog. Use it or don’t.',
+      title: 'Everyone can post. Use it or don’t.',
       lede:
-        'Writing in public has become a business decision - pick a platform, pick an audience ' +
-        'strategy, post at the right hour. Newt’s version is smaller and older than that. You ' +
-        'have an address, you write at it, and the people who wanted to read you can.',
+        'It’s a blog, in every way that matters: your own address, your own archive, and an RSS ' +
+        'feed anyone can follow. We just call them posts. Writing in public has become a ' +
+        'business decision - pick a platform, pick an audience strategy, post at the right hour. ' +
+        'Newt’s version is smaller and older than that. You have an address, you write at it, ' +
+        'and the people who wanted to read you can.',
       statement:
         'One writing surface, three audiences: everyone, your friends, or nobody but future you.',
       steps: [
@@ -547,7 +556,7 @@ export const SECTIONS: Section[] = [
           who: 'Someone keeping a journal',
           problem:
             'They want to write regularly with no intention of anyone reading it, and every ' +
-            'blogging tool treats publishing as the goal.',
+            'tool for this treats publishing as the goal.',
           answer:
             'Private posts. Same editor, same archive, same search - visible to nobody. If one ' +
             'of them turns out to be worth sharing, change one setting.',
@@ -572,7 +581,7 @@ export const SECTIONS: Section[] = [
         },
         {
           title: 'Followers',
-          body: 'People can follow your blog and see new posts as they land, in the order you published them.',
+          body: 'People can follow you and see new posts as they land, in the order you published them - by RSS, like any blog.',
         },
         {
           title: 'Comments underneath',
@@ -620,7 +629,7 @@ export const SECTIONS: Section[] = [
         {
           title: 'Comment from wherever you found it',
           body:
-            'From an RSS headline, from a saved article, from a blog post. It’s the same thread ' +
+            'From an RSS headline, from a saved article, from a post. It’s the same thread ' +
             'either way, because the URL is what identifies it.',
         },
         {
@@ -666,7 +675,7 @@ export const SECTIONS: Section[] = [
       details: [
         {
           title: 'Profiles',
-          body: 'Your posts, your blog and your friends in one place, at an address you can hand to someone.',
+          body: 'Your posts, your comments and your friends in one place, at an address you can hand to someone.',
         },
         {
           title: 'Friend requests',

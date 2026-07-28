@@ -611,8 +611,20 @@
 
 .docEmptyBtn:hover { background: #f4f4fe; border-color: #c9c9f5; }
 
-.docTitle {
+/* The title and what you can do with the note, on one line. The padding moved
+   up here from .docTitle so the button sits on the title's baseline rather than
+   floating above the editor in a row of its own. */
+.docHead {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 32px 8px;
+}
+
+.docTitle {
+  flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
@@ -620,10 +632,42 @@
   font-size: 24px;
   font-weight: 600;
   color: #1c2029;
-  padding: 20px 32px 8px;
+  padding: 0;
 }
 
 .docTitle::placeholder { color: #cdd0d9; }
+
+/* Quiet until wanted: this is a deliberate act taken now and then, not one of
+   the note's everyday controls, so it doesn't compete with the words. */
+.docHeadBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e3e5ea;
+  background: #fff;
+  color: #6b7280;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.docHeadBtn:hover {
+  color: #1c2029;
+  border-color: #c7cad2;
+  background: #f7f8fa;
+}
+
+@media (max-width: 620px) {
+  .docHead { padding: 16px 18px 6px; gap: 8px; }
+  .docTitle { font-size: 20px; }
+  /* The icon still says "make something of this"; the words are what run out
+     of room first. */
+  .docHeadBtn { font-size: 0; gap: 0; padding: 7px 9px; }
+}
 
 /* ── Recently deleted ── */
 .trashSection {

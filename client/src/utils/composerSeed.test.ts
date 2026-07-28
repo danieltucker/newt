@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EMBED_CLASS } from './noteEmbed';
-import { repostBody, takeRepost, clearRepost, RepostDraft } from './repost';
+import {
+  repostBody, stashSeed, takeSeed, clearSeed, ComposerSeed, RepostDraft,
+} from './composerSeed';
 
-const KEY = 'newt:repost';
+const KEY = 'newt:compose';
 
 const draft: RepostDraft = {
   title: 'On looms',
@@ -16,55 +18,65 @@ const draft: RepostDraft = {
   },
 };
 
+const seed: ComposerSeed = { title: 'On looms', body: '<p>Punched cards.</p>' };
+
 const stash = (value: unknown) =>
   sessionStorage.setItem(KEY, typeof value === 'string' ? value : JSON.stringify(value));
 
-// takeRepost holds its answer for the life of the page, so each test needs both
+// takeSeed holds its answer for the life of the page, so each test needs both
 // halves of that reset - the stash and the copy already read out of it.
-beforeEach(() => { sessionStorage.clear(); clearRepost(); });
+beforeEach(() => { sessionStorage.clear(); clearSeed(); });
 
-describe('takeRepost', () => {
-  it('hands the composer what the reader stashed', () => {
-    stash(draft);
-    expect(takeRepost()).toEqual(draft);
+describe('takeSeed', () => {
+  it('hands the composer what was stashed', () => {
+    stash(seed);
+    expect(takeSeed()).toEqual(seed);
   });
 
   it('empties the stash as it reads it', () => {
-    stash(draft);
-    expect(takeRepost()).not.toBeNull();
+    stash(seed);
+    expect(takeSeed()).not.toBeNull();
     expect(sessionStorage.getItem(KEY)).toBeNull();
   });
 
   // The composer reads this while rendering, and StrictMode renders twice and
-  // keeps one of the two passes. A read that consumed the draft would hand it
-  // to the pass React discards, and the repost would open empty.
+  // keeps one of the two passes. A read that consumed the seed would hand it
+  // to the pass React discards, and the composer would open empty.
   it('answers the same both times a single render asks', () => {
-    stash(draft);
-    expect(takeRepost()).toEqual(draft);
-    expect(takeRepost()).toEqual(draft);
+    stash(seed);
+    expect(takeSeed()).toEqual(seed);
+    expect(takeSeed()).toEqual(seed);
   });
 
   it('has nothing left once the composer that opened on it lets go', () => {
-    stash(draft);
-    expect(takeRepost()).not.toBeNull();
-    clearRepost();
-    expect(takeRepost()).toBeNull();
+    stash(seed);
+    expect(takeSeed()).not.toBeNull();
+    clearSeed();
+    expect(takeSeed()).toBeNull();
   });
 
   it('is null when nothing was stashed', () => {
-    expect(takeRepost()).toBeNull();
+    expect(takeSeed()).toBeNull();
   });
 
-  it('refuses a draft it does not recognise rather than seeding half of one', () => {
-    for (const bad of ['not json', {}, { embed: null }, { embed: { kind: 'post' } }]) {
+  it('refuses a seed it does not recognise rather than opening half of one', () => {
+    for (const bad of ['not json', {}, { title: 'x' }, { body: '<p>x</p>' }, { title: 1, body: 2 }]) {
       stash(bad);
-      expect(takeRepost()).toBeNull();
+      expect(takeSeed()).toBeNull();
     }
   });
+});
 
-  it('survives a stash written without a title', () => {
-    stash({ embed: draft.embed });
-    expect(takeRepost()?.title).toBe('');
+describe('stashSeed', () => {
+  it('round-trips a note body through the stash untouched', () => {
+    // Turning a note into a post carries its markup across verbatim - lists,
+    // headings and reference cards all have to survive the crossing.
+    const note: ComposerSeed = {
+      title: 'Reading queue',
+      body: '<h2>Queue</h2><ul><li>Looms</li></ul>',
+    };
+    stashSeed(note);
+    expect(takeSeed()).toEqual(note);
   });
 });
 

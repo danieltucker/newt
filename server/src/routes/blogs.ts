@@ -40,10 +40,18 @@ router.use(optionalAuth);
 
 const PAGE_SIZE = 20;
 
-// Long-form writing is slower than commenting, so the ceiling is lower — it is
-// there to stop scripted flooding, not to pace a real author.
+// The profile's post list carries whole bodies rather than excerpts, so a page
+// of it is worth far more bytes than a page of anything else here — a post may
+// run to MAX_BLOG_TEXT. Fewer per request, and the reader pages for more.
+const FEED_PAGE_SIZE = 5;
+
+// There to stop scripted flooding, not to pace a real author. The old ceiling
+// of 60/hour was set when every save was a deliberate button press; the editor
+// now autosaves a draft as it is written, so a single long writing session is
+// legitimately worth dozens of writes. The client throttles itself to one
+// autosave per 15s (see AUTOSAVE_MIN_GAP_MS), which tops out well under this.
 const blogWriteLimiter = perUserLimiter({
-  windowMs: 60 * 60_000, max: 60,
+  windowMs: 60 * 60_000, max: 300,
   message: "You've hit the hourly limit for blog edits — please try again later.",
 });
 
@@ -509,15 +517,26 @@ router.get('/:username/posts', async (req: AuthRequest, res: Response): Promise<
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
 
     const rows = await prisma.blogPost.findMany({
-      where: { userId: owner.id, ...visiblePostWhere(req.userId, friendIds) },
+      where: {
+        userId: owner.id,
+        // Drafts are not on the profile, the author's own included. This is a
+        // separate clause from visiblePostWhere on purpose: that answers "may
+        // this viewer read it", and for a draft's own author the answer is yes.
+        // What it must not do is *publish* it here - a profile is the page you
+        // hand to someone else, and an author reads their drafts in My posts.
+        visibility: { not: 'private' },
+        ...visiblePostWhere(req.userId, friendIds),
+      },
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
-      take: PAGE_SIZE + 1,
+      take: FEED_PAGE_SIZE + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: SUMMARY_SELECT,
+      // Bodies, not excerpts: the profile shows each post in full, the way a
+      // blog's own index page does. See FEED_PAGE_SIZE for what that costs.
+      select: FULL_SELECT,
     });
 
-    const hasMore = rows.length > PAGE_SIZE;
-    const posts = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+    const hasMore = rows.length > FEED_PAGE_SIZE;
+    const posts = hasMore ? rows.slice(0, FEED_PAGE_SIZE) : rows;
     res.json({ posts, nextCursor: hasMore ? posts[posts.length - 1].id : null });
   } catch (err) {
     logger.error(err, 'List blog posts error');

@@ -128,9 +128,9 @@ function PersonalFeedPanel() {
 
   return (
     <div className={styles.sectionBlock}>
-      <div className={styles.blockTitle}>Your friends’ blog feed</div>
+      <div className={styles.blockTitle}>Your friends’ post feed</div>
       <div className={styles.rowHint} style={{ marginBottom: 12 }}>
-        A private RSS feed of blog posts from you and your friends, including
+        A private RSS feed of posts from you and your friends, including
         friends-only posts. Add it to a folder’s feeds, or any RSS reader.
         <br />
         <strong>Treat this link like a password</strong> - anyone who has it can

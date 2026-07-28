@@ -4,7 +4,7 @@ import { CommentPrefs } from '../types';
 import { faviconUrl } from '../utils/color';
 import { articlePathFor } from '../utils/articleUrl';
 import { articleEmbed } from '../utils/noteEmbed';
-import { startRepost } from '../utils/repost';
+import { startRepost } from '../utils/composerSeed';
 import CommentsPanel from './CommentsPanel';
 import styles from './ArticleDetailModal.module.css';
 

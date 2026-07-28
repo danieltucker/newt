@@ -1,12 +1,13 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { useCommentCounts } from '../hooks/useCommentCounts';
-import { applyCommentCounts, embeddedUrls, postEmbed } from '../utils/noteEmbed';
+import { postEmbed } from '../utils/noteEmbed';
 import { BlogPost, CommentPrefs } from '../types';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogEditPathFor } from '../utils/blogUrl';
-import { startRepost } from '../utils/repost';
+import { startRepost } from '../utils/composerSeed';
 import { POST_VIS_META } from '../components/VisibilityMeta';
+import PostBody from '../components/PostBody';
+import Lightbox, { LightboxImage } from '../components/Lightbox';
 import CommentsPanel from '../components/CommentsPanel';
 import FollowBlogButton from '../components/FollowBlogButton';
 import ReportModal from '../components/ReportModal';
@@ -73,6 +74,8 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
   const [state, setState] = useState<LoadState>('loading');
   const [post, setPost] = useState<BlogPost | null>(null);
   const [reporting, setReporting] = useState(false);
+  // The cover only. Images inside the body are PostBody's own business.
+  const [zoomedHero, setZoomedHero] = useState<LightboxImage | null>(null);
 
   // Refetch when auth changes: signing in can reveal a friends-only post that
   // 404'd a moment ago.
@@ -96,19 +99,6 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
     if (post) document.title = post.title;
     return () => { document.title = 'New Tab'; };
   }, [post]);
-
-  // References embedded in the post show how much conversation the thing they
-  // point at has drawn. The number is fetched per view rather than stored with
-  // the post - the server's allowlist refuses to carry it for exactly that
-  // reason - and it is visibility-filtered, so a stranger is only told about
-  // comments they could go and read.
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const { counts } = useCommentCounts(
-    useMemo(() => embeddedUrls(post?.body ?? ''), [post?.body]),
-  );
-  useEffect(() => {
-    if (bodyRef.current) applyCommentCounts(bodyRef.current, counts);
-  }, [counts, post?.body]);
 
   if (state === 'loading') {
     return <Shell embedded={embedded}><div className={styles.centered}>Loading…</div></Shell>;
@@ -190,9 +180,26 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
 
       <article className={styles.article}>
         {/* Server-validated to a site-relative /api/v1/images/<id> path, so
-            this can never point off-origin - see normalizeHeroImage. */}
+            this can never point off-origin - see normalizeHeroImage.
+
+            Opens full size like any image in the body, and with more reason
+            than most: the banner is a 2:1 crop, so some of what the author
+            chose is not on screen at all until you open it. */}
         {post.heroImage && (
-          <img className={styles.hero} src={post.heroImage} alt="" />
+          <img
+            className={styles.hero}
+            src={post.heroImage}
+            alt=""
+            role="button"
+            tabIndex={0}
+            aria-label="View cover image full size"
+            onClick={() => setZoomedHero({ src: post.heroImage })}
+            onKeyDown={e => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              setZoomedHero({ src: post.heroImage });
+            }}
+          />
         )}
 
         <h1 className={styles.title}>{post.title}</h1>
@@ -218,14 +225,7 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
           )}
         </div>
 
-        {/* Sanitized server-side on write - see sanitizeBlogHtml */}
-        {/* note-embed-read is the themed skin for reference cards - see
-            styles/noteEmbed.css. Global, so it is not hashed. */}
-        <div
-          ref={bodyRef}
-          className={`${styles.body} note-embed-read`}
-          dangerouslySetInnerHTML={{ __html: post.body }}
-        />
+        <PostBody html={post.body} />
       </article>
 
       {post.commentsEnabled ? (
@@ -241,6 +241,8 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
       ) : (
         <div className={styles.commentsOff}>Comments are turned off for this post.</div>
       )}
+
+      <Lightbox image={zoomedHero} onClose={() => setZoomedHero(null)} />
 
       {reporting && (
         <ReportModal

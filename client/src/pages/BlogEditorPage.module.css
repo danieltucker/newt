@@ -1,28 +1,28 @@
-.page {
-  min-height: 100vh;
-  background: var(--bg);
-  color: var(--text);
-  display: flex;
-  flex-direction: column;
-}
+/* The page chrome is the shell's - header, rail, footer all come from
+   NewTabPage. What's left here is the composer and the controls that act on it.
 
-/* ── Toolbar ── */
-.toolbar {
+   The action bar sticks *under* the shell bar rather than to the top of the
+   viewport: --shellbar-h is measured and published by ShellBar, so this tracks
+   it through the bar's own breakpoints instead of guessing a height. Save and
+   the visibility switch stay reachable however far a long post scrolls. */
+.actionBar {
   position: sticky;
-  top: 0;
-  z-index: 5;
+  top: var(--shellbar-h, 56px);
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 12px 20px;
-  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
 }
 
-.toolbarLeft, .toolbarRight {
+.actionLeft, .actionRight {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -49,6 +49,14 @@
   background: var(--surface2);
   padding: 4px 9px;
   border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Only for a post with no autosave behind it, where "unsaved" is something the
+   author has to act on rather than something that resolves itself. */
+.savedTagWarn {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
 .toggle {
@@ -125,12 +133,16 @@
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
 /* ── Composer ── */
+/* The shell's body column already supplies the page gutters, so this only sets
+   the measure - the same 780px the standalone page used. */
 .wrap {
-  flex: 1;
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
-  padding: 26px 20px 40px;
+  padding-bottom: 40px;
+}
+
+.body {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -297,6 +309,50 @@
 }
 .viewLink:hover { text-decoration: underline; }
 
+/* ── Delete ──
+   Sits at the far end of the foot, away from Publish and View: the two things
+   an author reaches for constantly should not share an edge with the one that
+   can't be undone. */
+.deleteBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.deleteBtn:hover { color: #e5484d; background: color-mix(in oklab, #e5484d 10%, transparent); }
+
+.confirmRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirmText {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dangerBtn {
+  border: none;
+  background: #e5484d;
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.dangerBtn:hover:not(:disabled) { filter: brightness(1.08); }
+.dangerBtn:disabled { opacity: 0.6; cursor: default; }
+
 /* ── States ── */
 .centered {
   display: flex;
@@ -316,8 +372,8 @@
 }
 
 @media (max-width: 620px) {
-  .toolbar { padding: 10px 14px; }
+  .actionBar { padding: 9px 10px; }
   .visOptionLabel { display: none; }
   .titleInput { font-size: 24px; }
-  .wrap { padding: 20px 14px 32px; }
+  .wrap { padding-bottom: 32px; }
 }

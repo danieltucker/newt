@@ -49,6 +49,12 @@
   color: var(--muted);
 }
 
+/* Matches the chips below it, so the two read as the same fact stated twice. */
+.subDraft {
+  color: var(--draft);
+  font-weight: 650;
+}
+
 /* ── List ── */
 .list { display: flex; flex-direction: column; gap: 10px; }
 
@@ -62,6 +68,17 @@
   padding: 14px 16px;
 }
 .row:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+/* An unpublished draft. Dashed, because "unfinished" is legible without relying
+   on colour at all, and an amber spine so a draft is findable in a long list at
+   a glance. Everything published keeps the plain surface. */
+.rowDraft {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--draft) 42%, transparent);
+  border-left: 3px solid var(--draft);
+  background: color-mix(in oklab, var(--draft) 5%, var(--surface));
+}
+.rowDraft:hover { border-color: color-mix(in oklab, var(--draft) 70%, transparent); border-left-color: var(--draft); }
 
 /* A cover image reduced to an identifying thumbnail - this list is for managing
    posts, so the title and its draft/published chip stay the row's subject. */
@@ -111,10 +128,17 @@
   border-radius: 999px;
   white-space: nowrap;
 }
-/* A draft is a neutral state, not an accent-worthy one */
+/* A draft is the state worth spotting, so it gets its own hue rather than the
+   accent every other chip wears. (It used to be deliberately neutral - that made
+   an unpublished post the quietest thing in a list of published ones.) */
 .chipDraft {
-  color: var(--muted);
-  background: var(--surface2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--draft);
+  background: color-mix(in oklab, var(--draft) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--draft) 35%, transparent);
+  padding: 2px 8px 2px 6px;
 }
 
 .mutedChip {

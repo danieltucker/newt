@@ -9,6 +9,10 @@
   /* Favorited tags. Deliberately not --accent: an unread card is already
      accent-outlined, and a favorite has to be legible on top of that. */
   --fav: #FFD470;
+  /* Unpublished drafts. Its own hue because a draft has to be told apart from a
+     published post at a glance, and every other state in the list already wears
+     --accent. Amber reads as "not finished" without reading as an error. */
+  --draft: #E8A33D;
   --border: rgba(255, 255, 255, 0.08);
   --shadow: rgba(0, 0, 0, 0.4);
   --overlay: rgba(8, 9, 12, 0.62);
@@ -30,6 +34,8 @@
   /* Lighter than it wants to be would fail on white - this is about as bright
      as the gold gets while the chip labels stay readable. */
   --fav: #C68A15;
+  /* Same amber, taken down until it carries on white - see --fav above. */
+  --draft: #A76A08;
   --border: rgba(20, 22, 30, 0.09);
   --shadow: rgba(20, 22, 30, 0.10);
   --overlay: rgba(20, 22, 30, 0.35);

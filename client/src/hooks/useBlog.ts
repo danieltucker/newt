@@ -30,7 +30,7 @@ export function useMyPosts(accessToken: string | null) {
   }, [accessToken, fetchPosts]);
 
   const remove = useCallback(async (id: string) => {
-    await apiDelete(`/api/v1/blogs/post/${encodeURIComponent(id)}`);
+    await deletePost(id);
     setPosts(prev => prev.filter(p => p.id !== id));
   }, []);
 
@@ -57,4 +57,10 @@ export function updatePost(id: string, patch: Partial<PostDraft>): Promise<BlogP
 
 export function loadOwnPost(id: string): Promise<BlogPost> {
   return apiGet<BlogPost>(`/api/v1/blogs/post/${encodeURIComponent(id)}`);
+}
+
+// Standalone so the composer can delete the post it has open without holding
+// the manage list's state. useMyPosts.remove wraps this and prunes its own list.
+export function deletePost(id: string): Promise<void> {
+  return apiDelete<void>(`/api/v1/blogs/post/${encodeURIComponent(id)}`);
 }

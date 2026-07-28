@@ -28,10 +28,18 @@ function profileCommentWhere(ownerId: string, canSeeFriends: boolean) {
 
 // Owner-centric post filter. Drafts ('private') belong to nobody but the author,
 // so only they ever see them here; friends-only posts need `canSeeFriends`.
+// Drafts are never on a profile - not even the owner's own. A profile is the
+// page you hand to someone else; a draft is unfinished work, and the place to
+// find it is My posts. Before this, `isSelf` dropped the filter entirely, so an
+// author's own drafts appeared in their Posts and Activity tabs and were counted
+// in the header's post count.
+//
+// This governs the count and the activity feed; the Posts tab is listed by
+// blogs.ts, which excludes drafts for the same reason.
 function profilePostWhere(ownerId: string, isSelf: boolean, canSeeFriends: boolean) {
   return {
     userId: ownerId,
-    ...(isSelf ? {} : { visibility: canSeeFriends ? { in: ['public', 'friends'] } : 'public' }),
+    visibility: isSelf || canSeeFriends ? { in: ['public', 'friends'] } : 'public',
   };
 }
 
