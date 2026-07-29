@@ -69,7 +69,33 @@ export function useReadingList(accessToken: string | null) {
     }
   }, [load]);
 
-  return { items, saveItem, updateItem, setInLibrary, moveToFolder, clearFolder, removeItem };
+  // Undo of removeItem. The delete has already gone through by the time this is
+  // offered, so restoring means re-creating: the row comes back with a new id
+  // but its original savedAt, which is what lands it back in the same place in
+  // the list. Comment threads key off the URL rather than the id, so a
+  // deleted-and-restored article keeps its conversation.
+  const restoreItem = useCallback(async (item: ReadingListItem) => {
+    const created = await apiPost<ReadingListItem>('/api/v1/reading-list', {
+      url: item.url,
+      title: item.title,
+      source: item.source,
+      readTime: item.readTime,
+      tag: item.tag,
+      imageUrl: item.imageUrl,
+      notes: item.notes,
+      savedAt: item.savedAt,
+    });
+    // Spliced back in by savedAt rather than pushed to the front, so it lands
+    // where the next reload will put it - the server orders by savedAt desc.
+    setItems(prev => {
+      const rest = prev.filter(i => i.id !== created.id);
+      const at = rest.findIndex(i => new Date(i.savedAt).getTime() <= new Date(created.savedAt).getTime());
+      return at === -1 ? [...rest, created] : [...rest.slice(0, at), created, ...rest.slice(at)];
+    });
+    return created;
+  }, []);
+
+  return { items, saveItem, updateItem, setInLibrary, moveToFolder, clearFolder, removeItem, restoreItem };
 }
 
 /**

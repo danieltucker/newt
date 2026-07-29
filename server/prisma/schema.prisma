@@ -16,6 +16,20 @@ model User {
   firstName     String?
   lastName      String?
   avatar        String?
+  // The banner behind the avatar on /u/<username>. Two columns rather than one
+  // because they are different kinds of thing and an image must be able to be
+  // removed without also forgetting which gradient was underneath it:
+  //   coverImage — a site-relative /api/v1/images/<id> path, never an arbitrary
+  //     URL (see normalizeImagePath). Set, it wins over the gradient.
+  //   coverTheme — the id of a gradient preset. NULL means "auto": derived from
+  //     the username, which is what every profile looked like before this.
+  coverImage    String?
+  coverTheme    String?
+  // The owner's links out - Bluesky, GitHub, a personal site. An array of
+  // { platform, url }, ordered as the owner arranged them, validated by
+  // normalizeProfileLinks before it is ever stored. JSON rather than a table:
+  // it is a short ordered list that is only ever read and written whole.
+  profileLinks  Json              @default("[]")
   settings      Json              @default("{}")
   totpSecret        String?
   totpPendingSecret String?

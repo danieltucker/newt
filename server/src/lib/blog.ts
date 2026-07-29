@@ -1,6 +1,6 @@
 import { sanitizeRichHtml, commentTextLength } from './comments';
 import { Visibility } from './commentVisibility';
-import { IMAGE_PATH_PREFIX } from './images';
+import { normalizeImagePath } from './images';
 
 // Pure helpers for blog posts. Kept free of Express and Prisma so they can be
 // unit-tested directly, the way comments.ts / commentVisibility.ts are.
@@ -108,22 +108,11 @@ export function excerptOf(html: string, max = DEFAULT_EXCERPT): string {
 }
 
 // A post's cover image is either nothing, or one of *our* uploaded images named
-// by its site-relative path. Constraining it to that shape is what keeps the
-// column from becoming an arbitrary-URL sink: an absolute value would let a post
-// beacon every reader to a third-party host, and a `javascript:` or `data:` one
-// would be an injection vector wherever the string reaches an src attribute.
-// Embedded body images get the same treatment via sanitizeBlogHtml — this is the
-// equivalent for the one image that lives outside the HTML.
-//
-// Returns the value to store ('' for none), or null when it isn't acceptable.
-const HERO_IMAGE_RE = new RegExp(`^${IMAGE_PATH_PREFIX}[A-Za-z0-9_-]+$`);
-
-export function normalizeHeroImage(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return '';                       // clearing the hero is allowed
-  return HERO_IMAGE_RE.test(trimmed) ? trimmed : null;
-}
+// by its site-relative path — the rule and the reasoning live in
+// normalizeImagePath, which a profile's cover shares. Embedded body images get
+// the equivalent treatment via sanitizeBlogHtml; this is for the one image that
+// lives outside the HTML.
+export const normalizeHeroImage = normalizeImagePath;
 
 export interface VisiblePost {
   userId: string;

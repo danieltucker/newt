@@ -4,10 +4,38 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { normalizeImagePath } from '../lib/images';
+import {
+  normalizeProfileLinks, readProfileLinks, MAX_PROFILE_LINKS, type ProfileLink,
+} from '../lib/profileLinks';
 import logger from '../lib/logger';
 
 const router = Router();
 router.use(requireAuth);
+
+// What the owner sees of their own account. Wider than PUBLIC_USER_SELECT — it
+// carries the email — so it is spelled out once here rather than at each use.
+const ACCOUNT_SELECT = {
+  username: true, email: true, firstName: true, lastName: true, avatar: true,
+  coverImage: true, coverTheme: true, profileLinks: true, totpEnabled: true,
+} as const;
+
+type AccountRow = {
+  profileLinks: unknown;
+  [k: string]: unknown;
+};
+
+// The Json column comes back as Prisma.JsonValue; the client wants the parsed
+// list. Anything unrecognisable reads as no links (see readProfileLinks).
+function toAccountJson(user: AccountRow) {
+  return { ...user, profileLinks: readProfileLinks(user.profileLinks) };
+}
+
+// A gradient preset is named by the client's own table (utils/coverGradient.ts),
+// which the server deliberately does not duplicate — see profileLinks.ts for the
+// same reasoning. All the server enforces is that the id is a short slug, so an
+// unknown one falls back to the username-derived gradient rather than breaking.
+const COVER_THEME_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
 
 // Avatars are stored as small base64 data URLs (client downscales to 128px
 // before upload) — no image processing dependencies needed server-side.
@@ -19,15 +47,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const user = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { username: true, email: true, firstName: true, lastName: true, avatar: true, totpEnabled: true },
+    select: ACCOUNT_SELECT,
   });
   if (!user) { res.status(404).json({ error: 'Not found' }); return; }
-  res.json(user);
+  res.json(toAccountJson(user));
 });
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { firstName, lastName, avatar, email } = req.body as Record<string, unknown>;
-  const data: Record<string, string | null> = {};
+  const { firstName, lastName, avatar, email, coverImage, coverTheme, profileLinks } =
+    req.body as Record<string, unknown>;
+  const data: Record<string, string | null | ProfileLink[]> = {};
 
   if ('email' in req.body) {
     if (email !== null && email !== '') {
@@ -63,15 +92,52 @@ router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
   }
 
+  // ── Profile cover ──
+  // The image is one of our own uploads named by its path (never a data URL, and
+  // never a third-party host), so a cover is stored as a reference and costs the
+  // profile payload a few dozen bytes rather than a few hundred kilobytes.
+  if ('coverImage' in req.body) {
+    if (coverImage === null || coverImage === '') {
+      data.coverImage = null;
+    } else {
+      const path = normalizeImagePath(coverImage);
+      if (!path) {
+        res.status(400).json({ error: 'coverImage must be an uploaded image path, or empty' }); return;
+      }
+      data.coverImage = path;
+    }
+  }
+
+  if ('coverTheme' in req.body) {
+    if (coverTheme === null || coverTheme === '') {
+      data.coverTheme = null;                      // back to the derived gradient
+    } else if (typeof coverTheme !== 'string' || !COVER_THEME_RE.test(coverTheme)) {
+      res.status(400).json({ error: 'coverTheme must be a gradient name, or empty' }); return;
+    } else {
+      data.coverTheme = coverTheme;
+    }
+  }
+
+  if ('profileLinks' in req.body) {
+    const links = normalizeProfileLinks(profileLinks);
+    if (!links) {
+      res.status(400).json({
+        error: `Links must be up to ${MAX_PROFILE_LINKS} ordinary http(s) addresses`,
+      });
+      return;
+    }
+    data.profileLinks = links;
+  }
+
   if (Object.keys(data).length === 0) { res.status(400).json({ error: 'Nothing to update' }); return; }
 
   try {
     const user = await prisma.user.update({
       where: { id: req.userId! },
       data,
-      select: { username: true, email: true, firstName: true, lastName: true, avatar: true, totpEnabled: true },
+      select: ACCOUNT_SELECT,
     });
-    res.json(user);
+    res.json(toAccountJson(user));
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'P2002') {
       res.status(409).json({ error: 'That email is already in use' });

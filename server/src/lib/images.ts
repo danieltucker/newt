@@ -21,6 +21,23 @@ export function imagePathFor(id: string): string {
   return `${IMAGE_PATH_PREFIX}${id}`;
 }
 
+// Any column that names an uploaded image — a post's hero, a profile's cover —
+// holds either nothing or one of *our* images, named by its site-relative path.
+// Constraining it to that shape is what keeps such a column from becoming an
+// arbitrary-URL sink: an absolute value would let one user's page beacon every
+// visitor to a third-party host, and a `javascript:` or `data:` one would be an
+// injection vector wherever the string reaches an src attribute.
+//
+// Returns the value to store ('' for none), or null when it isn't acceptable.
+const IMAGE_PATH_RE = new RegExp(`^${IMAGE_PATH_PREFIX}[A-Za-z0-9_-]+$`);
+
+export function normalizeImagePath(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return '';                       // clearing the image is allowed
+  return IMAGE_PATH_RE.test(trimmed) ? trimmed : null;
+}
+
 // Raster formats only, and deliberately no SVG: an SVG is a document that can
 // carry <script> and external references, so serving user-supplied SVG from our
 // own origin would be a stored-XSS vector no sanitizer of the *embedding* HTML

@@ -351,55 +351,121 @@
   border-style: dashed;
 }
 
-/* ── Soft delete ghost state ── */
-.pendingDelete {
+/* ── Ghost state ──
+   An article that has been deleted or filed into the Library, still drawn where
+   it was. The delete has already gone through; this is a placeholder that holds
+   the slot open until the next load, so the cards below don't jump up under a
+   cursor that's already moving to the next one.
+
+   Faded far enough to read as gone, but not so far you can't tell what it was -
+   which is the point, since the only thing you can do with it is decide whether
+   to take it back. The border stays at full strength so the slot still reads as
+   an item rather than a hole in the grid. */
+.ghost {
+  border-color: color-mix(in oklab, var(--border) 90%, transparent);
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+}
+
+/* No lift, no shadow - it isn't something you can pick up any more */
+.ghost:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--border) 90%, transparent);
+}
+
+/* Everything the card is made of, minus the overlay itself. Written as one rule
+   over the children rather than per-class so nothing added to a card later can
+   forget to fade - and so the comment row can stay mounted, which is what keeps
+   the placeholder exactly as tall as the card it replaced. */
+.ghost > *:not(.ghostOverlay) {
+  opacity: 0.3;
+  filter: grayscale(1);
   pointer-events: none;
 }
 
-.pendingDelete .card,
-.pendingDelete .cardFooter {
-  opacity: 0.07;
-}
-
+/* Covers the card so nothing under it is clickable, but is itself transparent
+   to the eye - only the pill inside is opaque, and only the pill takes clicks */
 .ghostOverlay {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   border-radius: 14px;
-  border: 1.5px dashed var(--border);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  overflow: hidden;
-  pointer-events: all;
+  padding: 8px;
 }
 
-.ghostCenter {
+/* The picker covers the card the same way a placeholder does, but the card is
+   still live underneath - the scrim is what says so, and stops it looking
+   clickable while the overlay is swallowing the clicks. */
+.filingOverlay {
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.ghostPill {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 45%, transparent);
 }
 
 .ghostLabel {
-  font-size: 12px;
-  color: var(--muted);
-  opacity: 0.7;
   font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
-.undoBtn {
-  padding: 4px 12px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+/* Greyed, and paired with the shelf picker - together they say "it's filed, and
+   here's where" without needing a trip to the Library to change your mind */
+.ghostFolderIcon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.65;
+}
+
+.ghostSelect {
+  min-width: 0;
+  max-width: 130px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+}
+
+.ghostSelect:hover {
+  background: var(--surface2);
+}
+
+.undoBtn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
 .undoBtn:hover {
@@ -408,15 +474,24 @@
   color: var(--accent);
 }
 
-.countdownBar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  width: 100%;
-  background: color-mix(in oklab, var(--accent) 55%, transparent);
-  animation: countdownShrink 3s linear forwards;
-  transform-origin: left center;
+/* The commit in the shelf picker - filled, because up to this point nothing has
+   been saved and the button is the whole difference. */
+.confirmBtn {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+
+.confirmBtn:hover {
+  filter: saturate(1.15) brightness(1.06);
 }
 
 @keyframes countdownShrink {
@@ -436,9 +511,43 @@
 /* Comment strip, separated from the card meta by a hairline */
 .commentRow {
   display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 4px 16px 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+}
+
+/* Filing, offered a second time down here beside the comment bar - the corner
+   cluster is easy to miss, and this is where the pointer already is when you've
+   finished with a card. Matches CommentBar's pill so the two read as a pair. */
+.rowFolderBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface2) 70%, transparent);
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.rowFolderBtn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+/* A row is already crowded - the icon alone carries it there, and the corner
+   cluster is right beside it with the same action spelled out. */
+.gridList .rowFolderBtn span {
+  display: none;
 }
 
 /* ── Window-style controls - a cluster of grey buttons pinned to the card's
@@ -506,64 +615,58 @@
   z-index: 1;
 }
 
+/* A bar across the top of the card rather than a cover over all of it. Anything
+   the overlay sits on top of is unreachable while it's up, so it takes the one
+   band the card can spare - the head of the cover art, or the padding .noHero
+   already reserves - and leaves the title, tags and comment bar live. */
 .postReadOverlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 3;
-  border-radius: 13px;
+  border-radius: 13px 13px 0 0;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  /* Extra headroom so a three-line title can't run under the dismiss button */
-  padding: 28px 12px 14px;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
   background: color-mix(in oklab,
-    color-mix(in oklab, var(--accent) 12%, var(--surface)) 86%, transparent);
-  backdrop-filter: blur(3px);
+    color-mix(in oklab, var(--accent) 14%, var(--surface)) 92%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 40%, transparent);
   animation: postReadIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 @keyframes postReadIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Clamp the whole prompt as one block so a long headline can't blow out the
-   card, while the "?" stays attached to the title on the same line */
 .postReadTitle {
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--muted);
-  text-align: center;
-  line-height: 1.35;
-  max-width: 100%;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  line-height: 1.3;
+  white-space: nowrap;
   overflow: hidden;
-}
-
-/* The article's own title, emphasized within the prompt */
-.postReadItemTitle {
-  color: var(--text);
+  text-overflow: ellipsis;
 }
 
 .postReadBtns {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
+  flex-shrink: 0;
+  gap: 6px;
 }
 
 .postReadBtns button {
-  min-width: 92px;
-  padding: 10px 16px;
+  padding: 4px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 7px;
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   transition: filter 0.12s;
@@ -573,11 +676,10 @@
   filter: saturate(1.15) brightness(1.06);
 }
 
-/* Dismiss - sits above the card's own controls, which the overlay covers */
+/* Dismiss - the bar covers the card's own controls in this band, so it carries
+   its own way out */
 .postReadCloseBtn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+  flex-shrink: 0;
   width: 22px;
   height: 22px;
   display: flex;
@@ -760,6 +862,23 @@
   flex-shrink: 0;
   padding-right: 12px;
   opacity: 1;
+}
+
+/* A row has no band to spare above the title, so the post-read prompt joins the
+   flow at the right end instead of overlaying anything. `relative` keeps the
+   countdown bar - which is what actually dismisses the prompt - inside it. */
+.gridList .postReadOverlay {
+  position: relative;
+  flex-shrink: 0;
+  align-self: stretch;
+  margin-right: 12px;
+  border-radius: 10px;
+  padding: 5px 5px 5px 10px;
+  box-shadow: none;
+}
+
+.gridList .postReadTitle {
+  flex: none;
 }
 
 /* The wrap is the card surface - content link on top, footer row below,

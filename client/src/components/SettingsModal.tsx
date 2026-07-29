@@ -1,8 +1,15 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import styles from './SettingsModal.module.css';
 import { UserSettings } from '../hooks/useSettings';
 import { tagKey, hasFavorite } from '../utils/favoriteTags';
 import { apiFetch, apiGet, apiPatch, apiPost } from '../services/api';
+import { COVER_AUTO, COVER_THEMES, coverStyle } from '../utils/coverGradient';
+import {
+  LINK_PLATFORMS, MAX_PROFILE_LINKS, WEBSITE_PLATFORM,
+  guessPlatform, linkIcon, linkLabel, normalizeLinkUrl,
+  type ProfileLink,
+} from '../utils/profileLinks';
+import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 
 export interface UserProfile {
   username: string;
@@ -10,6 +17,11 @@ export interface UserProfile {
   firstName: string | null;
   lastName: string | null;
   avatar: string | null;
+  // The profile banner: an uploaded image path, a named gradient, or neither -
+  // see utils/coverGradient.
+  coverImage: string | null;
+  coverTheme: string | null;
+  profileLinks: ProfileLink[];
 }
 
 interface Props {
@@ -225,6 +237,18 @@ function FavoriteTagsBlock({ favorites, onChange }: {
   );
 }
 
+// A link's site mark, with its first letter as the fallback. Same treatment the
+// profile page gives it - a favicon through our own proxy, and a letter when the
+// site has none - so the row here previews what the profile will actually show.
+function LinkFavicon({ link }: { link: ProfileLink }) {
+  const [failed, setFailed] = useState(false);
+  const icon = linkIcon(link);
+  if (!icon || failed) {
+    return <span className={styles.linkFallback} aria-hidden>{linkLabel(link).charAt(0).toUpperCase()}</span>;
+  }
+  return <img className={styles.linkFavicon} src={icon} alt="" onError={() => setFailed(true)} />;
+}
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -259,6 +283,17 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
     }).catch(() => setProfileError('Could not load profile'));
   }, [section, profile]);
 
+  // Every successful save lands here. Besides the local state and the shell's
+  // top-bar avatar, it announces on the window - the profile page renders
+  // *underneath* this modal, and would otherwise keep showing the old photo,
+  // cover and links until something navigated. ArticleModal signals the same
+  // way when its reader closes.
+  const applyProfile = useCallback((p: UserProfile) => {
+    setProfile(p);
+    onProfileChange?.(p);
+    window.dispatchEvent(new Event('profile-updated'));
+  }, [onProfileChange]);
+
   async function saveNames() {
     setProfileSaving(true); setProfileError(''); setProfileSaved(false);
     try {
@@ -267,8 +302,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
         lastName: lastName.trim() || null,
         email: email.trim() || null,
       });
-      setProfile(p);
-      onProfileChange?.(p);
+      applyProfile(p);
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (e) {
@@ -316,8 +350,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
     try {
       const avatar = await fileToAvatar(file);
       const p = await apiPatch<UserProfile>('/api/v1/account', { avatar });
-      setProfile(p);
-      onProfileChange?.(p);
+      applyProfile(p);
     } catch { setProfileError('Could not update image'); }
   }
 
@@ -325,9 +358,93 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
     setProfileError('');
     try {
       const p = await apiPatch<UserProfile>('/api/v1/account', { avatar: null });
-      setProfile(p);
-      onProfileChange?.(p);
+      applyProfile(p);
     } catch { setProfileError('Could not remove image'); }
+  }
+
+  // ── Profile cover ─────────────────────────────────────────────────────────
+  // Each of these saves on the spot rather than waiting for "Save profile":
+  // picking a gradient or an image is a choice you make by *looking* at the
+  // result, so there is nothing for a second confirming click to add.
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  async function patchProfile(patch: Record<string, unknown>, failure: string) {
+    setProfileError('');
+    setCoverBusy(true);
+    try {
+      applyProfile(await apiPatch<UserProfile>('/api/v1/account', patch));
+    } catch (e) {
+      let msg = failure;
+      if (e instanceof Error) { try { msg = JSON.parse(e.message).error ?? msg; } catch { /* not JSON */ } }
+      setProfileError(msg);
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
+  // The cover goes through the ordinary image upload - downscaled in the
+  // browser, stored once, referenced by path - rather than the inline data URL
+  // an avatar uses. A banner is far too large to carry inside every copy of the
+  // profile payload.
+  async function handleCoverFile(file: File | undefined) {
+    if (!file) return;
+    setProfileError('');
+    setCoverBusy(true);
+    try {
+      const { url } = await uploadImage(file);
+      applyProfile(await apiPatch<UserProfile>('/api/v1/account', { coverImage: url }));
+    } catch (e) {
+      setProfileError(e instanceof Error ? e.message : 'Could not update the cover');
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
+  // ── Profile links ─────────────────────────────────────────────────────────
+  const [linkPlatform, setLinkPlatform] = useState<string>(LINK_PLATFORMS[0].id);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkError, setLinkError] = useState('');
+  const [linksBusy, setLinksBusy] = useState(false);
+
+  // The whole list is sent every time. It is at most eight entries and its order
+  // is part of what the owner chose, so there is no sensible per-item endpoint.
+  async function saveLinks(next: ProfileLink[]) {
+    setLinkError('');
+    setLinksBusy(true);
+    try {
+      applyProfile(await apiPatch<UserProfile>('/api/v1/account', { profileLinks: next }));
+      return true;
+    } catch (e) {
+      let msg = 'Could not save your links';
+      if (e instanceof Error) { try { msg = JSON.parse(e.message).error ?? msg; } catch { /* not JSON */ } }
+      setLinkError(msg);
+      return false;
+    } finally {
+      setLinksBusy(false);
+    }
+  }
+
+  async function addLink() {
+    const links = profile?.profileLinks ?? [];
+    const url = normalizeLinkUrl(linkUrl);
+    if (!url) { setLinkError('That doesn’t look like a web address'); return; }
+    if (links.some(l => l.url === url)) { setLinkError('That link is already on your profile'); return; }
+    if (await saveLinks([...links, { platform: linkPlatform, url }])) {
+      setLinkUrl('');
+      setLinkPlatform(LINK_PLATFORMS[0].id);
+    }
+  }
+
+  // Typing or pasting a recognised address picks the service for you - the
+  // dropdown is then a correction, not a step.
+  function onLinkUrlChange(value: string) {
+    setLinkUrl(value);
+    setLinkError('');
+    const url = normalizeLinkUrl(value);
+    if (!url) return;
+    const guess = guessPlatform(url);
+    if (guess !== WEBSITE_PLATFORM) setLinkPlatform(guess);
   }
 
   // ── Password state ────────────────────────────────────────────────────────────
@@ -837,6 +954,168 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                     </button>
                   </div>
                   {profileError && <div className={styles.totpError}>{profileError}</div>}
+                </div>
+
+                <div className={styles.sectionBlock}>
+                  <div className={styles.blockTitle}>Profile cover</div>
+                  <div className={styles.rowHint} style={{ marginBottom: 12 }}>
+                    The banner behind your photo on your profile page. Pick a gradient, or
+                    put a picture up there instead.
+                  </div>
+
+                  {/* Shown at the profile's own proportions, with the avatar on
+                      it, because that is the only question worth answering here:
+                      does your face read against this. */}
+                  <div
+                    className={styles.coverPreview}
+                    style={coverStyle(
+                      profile?.username ?? '',
+                      profile?.coverTheme,
+                      profile?.coverImage,
+                    )}
+                  >
+                    <div className={styles.coverPreviewScrim} aria-hidden />
+                    {profile?.avatar
+                      ? <img src={profile.avatar} alt="" className={styles.coverPreviewAvatar} />
+                      : <div className={`${styles.coverPreviewAvatar} ${styles.coverPreviewInitial}`}>
+                          {/* The same letter the profile shows: your name where you
+                              have one, your handle where you don't - matching
+                              displayNameOf on the server. */}
+                          {(([firstName, lastName].filter(Boolean).join(' ').trim()
+                            || profile?.username || '?').trim()[0] ?? '?').toUpperCase()}
+                        </div>}
+                  </div>
+
+                  {profile?.coverImage && (
+                    <div className={styles.rowHint} style={{ margin: '10px 0 0' }}>
+                      Your picture is showing. The gradient underneath it is what you’ll
+                      see again if you remove it.
+                    </div>
+                  )}
+
+                  <div className={styles.coverSwatches}>
+                    {COVER_THEMES.map(t => {
+                      const active = (profile?.coverTheme ?? COVER_AUTO) === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          className={`${styles.coverSwatch} ${active ? styles.coverSwatchActive : ''}`}
+                          disabled={coverBusy}
+                          onClick={() => patchProfile(
+                            { coverTheme: t.id === COVER_AUTO ? null : t.id },
+                            'Could not change the cover',
+                          )}
+                          title={t.label}
+                        >
+                          <span
+                            className={styles.coverSwatchChip}
+                            style={{ background: t.gradient ?? coverStyle(profile?.username ?? '').background }}
+                          />
+                          <span className={styles.coverSwatchLabel}>{t.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <input
+                    ref={coverInputRef}
+                    type="file"
+                    accept={ACCEPTED_IMAGE_TYPES}
+                    style={{ display: 'none' }}
+                    onChange={e => { handleCoverFile(e.target.files?.[0]); e.target.value = ''; }}
+                  />
+                  <div className={styles.saveRow}>
+                    <button
+                      className={styles.enableBtn}
+                      disabled={coverBusy}
+                      onClick={() => coverInputRef.current?.click()}
+                    >
+                      {coverBusy ? 'Working…' : profile?.coverImage ? 'Change picture' : 'Use a picture'}
+                    </button>
+                    {profile?.coverImage && (
+                      <button
+                        className={styles.cancelBtn}
+                        disabled={coverBusy}
+                        onClick={() => patchProfile({ coverImage: null }, 'Could not remove the picture')}
+                      >
+                        Remove picture
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.sectionBlock}>
+                  <div className={styles.blockTitle}>Links</div>
+                  <div className={styles.rowHint} style={{ marginBottom: 12 }}>
+                    Where else to find you. These show under your name on your profile,
+                    for anyone who can see it - up to {MAX_PROFILE_LINKS}.
+                  </div>
+
+                  <div className={styles.linkList}>
+                    {(profile?.profileLinks ?? []).length === 0 && (
+                      <span className={styles.favTagEmpty}>No links yet.</span>
+                    )}
+                    {(profile?.profileLinks ?? []).map(link => (
+                      <div key={link.url} className={styles.linkRow}>
+                        <LinkFavicon link={link} />
+                        <div className={styles.linkText}>
+                          <div className={styles.linkName}>{linkLabel(link)}</div>
+                          <a
+                            className={styles.linkHref}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {link.url}
+                          </a>
+                        </div>
+                        <button
+                          className={styles.cancelBtn}
+                          disabled={linksBusy}
+                          onClick={() => saveLinks(
+                            (profile?.profileLinks ?? []).filter(l => l.url !== link.url),
+                          )}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {(profile?.profileLinks ?? []).length < MAX_PROFILE_LINKS && (
+                    <div className={styles.linkAdd}>
+                      <select
+                        className={styles.linkSelect}
+                        value={linkPlatform}
+                        onChange={e => setLinkPlatform(e.target.value)}
+                        aria-label="Which service"
+                      >
+                        {LINK_PLATFORMS.map(p => (
+                          <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        className={styles.textInput}
+                        type="url"
+                        inputMode="url"
+                        value={linkUrl}
+                        maxLength={300}
+                        spellCheck={false}
+                        placeholder={LINK_PLATFORMS.find(p => p.id === linkPlatform)?.example}
+                        onChange={e => onLinkUrlChange(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }}
+                        aria-label="Link address"
+                      />
+                      <button
+                        className={styles.enableBtn}
+                        onClick={addLink}
+                        disabled={linksBusy || !linkUrl.trim()}
+                      >
+                        {linksBusy ? 'Saving…' : 'Add'}
+                      </button>
+                    </div>
+                  )}
+                  {linkError && <div className={styles.totpError}>{linkError}</div>}
                 </div>
 
                 <div className={styles.sectionBlock}>

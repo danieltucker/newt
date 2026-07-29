@@ -46,10 +46,28 @@ export async function makeSafeAgent(urlStr: string): Promise<http.Agent | https.
 
   const family = net.isIPv6(address) ? 6 : 4;
   const AgentClass = parsed.protocol === 'https:' ? https.Agent : http.Agent;
-  return new AgentClass({
-    lookup: (_host: string, _opts: unknown, cb: (err: Error | null, addr: string, fam: number) => void) =>
-      cb(null, address, family),
-  } as ConstructorParameters<typeof AgentClass>[0]);
+  return new AgentClass({ lookup: pinnedLookup(address, family) } as ConstructorParameters<typeof AgentClass>[0]);
+}
+
+type LookupCallback =
+  (err: Error | null, addr: string | { address: string; family: number }[], fam?: number) => void;
+
+/**
+ * A dns.lookup stand-in that always answers with one already-vetted address.
+ *
+ * It has to answer in two different shapes. Node ≥20 turns on `autoSelectFamily`
+ * by default, and that path asks a custom lookup for *every* address by passing
+ * `all: true`, expecting an array of `{ address, family }` back. Replying in the
+ * single-address form there aborts the connection with "Invalid IP address:
+ * undefined" — which every caller here reads as "the site had no metadata",
+ * because a failed fetch and a page without an og:title are indistinguishable
+ * once the error is swallowed. So the breakage is total and completely silent.
+ */
+function pinnedLookup(address: string, family: number) {
+  return (_host: string, opts: { all?: boolean } | undefined, cb: LookupCallback) => {
+    if (opts?.all) cb(null, [{ address, family }]);
+    else cb(null, address, family);
+  };
 }
 
 /** Convenience wrapper — use makeSafeAgent when you also need to fetch. */

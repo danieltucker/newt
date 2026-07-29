@@ -293,7 +293,11 @@ router.get('/:id/articles', async (req: AuthRequest, res: Response): Promise<voi
       feedId: { in: feedIds },
       ...(includeAll ? {} : { dismissals: { none: { userId: req.userId!, folderId: id } } }),
     };
-    const [items, total] = await Promise.all([
+    // `unread` spans the whole folder, not the page being returned. The client
+    // shows it on the Unread filter chip, which sits next to site tiles whose
+    // badges are counted the same way (see lib/unread.ts) - a chip counting only
+    // the ten loaded articles would say "1" beside a tile saying "19".
+    const [items, total, unread] = await Promise.all([
       prisma.feedItem.findMany({
         where,
         orderBy: [{ pubDate: 'desc' }, { fetchedAt: 'desc' }],
@@ -301,6 +305,7 @@ router.get('/:id/articles', async (req: AuthRequest, res: Response): Promise<voi
         take: limit,
       }),
       prisma.feedItem.count({ where }),
+      prisma.feedItem.count({ where: { ...where, reads: { none: { userId: req.userId! } } } }),
     ]);
 
     const reads = await prisma.readFeedItem.findMany({
@@ -327,7 +332,7 @@ router.get('/:id/articles', async (req: AuthRequest, res: Response): Promise<voi
       };
     });
 
-    res.json({ articles, total, hasMore: offset + articles.length < total });
+    res.json({ articles, total, unread, hasMore: offset + articles.length < total });
   } catch (err) {
     logger.error(err, 'Feed articles error');
     res.status(500).json({ error: 'Server error' });
@@ -415,6 +420,17 @@ router.post('/:id/articles/read', async (req: AuthRequest, res: Response): Promi
   }
 });
 
+// A site tile's badge counts items that are neither read nor dismissed, so
+// dismissing one has to recompute it — otherwise the tile keeps advertising an
+// article the feed no longer shows, and only a later read-flush (which calls
+// syncBookmarkBadges) would quietly put it right. Returned the same shape as
+// the read endpoint so the client applies it the same way.
+async function badgesForItem(userId: string, itemId: string) {
+  const item = await prisma.feedItem.findUnique({ where: { id: itemId }, select: { feedId: true } });
+  if (!item) return [];
+  return syncBookmarkBadges(userId, [item.feedId]);
+}
+
 // "Dismiss" marks the shared item hidden for this user+folder only
 router.delete('/:id/articles/:articleId', async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, articleId } = req.params;
@@ -425,8 +441,27 @@ router.delete('/:id/articles/:articleId', async (req: AuthRequest, res: Response
       data: [{ userId: req.userId!, folderId: id, itemId: articleId }],
       skipDuplicates: true,
     });
-    res.json({ ok: true });
-  } catch {
+    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, articleId) });
+  } catch (err) {
+    logger.error(err, 'Dismiss article error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Undo of the above. A dismissed card stays on screen greyed out until the feed
+// is reloaded, and this is what its Undo calls — lifting the dismissal puts the
+// item back in the folder's next fetch, and back on the tile's badge.
+router.post('/:id/articles/:articleId/restore', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id, articleId } = req.params;
+  try {
+    const folder = await prisma.folder.findFirst({ where: { id, userId: req.userId! } });
+    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
+    await prisma.dismissedFeedItem.deleteMany({
+      where: { userId: req.userId!, folderId: id, itemId: articleId },
+    });
+    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, articleId) });
+  } catch (err) {
+    logger.error(err, 'Restore article error');
     res.status(500).json({ error: 'Server error' });
   }
 });

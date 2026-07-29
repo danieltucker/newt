@@ -1,3 +1,8 @@
+// A profile's outbound link. Defined beside the platform table it goes with, and
+// re-exported here so a consumer of ProfileUser needs only the one import.
+import type { ProfileLink } from './utils/profileLinks';
+export type { ProfileLink };
+
 // One feed subscription inside a folder. It has an id of its own so it can be
 // renamed, re-pointed at a new URL, or moved to another folder and still be the
 // same subscription. `name` is "" when the user hasn't set one - see feedLabel.
@@ -242,6 +247,12 @@ export interface ProfileUser {
   displayName: string;
   avatar: string | null;
   createdAt: string;
+  // The banner behind the avatar. An uploaded image wins; failing that a named
+  // gradient; failing that one derived from the username. See coverStyle().
+  coverImage: string | null;
+  coverTheme: string | null;
+  // The owner's links out, in the order they arranged them.
+  profileLinks: ProfileLink[];
   commentCount: number;
   postCount: number;
   isSelf: boolean;

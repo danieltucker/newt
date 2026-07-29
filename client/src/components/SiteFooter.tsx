@@ -1,5 +1,6 @@
 import NewtMark from './NewtMark';
 import styles from './SiteFooter.module.css';
+import { REPO_URL } from '../utils/repo';
 
 // The footer, on every page that has a bottom.
 //
@@ -61,7 +62,7 @@ export default function SiteFooter({ className = '' }: { className?: string }) {
 
         <a
           className={styles.version}
-          href="https://github.com/danieltucker/newTab"
+          href={REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
         >

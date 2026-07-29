@@ -29,6 +29,14 @@ const MAX_TOPIC_CHIPS = 12;
 // through a screenful costs one request instead of a dozen
 const READ_FLUSH_MS = 600;
 
+// A card that's been dealt with - dismissed, or saved to the reading list - but
+// is still drawn in its slot, greyed out, until the feed reloads. Removing it
+// outright pulls every card below it up, and the next click lands on whatever
+// slid into place. Only a dismissal is undoable: undoing a save would have to
+// decide what to do with the reading-list copy, and "put the card back" isn't
+// obviously that. Both are already committed server-side.
+type GhostKind = 'dismissed' | 'saved';
+
 interface Props {
   folderId: string;
   onSaveArticle: (a: { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null }, markSaved: () => void) => void;
@@ -136,6 +144,25 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [ghosts, setGhosts] = useState<Map<string, GhostKind>>(new Map());
+  // Folder-wide, straight from the server, so the chip agrees with the site
+  // tiles in the rail rather than counting only what happens to be loaded.
+  const [unreadTotal, setUnreadTotal] = useState(0);
+
+  // ── What the unread filter shows ──
+  // Not "everything currently unread": read-on-scroll would then delete each
+  // card as you passed it and you'd never reach the bottom. Instead an article
+  // is judged once, when it first comes under the filter, and keeps its place
+  // for as long as the filter stays on.
+  //
+  // The first cut of this snapshotted the read set instead, and tested new
+  // arrivals against that snapshot - so every already-read article on every page
+  // fetched afterwards passed the filter, which is why the list filled up with
+  // cards carrying no unread outline.
+  const [unreadPinned, setUnreadPinned] = useState<Set<string>>(new Set());
+  // Ids the filter has already ruled on, so each is judged exactly once.
+  const unreadJudged = useRef<Set<string>>(new Set());
 
   // Tokenize the favorites once per change, not once per card.
   const favorites = useMemo(() => prepareFavorites(favoriteTags), [favoriteTags]);
@@ -166,7 +193,10 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const displayed = articles.filter(a =>
     (!activeCategory || a.categories.includes(activeCategory)) &&
     (!activeSource || a.source === activeSource) &&
-    (!favoritesOnly || favHits.has(a.id))
+    (!favoritesOnly || favHits.has(a.id)) &&
+    // A ghost keeps its slot whatever the unread filter says - it was on screen
+    // a moment ago and pulling it now would undo the point of leaving it there.
+    (!unreadOnly || ghosts.has(a.id) || unreadPinned.has(a.id))
   );
 
   // The filter has to go when its last match does, or you're left staring at an
@@ -181,10 +211,11 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     try {
       const r = await apiFetch(`/api/v1/folders/${folderId}/articles?offset=${offset}&limit=${pageSize}`);
       if (!r.ok) { setError('Could not load feed'); return; }
-      const data: { articles: FeedArticle[]; total: number } = await r.json();
+      const data: { articles: FeedArticle[]; total: number; unread?: number } = await r.json();
       const merged = offset === 0 ? data.articles : [...existing, ...data.articles];
       setArticles(merged);
       setTotal(data.total);
+      if (typeof data.unread === 'number') setUnreadTotal(data.unread);
       // Union rather than replace - ids marked read locally this session may not
       // have reached the server yet
       const serverRead = data.articles.filter(a => a.read).map(a => a.id);
@@ -203,6 +234,15 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     setReadIds(new Set());
     setActiveCategory(null);
     setActiveSource(null);
+    // A reload is exactly what clears the placeholders - the dismissed items
+    // simply won't come back in the response.
+    setGhosts(new Map());
+    setUnreadOnly(false);
+    setUnreadPinned(new Set());
+    unreadJudged.current = new Set();
+    // Cleared here rather than in its own effect so it happens before the read
+    // sweep seeds it - the other order wiped the seeding on every folder switch.
+    seenRef.current = new Set();
     load(0, []);
   }, [folderId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -216,8 +256,27 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   // Mirrors readIds - the observer callback can't see fresh state through its closure
   const readIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { readIdsRef.current = new Set(readIds); }, [readIds]);
+  // Same reason as readIdsRef: the scroll sweep runs outside React and can't see
+  // fresh state through its closure.
+  const ghostsRef = useRef<Map<string, GhostKind>>(new Map());
+  useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
+
+  // Pages fetched while the unread filter is on get judged as they land, on the
+  // read state they arrive with. Declared after the mirror above so readIdsRef
+  // is already up to date for the same commit that added the articles.
+  useEffect(() => {
+    if (!unreadOnly) return;
+    let added = false;
+    const next = new Set(unreadPinned);
+    for (const a of articles) {
+      if (unreadJudged.current.has(a.id)) continue;
+      unreadJudged.current.add(a.id);
+      if (!readIdsRef.current.has(a.id)) { next.add(a.id); added = true; }
+    }
+    if (added) setUnreadPinned(next);
+  }, [articles, unreadOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const flushRead = useCallback(async () => {
     if (flushTimer.current) { clearTimeout(flushTimer.current); flushTimer.current = null; }
@@ -230,6 +289,11 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         body: JSON.stringify({ itemIds }),
       });
       if (!r.ok) return;
+      // Every id in this batch was unread when it went into the queue (see the
+      // observer below), so each is one genuine transition - drawing the chip
+      // down by the batch size keeps it in step with the rail's badges, which
+      // the same response updates.
+      setUnreadTotal(n => Math.max(0, n - itemIds.length));
       const data: { bookmarks: { id: string; unreadCount: number }[] } = await r.json();
       if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
     } catch {
@@ -241,39 +305,68 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const flushRef = useRef(flushRead);
   useEffect(() => { flushRef.current = flushRead; }, [flushRead]);
 
+  // One pass over where the cards actually are. A card counts as read once it
+  // sits entirely above the top of the viewport, having previously been at or
+  // below it - the "previously" is what stops a folder switch or a Load more
+  // from retroactively marking a backlog nobody looked at.
+  //
+  // This was an IntersectionObserver watching for exit events, which is why
+  // articles were being skipped: the observer coalesces, and a card that goes
+  // from below the fold to above it between two callbacks reports neither edge,
+  // so it was never marked. Geometry can't miss - the sweep sees where every
+  // mounted card is, not just the ones that happened to fire.
+  const sweepRead = useCallback(() => {
+    const justRead: string[] = [];
+    for (const [id, el] of cardEls.current) {
+      // A dismissed card is still mounted as a placeholder. Marking it read as
+      // it scrolls by would count it twice against the unread total, which the
+      // dismissal has already drawn down - and "read" is meaningless for
+      // something you threw away.
+      if (ghostsRef.current.has(id)) continue;
+      const rect = el.getBoundingClientRect();
+      // A detached or display:none card measures 0x0 at the origin; treat it as
+      // nothing rather than as "scrolled past".
+      if (rect.height === 0 && rect.width === 0) continue;
+      if (rect.bottom > 0) { seenRef.current.add(id); continue; }
+      if (seenRef.current.has(id) && !readIdsRef.current.has(id)) justRead.push(id);
+    }
+    if (justRead.length === 0) return;
+    // Outline clears immediately; the server hears about it on the next flush
+    for (const id of justRead) {
+      readIdsRef.current.add(id);
+      pendingRef.current.add(id);
+    }
+    setReadIds(new Set(readIdsRef.current));
+    if (flushTimer.current) clearTimeout(flushTimer.current);
+    flushTimer.current = setTimeout(() => { flushRef.current(); }, READ_FLUSH_MS);
+  }, []);
+
   useEffect(() => {
     if (!markReadOnScroll) return;
-    const obs = new IntersectionObserver(entries => {
-      const justRead: string[] = [];
-      for (const entry of entries) {
-        const id = (entry.target as HTMLElement).dataset.articleId;
-        if (!id) continue;
-        if (entry.isIntersecting) { seenRef.current.add(id); continue; }
-        // Only an exit past the top counts - leaving via the bottom means the
-        // card scrolled back down out of view, which isn't "read"
-        const rootTop = entry.rootBounds?.top ?? 0;
-        if (seenRef.current.has(id) && !readIdsRef.current.has(id) &&
-            entry.boundingClientRect.bottom <= rootTop) {
-          justRead.push(id);
-        }
-      }
-      if (justRead.length === 0) return;
-      // Outline clears immediately; the server hears about it on the next flush
-      for (const id of justRead) readIdsRef.current.add(id);
-      setReadIds(new Set(readIdsRef.current));
-      for (const id of justRead) pendingRef.current.add(id);
-      if (flushTimer.current) clearTimeout(flushTimer.current);
-      flushTimer.current = setTimeout(() => { flushRef.current(); }, READ_FLUSH_MS);
-    });
-    observerRef.current = obs;
-    // Cards mounted before this effect ran (ref callbacks fire first on the
-    // commit that renders them) still need picking up
-    for (const el of cardEls.current.values()) obs.observe(el);
+    let queued = false;
+    function onScroll() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; sweepRead(); });
+    }
+    // Seeds seenRef for everything already on screen, so the first scroll has
+    // something to compare against.
+    sweepRead();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
     return () => {
-      obs.disconnect();
-      observerRef.current = null;
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
     };
-  }, [markReadOnScroll, folderId]);
+  }, [markReadOnScroll, folderId, sweepRead]);
+
+  // Newly appended pages need seeding too, or the first card of a page fetched
+  // while you were already scrolled down would be above the fold on its very
+  // first sweep and get skipped for never having been "seen".
+  useEffect(() => {
+    if (!markReadOnScroll) return;
+    sweepRead();
+  }, [articles, markReadOnScroll, sweepRead]);
 
   // Don't lose queued ids to a tab close or a folder switch
   useEffect(() => {
@@ -285,18 +378,10 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     };
   }, [folderId]);
 
-  useEffect(() => { seenRef.current = new Set(); }, [folderId]);
 
   const observeCard = useCallback((el: HTMLDivElement | null, id: string) => {
-    if (el) {
-      el.dataset.articleId = id;
-      cardEls.current.set(id, el);
-      observerRef.current?.observe(el);
-    } else {
-      const prev = cardEls.current.get(id);
-      if (prev) observerRef.current?.unobserve(prev);
-      cardEls.current.delete(id);
-    }
+    if (el) cardEls.current.set(id, el);
+    else cardEls.current.delete(id);
   }, []);
 
   // Infinite scroll - when the sentinel below the list enters the viewport,
@@ -336,7 +421,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   // Covers the pages that haven't been scrolled to yet, which is the whole
   // point - the server walks the folder's feeds rather than the loaded list.
   const [markingAll, setMarkingAll] = useState(false);
-  const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id));
+  const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id) && !ghosts.has(a.id));
 
   async function handleMarkAllRead() {
     if (markingAll) return;
@@ -352,6 +437,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         // Whatever is on screen is read now, even if the feed shifted mid-call
         for (const a of articles) readIdsRef.current.add(a.id);
         setReadIds(new Set(readIdsRef.current));
+        setUnreadTotal(0);
         onFolderMarkedRead?.(folderId);
       }
     } catch {
@@ -366,14 +452,47 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
       { id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories, readTime: a.readTime, imageUrl: a.imageUrl },
       // Once it's in the reading list it leaves the feed (dismissed server-side,
       // so it stays gone across refreshes)
-      () => handleDismiss(a.id)
+      () => handleDismiss(a.id, 'saved')
     );
   }
 
-  async function handleDismiss(articleId: string) {
-    setArticles(prev => prev.filter(a => a.id !== articleId));
-    setTotal(prev => Math.max(0, prev - 1));
-    apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}`, { method: 'DELETE' }).catch(() => {});
+  // Commits straight away. The card stays in the list as a greyed-out
+  // placeholder so nothing below it moves; the next load is what clears it,
+  // which is also when the feed is expected to re-lay out.
+  // Both endpoints hand back the site tiles whose badge changed, because a
+  // dismissal takes the article off those counts too - without this the rail
+  // went on advertising articles the feed had already dropped.
+  async function applyBadges(res: Response) {
+    if (!res.ok) return;
+    const data: { bookmarks?: { id: string; unreadCount: number }[] } = await res.json();
+    if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
+  }
+
+  function handleDismiss(articleId: string, kind: GhostKind = 'dismissed') {
+    setGhosts(prev => new Map(prev).set(articleId, kind));
+    // Only an unread article was being counted, so only that one moves the chip.
+    if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => Math.max(0, n - 1));
+    apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}`, { method: 'DELETE' })
+      .then(applyBadges).catch(() => {});
+  }
+
+  function handleUndoDismiss(articleId: string) {
+    setGhosts(prev => { const m = new Map(prev); m.delete(articleId); return m; });
+    if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => n + 1);
+    apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}/restore`, { method: 'POST' })
+      .then(applyBadges).catch(() => {});
+  }
+
+  function toggleUnreadOnly() {
+    if (unreadOnly) { setUnreadOnly(false); return; }
+    const pinned = new Set<string>();
+    unreadJudged.current = new Set();
+    for (const a of articles) {
+      unreadJudged.current.add(a.id);
+      if (!readIdsRef.current.has(a.id)) pinned.add(a.id);
+    }
+    setUnreadPinned(pinned);
+    setUnreadOnly(true);
   }
 
   if (loading) return (
@@ -408,7 +527,11 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
       <div className={styles.headerRow}>
         <div className={styles.sectionLabel}>
           Feed Articles
-          <span className={styles.count}>{total}</span>
+          {/* `total` still counts the placeholders, because it's also what
+              paging measures against - articles.length includes them too, so
+              decrementing it here would strand the last page. Only the label
+              nets them out. */}
+          <span className={styles.count}>{Math.max(0, total - ghosts.size)}</span>
         </div>
         <div className={styles.headerActions}>
           {markReadOnScroll && (
@@ -428,8 +551,24 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
         </div>
       </div>
 
-      {(allCategories.length > 1 || allSources.length > 1 || favHits.size > 0) && (
+      {(allCategories.length > 1 || allSources.length > 1 || favHits.size > 0 || markReadOnScroll) && (
         <div className={styles.chips}>
+          {/* Read state is only tracked when read-on-scroll is on, so without it
+              there is no such thing as unread here to filter to. */}
+          {markReadOnScroll && (
+            <button
+              className={`${styles.chip} ${styles.unreadChip} ${unreadOnly ? styles.chipActive : ''}`}
+              onClick={toggleUnreadOnly}
+              aria-pressed={unreadOnly}
+              disabled={!unreadOnly && unreadTotal === 0}
+              title={unreadOnly
+                ? 'Show every article again'
+                : `Show only articles you haven’t read yet (${unreadTotal} in this folder)`}
+            >
+              Unread
+              <span className={styles.chipCount}>{unreadTotal}</span>
+            </button>
+          )}
           {/* Shown whenever there's a list to manage, not only when something
               matches - otherwise a favorite that has stopped matching becomes
               unreachable from the page it's affecting. The filter button
@@ -487,15 +626,22 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
       )}
 
       <div className={gridClass}>
-        {displayed.map((a, i) => (
+        {displayed.length === 0 ? (
+          <div className={styles.status} style={{ opacity: 0.45 }}>
+            {unreadOnly ? 'Nothing unread here - everything on this page has been read.'
+              : 'No articles match these filters.'}
+          </div>
+        ) : displayed.map((a, i) => (
           <ArticleCard
             key={a.id}
             article={a}
             variant={variants?.[i]}
             isNew={markReadOnScroll && !readIds.has(a.id)}
+            ghost={ghosts.get(a.id)}
             cardRef={markReadOnScroll ? observeCard : undefined}
             onSave={() => handleSave(a)}
             onDismiss={() => handleDismiss(a.id)}
+            onUndoDismiss={() => handleUndoDismiss(a.id)}
             commentCount={commentCounts[a.link] ?? 0}
             onOpenReader={() => setReading(a)}
             onViewProfile={onViewProfile}
@@ -547,10 +693,12 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   );
 }
 
-function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
+  /** Set when this card is a placeholder for something already dealt with. */
+  ghost?: GhostKind;
   cardRef?: (el: HTMLDivElement | null, id: string) => void;
-  onSave: () => void; onDismiss: () => void;
+  onSave: () => void; onDismiss: () => void; onUndoDismiss: () => void;
   commentCount: number;
   onOpenReader: () => void;
   onViewProfile?: (username: string) => void;
@@ -578,7 +726,8 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
   const hasHero = showImage && !!article.imageUrl;
   const wrapClass = [
     styles.cardWrap,
-    isNew ? styles.unread : '',
+    ghost ? styles.ghost : '',
+    isNew && !ghost ? styles.unread : '',
     variant === 'feature' ? styles.featureWrap : '',
     variant === 'brief' ? styles.briefWrap : '',
     variant === 'text' ? styles.textWrap : '',
@@ -589,6 +738,20 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
 
   return (
     <div className={wrapClass} ref={cardRef ? el => cardRef(el, article.id) : undefined}>
+      {/* Covers the card so nothing under it is clickable, while leaving it
+          legible - you can still see what you just got rid of. */}
+      {ghost && (
+        <div className={styles.ghostOverlay}>
+          <div className={styles.ghostPill}>
+            <span className={styles.ghostLabel}>
+              {ghost === 'saved' ? 'Saved to reading list' : 'Dismissed'}
+            </span>
+            {ghost === 'dismissed' && (
+              <button className={styles.undoBtn} onClick={onUndoDismiss}>Undo</button>
+            )}
+          </div>
+        </div>
+      )}
       <div className={styles.card}>
         {showImage && article.imageUrl && (
           <img
@@ -667,8 +830,12 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
         <div className={styles.commentRow}>
           <CommentBar count={commentCount} onClick={onOpenReader} />
         </div>
-        {/* Floating window-style controls - top-right, over the cover art */}
-        <div className={styles.cardActions}>
+        {/* Floating window-style controls - top-right, over the cover art.
+            Dropped entirely on a ghost rather than hidden with an attribute:
+            .cardActions sets `display: flex`, which would beat [hidden]'s UA
+            `display: none` and leave them looking clickable. They're absolute,
+            so removing them costs the card no height. */}
+        {!ghost && <div className={styles.cardActions}>
           <button
             className={styles.actionBtn}
             onClick={onSave}
@@ -682,7 +849,7 @@ function ArticleCard({ article, variant, isNew, cardRef, onSave, onDismiss, comm
               <path d="M1 1l10 10M11 1L1 11"/>
             </svg>
           </button>
-        </div>
+        </div>}
       </div>
     </div>
   );

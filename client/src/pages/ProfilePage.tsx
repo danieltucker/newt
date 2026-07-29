@@ -1,10 +1,11 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import styles from './ProfilePage.module.css';
 import { apiFetch, apiGet, apiPost } from '../services/api';
 import {
-  ProfileUser, ProfileComment, FriendRelation,
+  ProfileUser, ProfileComment, FriendRelation, ProfileLink,
   BlogPost, BlogPostSummary, ProfileActivityItem,
 } from '../types';
+import { linkIcon, linkLabel } from '../utils/profileLinks';
 import { relTime } from '../utils/notifications';
 import { articlePathFor } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
@@ -37,6 +38,10 @@ interface Props {
   onOpenArticle?: (url: string) => void;
   /** Raw ?tab= value from the URL. Unrecognised values fall back to Posts. */
   initialTab?: string | null;
+  /** Open Settings on the Account section, where the photo, cover and links are
+   *  edited. Absent standalone, where there is no settings panel to open - so the
+   *  avatar's Edit affordance appears only inside the app shell. */
+  onEditProfile?: () => void;
 }
 
 // Posts is the landing tab. 'history' is the merged stream - posts and shared
@@ -99,21 +104,31 @@ function Shell({ embedded, children }: { embedded?: boolean; children: ReactNode
   );
 }
 
-export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, initialTab }: Props) {
+export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, initialTab, onEditProfile }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromParam(initialTab));
+  // Bumped to re-run the header fetch without clearing what's on screen - see
+  // the profile-updated listener below.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   // Following a ?tab= link while already on a profile changes the prop but not
   // the mounted state, so the tab has to follow it.
   useEffect(() => { setTab(tabFromParam(initialTab)); }, [initialTab, username]);
 
+  // A different profile is a different page: drop the old header rather than
+  // showing it under the new name while the fetch below is in flight. Declared
+  // ahead of that fetch so it has already cleared state by the time it runs.
+  useEffect(() => { setProfile(null); setState('loading'); }, [username]);
+
   // Load the profile header. Re-runs if the viewer's auth changes (a friend logging
   // in should reveal friends-only content and the relation control).
   useEffect(() => {
     let cancelled = false;
-    setState('loading');
-    setProfile(null);
+    // Only the first load blanks the page. A refresh triggered by an edit keeps
+    // the old header up until the new one lands, so saving a cover doesn't flash
+    // the profile through "Loading…".
+    setState(s => (s === 'ready' ? s : 'loading'));
     apiFetch(`/api/v1/profiles/${encodeURIComponent(username)}`)
       .then(async res => {
         if (cancelled) return;
@@ -125,7 +140,17 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
       })
       .catch(() => { if (!cancelled) setState('error'); });
     return () => { cancelled = true; };
-  }, [username, accessToken]);
+  }, [username, accessToken, reloadNonce]);
+
+  // Settings announces a saved account (photo, cover, links) on the window, the
+  // way the article reader announces closing. Editing happens in a modal over
+  // this page, so without this the profile underneath would keep showing the old
+  // banner until something else navigated.
+  useEffect(() => {
+    function onUpdated() { setReloadNonce(n => n + 1); }
+    window.addEventListener('profile-updated', onUpdated);
+    return () => window.removeEventListener('profile-updated', onUpdated);
+  }, []);
 
   useEffect(() => {
     if (profile) document.title = `${profile.displayName} · Profile`;
@@ -178,6 +203,7 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
         profile={profile}
         accessToken={accessToken}
         navigate={navigate}
+        onEditProfile={onEditProfile}
         onRelationChange={rel => setProfile(p => (p ? { ...p, relation: rel } : p))}
         onBlockedChange={blocked => setProfile(p => (p ? { ...p, blocked, relation: 'none' } : p))}
       />
@@ -195,38 +221,20 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
         </div>
       ) : (
         <>
-          <div className={styles.tabs} role="tablist">
-            <button role="tab" aria-selected={tab === 'posts'}
-              className={`${styles.tab} ${tab === 'posts' ? styles.tabActive : ''}`}
-              onClick={() => setTab('posts')}>
-              Posts{profile.postCount > 0 && <span className={styles.tabCount}>{profile.postCount}</span>}
-            </button>
-            <button role="tab" aria-selected={tab === 'history'}
-              className={`${styles.tab} ${tab === 'history' ? styles.tabActive : ''}`}
-              onClick={() => setTab('history')}>
-              History
-            </button>
-            <button role="tab" aria-selected={tab === 'comments'}
-              className={`${styles.tab} ${tab === 'comments' ? styles.tabActive : ''}`}
-              onClick={() => setTab('comments')}>
-              Comments{profile.commentCount > 0 && <span className={styles.tabCount}>{profile.commentCount}</span>}
-            </button>
-            {/* Self-only - see the Tab type */}
-            {profile.isSelf && (
-              <button role="tab" aria-selected={tab === 'friends'}
-                className={`${styles.tab} ${tab === 'friends' ? styles.tabActive : ''}`}
-                onClick={() => setTab('friends')}>
-                Friends
-              </button>
-            )}
-            {profile.isSelf && (
-              <button role="tab" aria-selected={tab === 'library'}
-                className={`${styles.tab} ${tab === 'library' ? styles.tabActive : ''}`}
-                onClick={() => setTab('library')}>
-                Library
-              </button>
-            )}
-          </div>
+          <ProfileTabs
+            tabs={[
+              { id: 'posts', label: 'Posts', count: profile.postCount },
+              { id: 'history', label: 'History' },
+              { id: 'comments', label: 'Comments', count: profile.commentCount },
+              // Self-only - see the Tab type
+              ...(profile.isSelf ? [
+                { id: 'friends' as Tab, label: 'Friends' },
+                { id: 'library' as Tab, label: 'Library' },
+              ] : []),
+            ]}
+            active={tab}
+            onSelect={setTab}
+          />
 
           {tab === 'posts' && (
             <PostsTab username={profile.username} authKey={accessToken} onOpen={goPost} />
@@ -257,6 +265,85 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
   );
 }
 
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+// One bar under the row, and it moves. It rests under the selected tab in the
+// accent colour; point at any other tab and it slides there and goes grey, which
+// says "this is where you'd land" without pretending you have already landed.
+// Letting go puts it back where it belongs.
+//
+// The bar is positioned rather than being each button's own border, because a
+// border can't travel between two elements - measuring is what makes the
+// movement possible at all.
+interface TabSpec { id: Tab; label: string; count?: number }
+
+function ProfileTabs({ tabs, active, onSelect }: {
+  tabs: TabSpec[];
+  active: Tab;
+  onSelect: (t: Tab) => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<Tab | null>(null);
+  const [bar, setBar] = useState<{ left: number; width: number } | null>(null);
+
+  // Whichever tab the bar should currently be under: the one being pointed at,
+  // or the selected one when nothing is.
+  const target = preview ?? active;
+
+  // Layout effect, not a plain one: the bar has to be measured and placed in the
+  // same frame the row paints, or it starts at 0 and slides in from the left the
+  // first time a profile loads.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    function measure() {
+      const el = list?.querySelector<HTMLElement>(`[data-tab="${target}"]`);
+      if (el) setBar({ left: el.offsetLeft, width: el.offsetWidth });
+    }
+    measure();
+    // The row wraps and re-measures on a narrow screen, and the counts arrive
+    // after the first paint - both move the buttons under a bar already placed.
+    const ro = new ResizeObserver(measure);
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [target, tabs.length]);
+
+  return (
+    <div
+      className={styles.tabs}
+      role="tablist"
+      ref={listRef}
+      onMouseLeave={() => setPreview(null)}
+    >
+      {tabs.map(t => (
+        <button
+          key={t.id}
+          data-tab={t.id}
+          role="tab"
+          aria-selected={active === t.id}
+          className={`${styles.tab} ${active === t.id ? styles.tabActive : ''}`}
+          onClick={() => onSelect(t.id)}
+          onMouseEnter={() => setPreview(t.id)}
+          // Keyboard parity: tabbing through the row moves the bar too.
+          onFocus={() => setPreview(t.id)}
+          onBlur={() => setPreview(null)}
+        >
+          {t.label}
+          {t.count !== undefined && t.count > 0 && (
+            <span className={styles.tabCount}>{t.count}</span>
+          )}
+        </button>
+      ))}
+      {bar && (
+        <span
+          className={`${styles.tabBar} ${target === active ? '' : styles.tabBarPreview}`}
+          style={{ left: bar.left, width: bar.width }}
+          aria-hidden
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Library tab ───────────────────────────────────────────────────────────────
 // Takes the shell's reading list when embedded so a Restore here shows up on the
 // New Tab page immediately. Standalone there is no shell, so it loads its own.
@@ -283,11 +370,47 @@ function LibraryTab({ accessToken, binding, onOpenArticle }: {
   );
 }
 
+// The row of small site marks under the handle - Bluesky, GitHub, a personal
+// site. Icons are favicons taken from each link's own host (see linkIcon), so
+// any site works and nothing here needs updating when one rebrands; a host with
+// no favicon falls back to its first letter rather than a broken image.
+function ProfileLinks({ links }: { links: ProfileLink[] }) {
+  if (links.length === 0) return null;
+  return (
+    <div className={styles.links}>
+      {links.map(link => (
+        <ProfileLinkChip key={link.url} link={link} />
+      ))}
+    </div>
+  );
+}
+
+function ProfileLinkChip({ link }: { link: ProfileLink }) {
+  const [failed, setFailed] = useState(false);
+  const label = linkLabel(link);
+  const icon = linkIcon(link);
+  return (
+    <a
+      className={styles.linkChip}
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`${label} - ${link.url}`}
+      aria-label={label}
+    >
+      {icon && !failed
+        ? <img className={styles.linkIcon} src={icon} alt="" onError={() => setFailed(true)} />
+        : <span className={styles.linkInitial} aria-hidden>{label.charAt(0).toUpperCase()}</span>}
+    </a>
+  );
+}
+
 // ── Header ────────────────────────────────────────────────────────────────
-function ProfileHeader({ profile, accessToken, navigate, onRelationChange, onBlockedChange }: {
+function ProfileHeader({ profile, accessToken, navigate, onEditProfile, onRelationChange, onBlockedChange }: {
   profile: ProfileUser;
   accessToken: string | null;
   navigate: (to: string) => void;
+  onEditProfile?: () => void;
   onRelationChange: (rel: FriendRelation) => void;
   onBlockedChange: (blocked: boolean) => void;
 }) {
@@ -342,17 +465,42 @@ function ProfileHeader({ profile, accessToken, navigate, onRelationChange, onBlo
     setBusy(false);
   }
 
+  // Only the owner gets the Edit affordance, and only where there is a settings
+  // panel to open - standalone (a logged-out visitor on a shared link) there
+  // isn't one, so the prop is absent and the avatar is a plain image.
+  const canEdit = profile.isSelf && !!onEditProfile;
+
   return (
     <div className={styles.header}>
-      {/* A cover strip, tinted from the profile's own accent seed so two
-          profiles don't look like the same page with a different name on it. */}
-      <div className={styles.cover} style={coverStyle(profile.username)} aria-hidden />
+      {/* The cover runs from the top of the card down to the top of the display
+          name, with the avatar standing on it. It is an uploaded image if the
+          owner set one, otherwise a gradient they picked, otherwise one tinted
+          from their own accent seed - so two profiles never look like the same
+          page with a different name on it. */}
+      <div
+        className={styles.cover}
+        style={coverStyle(profile.username, profile.coverTheme, profile.coverImage)}
+      >
+        <div className={styles.coverScrim} aria-hidden />
+        <div className={styles.avatarSlot}>
+          {canEdit ? (
+            <button
+              type="button"
+              className={styles.avatarEdit}
+              onClick={onEditProfile}
+              title="Edit your photo, cover and links"
+            >
+              <Avatar user={profile} />
+              <span className={styles.avatarEditVeil} aria-hidden>Edit</span>
+              <span className={styles.srOnly}>Edit your photo, cover and links</span>
+            </button>
+          ) : (
+            <Avatar user={profile} />
+          )}
+        </div>
+      </div>
 
       <div className={styles.headerBody}>
-        <div className={styles.avatarSlot}>
-          <Avatar user={profile} />
-        </div>
-
         <div className={styles.identityRow}>
           <div className={styles.identity}>
             <div className={styles.displayName}>{profile.displayName}</div>
@@ -363,6 +511,7 @@ function ProfileHeader({ profile, accessToken, navigate, onRelationChange, onBlo
                 <span className={styles.relTag}>{relationTag(profile.relation, accessToken)}</span>
               )}
             </div>
+            <ProfileLinks links={profile.profileLinks} />
           </div>
 
           {/* One primary action, everything else behind the overflow - the

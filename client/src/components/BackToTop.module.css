@@ -1,0 +1,63 @@
+/* Bottom-right, above everything on the page but below the modals - a reader or
+   settings dialog covers the scroll it would return you to.
+   Stacked directly above the notes launcher (46px at right/bottom 22px in
+   NewTabPage.module.css) and centred on the same axis, so the two read as one
+   column of controls rather than two things that nearly collided. */
+.btn {
+  position: fixed;
+  right: 24px;
+  bottom: 78px;
+  z-index: 40;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 55%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  /* Parked out of the way until .shown - visibility is what keeps it from
+     eating clicks meant for the content underneath while it's invisible. */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: opacity 0.18s, transform 0.18s, visibility 0.18s,
+              background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.shown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.btn:hover {
+  background: color-mix(in oklab, var(--accent) 88%, transparent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: opacity 0.18s, visibility 0.18s; transform: none; }
+  .shown { transform: none; }
+}
+
+@media (max-width: 640px) {
+  .btn {
+    right: 26px;
+    bottom: 74px;
+    width: 38px;
+    height: 38px;
+  }
+}

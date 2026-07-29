@@ -113,6 +113,28 @@
   font-weight: 600;
 }
 
+/* The unread filter, first in the row: it's the one chip that narrows the feed
+   by state rather than by subject, which is what you reach for on a backlog. */
+.unreadChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.unreadChip:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.chipCount {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
 /* The favorites filter - a different axis from the topic chips beside it, so it
    wears the favorite colour rather than the accent. */
 .favChip {
@@ -352,6 +374,83 @@
 .cardWrap:hover .card {
   box-shadow: 0 12px 28px var(--shadow);
   border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+/* ── Ghost ──
+   An article that's been dismissed or saved, still holding its slot so the feed
+   doesn't close up under the pointer. Faded far enough to read as gone but not
+   so far you can't tell what it was - the only decision left is whether to take
+   it back. The border stays at full strength so the slot still reads as an item
+   rather than a hole in the grid. */
+.ghost .card {
+  opacity: 0.3;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+.ghost:hover {
+  transform: none;
+}
+
+.ghost:hover .card {
+  box-shadow: none;
+  border-color: var(--border);
+}
+
+/* Blocks the card underneath while staying invisible itself - only the pill is
+   opaque, and only the pill takes clicks. */
+.ghostOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.ghostPill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 45%, transparent);
+}
+
+.ghostLabel {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.undoBtn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.undoBtn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── Unread ──

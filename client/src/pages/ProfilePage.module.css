@@ -28,10 +28,16 @@
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
 /* ── Header ──
-   A cover strip with the avatar straddling its lower edge. The identity, the
-   one primary action and the stats then read top-to-bottom in that order,
-   instead of the old three-column split that left a stack of four equal-weight
-   buttons hanging off the right. */
+   A cover that runs from the top of the card down to the top of the display
+   name, with the avatar standing on it. The identity, the one primary action
+   and the stats then read top-to-bottom in that order, instead of the old
+   three-column split that left a stack of four equal-weight buttons hanging off
+   the right.
+
+   The cover used to be a 104px strip the avatar straddled, which read as a
+   decorative rule rather than a banner and gave an uploaded photo nowhere to
+   be. Now the avatar sits *inside* it and the name begins immediately below,
+   so the picture ends exactly where the person's name starts. */
 .header {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -40,33 +46,147 @@
 }
 
 .cover {
-  height: 104px;
-  /* The gradient itself is inline (derived per-username); this only softens it
-     so the strip frames the card rather than shouting from the top of it. */
-  opacity: 0.82;
+  /* The background - gradient, or an uploaded image over it - is inline, since
+     it is per-profile. Everything about how tall it is lives here. */
   position: relative;
+  min-height: 196px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 22px 16px;
 }
-/* Fades the strip into the card below, so the avatar isn't cut by a hard line */
-.cover::after {
-  content: '';
+
+/* Two jobs, and both matter more now the cover can be a photograph: it darkens
+   the foot of the banner so the avatar's ring and the name below it stay
+   legible over a bright image, and it fades into the card so the cover's lower
+   edge is a transition rather than a cut. */
+.coverScrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 40%, color-mix(in oklab, var(--surface) 55%, transparent));
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, #000 6%, transparent) 0%,
+    transparent 34%,
+    color-mix(in oklab, #000 22%, transparent) 100%
+  );
 }
 
 .headerBody {
-  padding: 0 22px 20px;
+  /* Small, because the cover's own padding already sets the avatar off the
+     name. The gap here is what separates the banner from the text under it. */
+  padding: 14px 22px 20px;
 }
 
-/* Pulls the avatar up over the cover's lower edge. Positioned so it stacks
-   above .cover::after - that fade is a positioned pseudo-element, and without
-   a stacking context here it paints straight over the avatar. */
+/* Stacks above .coverScrim, which is a positioned sibling and would otherwise
+   paint straight over the avatar. */
 .avatarSlot {
   position: relative;
   z-index: 1;
-  margin-top: -40px;
-  margin-bottom: 10px;
   width: max-content;
+}
+
+/* The owner's own avatar is a button into Settings. It carries no chrome of its
+   own - the veil below is the entire affordance - so it must not look like a
+   button until it is pointed at. */
+.avatarEdit {
+  display: block;
+  position: relative;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.avatarEditVeil {
+  position: absolute;
+  /* Inset by the avatar's own ring so the veil covers the photograph and not
+     the surface-coloured border around it. */
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  /* Blur as well as darken. A scrim alone is invisible over the letter-tile
+     fallback, which is already near-black - the blur is what makes the veil
+     read as covering something whatever is underneath it, photo or initial. */
+  background: color-mix(in oklab, #000 62%, transparent);
+  backdrop-filter: blur(3px);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+/* The ring picks up the accent too, so the affordance is legible even where
+   backdrop-filter isn't supported. */
+.avatarEdit:hover .avatar,
+.avatarEdit:hover .avatarFallback,
+.avatarEdit:focus-visible .avatar,
+.avatarEdit:focus-visible .avatarFallback {
+  border-color: var(--accent);
+}
+.avatarEdit:hover .avatarEditVeil,
+.avatarEdit:focus-visible .avatarEditVeil { opacity: 1; }
+
+/* Text for a screen reader only. The veil says "Edit" visually, but it is
+   aria-hidden - it appears on hover, and a title attribute is not announced
+   reliably. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Links out ── */
+/* Small site marks under the handle. Favicons rather than a bundled icon set,
+   the same way bookmark tiles are drawn - which is what lets someone link
+   anywhere, not only to the services we happened to think of. */
+.links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.linkChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.linkChip:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.linkIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  display: block;
+}
+
+.linkInitial {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .identityRow {
@@ -217,8 +337,10 @@
 .overflowDanger { color: #e5484d; }
 .overflowDanger:hover { background: color-mix(in oklab, #e5484d 12%, transparent); }
 
+/* Large enough to be a portrait rather than a stamp - it is the one picture on
+   the page that is of the person whose page it is. */
 .avatar {
-  width: 84px; height: 84px;
+  width: 118px; height: 118px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -228,7 +350,7 @@
   display: block;
 }
 .avatarFallback {
-  width: 84px; height: 84px;
+  width: 118px; height: 118px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -236,13 +358,17 @@
   background: color-mix(in oklab, var(--accent) 22%, var(--surface2));
   color: var(--text);
   font-weight: 700;
-  font-size: 32px;
+  font-size: 44px;
   flex-shrink: 0;
   border: 4px solid var(--surface);
 }
 
 /* ── Tabs ── */
+/* position: relative because .tabBar is placed against this box - see the
+   comment on ProfileTabs for why the underline is one moving element rather
+   than a border on each button. */
 .tabs {
+  position: relative;
   display: flex;
   gap: 4px;
   margin: 24px 0 12px;
@@ -258,15 +384,39 @@
   font-weight: 650;
   padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  transition: color 0.15s;
 }
 .tab:hover { color: var(--text); }
-.tabActive { color: var(--text); border-bottom-color: var(--accent); }
+.tabActive { color: var(--text); }
 .tabCount { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+/* The travelling underline. `left`/`width` are set inline from the measured
+   button. Sits at bottom: 0 - directly on the row's rule rather than over it -
+   because the row scrolls sideways on a narrow screen, and an overflow box
+   would clip anything hanging past its edge. */
+.tabBar {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  transition:
+    left 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.18s ease;
+}
+
+/* Parked under a tab you're only pointing at. Grey, because it is showing you
+   where you would land - not claiming you are already there. */
+.tabBarPreview { background: color-mix(in oklab, var(--muted) 75%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tabBar { transition: background-color 0.18s ease; }
+}
 
 /* ── Lists ── */
 .list { display: flex; flex-direction: column; gap: 10px; }
@@ -567,12 +717,16 @@
 }
 
 @media (max-width: 520px) {
-  .cover { height: 82px; }
-  .headerBody { padding: 0 16px 18px; }
-  .avatarSlot { margin-top: -32px; }
-  .avatar, .avatarFallback { width: 68px; height: 68px; }
-  .avatarFallback { font-size: 26px; }
+  .cover { min-height: 152px; padding: 0 16px 14px; }
+  .headerBody { padding: 12px 16px 18px; }
+  .avatar, .avatarFallback { width: 88px; height: 88px; }
+  .avatarFallback { font-size: 32px; }
   /* The action row drops below the name rather than squeezing beside it */
   .identityRow { flex-direction: column; align-items: stretch; gap: 12px; }
   .displayName { font-size: 21px; }
+  /* The row scrolls sideways rather than wrapping - a wrapped tab row would put
+     the travelling bar on a line the pointer isn't on. */
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; }
 }

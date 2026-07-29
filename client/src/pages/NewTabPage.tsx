@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } fr
 import styles from './NewTabPage.module.css';
 import ShellBar, { RAIL_NARROW } from '../components/ShellBar';
 import SiteFooter from '../components/SiteFooter';
+import BackToTop from '../components/BackToTop';
 import { toggleFavorite } from '../utils/favoriteTags';
 import SearchBar from '../components/SearchBar';
 import FolderSidebar from '../components/FolderSidebar';
@@ -33,6 +34,7 @@ import { useFolders } from '../hooks/useFolders';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
+import { useReadingFolders } from '../hooks/useReadingFolders';
 import { useSettings } from '../hooks/useSettings';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
@@ -125,7 +127,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // binding so its Library tab shares this exact list instead of loading a
   // second copy that would drift from it.
   const readingListBinding = useReadingList(accessToken);
-  const { items: readingList, saveItem, updateItem, setInLibrary, removeItem } = readingListBinding;
+  const { items: readingList, saveItem, updateItem, setInLibrary, removeItem, restoreItem, moveToFolder } = readingListBinding;
+  // Shelves, so an article filed from the reading list can be dropped straight
+  // onto one without a detour through the Library.
+  const { folders: readingFolders } = useReadingFolders(accessToken);
 
   const CACHE_KEY = `bfc_${username}`;
 
@@ -759,6 +764,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 library={readingListBinding}
                 onOpenArticle={setArticleUrl}
                 initialTab={view.tab}
+                // Clicking your own avatar lands on Account, where the photo,
+                // the cover and the links all live.
+                onEditProfile={() => { setSettingsSection('account'); setShowSettings(true); }}
               />
             )}
             {view.kind === 'post' && (
@@ -814,6 +822,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onUpdate={updateItem}
                 onAddToLibrary={setInLibrary}
                 onDelete={removeItem}
+                onRestore={restoreItem}
+                readingFolders={readingFolders}
+                onMoveToFolder={moveToFolder}
                 onOpenLibrary={() => navigate(`${profilePathFor(username)}?tab=library`)}
                 articleOpenMode={(() => {
                 const m = settings.readingListOpenMode ?? settings.articleOpenMode;
@@ -878,6 +889,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           stopping at the body column's 32px gutters. */}
       <SiteFooter />
       </div>
+
+      {/* Fixed to the viewport, so it belongs outside .page's flow. Stacks above
+          the notes launcher below. */}
+      <BackToTop />
 
       {/* Notes launcher - small round button, bottom-right */}
       {!showNotes && (

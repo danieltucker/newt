@@ -4,6 +4,7 @@ import { optionalAuth, AuthRequest } from '../middleware/auth';
 import { PUBLIC_USER_SELECT, toPublicUser, friendIdsOf } from '../lib/friends';
 import { wallDirection, isWalledOff } from '../lib/blocks';
 import { blogFeedUrlFor } from '../lib/blogFeed';
+import { readProfileLinks } from '../lib/profileLinks';
 import logger from '../lib/logger';
 
 // Public profile pages: /u/<username>. Served with optionalAuth so a logged-out
@@ -62,10 +63,22 @@ async function relationTo(viewerId: string, ownerId: string): Promise<'none' | '
 
 // Look up a non-banned user by username (case-insensitive). Returns null so the
 // caller can 404 without distinguishing "no such user" from "banned".
+// The cover and the links are the owner's own decoration of their page, so they
+// are selected here rather than added to PUBLIC_USER_SELECT: that select rides
+// along on every comment author and notification actor, and none of those need
+// a banner. Only the header route below reads these.
+const PROFILE_OWNER_SELECT = {
+  ...PUBLIC_USER_SELECT,
+  createdAt: true,
+  coverImage: true,
+  coverTheme: true,
+  profileLinks: true,
+} as const;
+
 async function findOwner(username: string) {
   return prisma.user.findFirst({
     where: { username: { equals: username, mode: 'insensitive' }, bannedAt: null },
-    select: { ...PUBLIC_USER_SELECT, createdAt: true },
+    select: PROFILE_OWNER_SELECT,
   });
 }
 
@@ -90,9 +103,14 @@ router.get('/:username', async (req: AuthRequest, res: Response): Promise<void> 
     const wall = await wallDirection(req.userId, owner.id);
     if (wall === 'they-blocked-you') { res.status(404).json({ error: 'Profile not found' }); return; }
     if (wall === 'you-blocked-them') {
+      // A stub carries identity and nothing else. Their cover and their links
+      // are content, and the point of the wall is that you no longer see it.
       res.json({
         ...toPublicUser(owner),
         createdAt: owner.createdAt,
+        coverImage: null,
+        coverTheme: null,
+        profileLinks: [],
         commentCount: 0,
         postCount: 0,
         isSelf: false,
@@ -113,6 +131,9 @@ router.get('/:username', async (req: AuthRequest, res: Response): Promise<void> 
     res.json({
       ...toPublicUser(owner),
       createdAt: owner.createdAt,
+      coverImage: owner.coverImage,
+      coverTheme: owner.coverTheme,
+      profileLinks: readProfileLinks(owner.profileLinks),
       commentCount,
       postCount,
       isSelf,

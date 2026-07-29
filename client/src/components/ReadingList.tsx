@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import styles from './ReadingList.module.css';
-import { ReadingListItem, CommentPrefs } from '../types';
+import { ReadingListItem, ReadingFolder, CommentPrefs } from '../types';
 import { parseDomain } from '../utils/color';
 import { apiFetch } from '../services/api';
 import { useCommentCounts } from '../hooks/useCommentCounts';
@@ -28,14 +27,9 @@ const LAYOUT_OPTIONS = [
   { value: 'magazine' as const, title: 'Magazine', icon: <MagazineIcon /> },
 ];
 
-// Animate layout reflow (deletes/archives) so cards visibly slide to their
-// new spots. View transitions are GPU-composited; falls back to an instant
-// update where unsupported.
-function withViewTransition(fn: () => void) {
-  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-  if (doc.startViewTransition) doc.startViewTransition(() => { flushSync(fn); });
-  else fn();
-}
+// Deletes and Library moves no longer reflow the grid at all - the card holds
+// its place as a greyed-out placeholder until the next load - so there is no
+// longer anything for a view transition to animate here.
 
 // ── Magazine layout variants (saved articles have no artwork, so the mix
 // comes from big text features and full-note briefs) ──
@@ -114,12 +108,64 @@ function ClockIcon() {
   );
 }
 
+// A card that has left the list - deleted, or filed into the Library - but is
+// still drawn in its old spot, greyed out, until the page is reloaded. Both
+// actions commit straight away; this is only a placeholder, so that removing one
+// article doesn't shuffle every card below it under a cursor that's already
+// moving toward the next one. See the ghost handling in ReadingList below.
+type GhostKind = 'deleted' | 'shelved';
+
+interface Ghost {
+  /** The item as it was when it left the list, for the placeholder and Undo. */
+  item: ReadingListItem;
+  kind: GhostKind;
+  /** Which shelf it was filed onto, for 'shelved'. Null is Unsorted. */
+  folderId?: string | null;
+}
+
+// Picking a shelf, before anything has been committed. Mounted only while the
+// picker is open, so its draft resets every time rather than remembering a
+// choice you backed out of.
+function ShelfPicker({ folders, initial, onCancel, onSave }: {
+  folders: ReadingFolder[];
+  initial: string | null;
+  onCancel: () => void;
+  onSave: (folderId: string | null) => void;
+}) {
+  const [shelf, setShelf] = useState(initial ?? '');
+  return (
+    <div className={`${styles.ghostOverlay} ${styles.filingOverlay}`}>
+      <div className={styles.ghostPill}>
+        <span className={styles.ghostFolderIcon} aria-hidden><FolderIcon size={13} /></span>
+        <select
+          className={styles.ghostSelect}
+          aria-label="Folder to save into"
+          value={shelf}
+          autoFocus
+          onChange={e => setShelf(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+        >
+          <option value="">Unsorted</option>
+          {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+        <button className={styles.undoBtn} onClick={onCancel}>Cancel</button>
+        <button className={styles.confirmBtn} onClick={() => onSave(shelf || null)}>Save</button>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   items: ReadingListItem[];
   onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes'>) => Promise<unknown>;
   onUpdate: (id: string, patch: Partial<Pick<ReadingListItem, 'title' | 'tag' | 'notes'>>) => Promise<void>;
   onDelete: (id: string) => void;
+  /** Undo of onDelete. The row is already gone, so this re-creates it. */
+  onRestore?: (item: ReadingListItem) => Promise<unknown>;
   onAddToLibrary: (id: string, inLibrary: boolean) => Promise<void>;
+  /** Library shelves, for filing a just-shelved article without leaving here. */
+  readingFolders?: ReadingFolder[];
+  onMoveToFolder?: (id: string, folderId: string | null) => void;
   /** Open the Library (the profile tab). Without it the count renders inert. */
   onOpenLibrary?: () => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
@@ -142,32 +188,23 @@ function parseTags(tag: string): string[] {
   return tag.split(',').map(t => t.trim()).filter(Boolean);
 }
 
-function LibraryIcon() {
-  // Books on a shelf - a place things live, not a box they get buried in
+// A folder, because that is what the Library is made of - shelves you file into.
+// It was a books-on-a-shelf glyph, which said "library" but not "and then you
+// choose where it goes", which is the part of the action people missed.
+function FolderIcon({ size = 12 }: { size?: number }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 1.75h1.75v8.5H2z"/>
-      <path d="M5 1.75h1.75v8.5H5z"/>
-      <path d="M8.15 2.1l1.7.45-2.1 7.9-1.7-.45z"/>
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1.25 3.1c0-.47.38-.85.85-.85h2.06c.28 0 .54.13.7.36l.53.73h4.56c.47 0 .85.38.85.85v4.7c0 .47-.38.85-.85.85H2.1a.85.85 0 0 1-.85-.85V3.1z"/>
     </svg>
   );
 }
 
-function RestoreIcon() {
-  // Arrow lifting out of an open tray - clearly "move back", not "shelve again"
+// The shelved counterpart: filled, so a card already in the Library reads as
+// done at a glance rather than as another button to press.
+function FolderFilledIcon({ size = 12 }: { size?: number }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 7.5v2.75c0 .41.34.75.75.75h6.5c.41 0 .75-.34.75-.75V7.5"/>
-      <path d="M6 7.75V1.5"/>
-      <path d="M3.5 3.75L6 1.25 8.5 3.75"/>
-    </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7.5 1.5l2 2L3 10H1v-2L7.5 1.5z"/>
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M1.25 3.1c0-.47.38-.85.85-.85h2.06c.28 0 .54.13.7.36l.53.73h4.56c.47 0 .85.38.85.85v4.7c0 .47-.38.85-.85.85H2.1a.85.85 0 0 1-.85-.85V3.1z"/>
     </svg>
   );
 }
@@ -175,15 +212,19 @@ function PencilIcon() {
 interface CardProps {
   item: ReadingListItem;
   variant?: MagVariant;
-  isPendingDelete?: boolean;
+  /** Set when this card is a placeholder for something already gone. */
+  ghost?: Ghost;
+  /** True while this card's shelf picker is open. Nothing is committed yet. */
+  filing?: boolean;
+  onStartFiling: (id: string) => void;
+  onCancelFiling: () => void;
+  onConfirmFiling: (id: string, folderId: string | null) => void;
   isPostRead?: boolean;
   onPostReadAction?: (action: 'library' | 'delete') => void;
   onPostReadDismiss?: () => void;
   onOpened?: (id: string) => void;
   onDelete: (id: string) => void;
   onUndo: (id: string) => void;
-  onAddToLibrary: (id: string, inLibrary: boolean) => void;
-  onEdit: (item: ReadingListItem) => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
   onOpenArticle?: (url: string) => void;
   commentCount: number;
@@ -191,10 +232,17 @@ interface CardProps {
   /** Favorites this item matched - the list did the matching. */
   favHits?: string[];
   favorites?: PreparedFavorite[];
+  readingFolders?: ReadingFolder[];
 }
 
-function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, onAddToLibrary, onEdit, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [] }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onStartFiling, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [] }: CardProps) {
   const tags = parseTags(item.tag);
+  const isGhost = !!ghost;
+  // Where a shelved placeholder says it went. Null (and an id whose folder has
+  // since been deleted) is Unsorted, which is a real shelf, not a failure.
+  const shelfName = ghost?.folderId
+    ? readingFolders.find(f => f.id === ghost.folderId)?.name ?? 'Unsorted'
+    : 'Unsorted';
 
   // Magazine text/brief variants stay type-only; everything else shows art when it exists
   const showImage = !!item.imageUrl &&
@@ -205,8 +253,8 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
     variant === 'feature' ? styles.featureWrap : '',
     variant === 'brief' ? styles.briefWrap : '',
     item.inLibrary ? styles.libraryCard : '',
-    isPendingDelete ? styles.pendingDelete : '',
-    isPostRead ? styles.postReadCard : '',
+    isGhost ? styles.ghost : '',
+    isPostRead && !isGhost ? styles.postReadCard : '',
     // No cover art → reserve top space so the floating controls push text down
     // instead of overlapping it
     !showImage ? styles.noHero : '',
@@ -217,6 +265,7 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
   const vtStyle = { viewTransitionName: `rl-${item.id.replace(/[^a-zA-Z0-9_-]/g, '')}` } as React.CSSProperties;
 
   function handleCardClick(e: React.MouseEvent) {
+    if (isGhost) { e.preventDefault(); return; }
     onOpened?.(item.id);
     if (articleOpenMode === 'iframe') {
       e.preventDefault();
@@ -232,14 +281,36 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
 
   return (
     <div className={wrapClass} style={vtStyle}>
-      {isPendingDelete && (
+      {/* Sits over the whole card but lets clicks through except on its own
+          controls, so the card underneath stays legible - you can still see
+          which article you just got rid of. */}
+      {ghost && (
         <div className={styles.ghostOverlay}>
-          <div className={styles.ghostCenter}>
-            <span className={styles.ghostLabel}>Deleted</span>
+          <div className={styles.ghostPill}>
+            {ghost.kind === 'deleted' ? (
+              <span className={styles.ghostLabel}>Deleted</span>
+            ) : (
+              <>
+                <span className={styles.ghostFolderIcon} aria-hidden><FolderFilledIcon size={13} /></span>
+                {/* Naming the shelf is the confirmation - "Saved" alone leaves
+                    you wondering where it went. */}
+                <span className={styles.ghostLabel}>Saved to {shelfName}</span>
+              </>
+            )}
             <button className={styles.undoBtn} onClick={() => onUndo(item.id)}>Undo</button>
           </div>
-          <div className={styles.countdownBar} />
         </div>
+      )}
+
+      {/* Nothing has been committed at this point - the card is still in the
+          reading list until Save is pressed. */}
+      {filing && !isGhost && (
+        <ShelfPicker
+          folders={readingFolders}
+          initial={item.folderId}
+          onCancel={onCancelFiling}
+          onSave={folderId => onConfirmFiling(item.id, folderId)}
+        />
       )}
       <a href={item.url} className={styles.card} onClick={handleCardClick} {...linkProps}>
         {showImage && (
@@ -283,32 +354,42 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
         </div>
       </div>
 
-      {/* Outside the card's <a> - a button must not nest inside a link */}
-      {!isPendingDelete && (
-        <div className={styles.commentRow}>
-          <CommentBar count={commentCount} onClick={onOpenReader} />
-        </div>
-      )}
+      {/* Outside the card's <a> - a button must not nest inside a link.
+          Filing is offered here as well as up in the corner cluster: this row is
+          where the hand already is once you've read the thing.
+          Kept mounted on a ghost, greyed and inert via CSS: dropping it would
+          shorten the card, and a placeholder that changes height defeats the
+          point of leaving one behind. */}
+      <div className={styles.commentRow}>
+        <CommentBar count={commentCount} onClick={onOpenReader} />
+        <button
+          className={styles.rowFolderBtn}
+          aria-label="Save to a Library folder"
+          title="Save to a Library folder"
+          onClick={() => onStartFiling(item.id)}
+        >
+          <FolderIcon size={13} />
+          {/* The ellipsis is doing real work: this opens a shelf picker rather
+              than filing on the spot, and it has to read differently from the
+              header's "+ Save article", which adds a new URL. */}
+          <span>Save to…</span>
+        </button>
+      </div>
 
       {/* Floating window-style controls - top-right, over the cover art */}
-      {!isPendingDelete && (
+      {!isGhost && (
         <div className={styles.cardActions}>
           <button
             className={styles.actionBtn}
-            aria-label={item.inLibrary ? 'Restore to reading list' : 'Add to Library'}
-            title={item.inLibrary ? 'Restore to reading list' : 'Add to Library'}
-            onClick={() => onAddToLibrary(item.id, !item.inLibrary)}
+            aria-label="Save to a Library folder"
+            title="Save to a Library folder"
+            onClick={() => onStartFiling(item.id)}
           >
-            {item.inLibrary ? <RestoreIcon /> : <LibraryIcon />}
+            <FolderIcon />
           </button>
-          <button
-            className={styles.actionBtn}
-            aria-label="Edit article"
-            title="Edit"
-            onClick={() => onEdit(item)}
-          >
-            <PencilIcon />
-          </button>
+          {/* Editing lives in the article reader now - a pencil on every card
+              was a third control competing for a corner that only ever gets
+              used for filing and deleting. */}
           <button
             className={`${styles.actionBtn} ${styles.deleteBtn}`}
             aria-label="Remove article"
@@ -322,8 +403,22 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
         </div>
       )}
 
-      {isPostRead && !isPendingDelete && (
+      {/* A strip across the head of the card, not a cover over it. It used to
+          fill the card, which meant returning from an article blocked the very
+          things you'd want next - commenting, the title link, the tags. The
+          prompt drops the article's own title for the same reason: the card
+          right below it is already showing that. */}
+      {isPostRead && !isGhost && (
         <div className={styles.postReadOverlay}>
+          <span className={styles.postReadTitle}>Done with this?</span>
+          <div className={styles.postReadBtns}>
+            <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('library')}>
+              Library
+            </button>
+            <button className={styles.postReadRemoveBtn} onClick={() => onPostReadAction?.('delete')}>
+              Remove
+            </button>
+          </div>
           <button
             className={styles.postReadCloseBtn}
             aria-label="Dismiss"
@@ -334,17 +429,6 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
               <path d="M1 1l10 10M11 1L1 11"/>
             </svg>
           </button>
-          <div className={styles.postReadTitle}>
-            Are you done with <span className={styles.postReadItemTitle}>{item.title}</span>?
-          </div>
-          <div className={styles.postReadBtns}>
-            <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('library')}>
-              Add to Library
-            </button>
-            <button className={styles.postReadRemoveBtn} onClick={() => onPostReadAction?.('delete')}>
-              Remove
-            </button>
-          </div>
           {/* Drains left-to-right; hovering the overlay pauses it (see CSS), and
               the animation ending - not a JS timer - is what dismisses it, so the
               bar can never disagree with the countdown it's drawing. */}
@@ -355,11 +439,11 @@ function ReadingCard({ item, variant, isPendingDelete, isPostRead, onPostReadAct
   );
 }
 
-const DELETE_DELAY = 3000;
-
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddToLibrary, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
-  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
-  const timerMap = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+  // Cards that have left the list but are still drawn where they were. Local
+  // and deliberately not persisted: a reload is what clears them, which is also
+  // the moment the list re-lays out. Keyed by the id the item had at the time.
+  const [ghosts, setGhosts] = useState<Map<string, Ghost>>(new Map());
 
   const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(
     useMemo(() => items.map(i => i.url), [items])
@@ -374,20 +458,58 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
   // The item open in the reader modal
   const [reading, setReading] = useState<ReadingListItem | null>(null);
 
-  function requestDelete(id: string) {
-    setPendingDeletes(prev => new Set(prev).add(id));
-    timerMap.current[id] = setTimeout(() => {
-      delete timerMap.current[id];
-      // Animate the surviving cards sliding into the freed spot
-      withViewTransition(() => {
-        onDelete(id);
-        setPendingDeletes(prev => { const s = new Set(prev); s.delete(id); return s; });
-      });
-    }, DELETE_DELAY);
+  // Both of these commit immediately and leave a placeholder behind. Nothing
+  // below the card moves, so the next click lands on what it was aimed at -
+  // which is the whole reason the row is held open rather than closed up.
+  function addGhost(id: string, kind: GhostKind, folderId?: string | null) {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    setGhosts(prev => new Map(prev).set(id, { item, kind, folderId }));
   }
 
-  function handleAddToLibrary(id: string, inLibrary: boolean) {
-    withViewTransition(() => { onAddToLibrary(id, inLibrary); });
+  function dropGhost(id: string) {
+    setGhosts(prev => { const m = new Map(prev); m.delete(id); return m; });
+  }
+
+  function requestDelete(id: string) {
+    addGhost(id, 'deleted');
+    onDelete(id);
+  }
+
+  // Which card has its shelf picker open. Nothing about it is committed - the
+  // article is still in the reading list until Save is pressed, which is the
+  // point: filing used to happen the instant the folder icon was clicked, so
+  // there was no moment that read as "saved".
+  const [filingId, setFilingId] = useState<string | null>(null);
+
+  function confirmFiling(id: string, folderId: string | null) {
+    setFilingId(null);
+    addGhost(id, 'shelved', folderId);
+    // A folderId implies inLibrary server-side, so one call does both; without
+    // one there's no shelf to move to and it just goes to the Library.
+    if (folderId && onMoveToFolder) onMoveToFolder(id, folderId);
+    else onAddToLibrary(id, true);
+  }
+
+  function undoGhost(id: string) {
+    const ghost = ghosts.get(id);
+    if (!ghost) return;
+    if (ghost.kind === 'shelved') {
+      // Still the same row - pulling it back out of the Library is enough, and
+      // that update is optimistic, so the real card is there in the same commit.
+      // The server clears folderId alongside inLibrary, so this also takes it
+      // back off the shelf it was just filed onto.
+      dropGhost(id);
+      onAddToLibrary(id, false);
+      return;
+    }
+    // Deleted for real, so Undo has to re-create it. The placeholder stays up
+    // until that lands - dropping it first would collapse the row and then
+    // reopen it, which is the shuffling this whole thing exists to avoid - and
+    // stays up if it fails, so a failed Undo can be tried again rather than
+    // silently losing the article.
+    if (!onRestore) { dropGhost(id); return; }
+    onRestore(ghost.item).then(() => dropGhost(id), () => {});
   }
 
   // ── Post-read overlay: when you come back from an article you opened,
@@ -438,17 +560,11 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
     const id = postRead;
     if (!id) return;
     setPostRead(null);
-    if (action === 'library') handleAddToLibrary(id, true);
+    // Opens the shelf picker rather than filing outright, so this route to the
+    // Library confirms itself the same way the card's own button does.
+    if (action === 'library') setFilingId(id);
     else requestDelete(id);
   }
-
-  function undoDelete(id: string) {
-    clearTimeout(timerMap.current[id]);
-    delete timerMap.current[id];
-    setPendingDeletes(prev => { const s = new Set(prev); s.delete(id); return s; });
-  }
-
-  useEffect(() => () => { Object.values(timerMap.current).forEach(clearTimeout); }, []);
 
   const [expanded, setExpanded] = useState(false);
   const [url, setUrl] = useState('');
@@ -489,10 +605,34 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
 
   const activeFavCount = active.filter(i => favHits.has(i.id)).length;
 
-  const filtered = active.filter(i =>
+  const matchesFilters = useCallback((i: ReadingListItem) =>
     (!activeTag || parseTags(i.tag).includes(activeTag)) &&
-    (!favoritesOnly || favHits.has(i.id))
-  );
+    (!favoritesOnly || favHits.has(i.id)),
+  [activeTag, favoritesOnly, favHits]);
+
+  const filtered = active.filter(matchesFilters);
+
+  // What actually gets drawn: the live list with the placeholders slotted back
+  // into the spots they held. Both lists are savedAt-descending already (the
+  // server orders that way and a restored item keeps its original savedAt), so
+  // one merge sort puts every ghost back exactly where its card used to be.
+  // Ghosts are deliberately kept out of `filtered` above - a deleted article
+  // shouldn't still be counted in the tag chips or the minutes-saved nudge.
+  const rows = useMemo(() => {
+    const live = filtered.map(item => ({ item, ghost: undefined as Ghost | undefined }));
+    if (ghosts.size === 0) return live;
+    // A restore re-creates the row under a new id, so a placeholder is retired
+    // by its article turning up again rather than by the id coming back. Doing
+    // it here rather than in the Undo handler makes the swap one render: the
+    // placeholder is never on screen alongside the card that replaced it.
+    const liveUrls = new Set(filtered.map(i => i.url));
+    const placeheld = [...ghosts.values()]
+      .filter(g => matchesFilters(g.item) && !liveUrls.has(g.item.url))
+      .map(g => ({ item: g.item, ghost: g as Ghost | undefined }));
+    return [...live, ...placeheld].sort(
+      (a, b) => new Date(b.item.savedAt).getTime() - new Date(a.item.savedAt).getTime()
+    );
+  }, [filtered, ghosts, matchesFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTag && !allTags.includes(activeTag)) setActiveTag(null);
@@ -514,7 +654,10 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
     : layout === 'magazine' ? styles.gridMagazine
     : styles.grid;
 
-  const variants = layout === 'magazine' ? magazineVariants(filtered) : null;
+  // Over `rows`, not `filtered` - a ghost still occupies its slot, so leaving it
+  // out here would shift every variant below it and reshuffle the page layout,
+  // which is exactly what holding the slot is meant to prevent.
+  const variants = layout === 'magazine' ? magazineVariants(rows.map(r => r.item)) : null;
 
   // Auto-fetch page title when URL settles
   useEffect(() => {
@@ -718,32 +861,35 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
       )}
 
       <div className={gridClass}>
-        {filtered.length === 0 && !expanded ? (
+        {rows.length === 0 && !expanded ? (
           <div className={styles.empty}>
             {favoritesOnly ? 'No saved articles match your favorite tags.'
               : activeTag ? `No articles tagged "${activeTag}".`
               : 'No saved articles yet.'}
           </div>
-        ) : filtered.map((item, i) => (
+        ) : rows.map(({ item, ghost }, i) => (
           <ReadingCard
             key={item.id}
             item={item}
             variant={variants?.[i]}
-            isPendingDelete={pendingDeletes.has(item.id)}
+            ghost={ghost}
+            filing={filingId === item.id}
+            onStartFiling={setFilingId}
+            onCancelFiling={() => setFilingId(null)}
+            onConfirmFiling={confirmFiling}
             isPostRead={postRead === item.id}
             onPostReadAction={postReadAction}
             onPostReadDismiss={dismissPostRead}
             onOpened={markOpened}
             onDelete={requestDelete}
-            onUndo={undoDelete}
-            onAddToLibrary={handleAddToLibrary}
-            onEdit={setEditingItem}
+            onUndo={undoGhost}
             articleOpenMode={articleOpenMode}
             onOpenArticle={onOpenArticle}
             commentCount={commentCounts[item.url] ?? 0}
             onOpenReader={() => setReading(item)}
             favHits={favHits.get(item.id)}
             favorites={favorites}
+            readingFolders={readingFolders}
           />
         ))}
       </div>
@@ -752,7 +898,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
           its own now, so this is a doorway rather than a drawer. */}
       {libraryCount > 0 && onOpenLibrary && (
         <button className={styles.libraryLink} onClick={onOpenLibrary}>
-          <LibraryIcon />
+          <FolderIcon />
           <span>Library</span>
           <span className={styles.libraryCount}>{libraryCount}</span>
           <span className={styles.libraryArrow} aria-hidden="true">→</span>
@@ -786,9 +932,13 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onAddTo
           onViewProfile={onViewProfile}
           actions={
             <>
-              <button onClick={() => { handleAddToLibrary(reading.id, !reading.inLibrary); setReading(null); }}>
-                {reading.inLibrary ? 'Restore' : 'Add to Library'}
+              {/* Hands off to the card's own shelf picker rather than filing
+                  from in here - one Save flow, one place it can be confirmed. */}
+              <button onClick={() => { setReading(null); setFilingId(reading.id); }}>
+                Save to Library…
               </button>
+              {/* The reader is the way in to editing now that the cards have no
+                  pencil. */}
               <button onClick={() => { setReading(null); setEditingItem(reading); }}>
                 Edit
               </button>

@@ -28,13 +28,29 @@ function validImageUrl(v: unknown): string | null {
 }
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { url, title, source, readTime, tag, imageUrl } = req.body;
+  const { url, title, source, readTime, tag, imageUrl, notes, savedAt } = req.body;
   if (!url || !title) { res.status(400).json({ error: 'url and title required' }); return; }
   if (typeof url !== 'string' || url.length > 2048) { res.status(400).json({ error: 'url must be ≤2048 characters' }); return; }
   if (typeof title !== 'string' || title.length > 500) { res.status(400).json({ error: 'title must be ≤500 characters' }); return; }
   if (source !== undefined && typeof source === 'string' && source.length > 200) { res.status(400).json({ error: 'source must be ≤200 characters' }); return; }
   const image = validImageUrl(imageUrl);
   if (image === null) { res.status(400).json({ error: 'imageUrl must be an http(s) URL ≤2048 characters' }); return; }
+  if (notes !== undefined && (typeof notes !== 'string' || notes.length > 50000)) {
+    res.status(400).json({ error: 'notes must be a string ≤50,000 characters' }); return;
+  }
+
+  // Deleting is immediate — the greyed-out card the list leaves behind is only a
+  // local placeholder — so Undo has to re-create the row. Carrying the original
+  // savedAt over is what puts it back where it was instead of at the top of the
+  // list; there is no other way to set it, and backdating your own list is
+  // harmless. Anything else is a plain create and leaves it unset.
+  let saved: Date | undefined;
+  if (savedAt !== undefined) {
+    if (typeof savedAt !== 'string') { res.status(400).json({ error: 'savedAt must be an ISO date string' }); return; }
+    const parsed = new Date(savedAt);
+    if (isNaN(parsed.getTime())) { res.status(400).json({ error: 'savedAt must be an ISO date string' }); return; }
+    saved = parsed;
+  }
 
   // Only allow http/https — blocks javascript:, data:, vbscript:, etc.
   try {
@@ -55,6 +71,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       readTime: readTime || '',
       tag: tag || '',
       imageUrl: image,
+      ...(notes !== undefined ? { notes } : {}),
+      ...(saved ? { savedAt: saved } : {}),
     },
   });
   res.status(201).json(item);

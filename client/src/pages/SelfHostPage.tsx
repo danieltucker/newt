@@ -1,5 +1,6 @@
 import { Band, Closer, MarketingPage, SectionHead, chrome, useGo } from '../marketing/Chrome';
 import styles from './SelfHostPage.module.css';
+import { REPO_NAME, REPO_URL } from '../utils/repo';
 
 // Self-hosting, moved off the landing page and given a room of its own.
 //
@@ -20,7 +21,7 @@ const STACK: { name: string; role: string; note: string }[] = [
 ];
 
 const STEPS: { cmd: string; body: string }[] = [
-  { cmd: 'git clone …/newTab', body: 'The whole thing, client and server, in one repository.' },
+  { cmd: `git clone …/${REPO_NAME}`, body: 'The whole thing, client and server, in one repository.' },
   { cmd: 'cp .env.example .env', body: 'Database URL, JWT secrets, the origin you’ll serve it from. The example file lists every key with a comment.' },
   { cmd: 'docker compose up --build', body: 'Three containers. Prisma applies the migrations on start; the first account you register is the administrator.' },
 ];
@@ -67,7 +68,7 @@ interface Props {
   signedIn?: boolean;
 }
 
-const REPO = 'https://github.com/danieltucker/newTab';
+const REPO = REPO_URL;
 
 export default function SelfHostPage({ navigate, signedIn }: Props) {
   const go = useGo(navigate);
@@ -115,8 +116,8 @@ export default function SelfHostPage({ navigate, signedIn }: Props) {
           </div>
           <pre className={styles.terminalBody}>
             <code>
-              <span className={styles.prompt}>❯</span> git clone …/newTab{'\n'}
-              <span className={styles.prompt}>❯</span> cd newTab{'\n'}
+              <span className={styles.prompt}>❯</span> git clone …/{REPO_NAME}{'\n'}
+              <span className={styles.prompt}>❯</span> cd {REPO_NAME}{'\n'}
               <span className={styles.prompt}>❯</span> cp .env.example .env{'\n'}
               <span className={styles.prompt}>❯</span> docker compose up --build{'\n'}
               <span className={styles.out}>{'\n'}  client   ready on :80{'\n'}  server   listening on :3001{'\n'}  db       database system is ready{'\n'}</span>

@@ -1,4 +1,4 @@
-# newTab
+# newt
 
 A browser new tab replacement that turns your new tab page into a personal productivity dashboard. Manage bookmarks, read RSS feeds, save articles, and keep notes — all in one place.
 
@@ -38,8 +38,8 @@ A browser new tab replacement that turns your new tab page into a personal produ
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/danieltucker/newTab.git
-cd newTab
+git clone https://github.com/danieltucker/newt.git
+cd newt
 cp .env.example .env
 ```
 
@@ -101,7 +101,7 @@ npm run db:studio     # Open Prisma Studio at localhost:5555
 ## Project Structure
 
 ```
-newTab/
+newt/
 ├── client/               # React frontend (Vite)
 │   ├── src/
 │   │   ├── components/   # UI components

@@ -382,6 +382,21 @@ interface Props {
 const SIDEBAR_MIN = 168;
 const SIDEBAR_MAX = 460;
 const MAX_KEY = 'newt:notesMaximized';
+// The note that was open when the console was last closed, so reopening picks up
+// where you left off. Per-device like MAX_KEY above: which note you had open on
+// this machine isn't something to sync to the others.
+const LAST_KEY = 'newt:notesLastOpen';
+
+function readLastOpen(): string | null {
+  try { return localStorage.getItem(LAST_KEY); } catch { return null; }
+}
+
+function writeLastOpen(id: string | null) {
+  try {
+    if (id) localStorage.setItem(LAST_KEY, id);
+    else localStorage.removeItem(LAST_KEY);
+  } catch { /* ignore */ }
+}
 
 export default function NotesConsole({
   docs, folders: foldersProp, order: orderProp, legacyNotes, onSave,
@@ -450,17 +465,26 @@ export default function NotesConsole({
     | { kind: 'folder'; folder: NoteFolder }
     | null
   >(null);
-  // The console opens with nothing selected - the editor stays blank until a note
-  // is picked (unless it was opened straight onto a search hit).
-  const [activeId, setActiveId] = useState<string | null>(
-    () => (initialNoteId && initial.some(d => d.id === initialNoteId) ? initialNoteId : null)
-  );
+  // The console reopens on whatever was open when it was last closed. A search
+  // hit still wins - that's an explicit request for a particular note.
+  //
+  // A note that has since been deleted doesn't count as somewhere to return to:
+  // deleting stamps `deletedAt` rather than dropping the doc, so it would still
+  // be found here and would reopen the console onto a note sitting in the trash.
+  // Falling through to null leaves the editor blank, which is what this did
+  // before any of it was remembered.
+  const [restoredId] = useState<string | null>(() => {
+    if (initialNoteId && initial.some(d => d.id === initialNoteId)) return initialNoteId;
+    const last = readLastOpen();
+    return last && initial.some(d => d.id === last && !d.deletedAt) ? last : null;
+  });
+  const [activeId, setActiveId] = useState<string | null>(restoredId);
   // Narrow screens can't carry the tree and the editor at once - see the 720px
   // block in the stylesheet, where these become two full-height views. This says
   // which one is showing. Wide screens show both and ignore it entirely; it's
   // still tracked there so the right view is up if the window is narrowed.
   const [mobilePane, setMobilePane] = useState<'tree' | 'doc'>(
-    () => (initialNoteId ? 'doc' : 'tree')
+    () => (restoredId ? 'doc' : 'tree')
   );
   const [saved, setSaved] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -528,6 +552,12 @@ export default function NotesConsole({
 
   const active = activeId ? docsRef.current.find(d => d.id === activeId) : undefined;
   const activeTrashed = !!active?.deletedAt;
+
+  // Remember the open note for the next time the console is opened. Tracking
+  // activeId rather than saving on close covers the ways the console can go away
+  // without a tidy exit - a reload, or the tab being closed outright. Deleting
+  // the open note clears activeId (see commit), so it clears this too.
+  useEffect(() => { writeLastOpen(activeId); }, [activeId]);
 
   // Comment counts for the references embedded in the open note. Seeded from
   // the saved body on every note switch - the editor is uncontrolled, so that
