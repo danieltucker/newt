@@ -43,6 +43,25 @@
   color: var(--text);
 }
 
+/* Points right when the list is shut, down when it's open. The markup has
+   always asked for these two classes; they were never written, so the arrow sat
+   at rotate(0) in both states and said nothing. */
+.chevron {
+  flex-shrink: 0;
+  font-size: 9px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron { transition: none; }
+}
+
 /* Standing in for the hidden cards, so a collapsed list still says how much is in it */
 .sectionCount {
   font-size: 11px;
