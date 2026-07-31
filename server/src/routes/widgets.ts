@@ -46,6 +46,9 @@ router.get('/rss', async (req: Request, res: Response): Promise<void> => {
     const resp = await nodeFetch(url, {
       agent: safeAgent,
       timeout: 8000,
+      // Caller-supplied URL: bound the body by bytes, not just by the idle
+      // timeout, so an endless feed can't buffer into the heap.
+      size: 2_000_000,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0; +RSS)' },
     } as FetchOptions);
     if (!resp.ok) { res.status(502).json({ error: `Feed returned ${resp.status}` }); return; }

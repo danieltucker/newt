@@ -19,6 +19,7 @@ import { Visibility, isVisibility, visibilityWhere, canModerateComment } from '.
 import { assembleThread } from '../lib/commentTree';
 import { canSeePost } from '../lib/blog';
 import { perUserLimiter } from '../lib/rateLimit';
+import { limitsForUser } from '../lib/trust';
 
 const router = Router();
 // Reads (list a thread, counts, a comment's history) are public so a shared
@@ -46,12 +47,18 @@ async function viewerContext(userId: string | undefined): Promise<{
 // across IPs). A burst cap for fast back-and-forth, plus an hourly ceiling.
 // These also bound notification fan-out, since a friends-comment notifies every
 // friend and a reply notifies the parent author.
+// Both scale with the account's trust level (lib/trust.ts): an hour-old account
+// can still join a conversation, just not flood one. The 'established' numbers
+// are the values that previously applied to everyone, so this is not a
+// tightening for ordinary users.
 const commentBurstLimiter = perUserLimiter({
-  windowMs: 60_000, max: 8,
+  windowMs: 60_000,
+  max: async (req) => (await limitsForUser(req.userId)).commentsPerMinute,
   message: "You're posting comments too fast — take a breather and try again in a moment.",
 });
 const commentHourlyLimiter = perUserLimiter({
-  windowMs: 60 * 60_000, max: 60,
+  windowMs: 60 * 60_000,
+  max: async (req) => (await limitsForUser(req.userId)).commentsPerHour,
   message: "You've hit the hourly comment limit — please try again later.",
 });
 

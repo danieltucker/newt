@@ -70,7 +70,7 @@ describe('hostOf', () => {
 
 describe('pageEmbed', () => {
   it('points href and url at the same address', () => {
-    const d = pageEmbed('https://example.com/a', { title: 'T', image: null });
+    const d = pageEmbed('https://example.com/a', { title: 'T', image: null, description: null });
     expect(d.href).toBe('https://example.com/a');
     expect(d.url).toBe('https://example.com/a');
     expect(d.kind).toBe('page');

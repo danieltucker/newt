@@ -119,7 +119,7 @@
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 10px 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -139,10 +139,10 @@
 .saveBtn {
   align-self: flex-end;
   padding: 0 16px;
-  min-height: 36px;
+  min-height: 38px;
   background: var(--accent);
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -245,7 +245,10 @@
 }
 
 /* Same behaviour as the tags on a feed card: an unstarred chip is only as wide
-   as its label, and the star grows in when you point at it. */
+   as its label, and the star grows in when you point at it.
+   These widths are border-box (see tokens.css), so they have to cover the
+   padding as well as the 10px star - at width:10px the padding ate the content
+   box and all that appeared on hover was a 2px sliver of the star's left edge. */
 .tagChipStar {
   display: inline-flex;
   align-items: center;
@@ -258,14 +261,14 @@
 
 .tagChip:hover .tagChipStar,
 .tagChip:focus-within .tagChipStar {
-  width: 10px;
+  width: 18px;  /* 8px padding + 10px star */
   padding-left: 8px;
   opacity: 0.7;
 }
 
 .tagChipStar[aria-pressed='true'],
 .tagChip:hover .tagChipStar[aria-pressed='true'] {
-  width: 10px;
+  width: 18px;
   padding-left: 8px;
   opacity: 1;
   color: var(--fav);
@@ -527,9 +530,13 @@
   margin-top: auto;
 }
 
-/* Comment strip, separated from the card meta by a hairline */
+/* The card's action strip: read/comment on the left, save on the right,
+   separated from the card meta by a hairline. Wraps rather than squeezes - on a
+   narrow card the two pills stack and each gets the full width (see the
+   narrow-screen block at the foot of this file). */
 .commentRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin: 4px 16px 12px;
@@ -537,36 +544,10 @@
   border-top: 1px solid var(--border);
 }
 
-/* Filing, offered a second time down here beside the comment bar - the corner
-   cluster is easy to miss, and this is where the pointer already is when you've
-   finished with a card. Matches CommentBar's pill so the two read as a pair. */
-.rowFolderBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--surface2) 70%, transparent);
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 11.5px;
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-}
-
-.rowFolderBtn:hover {
-  color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
-}
-
-/* A row is already crowded - the icon alone carries it there, and the corner
-   cluster is right beside it with the same action spelled out. */
-.gridList .rowFolderBtn span {
-  display: none;
+/* Pushed to the far end, opposite the comment pill. SaveButton owns its own
+   look - it is shaped to match CommentBar so the two read as a pair. */
+.rowSave {
+  margin-left: auto;
 }
 
 /* ── Window-style controls - a cluster of grey buttons pinned to the card's
@@ -588,10 +569,14 @@
   opacity: 1;
 }
 
+/* Square, and big enough to hit: the old 30x26 was under the 32px a cursor
+   wants and nowhere near what a thumb needs. The radius is the card's own 14px
+   stepped down for a control this size, so the corners read as the same family
+   rather than as a stray rounded rectangle. */
 .actionBtn {
-  width: 30px;
-  height: 26px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(6px);
@@ -622,7 +607,7 @@
    the text rather than over it (list layout keeps its own inline row) */
 .grid .cardWrap.noHero .card,
 .gridMagazine .cardWrap.noHero .card {
-  padding-top: 42px;
+  padding-top: 46px;
 }
 
 /* ── Post-read overlay - offered when you return from an article ── */
@@ -680,10 +665,12 @@
   gap: 6px;
 }
 
+/* Pills, like every other button that sits on a card here */
 .postReadBtns button {
-  padding: 4px 10px;
+  min-height: 26px;
+  padding: 4px 12px;
   border: none;
-  border-radius: 7px;
+  border-radius: 999px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 11.5px;
   font-weight: 600;
@@ -706,7 +693,7 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   color: var(--muted);
   cursor: pointer;
@@ -864,6 +851,16 @@
   white-space: nowrap;
 }
 
+/* In a row the action strip isn't a strip - it's the tail of the row, so it
+   drops the hairline that separates it from the card meta above. */
+.gridList .commentRow {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  margin: 0 12px 0 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 /* In the list layout the footer flattens back into an inline row */
 .gridList .cardFooter {
   flex-direction: row;
@@ -957,13 +954,16 @@
   gap: 4px;
 }
 
+/* A pill, like the feed's category tags and the filter chips above - a saved
+   article and a feed article are the same object wearing two different card
+   designs, and a 6px rounded rectangle here was the giveaway. */
 .tag {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: var(--accent);
   border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
-  border-radius: 6px;
-  padding: 2px 7px;
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 /* Matched a favorite. Display only - see ReadingCard for why the tags on a card
@@ -1038,10 +1038,83 @@
 
 @media (max-width: 460px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Two cards to a row leaves no width for two pills side by side. They stack
+     instead and each takes the full card, which on a phone is the biggest
+     target either of them will ever get. */
+  .commentRow > * {
+    flex: 1 1 100%;
+  }
+
+  .rowSave {
+    margin-left: 0;
+  }
 }
 
-/* Touch devices: hover never fires - keep actions fully visible.
-   Must stay at the end of the file to outrank the dimmed base rule. */
+/* Touch devices: hover never fires - keep actions fully visible, and size every
+   control for a thumb rather than a cursor.
+   Must stay at the end of the file to outrank the dimmed base rules. */
 @media (hover: none) {
-  .cardActions { opacity: 1; }
+  .cardActions {
+    opacity: 1;
+    gap: 6px;
+  }
+
+  .actionBtn {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* Keeps the taller buttons off the title on an art-less card */
+  .grid .cardWrap.noHero .card,
+  .gridMagazine .cardWrap.noHero .card {
+    padding-top: 52px;
+  }
+
+  /* The star can't wait for a hover that never comes, so the chip carries it
+     openly - and both halves get real padding, since a 10px star between two
+     3px gaps is not something you can hit on purpose. */
+  .chip {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  .tagChip {
+    padding: 0;
+  }
+
+  .tagChipStar,
+  .tagChip:hover .tagChipStar {
+    width: 22px;  /* 10px + 2px padding + 10px star */
+    padding: 8px 2px 8px 10px;
+    opacity: 0.5;
+  }
+
+  .tagChipStar[aria-pressed='true'],
+  .tagChip:hover .tagChipStar[aria-pressed='true'] {
+    width: 22px;
+    padding: 8px 2px 8px 10px;
+    opacity: 1;
+  }
+
+  .tagChipLabel,
+  .tagChip:hover .tagChipLabel,
+  .tagChipFav .tagChipLabel {
+    padding: 8px 12px 8px 6px;
+  }
+
+  .undoBtn,
+  .confirmBtn {
+    min-height: 34px;
+  }
+
+  .postReadBtns button {
+    min-height: 34px;
+    padding: 4px 14px;
+  }
+
+  .postReadCloseBtn {
+    width: 32px;
+    height: 32px;
+  }
 }

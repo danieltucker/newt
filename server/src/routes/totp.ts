@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import speakeasy from 'speakeasy';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { clearTrustCache } from '../lib/trust';
 import logger from '../lib/logger';
 
 const router = Router();
@@ -65,6 +66,11 @@ router.post('/confirm', async (req: AuthRequest, res: Response): Promise<void> =
     where: { id: req.userId! },
     data: { totpSecret: user.totpPendingSecret, totpPendingSecret: null, totpEnabled: true },
   });
+  // 2FA promotes the account's trust level (lib/trust.ts), and the cached value
+  // says otherwise for up to five more minutes. Drop it so the wider limits apply
+  // from the moment enrolment finishes rather than whenever the TTL happens to
+  // lapse — this is the one transition a user is waiting on.
+  clearTrustCache(req.userId!);
   res.json({ ok: true });
 });
 
@@ -85,6 +91,9 @@ router.post('/disable', async (req: AuthRequest, res: Response): Promise<void> =
     where: { id: req.userId! },
     data: { totpSecret: null, totpPendingSecret: null, totpEnabled: false },
   });
+  // Symmetrically: dropping 2FA drops the trust level it earned, and a stale
+  // cache entry would keep the wider limits alive past the change.
+  clearTrustCache(req.userId!);
   res.json({ ok: true });
 });
 

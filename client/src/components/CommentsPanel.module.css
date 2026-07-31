@@ -3,11 +3,18 @@
 
 /* ── Card strip ───────────────────────────────────────────────────────── */
 
+/* Geometry here is load-bearing: this pill sits beside SaveButton at the foot of
+   every card, and the two have to be the same height or the row reads as a
+   mistake. Keep this in step with SaveButton's .group - the bordered box in
+   both cases, so border-box min-heights measure like for like - here and in the
+   touch block below. */
 .bar {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 5px 10px;
+  min-height: 30px;
+  padding: 0 11px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: color-mix(in oklab, var(--surface2) 70%, transparent);
@@ -31,6 +38,15 @@
    scanning a wall of cards */
 .barCount {
   display: none;
+}
+
+/* Touch: a thumb, not a cursor. Matches SaveButton's .main exactly. */
+@media (hover: none) {
+  .bar {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 12.5px;
+  }
 }
 
 /* ── Panel ────────────────────────────────────────────────────────────── */

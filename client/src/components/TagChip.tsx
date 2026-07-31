@@ -32,15 +32,19 @@ export default function TagChip({ tag, starred, coveredBy, onToggle, className =
       title={title}
       aria-pressed={starred}
     >
-      <StarIcon filled={starred} />
+      {/* Collapsed until hovered - see the stylesheet. The behaviour is opt-in
+          per surface: the reading list's filter chips collapse the button
+          around the star instead, so the star itself stays drawn. */}
+      <StarIcon filled={starred} className={styles.starCollapse} />
       <span className={styles.label}>{tag}</span>
     </button>
   );
 }
 
-// Filled when favorited, hollow otherwise. The hollow one only surfaces on
-// hover or focus (see the stylesheet) - an unstarred outline on every tag of
-// every card would be more chrome than the tags themselves.
+// Filled when favorited, hollow otherwise. Pass `styles.starCollapse` (or let a
+// parent collapse the control around it) to keep the hollow one out of the way
+// until hover - an unstarred outline on every tag of every card would be more
+// chrome than the tags themselves.
 export function StarIcon({ filled, className = '' }: { filled: boolean; className?: string }) {
   return (
     <svg

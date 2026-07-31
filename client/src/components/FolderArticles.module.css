@@ -19,12 +19,23 @@
   gap: 8px;
 }
 
-/* Comment strip, separated from the card meta by a hairline */
+/* The card's action strip: read/comment on the left, save on the right,
+   separated from the card meta by a hairline. Wraps rather than squeezes - on a
+   narrow card the two pills stack and each takes the full width. */
 .commentRow {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+/* Pushed to the far end, opposite the comment pill. SaveButton owns its own
+   look - it is shaped to match CommentBar so the two read as a pair. */
+.rowSave {
+  margin-left: auto;
 }
 
 .markAllBtn {
@@ -199,6 +210,16 @@
 
 .gridList .domain { max-width: 180px; }
 
+/* In a row the action strip isn't a strip - it's the tail of the row, so it
+   drops the hairline that separates it from the meta above in a card. */
+.gridList .commentRow {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 /* No cover art to float over in a row - drop the controls back into the flow
    at the right end, but keep the grey-button look */
 .gridList .cardActions {
@@ -322,10 +343,14 @@
   opacity: 1;
 }
 
+/* Square, and big enough to hit: the old 30x26 was under the 32px a cursor
+   wants and nowhere near what a thumb needs. The radius is the card's own 14px
+   stepped down for a control this size, so the corners read as the same family
+   rather than as a stray rounded rectangle. */
 .actionBtn {
-  width: 30px;
-  height: 26px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(6px);
@@ -341,7 +366,7 @@
   stroke-width: 2.2;
 }
 
-/* Grey at rest; save reveals the accent on hover, dismiss goes red */
+/* Grey at rest; dismiss goes red on hover */
 .actionBtn:hover {
   background: color-mix(in oklab, var(--accent) 85%, transparent);
   border-color: transparent;
@@ -356,7 +381,7 @@
    rather than over it (list layout keeps its own inline row) */
 .grid .cardWrap.noHero .card,
 .gridMagazine .cardWrap.noHero .card {
-  padding-top: 42px;
+  padding-top: 46px;
 }
 
 /* ── Card ── */
@@ -688,12 +713,51 @@
 
 @media (max-width: 460px) {
   .grid { columns: 2; column-width: auto; }
+
+  /* Two cards to a row leaves no width for two pills side by side. They stack
+     instead and each takes the full card, which on a phone is the biggest
+     target either of them will ever get. */
+  .commentRow > * {
+    flex: 1 1 100%;
+  }
+
+  .rowSave {
+    margin-left: 0;
+  }
 }
 
-/* Touch devices: hover never fires - keep actions fully visible.
-   Must stay after the dimmed base rule to outrank it. */
+/* Touch devices: hover never fires - keep actions fully visible, and size every
+   control for a thumb rather than a cursor.
+   Must stay after the dimmed base rules to outrank them. */
 @media (hover: none) {
   .cardActions { opacity: 1; }
+
+  .actionBtn {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* Keeps the taller button off the title on an art-less card */
+  .grid .cardWrap.noHero .card,
+  .gridMagazine .cardWrap.noHero .card {
+    padding-top: 52px;
+  }
+
+  /* A tag is a real control here - it stars a favorite - so it needs to be
+     hittable, not just readable */
+  .cats .cat {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  .chip {
+    font-size: 13px;
+    padding: 7px 13px;
+  }
+
+  .undoBtn {
+    min-height: 34px;
+  }
 }
 
 /* Filter dropdowns themselves live in FilterDropdown.module.css */

@@ -19,12 +19,20 @@
   white-space: nowrap;
 }
 
+/* The icon itself is always drawn at its natural size. Hiding it used to live
+   here, keyed off `.chip` - which meant any other surface reusing StarIcon got
+   a star that was permanently 0px wide with nothing to reveal it. The reading
+   list's filter chips were exactly that: they animated open on hover and never
+   showed a star. Collapsing is now opt-in, below. */
+.star {
+  flex-shrink: 0;
+}
+
 /* An unstarred tag takes up no more room than its label - the star grows in
    from nothing when you point at it, so a resting tag row carries no dead
    space. The chip widens by ~13px on hover; the transition is what keeps that
    reading as an affordance appearing rather than the row twitching. */
-.star {
-  flex-shrink: 0;
+.starCollapse {
   width: 0;
   margin-right: 0;
   opacity: 0;
@@ -32,8 +40,8 @@
   transition: width 0.13s ease, margin-right 0.13s ease, opacity 0.13s ease;
 }
 
-.chip:hover .star,
-.chip:focus-visible .star {
+.chip:hover .starCollapse,
+.chip:focus-visible .starCollapse {
   width: 10px;
   margin-right: 3px;
   opacity: 0.65;
@@ -50,7 +58,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .star { transition: none; }
+  .starCollapse { transition: none; }
+}
+
+/* Touch: there is no pointer to reveal the star with, so an unstarred tag would
+   have no way to become a favorite at all. It stays out, quietly. */
+@media (hover: none) {
+  .starCollapse:not(.starOn) {
+    width: 10px;
+    margin-right: 3px;
+    opacity: 0.45;
+  }
 }
 
 .chipStarred {

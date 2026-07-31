@@ -54,8 +54,20 @@
   opacity: var(--grain-opacity, 0.05);
 }
 
-/* Everything above the background */
-.root > *:not(.bg) { position: relative; z-index: 1; }
+/* Everything above the background.
+
+   .nav is deliberately excluded. This selector outweighs `.nav` on specificity
+   (0,2,0 against 0,1,0), so including the header silently replaced its
+   `position: sticky` with `relative` and its --z-sticky layer with 1 — the
+   declarations in .nav below never applied at all. That put the header in the
+   same stacking layer as <main> and *earlier* in the DOM, so the features menu
+   opened behind the hero headline and none of its six items could be clicked.
+
+   Excluding it here rather than raising its z-index is the fix that keeps one
+   source of truth: .nav says what the nav does, and this rule stops overruling
+   it. Any future child of .root that needs its own layer wants the same
+   treatment. */
+.root > *:not(.bg):not(.nav) { position: relative; z-index: 1; }
 
 /* ══ Bands ══════════════════════════════════════════════════════════════ */
 
@@ -410,6 +422,76 @@
   overflow: hidden;
   background: var(--surface);
   box-shadow: 0 24px 70px var(--shadow), 0 2px 8px var(--shadow);
+}
+
+/* ── The press ──
+   The frame tips away from the pointer, so the corner you are over is the one
+   that sinks, and settles back when you leave. The angles arrive as custom
+   properties from usePress() in Chrome.tsx; the defaults here *are* the rest
+   state, which is why leaving is just a matter of removing the properties.
+
+   Its own perspective() rather than one on an ancestor: the hero already sets
+   `perspective` on .heroShot for its own lean, and a second frame borrowing
+   that one would tip around a vanishing point half a page away. */
+.shotLive {
+  transform:
+    perspective(900px)
+    rotateX(var(--press-rx, 0deg))
+    rotateY(var(--press-ry, 0deg))
+    scale(var(--press-scale, 1));
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 0.45s;
+}
+
+/* Pulled in and lit from underneath while held, which is most of what sells it
+   as a surface being pushed rather than a picture being rotated. */
+.shotLive:hover {
+  --press-scale: 0.985;
+  box-shadow: 0 14px 40px var(--shadow), 0 2px 6px var(--shadow);
+}
+
+.shotBtn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: zoom-in;
+  position: relative;
+}
+
+/* The contact point. Sits over the image, never over the browser chrome's
+   traffic lights, and is inert to the pointer so it can't steal the click. */
+.shotBtn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s;
+  background: radial-gradient(
+    28% 34% at var(--press-x, 50%) var(--press-y, 50%),
+    color-mix(in oklab, var(--text) 13%, transparent),
+    transparent 72%
+  );
+}
+
+.shotLive:hover .shotBtn::after { opacity: 1; }
+
+.shotBtn:focus-visible {
+  outline: 2px solid var(--tint, var(--accent));
+  outline-offset: 3px;
+  border-radius: 15px;
+}
+
+/* Nothing here is load-bearing - it is all flourish - so it all stands down
+   together rather than being reasoned about one property at a time. */
+@media (prefers-reduced-motion: reduce) {
+  .shotLive { transform: none; transition: none; }
+  .shotLive:hover { box-shadow: 0 24px 70px var(--shadow), 0 2px 8px var(--shadow); }
+  .shotBtn::after { display: none; }
 }
 
 /* The section's colour, pooled behind its screenshot. This is most of what

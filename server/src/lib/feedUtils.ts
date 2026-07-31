@@ -218,6 +218,11 @@ export interface FeedCheckResult {
 export async function checkFeed(feedUrl: string, since: Date | null): Promise<FeedCheckResult> {
   const resp = await nodeFetch(feedUrl, {
     timeout: 8000,
+    // The URL comes from a bookmark, so it is attacker-choosable. Bound the body
+    // by bytes as well as by time — the timeout is an idle-socket timer and never
+    // fires on an endless response that trickles steadily. See MAX_FEED_BYTES in
+    // feedRefresh for the same reasoning.
+    size: 2_000_000,
     redirect: 'follow',
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0; +Feed)' },
   } as FetchOptions);

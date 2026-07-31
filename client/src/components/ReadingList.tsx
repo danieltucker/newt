@@ -12,9 +12,9 @@ import FavoritesControl from './FavoritesControl';
 import {
   prepareFavorites, favoritesFor, isFavoriteTag, coveringFavorites, PreparedFavorite,
 } from '../utils/favoriteTags';
-import EditArticleModal from './EditArticleModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FilterDropdown from './FilterDropdown';
+import SaveButton, { SaveDestination } from './SaveButton';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
@@ -182,6 +182,8 @@ interface Props {
   onToggleFavoriteTag?: (tag: string) => void;
   /** Replace the whole list, from the manager behind the Favorites chip. */
   onSetFavoriteTags?: (tags: string[]) => void;
+  /** Make a new Library shelf and resolve to its id, from the Save menu. */
+  onCreateFolder?: (name: string) => Promise<string>;
 }
 
 function parseTags(tag: string): string[] {
@@ -209,6 +211,24 @@ function FolderFilledIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+// Where the Save button can put an article. Unsorted leads, because it is what
+// pressing the label alone does - a shelf is a refinement, not a requirement,
+// and demanding one was what made filing feel like paperwork.
+//
+// Shared by the card and the reader, which offer the same choice and must not
+// drift apart about what "Save" defaults to.
+function shelvesFor(folderId: string | null, folders: ReadingFolder[]): SaveDestination[] {
+  return [
+    { id: '', label: 'Unsorted', group: 'Library', hint: folderId ? undefined : 'Default' },
+    ...folders.map(f => ({
+      id: f.id,
+      label: f.name,
+      group: 'Library',
+      hint: folderId === f.id ? 'Default' : undefined,
+    })),
+  ];
+}
+
 interface CardProps {
   item: ReadingListItem;
   variant?: MagVariant;
@@ -216,7 +236,6 @@ interface CardProps {
   ghost?: Ghost;
   /** True while this card's shelf picker is open. Nothing is committed yet. */
   filing?: boolean;
-  onStartFiling: (id: string) => void;
   onCancelFiling: () => void;
   onConfirmFiling: (id: string, folderId: string | null) => void;
   isPostRead?: boolean;
@@ -233,11 +252,14 @@ interface CardProps {
   favHits?: string[];
   favorites?: PreparedFavorite[];
   readingFolders?: ReadingFolder[];
+  onCreateFolder?: (name: string) => Promise<string>;
 }
 
-function ReadingCard({ item, variant, ghost, filing, onStartFiling, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [] }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
+
+  const shelves = shelvesFor(item.folderId, readingFolders);
   // Where a shelved placeholder says it went. Null (and an id whose folder has
   // since been deleted) is Unsorted, which is a real shelf, not a failure.
   const shelfName = ghost?.folderId
@@ -355,38 +377,38 @@ function ReadingCard({ item, variant, ghost, filing, onStartFiling, onCancelFili
       </div>
 
       {/* Outside the card's <a> - a button must not nest inside a link.
-          Filing is offered here as well as up in the corner cluster: this row is
-          where the hand already is once you've read the thing.
+          Saving lives here rather than in the corner cluster: this row is where
+          the hand already is once you've read the thing, and a labelled pill is
+          both easier to understand and easier to hit than a 26px icon.
           Kept mounted on a ghost, greyed and inert via CSS: dropping it would
           shorten the card, and a placeholder that changes height defeats the
           point of leaving one behind. */}
       <div className={styles.commentRow}>
         <CommentBar count={commentCount} onClick={onOpenReader} />
-        <button
-          className={styles.rowFolderBtn}
-          aria-label="Save to a Library folder"
-          title="Save to a Library folder"
-          onClick={() => onStartFiling(item.id)}
-        >
-          <FolderIcon size={13} />
-          {/* The ellipsis is doing real work: this opens a shelf picker rather
-              than filing on the spot, and it has to read differently from the
-              header's "+ Save article", which adds a new URL. */}
-          <span>Save to…</span>
-        </button>
+        {/* Pressing the label files it under Unsorted straight away; the caret
+            is there for the times you know which shelf. Either way the card
+            leaves a "Saved to <shelf>" placeholder with an Undo, which is what
+            makes committing on one press safe. */}
+        <SaveButton
+          className={styles.rowSave}
+          label="Save"
+          icon={<FolderIcon size={13} />}
+          menuLabel="Save to…"
+          defaultId={item.folderId ?? ''}
+          destinations={shelves}
+          onSelect={id => onConfirmFiling(item.id, id || null)}
+          onCreateDestination={onCreateFolder && (async name => {
+            onConfirmFiling(item.id, await onCreateFolder(name));
+          })}
+        />
       </div>
 
-      {/* Floating window-style controls - top-right, over the cover art */}
+      {/* Floating window-style controls - top-right, over the cover art.
+          Only the destructive one is up here now: two icon buttons in a corner
+          meant the save was both the easiest thing to miss and the easiest
+          thing to hit by accident on the way to the delete. */}
       {!isGhost && (
         <div className={styles.cardActions}>
-          <button
-            className={styles.actionBtn}
-            aria-label="Save to a Library folder"
-            title="Save to a Library folder"
-            onClick={() => onStartFiling(item.id)}
-          >
-            <FolderIcon />
-          </button>
           {/* Editing lives in the article reader now - a pencil on every card
               was a third control competing for a corner that only ever gets
               used for filing and deleting. */}
@@ -439,7 +461,7 @@ function ReadingCard({ item, variant, ghost, filing, onStartFiling, onCancelFili
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder }: Props) {
   // Cards that have left the list but are still drawn where they were. Local
   // and deliberately not persisted: a reload is what clears them, which is also
   // the moment the list re-lays out. Keyed by the id the item had at the time.
@@ -577,7 +599,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const [saving, setSaving] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [editingItem, setEditingItem] = useState<ReadingListItem | null>(null);
 
   const active = items.filter(i => !i.inLibrary);
   // Not rendered here any more - the Library has its own home on the profile.
@@ -874,7 +895,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             variant={variants?.[i]}
             ghost={ghost}
             filing={filingId === item.id}
-            onStartFiling={setFilingId}
             onCancelFiling={() => setFilingId(null)}
             onConfirmFiling={confirmFiling}
             isPostRead={postRead === item.id}
@@ -890,6 +910,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             favHits={favHits.get(item.id)}
             favorites={favorites}
             readingFolders={readingFolders}
+            onCreateFolder={onCreateFolder}
           />
         ))}
       </div>
@@ -907,14 +928,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
 
       </>}
 
-      {editingItem && (
-        <EditArticleModal
-          item={editingItem}
-          onSave={onUpdate}
-          onClose={() => setEditingItem(null)}
-        />
-      )}
-
       {reading && (
         <ArticleDetailModal
           url={reading.url}
@@ -931,18 +944,24 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
           onClose={() => setReading(null)}
           onViewProfile={onViewProfile}
           actions={
-            <>
-              {/* Hands off to the card's own shelf picker rather than filing
-                  from in here - one Save flow, one place it can be confirmed. */}
-              <button onClick={() => { setReading(null); setFilingId(reading.id); }}>
-                Save to Library…
-              </button>
-              {/* The reader is the way in to editing now that the cards have no
-                  pencil. */}
-              <button onClick={() => { setReading(null); setEditingItem(reading); }}>
-                Edit
-              </button>
-            </>
+            /* The same control the card carries, so filing works identically
+               whether you decided before opening the article or after reading
+               it. Closing the reader is the point: the list behind it is where
+               the "Saved to <shelf>" placeholder and its Undo appear. */
+            <SaveButton
+              label="Save"
+              icon={<FolderIcon size={13} />}
+              menuLabel="Save to…"
+              defaultId={reading.folderId ?? ''}
+              currentId={reading.inLibrary ? (reading.folderId ?? '') : undefined}
+              destinations={shelvesFor(reading.folderId, readingFolders)}
+              onSelect={id => { setReading(null); confirmFiling(reading.id, id || null); }}
+              onCreateDestination={onCreateFolder && (async name => {
+                const folderId = await onCreateFolder(name);
+                setReading(null);
+                confirmFiling(reading.id, folderId);
+              })}
+            />
           }
         />
       )}

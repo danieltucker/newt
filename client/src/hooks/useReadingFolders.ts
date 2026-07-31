@@ -2,6 +2,37 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../services/api';
 import { ReadingFolder } from '../types';
 
+// Twelve hues spaced around the wheel, not a brand-colour list. The bookmark
+// picker reuses real product colours (Reddit orange, Spotify green, Stack
+// Overflow orange…), which is why it lands three oranges and no yellow - fine
+// when the colour is a logo reference, useless when it is a label you have to
+// tell apart at a glance. Each of these reads distinctly at dot size on both
+// themes. Six-digit hex is what the server accepts.
+//
+// Lives beside the hook rather than in the Library panel because a shelf can be
+// created from anywhere a Save button appears, and all of them should be
+// drawing from one list.
+export const SHELF_COLORS = [
+  '#E5484D', // red
+  '#F76B15', // orange
+  '#FFC53D', // yellow
+  '#99D52A', // lime
+  '#30A46C', // green
+  '#12A594', // teal
+  '#00A2C7', // cyan
+  '#0091FF', // blue
+  '#5E6AD2', // indigo
+  '#8E4EC6', // violet
+  '#D6409F', // magenta
+  '#8B8D98', // slate
+];
+
+/** The first colour no shelf is using, so a new one is telling apart on sight. */
+export function nextShelfColor(folders: ReadingFolder[]): string {
+  const taken = new Set(folders.map(f => f.color.toUpperCase()));
+  return SHELF_COLORS.find(c => !taken.has(c)) ?? SHELF_COLORS[0];
+}
+
 /**
  * Library shelves. Counts come from the server rather than being derived from
  * the loaded items, because a shelf's count has to be right even when the

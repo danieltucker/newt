@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './AddLinkModal.module.css';
 import { Folder } from '../types';
 import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl } from '../utils/color';
+import CloseButton from './CloseButton';
 
 interface Props {
   folders: Folder[];
@@ -74,7 +75,7 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
       <div className={styles.card} onClick={e => e.stopPropagation()}>
         <div className={styles.header}>
           <span className={styles.title}>Add a link</span>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <CloseButton onClick={onClose} />
         </div>
 
         {/* Live preview */}

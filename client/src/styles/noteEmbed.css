@@ -11,14 +11,16 @@
    Only surface colours are restated here. Layout, sizes and the three variants
    still come from the one definition, so a change there reaches both. */
 
-.note-embed-read .note-embed[data-variant='small'] .note-embed-a,
-.note-embed-read .note-embed[data-variant='large'] .note-embed-a {
+/* The card's box lives on the wrapper, so that both the card's link and the
+   comments row beside it sit inside one border - see RichEditor.module.css. */
+.note-embed-read .note-embed[data-variant='small'],
+.note-embed-read .note-embed[data-variant='large'] {
   border-color: var(--border);
   background: var(--surface);
 }
 
-.note-embed-read .note-embed[data-variant='small']:hover .note-embed-a,
-.note-embed-read .note-embed[data-variant='large']:hover .note-embed-a {
+.note-embed-read .note-embed[data-variant='small']:hover,
+.note-embed-read .note-embed[data-variant='large']:hover {
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
   background: var(--surface2);
   box-shadow: 0 4px 16px var(--shadow);
@@ -27,8 +29,27 @@
 .note-embed-read .note-embed .note-embed-title { color: var(--text); }
 .note-embed-read .note-embed .note-embed-meta { color: var(--muted); }
 
+/* Between the title and the meta line in weight, as it is in the hierarchy:
+   worth reading, but not at the expense of the post it sits inside. */
+.note-embed-read .note-embed .note-embed-desc {
+  color: color-mix(in oklab, var(--text) 72%, var(--muted));
+}
+
 .note-embed-read .note-embed .note-embed-kicker,
 .note-embed-read .note-embed .note-embed-comments { color: var(--accent); }
+
+/* The rules dividing the comments row off from the card's own link */
+.note-embed-read .note-embed[data-variant='small'] .note-embed-comments {
+  border-left-color: var(--border);
+}
+
+.note-embed-read .note-embed[data-variant='large'] .note-embed-comments {
+  border-top-color: var(--border);
+}
+
+.note-embed-read .note-embed .note-embed-comments:hover {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
 
 .note-embed-read .note-embed[data-variant='link'] .note-embed-a { color: var(--accent); }
 

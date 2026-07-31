@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useRef, useState } from 'react';
 import styles from './ShellBar.module.css';
 import NewtMark from './NewtMark';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import { navMenuItems, accountMenuItems, ShellMenuItem } from '../utils/shellNav';
+import { accountMenuItems, ShellMenuItem } from '../utils/shellNav';
 
 // The bookmarks rail rides beside the new tab's body while there are two columns
 // to ride in. Below this it moves into the hamburger - same width at which
@@ -21,7 +21,6 @@ interface Props {
   username: string;
   avatar?: string | null;
   isAdmin?: boolean;
-  path: string;
   notifUnread: number;
 
   navigate: (to: string) => void;
@@ -44,10 +43,14 @@ interface Props {
 }
 
 // A dropdown anchored under its trigger. Closes on outside click and Escape.
-function Menu({ open, onClose, align = 'left', children }: {
+// `role` is opt-out because only one of the two carries a list of menuitems -
+// the other holds the bookmarks rail, and calling that a menu would promise
+// arrow-key navigation between rows that aren't menuitems.
+function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
   open: boolean;
   onClose: () => void;
   align?: 'left' | 'right';
+  role?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -76,7 +79,7 @@ function Menu({ open, onClose, align = 'left', children }: {
     <div
       ref={ref}
       className={`${styles.menu} ${align === 'right' ? styles.menuRight : ''}`}
-      role="menu"
+      role={role}
     >
       {children}
     </div>
@@ -87,22 +90,16 @@ function MenuRow({ item, onPick }: { item: ShellMenuItem; onPick: (item: ShellMe
   return (
     <button
       role="menuitem"
-      className={`${styles.menuItem} ${item.current ? styles.menuItemCurrent : ''} ${item.danger ? styles.menuItemDanger : ''}`}
+      className={`${styles.menuItem} ${item.danger ? styles.menuItemDanger : ''}`}
       onClick={() => onPick(item)}
     >
-      {/* Home wears the mark - it's the one entry that names the app itself
-          rather than a section of it. */}
-      <span className={styles.menuLabel}>
-        {item.id === 'home' && <NewtMark className={styles.menuMark} />}
-        {item.label}
-      </span>
-      {item.current && <span className={styles.menuDot} aria-hidden />}
+      <span className={styles.menuLabel}>{item.label}</span>
     </button>
   );
 }
 
 export default function ShellBar({
-  username, avatar, isAdmin, path, notifUnread,
+  username, avatar, isAdmin, notifUnread,
   navigate, onOpenSettings, onOpenAdmin, onOpenNotifications, onLogout,
   search, bookmarksRail,
 }: Props) {
@@ -127,19 +124,27 @@ export default function ShellBar({
     return () => ro.disconnect();
   }, []);
 
+  // The hamburger is only rendered while it has the rail to hold; without that
+  // it would be a menu of one entry the brand button already covers.
+  const showNav = railNarrow && !!bookmarksRail;
+
+  // Widening the window takes the button away, so the menu it opened has to go
+  // with it - otherwise narrowing again reopens a dropdown nobody asked for.
+  useEffect(() => {
+    if (!showNav) setNavOpen(false);
+  }, [showNav]);
+
   // One menu at a time - two open dropdowns on the same row read as a bug.
   function openNav() { setAcctOpen(false); setNavOpen(o => !o); }
   function openAcct() { setNavOpen(false); setAcctOpen(o => !o); }
-
-  function handleNav(item: ShellMenuItem) {
-    setNavOpen(false);
-    if (item.to) navigate(item.to);
-  }
 
   function handleAccount(item: ShellMenuItem) {
     setAcctOpen(false);
     switch (item.id) {
       case 'profile': navigate(`/u/${encodeURIComponent(username)}`); break;
+      // The blog manager, not the profile's public Posts tab - this menu is
+      // your own things, and drafts only exist in the manager.
+      case 'myblog': navigate('/blog'); break;
       case 'settings': onOpenSettings(); break;
       case 'admin': onOpenAdmin(); break;
       case 'signout': onLogout(); break;
@@ -156,39 +161,37 @@ export default function ShellBar({
             <span className={styles.brandText}>newt</span>
           </button>
 
-          <div className={styles.menuWrap}>
-            <button
-              className={`${styles.iconBtn} ${navOpen ? styles.iconBtnOpen : ''}`}
-              onClick={openNav}
-              aria-haspopup="menu"
-              aria-expanded={navOpen}
-              title="Menu"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-            <Menu open={navOpen} onClose={() => setNavOpen(false)}>
-              {navMenuItems({ username, path }).map(item => (
-                <MenuRow key={item.id} item={item} onPick={handleNav} />
-              ))}
-              {/* Under the destinations: the bookmarks rail, once the body is
-                  too narrow to hold it alongside. It scrolls within itself so a
-                  long folder list can't push the menu past the bottom of the
-                  screen. */}
-              {railNarrow && bookmarksRail && (
-                <>
-                  <div className={styles.menuSep} />
-                  <div className={styles.menuRailLabel}>Bookmarks</div>
-                  <div className={styles.menuRail}>
-                    {bookmarksRail(() => setNavOpen(false))}
-                  </div>
-                </>
-              )}
-            </Menu>
-          </div>
+          {/* Purely the bookmarks rail's home on viewports too narrow to show
+              it beside the body. It held a short list of destinations too, but
+              the mark to its left already goes home and everything else about
+              you lives under the avatar - so the whole dropdown is bookmarks,
+              and above RAIL_NARROW the button isn't rendered at all. */}
+          {showNav && (
+            <div className={styles.menuWrap}>
+              <button
+                className={`${styles.iconBtn} ${navOpen ? styles.iconBtnOpen : ''}`}
+                onClick={openNav}
+                aria-expanded={navOpen}
+                title="Bookmarks"
+                aria-label="Bookmarks"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+              {/* Not a menu of menuitems - see Menu. The rail scrolls within
+                  itself so a long folder list can't push it past the bottom of
+                  the screen. */}
+              <Menu open={navOpen} onClose={() => setNavOpen(false)} role="group">
+                <div className={styles.menuRailLabel}>Bookmarks</div>
+                <div className={styles.menuRail}>
+                  {bookmarksRail?.(() => setNavOpen(false))}
+                </div>
+              </Menu>
+            </div>
+          )}
         </div>
 
         {/* ── Middle: search, the widest thing that will fit ── */}

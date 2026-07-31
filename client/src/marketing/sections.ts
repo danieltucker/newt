@@ -175,6 +175,7 @@ export const SECTIONS: Section[] = [
         'A tile mid-drag, with the drop gap open',
         'The pinned row across the top of the sidebar',
       ],
+      src: '/shots/bookmarks.png',
     },
   },
 
@@ -283,6 +284,7 @@ export const SECTIONS: Section[] = [
         'At least two unread indicators',
         'A favourited tag chip, so the gold is visible',
       ],
+      src: '/shots/feeds.png',
     },
   },
 
@@ -389,6 +391,7 @@ export const SECTIONS: Section[] = [
         'Tags visible on at least one card',
         'The read-time estimates showing',
       ],
+      src: '/shots/reading.png',
     },
   },
 
@@ -487,6 +490,7 @@ export const SECTIONS: Section[] = [
         'The slash command menu open, mid-list',
         'A note with a heading, a to-do or two, and a reference card',
       ],
+      src: '/shots/notes.png',
     },
   },
 
@@ -598,6 +602,7 @@ export const SECTIONS: Section[] = [
         'A reference card embedded in the body',
         'The comment thread started underneath',
       ],
+      src: '/shots/blog.png',
     },
   },
 
@@ -695,11 +700,19 @@ export const SECTIONS: Section[] = [
       id: 'social',
       title: 'Profiles and friends',
       size: '1200 × 800',
+      // The first two bullets cannot both be true of one frame: ProfilePage
+      // renders the Friends tab only when `profile.isSelf`, and the Follow
+      // button only when it isn't. The shot taken is somebody else's view of
+      // Maren — avatar, posts, Follow un-followed — which is the outward-facing
+      // half, and the half this section is arguing for. The nested thread is
+      // carried by the blog shot above. `/shots/social-friends.png` is the
+      // other reading (own profile, Friends tab) if you'd rather lead with it.
       capture: [
         'A profile with an avatar, a few posts and the Friends tab',
         'The Follow button in its un-followed state',
         'A comment thread with two or three replies nested',
       ],
+      src: '/shots/social.png',
     },
   },
 ];
@@ -718,4 +731,5 @@ export const HERO_SHOT: ShotSpec = {
     'An RSS folder with a couple of unread dots',
     'Search bar empty - it is the first thing the eye lands on',
   ],
+  src: '/shots/hero.png',
 };

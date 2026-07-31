@@ -146,6 +146,38 @@ describe('sanitizeCommentHtml — reference embeds', () => {
     expect(sanitizeCommentHtml(embed)).not.toContain('contenteditable');
   });
 
+  // The large card's summary. Unlike the live comment count it IS stored: it
+  // describes the target rather than reporting on it, so it does not go stale.
+  it('keeps the description, attribute and rendered line alike', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" data-embed="page" data-variant="large" ' +
+      'data-href="https://example.com/x" data-url="https://example.com/x" ' +
+      'data-title="A title" data-source="example.com" ' +
+      'data-description="What the page says about itself.">' +
+      '<a class="note-embed-a" href="https://example.com/x">' +
+      '<span class="note-embed-body">' +
+      '<span class="note-embed-title">A title</span>' +
+      '<span class="note-embed-desc">What the page says about itself.</span>' +
+      '</span></a></span>');
+    expect(out).toContain('data-description="What the page says about itself."');
+    expect(out).toContain('class="note-embed-desc"');
+  });
+
+  // The new slot is a span like the rest of the card, so it grants nothing the
+  // allowlist did not already grant: no script attributes, and no reach into
+  // the app's other styling. (A plain <img> or <b> nested in there survives, as
+  // it does anywhere else in a rich body - that is the existing policy for
+  // author HTML, not something this class opened up.)
+  it('gives a description no powers the rest of the card lacks', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-embed" data-embed="page" data-url="https://example.com/x">' +
+      '<span class="note-embed-desc" onclick="alert(1)">' +
+      '<span class="note-todo">smuggled</span></span></span>');
+    expect(out).not.toContain('onclick');
+    expect(out).not.toContain('note-todo');
+    expect(out).toContain('class="note-embed-desc"');
+  });
+
   it('refuses a live comment count, so a stale one can never be served', () => {
     const out = sanitizeCommentHtml(
       '<span class="note-embed" data-embed="article" data-url="https://example.com/x">' +

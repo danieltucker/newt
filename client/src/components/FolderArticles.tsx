@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiFetch } from '../services/api';
-import { FeedArticle, CommentPrefs } from '../types';
+import { FeedArticle, CommentPrefs, ReadingFolder } from '../types';
 import { faviconUrl } from '../utils/color';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
@@ -11,6 +11,7 @@ import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch'
 import FilterDropdown from './FilterDropdown';
 import TagChip from './TagChip';
 import FavoritesControl from './FavoritesControl';
+import SaveButton, { SaveDestination } from './SaveButton';
 import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
 import styles from './FolderArticles.module.css';
 
@@ -37,9 +38,26 @@ const READ_FLUSH_MS = 600;
 // obviously that. Both are already committed server-side.
 type GhostKind = 'dismissed' | 'saved';
 
+interface Ghost {
+  kind: GhostKind;
+  /** Where a save went - the placeholder names it, since the Save button can
+      now put an article somewhere other than the reading list. */
+  dest?: string;
+}
+
 interface Props {
   folderId: string;
-  onSaveArticle: (a: { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null }, markSaved: () => void) => void;
+  /** `dest` is set only when the reader picked a Library shelf over the
+      reading list; a null folderId inside it means Unsorted. */
+  onSaveArticle: (
+    a: { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null },
+    markSaved: () => void,
+    dest?: { folderId: string | null },
+  ) => void;
+  /** Library shelves, offered behind the Save button's caret. */
+  readingFolders?: ReadingFolder[];
+  /** Make a new shelf and resolve to its id, from that same menu. */
+  onCreateFolder?: (name: string) => Promise<string>;
   onArticlesLoaded?: (articles: FeedArticle[]) => void;
   refreshKey?: number;
   pageSize?: number;
@@ -73,6 +91,33 @@ function relativeDate(s: string | null): string {
   if (days < 7) return `${days}d ago`;
   return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
 }
+
+// Not a folder id, so it can't collide with one.
+const READING_LIST_DEST = 'reading-list';
+
+// Where Save can put this article. The reading list leads and is what the label
+// alone does; a Library shelf below it is for the pieces you already know you're
+// keeping rather than queueing. Shared by the card and the reader so the two
+// can't drift apart about what Save means.
+function destinationsFor(folders: ReadingFolder[]): SaveDestination[] {
+  return [
+    { id: READING_LIST_DEST, label: 'Reading list', hint: 'Default' },
+    { id: '', label: 'Unsorted', group: 'Library' },
+    ...folders.map(f => ({ id: f.id, label: f.name, group: 'Library' })),
+  ];
+}
+
+/** What the "Saved to …" placeholder calls a shelf. '' is Unsorted, a real shelf. */
+function shelfLabel(id: string, folders: ReadingFolder[]): string {
+  return folders.find(f => f.id === id)?.name ?? 'Unsorted';
+}
+
+const BookmarkIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
 
 const CheckAllIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -133,7 +178,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function FolderArticles({ folderId, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const seededFolders = useRef<Set<string>>(new Set());
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
@@ -145,7 +190,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [ghosts, setGhosts] = useState<Map<string, GhostKind>>(new Map());
+  const [ghosts, setGhosts] = useState<Map<string, Ghost>>(new Map());
   // Folder-wide, straight from the server, so the chip agrees with the site
   // tiles in the rail rather than counting only what happens to be loaded.
   const [unreadTotal, setUnreadTotal] = useState(0);
@@ -258,7 +303,7 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   useEffect(() => { readIdsRef.current = new Set(readIds); }, [readIds]);
   // Same reason as readIdsRef: the scroll sweep runs outside React and can't see
   // fresh state through its closure.
-  const ghostsRef = useRef<Map<string, GhostKind>>(new Map());
+  const ghostsRef = useRef<Map<string, Ghost>>(new Map());
   useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
 
   // Pages fetched while the unread filter is on get judged as they land, on the
@@ -447,12 +492,17 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     }
   }
 
-  function handleSave(a: FeedArticle) {
+  // `dest` is what the Save button's caret picked: absent means the reading
+  // list, which is what pressing the label alone does. A Library shelf skips
+  // the reading list entirely - the article is one you're filing, not one
+  // you're queueing to read.
+  function handleSave(a: FeedArticle, dest?: { folderId: string | null; label: string }) {
     onSaveArticle(
       { id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories, readTime: a.readTime, imageUrl: a.imageUrl },
-      // Once it's in the reading list it leaves the feed (dismissed server-side,
-      // so it stays gone across refreshes)
-      () => handleDismiss(a.id, 'saved')
+      // Once it's saved it leaves the feed (dismissed server-side, so it stays
+      // gone across refreshes)
+      () => handleDismiss(a.id, 'saved', dest?.label ?? 'reading list'),
+      dest ? { folderId: dest.folderId } : undefined
     );
   }
 
@@ -468,8 +518,8 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
     if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
   }
 
-  function handleDismiss(articleId: string, kind: GhostKind = 'dismissed') {
-    setGhosts(prev => new Map(prev).set(articleId, kind));
+  function handleDismiss(articleId: string, kind: GhostKind = 'dismissed', dest?: string) {
+    setGhosts(prev => new Map(prev).set(articleId, { kind, dest }));
     // Only an unread article was being counted, so only that one moves the chip.
     if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => Math.max(0, n - 1));
     apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}`, { method: 'DELETE' })
@@ -639,9 +689,11 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
             isNew={markReadOnScroll && !readIds.has(a.id)}
             ghost={ghosts.get(a.id)}
             cardRef={markReadOnScroll ? observeCard : undefined}
-            onSave={() => handleSave(a)}
+            onSave={dest => handleSave(a, dest)}
             onDismiss={() => handleDismiss(a.id)}
             onUndoDismiss={() => handleUndoDismiss(a.id)}
+            readingFolders={readingFolders}
+            onCreateFolder={onCreateFolder}
             commentCount={commentCounts[a.link] ?? 0}
             onOpenReader={() => setReading(a)}
             onViewProfile={onViewProfile}
@@ -679,9 +731,27 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
           onViewProfile={onViewProfile}
           actions={
             <>
-              <button onClick={() => { handleSave(reading); setReading(null); }}>
-                Save to reading list
-              </button>
+              {/* The card's own control, unchanged: the reading list on the
+                  label, a shelf behind the caret. Deciding after reading is
+                  the common case, so it should not be a different button. */}
+              <SaveButton
+                label="Save"
+                icon={<BookmarkIcon />}
+                menuLabel="Save to…"
+                defaultId={READING_LIST_DEST}
+                destinations={destinationsFor(readingFolders)}
+                onSelect={id => {
+                  handleSave(reading, id === READING_LIST_DEST
+                    ? undefined
+                    : { folderId: id || null, label: shelfLabel(id, readingFolders) });
+                  setReading(null);
+                }}
+                onCreateDestination={onCreateFolder && (async name => {
+                  const folderId = await onCreateFolder(name);
+                  handleSave(reading, { folderId, label: name });
+                  setReading(null);
+                })}
+              />
               <button onClick={() => { handleDismiss(reading.id); setReading(null); }}>
                 Dismiss
               </button>
@@ -693,12 +763,15 @@ export default function FolderArticles({ folderId, onSaveArticle, onArticlesLoad
   );
 }
 
-function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   /** Set when this card is a placeholder for something already dealt with. */
-  ghost?: GhostKind;
+  ghost?: Ghost;
   cardRef?: (el: HTMLDivElement | null, id: string) => void;
-  onSave: () => void; onDismiss: () => void; onUndoDismiss: () => void;
+  onSave: (dest?: { folderId: string | null; label: string }) => void;
+  onDismiss: () => void; onUndoDismiss: () => void;
+  readingFolders?: ReadingFolder[];
+  onCreateFolder?: (name: string) => Promise<string>;
   commentCount: number;
   onOpenReader: () => void;
   onViewProfile?: (username: string) => void;
@@ -716,6 +789,8 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   // Always derive from the domain (same as SiteTile) - stored bookmark favicon
   // URLs can go stale when the API path changes.
   const favicon = blogAuthor ? '' : domain ? faviconUrl(domain) : feedDomain ? faviconUrl(feedDomain) : '';
+
+  const destinations = destinationsFor(readingFolders);
 
   const showImage = variant === 'feature' || variant === 'standard';
   // Magazine text variants always run their snippet; elsewhere keep the
@@ -743,10 +818,13 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
       {ghost && (
         <div className={styles.ghostOverlay}>
           <div className={styles.ghostPill}>
+            {/* Naming the destination is the confirmation - "Saved" on its own
+                leaves you wondering which of the places you just chose from it
+                actually went to. */}
             <span className={styles.ghostLabel}>
-              {ghost === 'saved' ? 'Saved to reading list' : 'Dismissed'}
+              {ghost.kind === 'saved' ? `Saved to ${ghost.dest ?? 'reading list'}` : 'Dismissed'}
             </span>
-            {ghost === 'dismissed' && (
+            {ghost.kind === 'dismissed' && (
               <button className={styles.undoBtn} onClick={onUndoDismiss}>Undo</button>
             )}
           </div>
@@ -827,25 +905,39 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
           </div>
         </div>
 
+        {/* The card's action strip. Saving used to be an 11px bookmark icon in
+            the corner cluster, which was both hard to explain and hard to hit;
+            it is a labelled pill down here now, matched to the comment bar
+            beside it and to the identical control on a reading list card. */}
         <div className={styles.commentRow}>
           <CommentBar count={commentCount} onClick={onOpenReader} />
+          <SaveButton
+            className={styles.rowSave}
+            label="Save"
+            icon={<BookmarkIcon />}
+            menuLabel="Save to…"
+            defaultId={READING_LIST_DEST}
+            destinations={destinations}
+            onSelect={id => onSave(
+              id === READING_LIST_DEST
+                ? undefined
+                : { folderId: id || null, label: destinations.find(d => d.id === id)?.label ?? 'Library' }
+            )}
+            onCreateDestination={onCreateFolder && (async name => {
+              const folderId = await onCreateFolder(name);
+              onSave({ folderId, label: name });
+            })}
+          />
         </div>
         {/* Floating window-style controls - top-right, over the cover art.
+            Only Dismiss lives up here now; see the action strip above.
             Dropped entirely on a ghost rather than hidden with an attribute:
             .cardActions sets `display: flex`, which would beat [hidden]'s UA
             `display: none` and leave them looking clickable. They're absolute,
             so removing them costs the card no height. */}
         {!ghost && <div className={styles.cardActions}>
-          <button
-            className={styles.actionBtn}
-            onClick={onSave}
-            aria-label="Save to reading list"
-            title="Save to reading list"
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          </button>
           <button className={`${styles.actionBtn} ${styles.dismissBtn}`} onClick={onDismiss} aria-label="Dismiss" title="Dismiss">
-            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M1 1l10 10M11 1L1 11"/>
             </svg>
           </button>

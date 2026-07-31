@@ -1,0 +1,272 @@
+/* The split save control. Geometry is deliberately CommentBar's - the two sit
+   side by side at the foot of every card and should read as one pair of pills,
+   not as a pill and a button. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The min-height belongs here, on the bordered box, not on .main inside it.
+   With border-box sizing a 30px .main plus this element's 1px border came out
+   at 32px, against CommentBar's 30px - the two pills sat side by side 2px
+   apart. Both are now bordered boxes carrying the same min-height, so they
+   measure the same whatever the padding inside does. */
+.group {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface2) 70%, transparent);
+  color: var(--muted);
+  overflow: hidden;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.wrap:hover .group,
+.wrap:focus-within .group {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.main,
+.caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: inherit;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+/* Both halves stretch to the group's height - see the min-height there. */
+.main {
+  flex: 1 1 auto;
+  gap: 6px;
+  padding: 0 11px;
+}
+
+.caret {
+  flex-shrink: 0;
+  padding: 0 9px;
+  /* The seam is the whole point of a split button - without it the caret reads
+     as decoration on a single control. */
+  border-left: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+}
+
+/* Each half lights on its own, so which one you're about to press is never in
+   doubt */
+.main:hover,
+.caret:hover,
+.main:focus-visible,
+.caret:focus-visible {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  outline: none;
+}
+
+.icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── The destination menu ──
+   Opens upward: this button lives at the foot of a card, so downward would put
+   the list over the card below it - or off the end of the page on the last row. */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-content-overlay);
+  min-width: 190px;
+  max-width: 260px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px var(--shadow);
+  animation: pop 0.14s ease;
+}
+
+.heading {
+  padding: 8px 10px 4px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--surface2);
+  outline: none;
+}
+
+.itemCurrent {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.itemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint,
+.check {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Naming a new folder, without leaving the menu ── */
+.sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.itemNew {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.itemNew:hover,
+.itemNew:focus-visible {
+  color: var(--accent);
+}
+
+.plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.newRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+}
+
+.newInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+}
+
+.newInput:focus {
+  border-color: var(--accent);
+}
+
+.newInput::placeholder {
+  color: var(--muted);
+}
+
+.newGo {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+
+.newGo:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.newGo:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu { animation: none; }
+  .group, .main, .caret, .item { transition: none; }
+}
+
+/* Touch: no hover to reveal anything, and a thumb is not a cursor. Both halves
+   grow to a real target and the seam gets wider so they can't be mis-hit. */
+@media (hover: none) {
+  .group {
+    min-height: 38px;
+  }
+
+  .main {
+    padding: 0 14px;
+    font-size: 12.5px;
+  }
+
+  .caret {
+    padding: 0 13px;
+  }
+
+  .item {
+    min-height: 42px;
+    font-size: 14px;
+  }
+}

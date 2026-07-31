@@ -1,28 +1,7 @@
 import { useMemo, useState } from 'react';
 import styles from './LibraryPanel.module.css';
 import { ReadingListItem, ReadingFolder } from '../types';
-import { useReadingFolders } from '../hooks/useReadingFolders';
-
-// Twelve hues spaced around the wheel, not a brand-colour list. The bookmark
-// picker reuses real product colours (Reddit orange, Spotify green, Stack
-// Overflow orange…), which is why it lands three oranges and no yellow - fine
-// when the colour is a logo reference, useless when it is a label you have to
-// tell apart at a glance. Each of these reads distinctly at dot size on both
-// themes. Six-digit hex is what the server accepts.
-const COLORS = [
-  '#E5484D', // red
-  '#F76B15', // orange
-  '#FFC53D', // yellow
-  '#99D52A', // lime
-  '#30A46C', // green
-  '#12A594', // teal
-  '#00A2C7', // cyan
-  '#0091FF', // blue
-  '#5E6AD2', // indigo
-  '#8E4EC6', // violet
-  '#D6409F', // magenta
-  '#8B8D98', // slate
-];
+import { useReadingFolders, SHELF_COLORS as COLORS, nextShelfColor } from '../hooks/useReadingFolders';
 
 // Null is the Unsorted shelf, not "no selection" - see ReadingListItem.folderId.
 type Shelf = string | null;
@@ -74,10 +53,7 @@ export default function LibraryPanel({
 
   // Suggest the first unused hue instead of always the same one, so folders
   // made in a row don't all come out indigo and have to be recoloured by hand.
-  const suggestedColor = useMemo(() => {
-    const taken = new Set(folders.map(f => f.color.toUpperCase()));
-    return COLORS.find(c => !taken.has(c)) ?? COLORS[0];
-  }, [folders]);
+  const suggestedColor = useMemo(() => nextShelfColor(folders), [folders]);
   const pickedColor = newColor ?? suggestedColor;
 
   function openCreate() {

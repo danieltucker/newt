@@ -3,6 +3,7 @@ import styles from './NotificationsModal.module.css';
 import { useFriends } from '../hooks/useFriends';
 import { AppNotification, PublicUser } from '../types';
 import { notifActor, notifAction, relTime } from '../utils/notifications';
+import CloseButton from './CloseButton';
 
 // The bell's panel: one column, newest first. Friend *management* (who you know,
 // who you've asked, who to add) moved onto your profile's Friends tab - what's
@@ -98,7 +99,7 @@ export default function NotificationsModal({
       <div className={styles.card} onClick={e => e.stopPropagation()} role="dialog" aria-label="Notifications">
         <div className={styles.head}>
           <div className={styles.title}>Notifications</div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">✕</button>
+          <CloseButton onClick={onClose} />
         </div>
 
         <div className={styles.body}>

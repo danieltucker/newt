@@ -1,66 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { navMenuItems, accountMenuItems } from './shellNav';
+import { accountMenuItems } from './shellNav';
 
-describe('navMenuItems', () => {
-  it('always offers home, blog and profile', () => {
-    const ids = navMenuItems({ username: 'sam', path: '/' }).map(i => i.id);
-    expect(ids).toEqual(['home', 'myblog', 'profile']);
-  });
-
-  it('labels home with the product name, which ShellBar pairs with the mark', () => {
-    const home = navMenuItems({ username: 'sam', path: '/blog' })[0];
-    expect(home).toMatchObject({ id: 'home', label: 'Newt', to: '/' });
-  });
-
-  // The route stayed /blog so nobody's saved link broke; only the word changed.
-  it('calls the section Posts, whatever the route is still called', () => {
-    const item = navMenuItems({ username: 'sam', path: '/' }).find(i => i.id === 'myblog');
-    expect(item).toMatchObject({ label: 'My posts', to: '/blog' });
-  });
-
-  it('points the profile entry at the signed-in user', () => {
-    const items = navMenuItems({ username: 'sam', path: '/' });
-    expect(items.find(i => i.id === 'profile')?.to).toBe('/u/sam');
-  });
-
-  it('encodes usernames that need it', () => {
-    const items = navMenuItems({ username: 'a b/c', path: '/' });
-    expect(items.find(i => i.id === 'profile')?.to).toBe('/u/a%20b%2Fc');
-  });
-
-  it('marks exactly the entry matching the current path', () => {
-    const current = (path: string) =>
-      navMenuItems({ username: 'sam', path }).filter(i => i.current).map(i => i.id);
-
-    expect(current('/')).toEqual(['home']);
-    expect(current('/blog')).toEqual(['myblog']);
-    expect(current('/u/sam')).toEqual(['profile']);
-  });
-
-  it('keeps the blog marked while writing - the composer is part of that section', () => {
-    const current = (path: string) =>
-      navMenuItems({ username: 'sam', path }).filter(i => i.current).map(i => i.id);
-
-    expect(current('/blog/new')).toEqual(['myblog']);
-    expect(current('/blog/abc123')).toEqual(['myblog']);
-  });
-
-  it('treats a trailing slash as the same page', () => {
-    const items = navMenuItems({ username: 'sam', path: '/blog/' });
-    expect(items.find(i => i.id === 'myblog')?.current).toBe(true);
-  });
-
-  it('marks nothing when the path is some other page', () => {
-    // A post - /u/sam/a-slug - is not the profile, and not the blog manager.
-    const items = navMenuItems({ username: 'sam', path: '/u/sam/hello-world' });
-    expect(items.some(i => i.current)).toBe(false);
-  });
-});
-
+// navMenuItems is gone with the hamburger's destination list: My posts and My
+// profile moved here, and home is the mark in the corner. The hamburger holds
+// only the bookmarks rail now, which is markup rather than a list to gate.
 describe('accountMenuItems', () => {
   it('lists the account actions for an ordinary user', () => {
     const ids = accountMenuItems({}).map(i => i.id);
-    expect(ids).toEqual(['profile', 'settings', 'signout']);
+    expect(ids).toEqual(['profile', 'myblog', 'settings', 'signout']);
+  });
+
+  // The route stayed /blog so nobody's saved link broke, and the label lost its
+  // "My" when it moved off the hamburger and under your own avatar.
+  it('calls the blog manager Posts', () => {
+    const item = accountMenuItems({}).find(i => i.id === 'myblog');
+    expect(item?.label).toBe('Posts');
+  });
+
+  it('offers nothing of yours to a signed-out visitor', () => {
+    const ids = accountMenuItems({ signedIn: false }).map(i => i.id);
+    expect(ids).not.toContain('myblog');
+    expect(ids).not.toContain('profile');
   });
 
   it('has no people entry - friends live on the profile, notifications on the bell', () => {

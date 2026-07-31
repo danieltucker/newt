@@ -6,7 +6,7 @@ import { HistoryStack, EditKind } from '../utils/history';
 import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/noteFind';
 import { modLabel } from '../utils/platform';
-import { PageMeta, pageEmbed, isBareUrl } from '../utils/pageMeta';
+import { PageMeta, EMPTY_PAGE_META, pageEmbed, isBareUrl } from '../utils/pageMeta';
 import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
@@ -30,8 +30,11 @@ const TABLE_CLASS = 'note-table';
 // 'image' and 'reference' are grouped with the blocks in the menu but are not
 // block transforms - they open a picker, so applyCmd intercepts them before
 // applyBlock.
+// 'emoji' sits with the inline marks for the same reason: it changes the run of
+// text you are writing rather than the shape of the block, but it opens a picker
+// instead of toggling anything, so applyCmd intercepts it too.
 type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image' | 'reference';
-type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear';
+type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear' | 'emoji';
 
 interface Cmd {
   id: BlockId | InlineId;
@@ -66,7 +69,52 @@ const CMDS: Cmd[] = [
   { id: 'inlinecode', kind: 'inline', label: 'Inline code',   badge: '`',  hint: 'Monospace `text`',   keys: ['inlinecode', 'mono', 'monospace', 'codespan', '`'] },
   { id: 'link',       kind: 'inline', label: 'Link',          badge: '🔗', hint: 'Add a hyperlink',    keys: ['link', 'url', 'href', 'anchor', 'a', '[]()'] },
   { id: 'clear',      kind: 'inline', label: 'Clear format',  badge: 'Tx', hint: 'Strip formatting',   keys: ['clear', 'remove', 'unformat', 'reset', 'strip', 'plain'] },
+  { id: 'emoji',      kind: 'inline', label: 'Emoji',         badge: '🙂', hint: 'Pick a character',   keys: ['emoji', 'emoticon', 'smiley', 'face', 'reaction', 'symbol', ':)'] },
 ];
+
+// A picked shortlist rather than the whole of Unicode: what a note or a comment
+// actually reaches for. A full set is a search box, an index and a font problem,
+// which is a different feature from "put a 👍 in this sentence".
+//
+// Grouped the way a keyboard groups them so the one you want is where you
+// expect, and ordered by how often it gets used here rather than by codepoint.
+const EMOJI_GROUPS: { name: string; chars: string[] }[] = [
+  { name: 'Smileys', chars: [
+    '😀', '😃', '😄', '😁', '😅', '😂', '🙂', '🙃', '😉', '😊', '😍', '😘',
+    '😋', '😎', '🤩', '🤔', '🤨', '😐', '🙄', '😬', '😴', '😢', '😭', '😤',
+    '😱', '🤯', '😳', '🥳', '😇', '🤗', '🤐', '🤒',
+  ] },
+  { name: 'Gestures', chars: [
+    '👍', '👎', '👌', '🤝', '👏', '🙌', '🙏', '💪', '✌️', '🤞', '👋', '🫡',
+    '🤷', '🤦', '👀', '🧠',
+  ] },
+  { name: 'Hearts & sparks', chars: [
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💯', '✨', '⭐',
+    '🌟', '🔥', '💥', '⚡',
+  ] },
+  { name: 'Reading & work', chars: [
+    '📚', '📖', '📝', '✏️', '📌', '📎', '🔖', '🗂️', '💡', '🔍', '🔗', '💻',
+    '📱', '🖥️', '📷', '🎧', '🎵', '⏰', '🗓️', '📈', '📉', '📊', '🧾', '🗃️',
+  ] },
+  { name: 'Nature', chars: [
+    '🌱', '🌿', '🍀', '🌳', '🌸', '🌻', '🌎', '🌙', '☀️', '☁️', '🌧️', '❄️',
+    '🐈', '🐕', '🦊', '🐢',
+  ] },
+  { name: 'Food & drink', chars: [
+    '☕', '🍵', '🍺', '🍷', '🥂', '🍕', '🍔', '🌮', '🍎', '🍩', '🍪', '🎂',
+  ] },
+  { name: 'Going places', chars: [
+    '✈️', '🚀', '🚗', '🚲', '🏔️', '🏖️', '🎉', '🎁', '🏆', '🎯', '⚽', '🎮',
+  ] },
+  { name: 'Symbols', chars: [
+    '✅', '❌', '⚠️', '❓', '❗', '🚫', '🔒', '🔓', '➡️', '⬅️', '⬆️', '⬇️',
+    '🔁', '➕', '➖', '™️',
+  ] },
+];
+
+// Enough to place the panel before it exists; the CSS caps it at the same size.
+const EMOJI_PANEL_W = 268;
+const EMOJI_PANEL_H = 236;
 
 // Markdown typed at the start of a block turns it into that block, the way the
 // slash menu's aliases have always promised. The trailing space is part of the
@@ -223,6 +271,15 @@ const ClearIcon = () => icon(<>
 
 // A single clean rule. Faded marks above and below read as "=" at this size.
 const DividerIcon = () => icon(<path d="M3 12h18" />);
+
+// Drawn rather than an actual 🙂: a colour emoji in the bar would be the only
+// full-colour thing in a row of grey strokes, and it renders differently on
+// every platform.
+const EmojiIcon = () => icon(<>
+  <circle cx="12" cy="12" r="9" />
+  <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+  <path d="M9 9.5h.01" /><path d="M15 9.5h.01" />
+</>);
 
 const TableIcon = () => icon(<>
   <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -651,6 +708,13 @@ export default function RichEditor({
   const [bubble, setBubble] = useState<BubblePos | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
 
+  // Emoji picker. Fixed and portalled, like the bubble: the comment composer is
+  // a 190px shell with overflow hidden, so a panel that lived in the flow would
+  // swallow the writing area and an absolute one would be clipped away.
+  const [emojiAt, setEmojiAt] = useState<{ left: number; top: number } | null>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const emojiBtnRef = useRef<HTMLSpanElement>(null);
+
   // The rendered bubble is as wide as its buttons need; re-centre on the real
   // width before paint so nothing hangs off either edge.
   useLayoutEffect(() => {
@@ -984,6 +1048,60 @@ export default function RichEditor({
     emit();
   }
 
+  // ── Emoji ─────────────────────────────────────────────────────────────
+  // Anchored to whatever opened it - the toolbar button, or the caret when it
+  // came from /emoji - and flipped above that when there's no room below.
+  function openEmojiAt(rect: DOMRect | undefined) {
+    if (!rect) return;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - EMOJI_PANEL_W - 8));
+    const roomBelow = window.innerHeight - rect.bottom > EMOJI_PANEL_H + 12;
+    setEmojiAt({
+      left,
+      top: roomBelow ? rect.bottom + 6 : Math.max(8, rect.top - EMOJI_PANEL_H - 6),
+    });
+  }
+
+  function toggleEmoji() {
+    if (emojiAt) { setEmojiAt(null); return; }
+    openEmojiAt(emojiBtnRef.current?.getBoundingClientRect());
+  }
+
+  // Picking inserts as text, not markup: an emoji is a character in the
+  // sentence, so it undoes, spell-checks and copies like one. The panel's
+  // buttons suppress mousedown, so the caret is still where it was.
+  function insertEmoji(ch: string) {
+    ref.current?.focus();
+    record('struct');
+    document.execCommand('insertText', false, ch);
+    setEmojiAt(null);
+    emit();
+  }
+
+  useEffect(() => {
+    if (!emojiAt) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (emojiRef.current?.contains(t) || emojiBtnRef.current?.contains(t)) return;
+      setEmojiAt(null);
+    }
+    // Capture, so Escape closes the picker without also closing the console it
+    // is sitting in.
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); setEmojiAt(null); }
+    }
+    function onScroll() { setEmojiAt(null); }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [emojiAt]);
+
   // ── Link dialog ───────────────────────────────────────────────────────
   // Links are composed in the console itself (text + URL), not in a browser
   // prompt. Opening stashes the selection - the fields take focus away from the
@@ -1042,7 +1160,7 @@ export default function RichEditor({
     // dialog stays up saying so.
     if (form.variant !== 'link' && onFetchPageMeta) {
       setLinkBusy(true);
-      let meta: PageMeta = { title: null, image: null };
+      let meta: PageMeta = EMPTY_PAGE_META;
       try {
         meta = await onFetchPageMeta(href);
       } catch {
@@ -1355,7 +1473,7 @@ export default function RichEditor({
     const typed = text && text !== href && text !== href.replace(/^https?:\/\//, '') ? text : '';
 
     setLinkBusy(true);
-    let meta: PageMeta = { title: null, image: null };
+    let meta: PageMeta = EMPTY_PAGE_META;
     try {
       meta = await onFetchPageMeta(href);
     } catch { /* the host fallback in pageEmbed covers this */ }
@@ -1725,6 +1843,21 @@ export default function RichEditor({
       closeSlash();
       emit();
       openPicker();
+      return;
+    }
+    // And /emoji: the panel opens on the caret, so the "/emoji" text has to be
+    // gone before its rectangle is measured.
+    if (cmd.id === 'emoji') {
+      ref.current?.focus();
+      if (slashInfo.current) stripSlash();
+      closeSlash();
+      emit();
+      const sel = window.getSelection();
+      const caretRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : undefined;
+      // A collapsed range can measure zero-by-zero; the button is a fine fallback.
+      openEmojiAt(caretRect && caretRect.height > 0
+        ? caretRect
+        : emojiBtnRef.current?.getBoundingClientRect());
       return;
     }
     if (cmd.kind === 'inline') applyInline(cmd.id as InlineId);
@@ -2187,6 +2320,12 @@ export default function RichEditor({
         <TBtn title="Code block" onRun={() => applyBlock('code')}><CodeIcon /></TBtn>
         <TBtn title="Table"      onRun={() => applyBlock('table')}><TableIcon /></TBtn>
         <span className={styles.tbSep} />
+        {/* Only on the bar above the note, not in the selection bubble: the
+            bubble appears because text is selected, and inserting a character
+            would replace it. */}
+        <span className={styles.tbAnchor} ref={emojiBtnRef}>
+          <TBtn title="Emoji" active={!!emojiAt} onRun={toggleEmoji}><EmojiIcon /></TBtn>
+        </span>
         {linkBtns}
 
         {/* Row/column controls appear only while the caret is in a table. They
@@ -2348,6 +2487,40 @@ export default function RichEditor({
               {linkBtns}
             </>
           )}
+        </div>,
+        document.body
+      )}
+
+      {/* ── Emoji picker ── */}
+      {emojiAt && createPortal(
+        <div
+          ref={emojiRef}
+          className={styles.emojiPanel}
+          style={{ left: emojiAt.left, top: emojiAt.top }}
+          role="dialog"
+          aria-label="Emoji"
+        >
+          {EMOJI_GROUPS.map(g => (
+            <div key={g.name}>
+              <div className={styles.emojiGroupLabel}>{g.name}</div>
+              <div className={styles.emojiGrid}>
+                {g.chars.map(ch => (
+                  <button
+                    key={ch}
+                    type="button"
+                    className={styles.emojiBtn}
+                    aria-label={ch}
+                    // Same reason as the toolbar buttons: keep the caret alive
+                    // in the editor while this is pressed.
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => insertEmoji(ch)}
+                  >
+                    {ch}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>,
         document.body
       )}

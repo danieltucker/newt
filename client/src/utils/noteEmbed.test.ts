@@ -2,11 +2,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   EMBED_CLASS, EmbedData, applyCommentCounts, articleEmbed, buildEmbedHtml, commentLabel,
-  createEmbed, embedAt, embedMatches, embeddedUrls, hydrateEmbeds, postEmbed, readEmbed,
-  variantOf, hasThread,
+  createEmbed, embedAt, embedMatches, embedUrlsIn, embeddedUrls, hydrateEmbeds, postEmbed,
+  readEmbed, variantOf, hasThread,
 } from './noteEmbed';
 import { pageEmbed } from './pageMeta';
-import { parseArticlePath } from './articleUrl';
+import { articlePathFor, parseArticlePath } from './articleUrl';
 import { ReadingListItem } from '../types';
 
 const item = (over: Partial<ReadingListItem> = {}): ReadingListItem => ({
@@ -157,6 +157,43 @@ describe('buildEmbedHtml', () => {
     expect(parse(buildEmbedHtml(data, 'small')).textContent).toContain('example.com · 6 min');
     expect(parse(buildEmbedHtml(data, 'large')).textContent).toContain('Saved article');
   });
+
+  // The description is what the large size is *for*: without it that card was a
+  // small card with a bigger picture.
+  describe('the description', () => {
+    const described = { ...data, description: 'A summary of the thing.' };
+
+    it('appears on the large card only', () => {
+      expect(parse(buildEmbedHtml(described, 'large'))
+        .querySelector('.note-embed-desc')?.textContent).toBe('A summary of the thing.');
+      for (const variant of ['link', 'small'] as const) {
+        expect(parse(buildEmbedHtml(described, variant))
+          .querySelector('.note-embed-desc')).toBeNull();
+      }
+    });
+
+    it('leaves no empty line behind when there is nothing to say', () => {
+      expect(parse(buildEmbedHtml(data, 'large')).querySelector('.note-embed-desc')).toBeNull();
+    });
+
+    // It is stored on the wrapper like every other field, so switching sizes
+    // down and back must not lose it.
+    it('survives a round trip through a size it isn’t shown at', () => {
+      const small = createEmbed(readEmbed(createEmbed(described, 'large'))!, 'small');
+      expect(readEmbed(small)?.description).toBe('A summary of the thing.');
+    });
+
+    it('is escaped, being text this app fetched off someone else\'s page', () => {
+      const nasty = { ...data, description: '"><img src=x onerror=alert(1)>' };
+      const el = parse(buildEmbedHtml(nasty, 'large'));
+      // The card's own cover and favicon are still there; the smuggled one
+      // stayed text, in the attribute and on screen alike.
+      expect(el.querySelector('img[src="x"]')).toBeNull();
+      expect(el.querySelector('.note-embed-desc')?.textContent)
+        .toBe('"><img src=x onerror=alert(1)>');
+      expect(readEmbed(el)?.description).toBe('"><img src=x onerror=alert(1)>');
+    });
+  });
 });
 
 describe('changing size', () => {
@@ -171,7 +208,11 @@ describe('changing size', () => {
 });
 
 describe('page embeds (a plain URL rendered as a card)', () => {
-  const meta = { title: 'Fetched Title', image: 'https://cdn.example.com/og.png' };
+  const meta = {
+    title: 'Fetched Title',
+    image: 'https://cdn.example.com/og.png',
+    description: 'What the page says about itself.',
+  };
 
   it('takes its title from the page when the writer typed none', () => {
     const data = pageEmbed('https://example.com/post', meta);
@@ -186,10 +227,28 @@ describe('page embeds (a plain URL rendered as a card)', () => {
   });
 
   it('falls back to the host when the page yields nothing', () => {
-    const data = pageEmbed('https://www.example.com/x', { title: null, image: null });
+    const data = pageEmbed('https://www.example.com/x',
+      { title: null, image: null, description: null });
     expect(data.title).toBe('example.com');
     expect(data.source).toBe('example.com');
     expect(data.image).toBeUndefined();
+    expect(data.description).toBeUndefined();
+  });
+
+  // A link's source is a hostname, exactly like an article's publication, so it
+  // gets the same icon. Only a post - whose source is a person - goes without.
+  it('carries a favicon, its source being a domain', () => {
+    for (const variant of ['link', 'small', 'large'] as const) {
+      expect(parse(buildEmbedHtml(pageEmbed('https://example.com/post', meta), variant))
+        .querySelector('img.note-embed-fav')).not.toBeNull();
+    }
+  });
+
+  // "LINK" over a title and a hostname told the reader nothing they couldn't
+  // already see. The kinds that keep a kicker say something the card doesn't.
+  it('wears no kicker', () => {
+    const el = parse(buildEmbedHtml(pageEmbed('https://example.com/post', meta), 'large'));
+    expect(el.querySelector('.note-embed-kicker')).toBeNull();
   });
 
   it('survives a size change like any other embed', () => {
@@ -198,25 +257,56 @@ describe('page embeds (a plain URL rendered as a card)', () => {
     expect(readEmbed(large)).toEqual(data);
   });
 
-  it('grows no comments row - there is no thread on an arbitrary URL', () => {
+  // A pasted URL acquires a thread when somebody else saves that same article
+  // and talks about it, so the card gets the row like any other - it just has
+  // nothing to say until a count comes back.
+  it('carries a comments row, pointing at the thread rather than the source', () => {
     const page = createEmbed(pageEmbed('https://example.com/post', meta), 'large');
-    expect(page.querySelector('.note-embed-comments')).toBeNull();
-    // …whereas the kinds that do have a thread still get their slot
-    const article = createEmbed(articleEmbed(item()), 'large');
-    expect(article.querySelector('.note-embed-comments')).not.toBeNull();
+    const row = page.querySelector('a.note-embed-comments');
+    expect(row).not.toBeNull();
+    // The card goes to example.com; the row goes to the reader for that URL,
+    // which is where the conversation actually is.
+    expect(row!.getAttribute('href')).toBe(articlePathFor('https://example.com/post'));
+    expect(page.querySelector('a.note-embed-a')!.getAttribute('href'))
+      .toBe('https://example.com/post');
+  });
+
+  it('says nothing until there is something to say', () => {
+    const root = document.createElement('div');
+    root.appendChild(createEmbed(pageEmbed('https://example.com/post', meta), 'large'));
+    const row = () => root.querySelector('.note-embed-comments')!;
+
+    // Nobody asked yet, and a zero on a link is not worth a row - the CSS keeps
+    // it hidden in both cases, which is what the missing attribute drives.
+    applyCommentCounts(root, {});
+    expect(row().hasAttribute('data-comments')).toBe(false);
+    applyCommentCounts(root, { 'https://example.com/post': 0 });
+    expect(row().hasAttribute('data-comments')).toBe(false);
+
+    applyCommentCounts(root, { 'https://example.com/post': 7 });
+    expect(row().getAttribute('data-comments')).toBe('7 comments');
+  });
+
+  // Where an article differs: it is a page of ours with a comment box on it, so
+  // "no comments yet" is an invitation rather than a dead end.
+  it('differs from an article, which says so even at zero', () => {
+    const root = document.createElement('div');
+    root.appendChild(createEmbed(articleEmbed(item()), 'large'));
+    applyCommentCounts(root, { 'https://example.com/post': 0 });
+    expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
+      .toBe('No comments yet');
+  });
+
+  it('is asked about at all - the URL goes into the counts request', () => {
+    const root = document.createElement('div');
+    root.appendChild(createEmbed(pageEmbed('https://example.com/post', meta), 'large'));
+    expect(embedUrlsIn(root)).toEqual(['https://example.com/post']);
   });
 
   it('knows which kinds carry a thread of their own', () => {
     expect(hasThread('article')).toBe(true);
     expect(hasThread('post')).toBe(true);
     expect(hasThread('page')).toBe(false);
-  });
-
-  it('is left alone by applyCommentCounts', () => {
-    const root = document.createElement('div');
-    root.appendChild(createEmbed(pageEmbed('https://example.com/post', meta), 'large'));
-    applyCommentCounts(root, { 'https://example.com/post': 7 });
-    expect(root.textContent).not.toContain('7');
   });
 });
 
@@ -294,12 +384,19 @@ describe('live comment counts', () => {
       .toBe('1 comment');
   });
 
-  it('does nothing to the sizes that have no slot', () => {
-    for (const v of ['link', 'small'] as const) {
-      const root = mount(v);
-      applyCommentCounts(root, { 'https://example.com/post': 4 });
-      expect(root.innerHTML).not.toContain('data-comments');
-    }
+  // The medium card carries the row too now - it is the size most cards in a
+  // post are, and "there are eleven comments on this" is worth the same there.
+  it('fills the row on the small card as well as the large', () => {
+    const root = mount('small');
+    applyCommentCounts(root, { 'https://example.com/post': 4 });
+    expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
+      .toBe('4 comments');
+  });
+
+  it('does nothing to the inline size, which has no row', () => {
+    const root = mount('link');
+    applyCommentCounts(root, { 'https://example.com/post': 4 });
+    expect(root.innerHTML).not.toContain('note-embed-comments');
   });
 });
 

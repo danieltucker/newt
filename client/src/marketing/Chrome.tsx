@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import NewtMark from '../components/NewtMark';
 import SiteFooter from '../components/SiteFooter';
+import Lightbox from '../components/Lightbox';
 import { SECTIONS, type Section, type ShotSpec } from './sections';
 import styles from './chrome.module.css';
 import './reveal.css';
@@ -24,16 +25,37 @@ const TONE_CLASS: Record<Tone, string> = {
   glow: styles.toneGlow,
 };
 
-/** Reveal-on-scroll for every `[data-reveal]` inside `ref`. */
+/**
+ * Reveal-on-scroll for every `[data-reveal]` inside `ref`.
+ *
+ * Elements start at `opacity: 0` (see reveal.css) and are only made visible
+ * once observed, so anything this hook fails to observe is *permanently
+ * invisible*. That is the whole risk here, and it is why the DOM is watched
+ * rather than scanned once:
+ *
+ * Marketing routes swap their content without remounting MarketingPage — the
+ * six feature pages are all <FeaturePage>, so React reconciles rather than
+ * remounts. A one-shot scan on mount therefore observed the *first* page's
+ * elements and none of the next page's. Navigating from one feature page to
+ * another left the section headings visible (they carry no data-reveal) above
+ * step cards and use-case cards stuck at zero opacity — the copy was there in
+ * the DOM the whole time, just never revealed.
+ */
 export function useReveal(ref: React.RefObject<HTMLElement>) {
   useEffect(() => {
-    const els = ref.current?.querySelectorAll('[data-reveal]');
-    if (!els) return;
+    const root = ref.current;
+    if (!root) return;
+
     // No observer means no animation rather than no content.
     if (!('IntersectionObserver' in window)) {
-      els.forEach(el => el.setAttribute('data-shown', ''));
-      return;
+      const showAll = () => root.querySelectorAll('[data-reveal]')
+        .forEach(el => el.setAttribute('data-shown', ''));
+      showAll();
+      const mo = new MutationObserver(showAll);
+      mo.observe(root, { childList: true, subtree: true });
+      return () => mo.disconnect();
     }
+
     const io = new IntersectionObserver(
       entries => entries.forEach(e => {
         if (!e.isIntersecting) return;
@@ -42,8 +64,23 @@ export function useReveal(ref: React.RefObject<HTMLElement>) {
       }),
       { rootMargin: '0px 0px -8% 0px', threshold: 0.06 },
     );
-    els.forEach(el => io.observe(el));
-    return () => io.disconnect();
+
+    // Observing twice would be harmless, but the set keeps this O(new nodes)
+    // rather than O(page) on every mutation.
+    const seen = new WeakSet<Element>();
+    const sweep = () => {
+      root.querySelectorAll('[data-reveal]').forEach(el => {
+        if (seen.has(el)) return;
+        seen.add(el);
+        io.observe(el);
+      });
+    };
+
+    sweep();
+    const mo = new MutationObserver(sweep);
+    mo.observe(root, { childList: true, subtree: true });
+
+    return () => { mo.disconnect(); io.disconnect(); };
   }, [ref]);
 }
 
@@ -229,46 +266,137 @@ export function Band({
 
 // ── Screenshot frame ──────────────────────────────────────────────────
 
+/**
+ * How far the frame tips at its very edge, in degrees. Deliberately small: this
+ * should read as a surface giving under the pointer, not as a card being thrown
+ * around. Anything past about 8 and the browser chrome at the top starts to
+ * look like it is falling off.
+ */
+const PRESS_TILT = 5;
+
+/**
+ * Pointer-tracked "press". The frame tips *away* from the cursor — the corner
+ * you are over is the corner that sinks — and a soft highlight follows the
+ * contact point.
+ *
+ * Both are published as CSS custom properties rather than as inline transforms,
+ * so the stylesheet still owns what the effect looks like and this only reports
+ * where the pointer is. Clearing the properties on the way out lets the CSS
+ * transition ease it back to rest instead of snapping.
+ */
+function usePress() {
+  const raf = useRef(0);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLElement>) => {
+    // A finger is already in contact with the thing it is touching, so tipping
+    // the surface away under it says nothing. Mouse only.
+    if (e.pointerType !== 'mouse') return;
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      // −1..1 out from the centre. rotateX is negated because a positive value
+      // tips the *top* away from the viewer, and what we want is for the edge
+      // under the cursor to be the one that goes down.
+      el.style.setProperty('--press-rx', `${-(y - 0.5) * 2 * PRESS_TILT}deg`);
+      el.style.setProperty('--press-ry', `${(x - 0.5) * 2 * PRESS_TILT}deg`);
+      el.style.setProperty('--press-x', `${x * 100}%`);
+      el.style.setProperty('--press-y', `${y * 100}%`);
+    });
+  }, []);
+
+  const onPointerLeave = useCallback((e: React.PointerEvent<HTMLElement>) => {
+    cancelAnimationFrame(raf.current);
+    const el = e.currentTarget;
+    for (const p of ['--press-rx', '--press-ry', '--press-x', '--press-y']) {
+      el.style.removeProperty(p);
+    }
+  }, []);
+
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  return { onPointerMove, onPointerLeave };
+}
+
 /** A browser-chrome frame. With `src` it shows the screenshot; without one it
  *  shows what that screenshot needs to contain, which is the point until the
- *  images exist. */
+ *  images exist.
+ *
+ *  A frame that has its image is also a control: the shots are captured at 2×
+ *  (2400–3200px wide) but drawn here at ~700px, so there is a great deal more
+ *  detail in the file than the page ever shows. Clicking opens it full size in
+ *  the same Lightbox the app uses for post images. */
 export function ShotFrame({ shot, tall = false, aura = false }: { shot: ShotSpec; tall?: boolean; aura?: boolean }) {
-  const frame = (
-    <figure className={`${styles.shot} ${tall ? styles.shotTall : ''}`}>
-      <div className={styles.chrome} aria-hidden>
-        <span className={`${styles.dot} ${styles.dotR}`} />
-        <span className={`${styles.dot} ${styles.dotY}`} />
-        <span className={`${styles.dot} ${styles.dotG}`} />
-        <span className={styles.chromeBar}>newt.page</span>
-      </div>
+  const [zoomed, setZoomed] = useState(false);
+  const press = usePress();
 
+  const chrome = (
+    <div className={styles.chrome} aria-hidden>
+      <span className={`${styles.dot} ${styles.dotR}`} />
+      <span className={`${styles.dot} ${styles.dotY}`} />
+      <span className={`${styles.dot} ${styles.dotG}`} />
+      <span className={styles.chromeBar}>newt.page</span>
+    </div>
+  );
+
+  const frame = (
+    <figure
+      className={`${styles.shot} ${tall ? styles.shotTall : ''} ${shot.src ? styles.shotLive : ''}`}
+      {...(shot.src ? press : {})}
+    >
       {shot.src ? (
-        <img className={styles.shotImg} src={shot.src} alt={shot.title} loading="lazy" />
+        // A real button, so Enter and Space work and it lands in the tab order
+        // with a focus ring, rather than a div wearing role="button".
+        <button
+          type="button"
+          className={styles.shotBtn}
+          onClick={() => setZoomed(true)}
+          aria-label={`${shot.title} — view full size`}
+        >
+          {chrome}
+          <img className={styles.shotImg} src={shot.src} alt={shot.title} loading="lazy" />
+        </button>
       ) : (
-        <div className={styles.placeholder}>
-          <div className={styles.phHead}>
-            <NewtMark className={styles.phMark} />
-            <div>
-              <div className={styles.phTitle}>{shot.title}</div>
-              <div className={styles.phMeta}>
-                <code>/shots/{shot.id}.png</code> · {shot.size}
+        <>
+          {chrome}
+          <div className={styles.placeholder}>
+            <div className={styles.phHead}>
+              <NewtMark className={styles.phMark} />
+              <div>
+                <div className={styles.phTitle}>{shot.title}</div>
+                <div className={styles.phMeta}>
+                  <code>/shots/{shot.id}.png</code> · {shot.size}
+                </div>
               </div>
             </div>
+            <ul className={styles.phList}>
+              {shot.capture.map(line => <li key={line}>{line}</li>)}
+            </ul>
           </div>
-          <ul className={styles.phList}>
-            {shot.capture.map(line => <li key={line}>{line}</li>)}
-          </ul>
-        </div>
+        </>
       )}
     </figure>
   );
 
-  if (!aura) return frame;
+  const zoom = (
+    <Lightbox
+      image={zoomed && shot.src ? { src: shot.src, alt: shot.title } : null}
+      onClose={() => setZoomed(false)}
+    />
+  );
+
+  if (!aura) return <>{frame}{zoom}</>;
   return (
-    <div className={styles.shotWrap}>
-      <span className={styles.aura} aria-hidden />
-      {frame}
-    </div>
+    <>
+      <div className={styles.shotWrap}>
+        <span className={styles.aura} aria-hidden />
+        {frame}
+      </div>
+      {zoom}
+    </>
   );
 }
 

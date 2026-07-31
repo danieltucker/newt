@@ -6,6 +6,7 @@ import { articlePathFor } from '../utils/articleUrl';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import CommentsPanel from './CommentsPanel';
+import CloseButton from './CloseButton';
 import styles from './ArticleDetailModal.module.css';
 
 // The article reader. Opened from a card's comment strip, it shows the full
@@ -42,7 +43,11 @@ interface Props {
   onCountChange?: (url: string, next: number) => void;
   legacyNote?: string;
   onLegacyNoteMigrated?: () => void;
-  /** Caller-supplied buttons (Save, Dismiss, Archive…) - each list owns its own verbs */
+  /**
+   * Caller-supplied controls (Save, Dismiss, Archive…) - each list owns its own
+   * verbs. They render in the action bar at the foot of the article, beside
+   * Repost and above the comments, not in the toolbar.
+   */
   actions?: ReactNode;
   onClose: () => void;
   onViewProfile?: (username: string) => void;
@@ -164,33 +169,6 @@ export default function ArticleDetailModal({
             <span className={styles.toolbarSource}>{displaySource || domain}</span>
           </div>
           <div className={styles.toolbarRight}>
-            {actions}
-            {/* Reposting writes a post as this reader, so it needs an account -
-                the same reason the comment composer is read-only signed out.
-                It carries whatever the reader resolved rather than what the
-                card was opened with, so the card quotes the better title. */}
-            {!readOnly && (
-              <button
-                title="Write a post quoting this article"
-                onClick={() => startRepost({
-                  title: displayTitle,
-                  embed: articleEmbed({
-                    url,
-                    title: displayTitle,
-                    source: displaySource || domain,
-                    imageUrl: heroImage,
-                    readTime: readText,
-                  }),
-                })}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                  <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                </svg>
-                Repost
-              </button>
-            )}
             <a
               className={styles.openBtn}
               href={url}
@@ -204,12 +182,7 @@ export default function ArticleDetailModal({
                 <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
               </svg>
             </a>
-            <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-                strokeWidth="1.9" strokeLinecap="round">
-                <path d="M1 1l10 10M11 1L1 11" />
-              </svg>
-            </button>
+            <CloseButton onClick={onClose} />
           </div>
         </header>
 
@@ -260,6 +233,47 @@ export default function ArticleDetailModal({
               </div>
             )}
           </article>
+
+          {/* What to *do* with the article sits at its foot, not up in the
+              chrome. Saving and reposting are things you decide once you've
+              read the thing, and the toolbar put them at the top of a page you
+              were about to scroll away from - next to a Close button, which is
+              the one neighbour a save should never have. Down here they share a
+              row with the conversation, which is the other thing you do when
+              you've finished reading. */}
+          {(actions || !readOnly) && (
+            <div className={styles.actionBar}>
+              {actions}
+              {/* Reposting writes a post as this reader, so it needs an account -
+                  the same reason the comment composer is read-only signed out.
+                  It carries whatever the reader resolved rather than what the
+                  card was opened with, so the card quotes the better title. */}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className={styles.repostBtn}
+                  title="Write a post quoting this article"
+                  onClick={() => startRepost({
+                    title: displayTitle,
+                    embed: articleEmbed({
+                      url,
+                      title: displayTitle,
+                      source: displaySource || domain,
+                      imageUrl: heroImage,
+                      readTime: readText,
+                    }),
+                  })}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                    <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                  </svg>
+                  Repost
+                </button>
+              )}
+            </div>
+          )}
 
           <div className={styles.commentsWrap}>
             <CommentsPanel

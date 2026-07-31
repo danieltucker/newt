@@ -34,7 +34,7 @@ import { useFolders } from '../hooks/useFolders';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
-import { useReadingFolders } from '../hooks/useReadingFolders';
+import { useReadingFolders, nextShelfColor } from '../hooks/useReadingFolders';
 import { useSettings } from '../hooks/useSettings';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
@@ -130,7 +130,16 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const { items: readingList, saveItem, updateItem, setInLibrary, removeItem, restoreItem, moveToFolder } = readingListBinding;
   // Shelves, so an article filed from the reading list can be dropped straight
   // onto one without a detour through the Library.
-  const { folders: readingFolders } = useReadingFolders(accessToken);
+  const { folders: readingFolders, createFolder: createReadingFolder } = useReadingFolders(accessToken);
+
+  // Naming a shelf from a card's Save menu. The colour isn't asked for there -
+  // that menu is one field wide and the point is not to break the save you were
+  // already making; the first unused hue is what the Library would have
+  // suggested anyway, and it can be recoloured there.
+  const handleCreateReadingFolder = useCallback(async (name: string) => {
+    const created = await createReadingFolder(name, nextShelfColor(readingFolders));
+    return created.id;
+  }, [createReadingFolder, readingFolders]);
 
   const CACHE_KEY = `bfc_${username}`;
 
@@ -724,7 +733,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         username={username}
         avatar={profile?.avatar}
         isAdmin={isAdmin}
-        path={window.location.pathname}
         notifUnread={notifUnread}
         navigate={navigate}
         onOpenSettings={() => { setSettingsSection(undefined); setShowSettings(true); }}
@@ -824,6 +832,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onDelete={removeItem}
                 onRestore={restoreItem}
                 readingFolders={readingFolders}
+                onCreateFolder={handleCreateReadingFolder}
                 onMoveToFolder={moveToFolder}
                 onOpenLibrary={() => navigate(`${profilePathFor(username)}?tab=library`)}
                 articleOpenMode={(() => {
@@ -846,24 +855,40 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
               <FolderArticles
                 key={activeFolderId}
                 folderId={activeFolderId}
-                onSaveArticle={async (a, markSaved) => {
+                onSaveArticle={async (a, markSaved, dest) => {
+                  const fields = {
+                    url: a.url,
+                    title: a.title,
+                    source: a.source,
+                    readTime: a.readTime != null ? `${a.readTime} min` : '',
+                    tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
+                    imageUrl: a.imageUrl ?? '',
+                  };
+                  // Picking a shelf is already a decision about this article, so
+                  // it never stops for the dialog - and it skips the reading
+                  // list, since filing it there first would only mean fishing it
+                  // back out again.
+                  if (dest) {
+                    try {
+                      const created = await saveItem(fields);
+                      if (dest.folderId) await moveToFolder(created.id, dest.folderId);
+                      else await setInLibrary(created.id, true);
+                      markSaved();
+                    } catch {}
+                    return;
+                  }
                   if ((settings.saveArticleMode ?? 'dialog') === 'instant') {
                     // Save with the article's own metadata - no dialog
                     try {
-                      await saveItem({
-                        url: a.url,
-                        title: a.title,
-                        source: a.source,
-                        readTime: a.readTime != null ? `${a.readTime} min` : '',
-                        tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
-                        imageUrl: a.imageUrl ?? '',
-                      });
+                      await saveItem(fields);
                       markSaved();
                     } catch {}
                   } else {
                     setSavingArticle({ ...a, markSaved });
                   }
                 }}
+                readingFolders={readingFolders}
+                onCreateFolder={handleCreateReadingFolder}
                 onArticlesLoaded={handleFeedArticlesLoaded}
                 refreshKey={feedRefreshKey}
                 pageSize={settings.rssFeedPageSize ?? 10}

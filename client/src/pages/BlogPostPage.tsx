@@ -162,6 +162,7 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
                 slug: post.slug,
                 heroImage: post.heroImage,
                 publishedAt: post.publishedAt,
+                excerpt: post.excerpt,
                 author,
               }),
             })}

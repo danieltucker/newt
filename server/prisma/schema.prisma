@@ -154,9 +154,16 @@ model Friendship {
   requester   User      @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   addresseeId String
   addressee   User      @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
-  status      String    @default("pending") // 'pending' | 'accepted'
+  status      String    @default("pending") // 'pending' | 'accepted' | 'declined'
   createdAt   DateTime  @default(now())
+  // Set when the addressee accepted or declined. For a declined row it is also
+  // the start of the re-request cooldown (see DECLINE_COOLDOWN_MS).
   respondedAt DateTime?
+  // The two user ids sorted and joined — one identity for the pair, regardless of
+  // who asked whom. The directional unique below cannot stop simultaneous A→B and
+  // B→A inserts from both succeeding; this can. Always written via
+  // friendPairKey(), never by hand. See lib/friends.ts.
+  pairKey     String    @unique
 
   @@unique([requesterId, addresseeId])
   @@index([addresseeId, status])

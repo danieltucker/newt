@@ -34,22 +34,6 @@
   color: var(--text);
 }
 
-.closeBtn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 6px;
-  font-size: 18px;
-  line-height: 1;
-  transition: color 0.15s;
-}
-
-.closeBtn:hover {
-  color: var(--text);
-}
-
 .preview {
   margin-bottom: 20px;
   padding: 16px;

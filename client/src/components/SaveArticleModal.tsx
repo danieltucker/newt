@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import styles from './SaveArticleModal.module.css';
 import TagChipInput from './TagChipInput';
+import CloseButton from './CloseButton';
 
 interface Props {
   url: string;
@@ -48,11 +49,7 @@ export default function SaveArticleModal({ url, title, source, imageUrl = '', in
       <div className={styles.card} onKeyDown={handleKeyDown}>
         <div className={styles.header}>
           <span className={styles.heading}>Save to reading list</span>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M1 1l10 10M11 1L1 11"/>
-            </svg>
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
 
         <a href={url} target="_blank" rel="noopener noreferrer" className={styles.urlPreview} title={url}>

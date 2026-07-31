@@ -41,23 +41,41 @@ export interface EmbedData {
   image?: string;
   /** One extra line the kind wants to show (read time, date, author). */
   meta?: string;
+  /**
+   * A sentence or two about the target, shown on the large card only. This is
+   * what makes that size worth its space: without it a large card was a small
+   * card with a bigger picture, which is no reason to give up a screenful of a
+   * post. Absent is normal - a saved article carries no summary - and the line
+   * is simply omitted.
+   */
+  description?: string;
 }
 
 // What the large card calls itself, so a wall of embeds still says what each
 // one is. Keyed by kind - the only place a new kind has to be named.
-const KIND_LABEL: Record<EmbedKind, string> = {
+//
+// No entry for 'page': a card headed LINK above a title and a hostname is
+// telling the reader something they can already see. The kinds that get a
+// kicker are the ones where it says something the card doesn't - that this came
+// out of your library, or that it was written here.
+const KIND_LABEL: Partial<Record<EmbedKind, string>> = {
   article: 'Saved article',
   post: 'Blog post',
-  page: 'Link',
 };
 
 const DEFAULT_VARIANT: EmbedVariant = 'small';
 
-// Kinds whose target has a conversation of its own. An article and a post are
-// both threaded on their canonical URL - the same key `url` already holds - so
-// one lookup serves both. A 'page' is any URL on the open web: there is no Newt
-// thread on it, so a large card must not grow a comments row it can never fill.
-// A future kind that is nothing to comment on simply stays off this list.
+// Every thread in the app is keyed on a canonical URL, and every embed carries
+// one - so any embed *may* have a conversation, including a link someone pasted
+// off the open web. Somebody else saving that article and talking about it is
+// exactly how a pasted URL acquires a thread, and the card had no way to say so.
+//
+// What this list marks is the stronger claim: kinds whose target has a thread
+// whether or not anyone has posted in it yet, because it is a page of ours with
+// a comment box on it. Those cards rest on a "Comments" invitation. Everything
+// else stays silent until a count actually comes back - see the CSS, which hides
+// the row until it has something to report, so a card never promises a
+// conversation that doesn't exist.
 const THREADED_KINDS: EmbedKind[] = ['article', 'post'];
 
 export function hasThread(kind: EmbedKind): boolean {
@@ -121,6 +139,8 @@ export interface PostRef {
   heroImage?: string | null;
   publishedAt?: string | null;
   author?: { username: string; displayName: string } | null;
+  /** The post's own summary - what its large card says about it. */
+  excerpt?: string | null;
 }
 
 /**
@@ -139,6 +159,7 @@ export function postEmbed(post: PostRef): EmbedData {
     source: post.author?.displayName ?? '',
     image: post.heroImage || undefined,
     meta: shortDate(post.publishedAt) || undefined,
+    description: post.excerpt?.trim() || undefined,
   };
 }
 
@@ -153,11 +174,17 @@ function attr(name: string, value: string | undefined): string {
   return value ? ` ${name}="${escapeHtml(value)}"` : '';
 }
 
-// A favicon identifies a *publication*, which is what an article's source is.
-// A post's source is a person's name, so there is no domain to look one up by -
-// asking anyway would fetch a broken image on every card.
+// A favicon identifies a *publication*, which is what an article's source is -
+// and a pasted link's, whose source is its hostname. A post's source is a
+// person's name, so there is no domain to look one up by; asking anyway would
+// fetch a broken image on every card. The gate is therefore "does this kind's
+// source name a domain", not "is this an article" - which is what it used to
+// say, and why a link card carried a bare hostname with a gap where every other
+// card had an icon.
+const DOMAIN_SOURCE_KINDS: EmbedKind[] = ['article', 'page'];
+
 function favicon(data: EmbedData): string {
-  if (data.kind !== 'article' || !data.source) return '';
+  if (!DOMAIN_SOURCE_KINDS.includes(data.kind) || !data.source) return '';
   return `<img class="note-embed-fav" src="${escapeHtml(faviconFor(data.source))}" alt="">`;
 }
 
@@ -181,18 +208,19 @@ function innerHtml(data: EmbedData, variant: EmbedVariant): string {
     const cover = image
       ? `<img class="note-embed-cover" src="${escapeHtml(image)}" alt="" loading="lazy">`
       : '';
+    const kind = KIND_LABEL[data.kind];
+    const kicker = kind ? `<span class="note-embed-kicker">${escapeHtml(kind)}</span>` : '';
+    // The one thing this size has that the small card doesn't - the reader gets
+    // to decide whether to follow the link without following it first.
+    const desc = data.description
+      ? `<span class="note-embed-desc">${escapeHtml(data.description)}</span>`
+      : '';
     return cover +
       '<span class="note-embed-body">' +
-        `<span class="note-embed-kicker">${escapeHtml(KIND_LABEL[data.kind])}</span>` +
+        kicker +
         title +
+        desc +
         metaLine(data) +
-        // Deliberately empty: the count is live, and is written in as
-        // data-comments by applyCommentCounts. Storing a number here would bake
-        // in whatever it happened to be the day the embed was made. Only for
-        // kinds that have a thread at all - on anything else the slot would
-        // rest on its "Comments" placeholder forever, promising a conversation
-        // that does not exist.
-        (hasThread(data.kind) ? '<span class="note-embed-comments"></span>' : '') +
       '</span>';
   }
 
@@ -201,6 +229,41 @@ function innerHtml(data: EmbedData, variant: EmbedVariant): string {
     : '';
   return thumb +
     '<span class="note-embed-body">' + title + metaLine(data) + '</span>';
+}
+
+/**
+ * Where the comments row goes.
+ *
+ * An article's card already points at its Newt page and a post's at the post
+ * itself; both of those carry the thread, so the row leads where the card does.
+ * A pasted link points off-site - following it would take you to the source,
+ * not to the conversation - so its row goes to the reader for that URL, which
+ * is the page the thread actually lives on. `/a/<id>` needs no server-side
+ * mapping, so this works for any URL, saved or not (see utils/articleUrl).
+ */
+function commentsHref(data: EmbedData): string {
+  return data.kind === 'page' ? articlePathFor(data.url) : data.href;
+}
+
+/**
+ * The comments row: a link of its own, so it can lead somewhere the card
+ * doesn't. It is a *sibling* of the card's anchor rather than a child, because
+ * an anchor inside an anchor is not markup a browser will keep - which is why
+ * this used to be an inert span that only reported a number. The card's box is
+ * drawn on the wrapper for the same reason: it has to enclose both.
+ *
+ * Deliberately empty of text: the count is live and is written in as
+ * data-comments by applyCommentCounts. Storing a number would bake in whatever
+ * it happened to be the day the embed was written.
+ */
+function commentsRow(data: EmbedData, variant: EmbedVariant): string {
+  if (variant === 'link') return '';
+  // Only a real web address has a thread to reach. Anything else - a relative
+  // href, a blank - would build a link to a reader that cannot decode it.
+  if (!/^https?:\/\//i.test(data.url)) return '';
+  const href = safeUrl(commentsHref(data));
+  if (!href) return '';
+  return `<a class="note-embed-comments" href="${escapeHtml(href)}"></a>`;
 }
 
 /** The stored markup for an embed, ready for insertion into a note. */
@@ -216,10 +279,12 @@ export function buildEmbedHtml(data: EmbedData, variant: EmbedVariant = DEFAULT_
     attr('data-source', data.source) +
     attr('data-image', safeUrl(data.image)) +
     attr('data-meta', data.meta) +
+    attr('data-description', data.description) +
     ' contenteditable="false">' +
       `<a class="note-embed-a" href="${escapeHtml(href || '#')}" target="_blank" rel="noopener noreferrer">` +
         innerHtml(data, variant) +
       '</a>' +
+      commentsRow(data, variant) +
     '</span>'
   );
 }
@@ -252,6 +317,7 @@ export function readEmbed(el: Element | null): EmbedData | null {
     source: el.getAttribute('data-source') ?? '',
     image: el.getAttribute('data-image') || undefined,
     meta: el.getAttribute('data-meta') || undefined,
+    description: el.getAttribute('data-description') || undefined,
   };
 }
 
@@ -270,41 +336,53 @@ export function embedAt(node: Node | null, root: HTMLElement): HTMLElement | nul
 }
 
 // ── Live comment counts ───────────────────────────────────────────────
-// The large card says how much conversation an article has drawn. That number
-// is the one thing about an embed that cannot live in the stored markup: it
-// changes after the embed is written, so a saved copy would be wrong within a
-// day. It travels as `data-comments` on an otherwise-empty slot, written by
-// whoever renders the embed and stripped again on the way in - the server's
-// allowlist does not carry it either, so it can never be persisted.
+// A card says how much conversation its target has drawn. That number is the
+// one thing about an embed that cannot live in the stored markup: it changes
+// after the embed is written, so a saved copy would be wrong within a day. It
+// travels as `data-comments` on an otherwise-empty row, written by whoever
+// renders the embed and stripped again on the way in - the server's allowlist
+// does not carry it either, so it can never be persisted.
 
 const COMMENTS_ATTR = 'data-comments';
 
-const THREADED = THREADED_KINDS
-  .map(kind => `.${EMBED_CLASS}[data-embed="${kind}"]`)
-  .join(', ');
+const ANY_EMBED = `.${EMBED_CLASS}`;
 
 export function commentLabel(n: number): string {
   if (n <= 0) return 'No comments yet';
   return `${n} comment${n === 1 ? '' : 's'}`;
 }
 
-/** Write live counts into every threaded embed under `root`, keyed by source URL. */
+/** Write live counts into every embed under `root`, keyed by source URL. */
 export function applyCommentCounts(root: ParentNode, counts: Record<string, number>): void {
-  root.querySelectorAll(THREADED).forEach(el => {
-    const slot = el.querySelector('.note-embed-comments');
-    if (!slot) return;
+  root.querySelectorAll(ANY_EMBED).forEach(el => {
+    const row = el.querySelector('.note-embed-comments');
+    if (!row) return;
+    const kind = el.getAttribute('data-embed') ?? '';
     const n = counts[el.getAttribute('data-url') ?? ''];
-    // An unknown count leaves the slot resting on its CSS default rather than
-    // asserting zero - "no comments yet" and "not asked yet" are different.
-    if (n === undefined) slot.removeAttribute(COMMENTS_ATTR);
-    else slot.setAttribute(COMMENTS_ATTR, commentLabel(n));
+    // Two ways to have nothing to say, and both leave the row resting on its
+    // CSS default rather than asserting anything:
+    //  - the count is unknown, because nobody has asked yet. "No comments yet"
+    //    and "not asked yet" are different claims.
+    //  - the count is zero on a kind with no comment box of its own. An article
+    //    with no replies is still somewhere you can go and reply; an arbitrary
+    //    link with none is just a link, and its row stays hidden.
+    const silent = n === undefined || (n === 0 && (!isKind(kind) || !hasThread(kind)));
+    if (silent) row.removeAttribute(COMMENTS_ATTR);
+    else row.setAttribute(COMMENTS_ATTR, commentLabel(n));
   });
 }
 
-/** The threaded URLs embedded under `root`, for one batched counts request. */
+/**
+ * The URLs embedded under `root`, for one batched counts request.
+ *
+ * Every embed, not only the kinds that are certain to have a thread: a pasted
+ * link is the case worth asking about, since the way it acquires a conversation
+ * is somebody else saving that same article and talking about it. Asking is one
+ * URL added to a request that is already being made.
+ */
 export function embedUrlsIn(root: ParentNode): string[] {
   const urls = new Set<string>();
-  root.querySelectorAll(THREADED).forEach(el => {
+  root.querySelectorAll(ANY_EMBED).forEach(el => {
     const url = el.getAttribute('data-url');
     if (url && /^https?:\/\//i.test(url)) urls.add(url);
   });

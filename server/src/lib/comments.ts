@@ -35,15 +35,22 @@ const TABLE_CLASS = 'note-table';
 // nofollow/noopener transform below still applies.
 const EMBED_CLASS = 'note-embed';
 
+// note-embed-comments stays listed for spans as well as anchors: embeds written
+// before the row became a link still carry it on a span, and their saved markup
+// has to keep rendering.
 const EMBED_SPAN_CLASSES = [
   EMBED_CLASS,
   'note-embed-body', 'note-embed-title', 'note-embed-meta',
-  'note-embed-kicker', 'note-embed-comments',
+  'note-embed-kicker', 'note-embed-comments', 'note-embed-desc',
 ];
 
 const EMBED_DATA_ATTRS = [
   'data-embed', 'data-variant', 'data-href', 'data-url',
   'data-title', 'data-source', 'data-image', 'data-meta',
+  // The large card's summary. Text only, and rendered as text — it is escaped
+  // into the markup by buildEmbedHtml and read back out with getAttribute, so
+  // it is never a path to markup the way a class or a URL would be.
+  'data-description',
 ];
 
 // Two independent caps on a comment body:
@@ -125,7 +132,11 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
     div: [TODO_CLASS],
     table: [TABLE_CLASS],
     span: EMBED_SPAN_CLASSES,
-    a: ['note-embed-a'],
+    // note-embed-comments is an anchor now, not a span: it links to the thread,
+    // which for a pasted link is somewhere the card itself does not go. Its
+    // href gets the same scheme check and rel/target transform as any other
+    // link in a body, so it grants nothing a plain <a> wouldn't.
+    a: ['note-embed-a', 'note-embed-comments'],
     img: ['note-embed-thumb', 'note-embed-cover', 'note-embed-fav'],
   },
   // Drop the contents of these outright rather than leaving bare text behind

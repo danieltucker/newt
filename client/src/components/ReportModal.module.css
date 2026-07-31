@@ -39,17 +39,6 @@
   color: var(--text);
 }
 
-.closeBtn {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 15px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
-}
-.closeBtn:hover { color: var(--text); background: var(--surface2); }
-
 .body {
   flex: 1;
   overflow-y: auto;

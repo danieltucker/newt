@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import styles from './ReportModal.module.css';
 import { apiPost } from '../services/api';
 import { ReportCategory, ReportTargetType } from '../types';
+import CloseButton from './CloseButton';
 
 // One dialog for every kind of report - a comment, a post, a person. What is
 // being reported travels as an opaque (type, id) pair; the server resolves it,
@@ -82,7 +83,7 @@ export default function ReportModal({ targetType, targetId, subjectName, onClose
       <div className={styles.card} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Report this ${WHAT[targetType]}`}>
         <div className={styles.head}>
           <div className={styles.title}>Report this {WHAT[targetType]}</div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">✕</button>
+          <CloseButton onClick={onClose} />
         </div>
 
         {done ? (

@@ -64,8 +64,8 @@ const SMALL: Small[] = [
   },
   {
     icon: ico(<><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="m7 10 2.5 2L7 14M12.5 15H17" /></>),
-    title: 'A terminal on a backtick',
-    body: 'Look up your IP, run a DNS query or a speed test, and reach half your settings without opening a menu.',
+    title: 'Answers on a backtick',
+    body: 'Your public IP, a DNS record, a quick speed test - the small things you\'d otherwise open a tab to find out. Plus a few shortcuts, like switching theme.',
   },
   {
     icon: ico(<><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" /><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" /></>),
@@ -215,20 +215,25 @@ export default function LandingPage({ navigate, signedIn }: Props) {
       {/* ══ The console ══
           Drawn, not screenshotted - it is text on a dark surface, which CSS
           renders more crisply than any capture, on a band dark enough to make
-          the terminal look like it lives there. */}
+          the console look like it lives there.
+
+          Pitched as a set of lookups, not as a shell. It is a fixed list of
+          about a dozen commands (see COMMANDS in components/Console.tsx), and
+          calling it a terminal sets an expectation the next visitor tests by
+          typing `ls`. Note also that ping and tracert are admin-only, which is
+          why neither is named here. */}
       <Band tone="deep" innerClassName={styles.consoleWrap}>
         <div data-reveal>
-          <span className={chrome.kicker}>Power tools</span>
+          <span className={chrome.kicker}>Quick lookups</span>
           <h2 className={chrome.h2}>
-            Press <kbd className={styles.kbd}><span className={styles.kbdKey}>`</span></kbd> and
-            a terminal drops in
+            Press <kbd className={styles.kbd}><span className={styles.kbdKey}>`</span></kbd> for
+            the small stuff
           </h2>
           <p className={chrome.body}>
-            The things you end up needing mid-browse, without leaving the page: your
-            public IP and where it thinks you are, a DNS lookup, a speed test. And the
-            settings you’d otherwise go hunting through menus for - switch theme, jump
-            to a folder, add a site, clear the cache. Type <code>help</code> if you
-            forget. It’s one keystroke away from anywhere in the app.
+            Not a shell - a short list of things worth having one keystroke away. Your
+            public IP and where it thinks you are, a DNS record, a speed test. It reaches
+            a few settings too: switch theme, jump to a folder, add a site. Type{' '}
+            <code>help</code> for the list.
           </p>
         </div>
 

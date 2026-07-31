@@ -38,21 +38,6 @@
   color: var(--text);
 }
 
-.closeBtn {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: none;
-  background: var(--surface2);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.closeBtn:hover { background: var(--border); color: var(--text); }
-
 .urlPreview {
   display: block;
   font-size: 11px;

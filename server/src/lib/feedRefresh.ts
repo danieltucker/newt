@@ -5,10 +5,21 @@ import { canonicalArticleKey } from './comments';
 import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
 
-type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
+type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number; size?: number };
 
 export const FEED_STALE_MS = 30 * 60 * 1000;        // 30 minutes
 export const FEED_TTL_MS   = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Hard ceiling on a feed document. The timeout alone does not bound this: it is
+// a socket *idle* timeout, so an endless response that dribbles a byte every few
+// seconds never trips it while `resp.text()` buffers the whole thing into this
+// process's heap. Any feed URL is attacker-chosen — a user only has to add a
+// bookmark — so the body has to be bounded by bytes, not just by time.
+//
+// node-fetch aborts the stream and throws once the limit is passed, which the
+// catch below already logs as a failed refresh. 2 MB is generous: a 50-item feed
+// with full content runs a few hundred KB at the high end.
+const MAX_FEED_BYTES = 2_000_000;
 
 const UPSERT_CHUNK    = 10; // feed items upserted per DB batch
 const MAX_CONCURRENCY = 5;  // feeds fetched in parallel — keep outbound bursts small
@@ -93,6 +104,7 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
 
     const resp = await nodeFetch(feed.fetchUrl, {
       timeout: 8000,
+      size: MAX_FEED_BYTES,
       redirect: 'follow',
       headers,
     } as FetchOptions);

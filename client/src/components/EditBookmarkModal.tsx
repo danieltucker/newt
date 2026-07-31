@@ -3,6 +3,7 @@ import styles from './AddLinkModal.module.css';
 import ownStyles from './EditBookmarkModal.module.css';
 import { Folder, Bookmark } from '../types';
 import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl } from '../utils/color';
+import CloseButton from './CloseButton';
 
 const PALETTE = [
   '#5E6AD2', '#FF4500', '#EA4C89', '#1DB954', '#F48024', '#A259FF',
@@ -89,7 +90,7 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
       <div className={styles.card} onClick={e => e.stopPropagation()}>
         <div className={styles.header}>
           <span className={styles.title}>Edit link</span>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <CloseButton onClick={onClose} />
         </div>
 
         <div className={styles.preview} style={{ background: previewBg, border: `1px solid ${previewBorder}` }}>

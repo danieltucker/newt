@@ -15,6 +15,7 @@
     "seed-deep-threads": "ts-node --transpile-only scripts/seedDeepThreads.ts",
     "seed-personas": "ts-node --transpile-only scripts/seedPersonas.ts",
     "seed-recent-chatter": "ts-node --transpile-only scripts/seedRecentChatter.ts",
+    "seed-showcase": "ts-node --transpile-only scripts/seedShowcase.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -52,7 +53,9 @@
     "@types/pino": "^7.0.4",
     "@types/qrcode": "^1.5.6",
     "@types/speakeasy": "^2.0.10",
+    "@types/supertest": "^7.2.1",
     "prisma": "^7.8.0",
+    "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5",
     "vitest": "^4.1.10"

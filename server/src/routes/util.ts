@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type { Readable } from 'stream';
 import nodeFetch from 'node-fetch';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -47,6 +48,29 @@ function decodeEntities(str: string): string {
 
 
 const MAX_HTML_BYTES = 500_000; // 500 KB — enough for any real <title>/<og:title>
+
+// A card shows two lines of description; anything past this is a page dumping
+// its whole first paragraph into a meta tag, and it would be stored verbatim in
+// whatever note embeds it.
+const MAX_DESCRIPTION = 300;
+
+/**
+ * The content of a <meta> tag, matched on either `property` (Open Graph) or
+ * `name` (the older convention), with the two attribute orders both tags turn
+ * up in. Null when absent or empty — the caller falls through to the next
+ * candidate, so "" must not count as an answer.
+ */
+function metaContent(html: string, key: string): string | null {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const attr = `(?:property|name)=["']${k}["']`;
+  const match = html.match(new RegExp(`<meta[^>]+${attr}[^>]+content=["']([^"']*)["']`, 'i'))
+    || html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+${attr}`, 'i'));
+  if (!match) return null;
+  // Collapse the newlines and runs of spaces that survive pretty-printed markup
+  const text = decodeEntities(match[1]).replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > MAX_DESCRIPTION ? `${text.slice(0, MAX_DESCRIPTION - 1).trimEnd()}…` : text;
+}
 
 const router = Router();
 
@@ -144,12 +168,18 @@ router.get('/page-meta', requireAuth, async (req: AuthRequest, res: Response): P
       return;
     }
 
-    // Read up to MAX_HTML_BYTES — stop collecting once limit is hit
+    // Read up to MAX_HTML_BYTES — stop collecting once limit is hit, and destroy
+    // the stream so the origin stops sending. Resolving alone leaves the socket
+    // open: the 5s timeout is an idle timer, so a page that keeps trickling bytes
+    // holds a connection indefinitely.
     const html = await new Promise<string>((resolve, reject) => {
       const chunks: Buffer[] = [];
       let size = 0;
       let settled = false;
-      const finish = (buf: string) => { if (!settled) { settled = true; resolve(buf); } };
+      // node-fetch v2 gives a Node Readable at runtime, typed as a web
+      // ReadableStream by the ambient DOM lib — hence the cast for destroy().
+      const body = response.body as unknown as Readable;
+      const finish = (buf: string) => { if (!settled) { settled = true; body.destroy(); resolve(buf); } };
       response.body!.on('data', (chunk: Buffer) => {
         if (settled) return;
         size += chunk.length;
@@ -164,14 +194,22 @@ router.get('/page-meta', requireAuth, async (req: AuthRequest, res: Response): P
       || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
     const image = imgMatch && /^https?:\/\//i.test(imgMatch[1]) ? decodeEntities(imgMatch[1].trim()) : null;
 
+    const description = metaContent(html, 'og:description')
+      ?? metaContent(html, 'twitter:description')
+      ?? metaContent(html, 'description');
+
     const ogMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
       || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
-    if (ogMatch) { res.json({ title: decodeEntities(ogMatch[1].trim()), image }); return; }
+    if (ogMatch) { res.json({ title: decodeEntities(ogMatch[1].trim()), image, description }); return; }
 
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    res.json({ title: titleMatch ? decodeEntities(titleMatch[1].trim()) : null, image });
+    res.json({
+      title: titleMatch ? decodeEntities(titleMatch[1].trim()) : null,
+      image,
+      description,
+    });
   } catch {
-    res.json({ title: null, image: null });
+    res.json({ title: null, image: null, description: null });
   }
 });
 

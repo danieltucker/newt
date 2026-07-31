@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import type { Readable } from 'stream';
 import nodeFetch from 'node-fetch';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
@@ -7,6 +8,7 @@ import { canonicalFeedKey } from '../lib/feedUtils';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
 import { addFolderFeed } from '../lib/folderFeeds';
 import { feedUnreadCount } from '../lib/unread';
+import { perUserLimiter } from '../lib/rateLimit';
 import logger from '../lib/logger';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
@@ -27,15 +29,30 @@ function findFeedInHtml(html: string, base: string): string | null {
   return null;
 }
 
+// Read at most `maxBytes` of a remote document. The byte budget is the point:
+// the URL is attacker-chosen (anyone can add a bookmark for any domain), so an
+// endless or enormous response must not be allowed to buffer into the heap.
+//
+// Reaching the cap resolves with what we have *and destroys the stream* — without
+// that the socket stays open and the origin keeps sending forever, since the 5s
+// timeout only fires on an idle socket, not a slow-but-steady one.
 async function fetchXml(url: string, maxBytes = 150_000): Promise<string | null> {
   try {
-    const res = await nodeFetch(url, { timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' } } as FetchOptions);
-    if (!res.ok) return null;
+    const res = await nodeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' } } as FetchOptions);
+    // node-fetch v2 hands back a Node Readable at runtime; the ambient DOM lib
+    // types it as a web ReadableStream, which has no destroy().
+    const body = res.body as unknown as Readable | null;
+    if (!res.ok) { body?.destroy(); return null; }
     const chunks: Buffer[] = [];
     let size = 0;
     let settled = false;
     return await new Promise<string | null>(resolve => {
-      const finish = (v: string | null) => { if (!settled) { settled = true; resolve(v); } };
+      const finish = (v: string | null) => {
+        if (settled) return;
+        settled = true;
+        body!.destroy();
+        resolve(v);
+      };
       res.body!.on('data', (c: Buffer) => { if (settled) return; chunks.push(c); size += c.length; if (size >= maxBytes) finish(Buffer.concat(chunks).toString('utf8')); });
       res.body!.on('end', () => finish(Buffer.concat(chunks).toString('utf8')));
       res.body!.on('error', () => finish(null));
@@ -75,6 +92,27 @@ async function discoverFeed(domain: string): Promise<string | null> {
 const router = Router();
 router.use(requireAuth);
 
+// A ceiling on how much of the database one account can occupy. /import accepts
+// 500 rows a call and nothing stopped an account from calling it repeatedly, so
+// row growth was bounded only by the per-IP request limiter — which an authed
+// client rotating IPs sidesteps entirely. Every bookmark also becomes feed work
+// later (discovery, then polling forever), so this cap is as much about outbound
+// fetch load as about disk.
+const MAX_BOOKMARKS_PER_USER = 2000;
+
+// Per-account, so it survives IP rotation the way the comment and friend limits
+// do. Generous, because ordinary browsing writes: /:id/visited fires on every
+// bookmark click and pin/unpin are one-tap actions.
+const bookmarkWriteLimiter = perUserLimiter({
+  windowMs: 60 * 60_000, max: 600,
+  message: 'Too many changes — please slow down for a moment.',
+});
+router.use((req, res, next) => {
+  // Reads stay on the shared per-IP limiter; only writes are metered per account.
+  if (req.method === 'GET') { next(); return; }
+  bookmarkWriteLimiter(req, res, next);
+});
+
 // Returns all bookmarks for the user in one query — used for the initial bulk load
 router.get('/all', async (req: AuthRequest, res: Response): Promise<void> => {
   const bookmarks = await prisma.bookmark.findMany({
@@ -99,9 +137,16 @@ router.post('/import', async (req: AuthRequest, res: Response): Promise<void> =>
   const existingDomains = new Set(existing.map(b => b.domain));
   const nextPosition = existing.length > 0 ? Math.max(...existing.map(b => b.position)) + 1 : 0;
 
+  // Trim to whatever room is left in the account's budget rather than rejecting
+  // the whole import: a browser export is usually mostly duplicates, and failing
+  // the entire call because the tail would overflow is a worse answer than
+  // importing what fits and reporting the rest as skipped.
+  const totalOwned = await prisma.bookmark.count({ where: { userId: req.userId! } });
+  const remaining = Math.max(0, MAX_BOOKMARKS_PER_USER - totalOwned);
+
   const toCreate = (bookmarks as { name: string; domain: string; color: string }[])
     .filter(b => b.domain && b.name && !existingDomains.has(b.domain))
-    .slice(0, 500);
+    .slice(0, Math.min(500, remaining));
 
   if (toCreate.length > 0) {
     await prisma.bookmark.createMany({
@@ -117,7 +162,14 @@ router.post('/import', async (req: AuthRequest, res: Response): Promise<void> =>
     });
   }
 
-  res.json({ created: toCreate.length, skipped: bookmarks.length - toCreate.length });
+  res.json({
+    created: toCreate.length,
+    skipped: bookmarks.length - toCreate.length,
+    // Lets the client say "you've reached the limit" instead of silently
+    // dropping the tail of the file the user just picked.
+    atCap: remaining === 0,
+    limit: MAX_BOOKMARKS_PER_USER,
+  });
 });
 
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -134,6 +186,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const { folderId, domain, name, faviconUrl, color } = req.body;
   if (!folderId || !domain || !name) {
     res.status(400).json({ error: 'folderId, domain, and name required' });
+    return;
+  }
+  const owned = await prisma.bookmark.count({ where: { userId: req.userId! } });
+  if (owned >= MAX_BOOKMARKS_PER_USER) {
+    res.status(409).json({ error: `You've reached the limit of ${MAX_BOOKMARKS_PER_USER} bookmarks.` });
     return;
   }
   if (typeof name !== 'string' || name.length > 100) { res.status(400).json({ error: 'name must be ≤100 characters' }); return; }

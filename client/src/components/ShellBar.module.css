@@ -257,34 +257,18 @@
   min-width: 0;
 }
 
-.menuMark {
-  width: 17px;
-  height: 17px;
-  flex-shrink: 0;
-}
-
-.menuItemCurrent { color: var(--accent); font-weight: 650; }
-.menuDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
 .menuItemDanger { color: var(--muted); }
 .menuItemDanger:hover { color: #e5484d; background: color-mix(in oklab, #e5484d 10%, transparent); }
-
-.menuSep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
 
 /* The bookmarks rail when it has moved into the hamburger (see RAIL_NARROW in
    ShellBar.tsx). It sets the menu's width - wider than a menu of labels needs
    to be, because the rail carries a 3-up pin grid - and caps its own height so
-   the menu stays on screen however many folders there are. */
+   the menu stays on screen however many folders there are.
+
+   That cap is the whole dropdown's budget now that nothing sits above the rail
+   but its label: the bar and the label together cost about 90px, so 72vh
+   leaves clearance at every viewport height worth supporting and gives a long
+   folder list a good deal more room than it had under the old destinations. */
 .menuRailLabel {
   padding: 5px 10px 6px;
   font-size: 10.5px;
@@ -296,7 +280,7 @@
 
 .menuRail {
   width: min(272px, calc(100vw - 44px));
-  max-height: 52vh;
+  max-height: 72vh;
   padding: 0 4px 4px;
   overflow-y: auto;
   overscroll-behavior: contain;

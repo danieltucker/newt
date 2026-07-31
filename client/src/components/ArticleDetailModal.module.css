@@ -84,8 +84,8 @@
   flex-shrink: 0;
 }
 
-/* Shared shape for toolbar buttons, including caller-supplied ones */
-.toolbarRight :global(button),
+/* The toolbar is down to two things now - go to the source, or leave. Everything
+   that acts on the article moved to .actionBar at the foot. */
 .openBtn {
   display: inline-flex;
   align-items: center;
@@ -104,29 +104,9 @@
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.toolbarRight :global(button):hover,
 .openBtn:hover {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-}
-
-.closeBtn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-
-.closeBtn:hover {
-  color: #e5484d;
-  border-color: color-mix(in oklab, #e5484d 45%, transparent);
 }
 
 /* ── Scroll body ──────────────────────────────────────────────────────── */
@@ -375,6 +355,55 @@
   to   { background-position: -200% 0; }
 }
 
+/* ── Action bar ───────────────────────────────────────────────────────────
+   Sits between the article and its conversation, on the same 720px column, so
+   the two things you do when you've finished reading - keep it, say something
+   about it - are in the same place. */
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 40px 0;
+}
+
+/* Direct children only: SaveButton brings its own pill and its inner halves are
+   buttons too - a descendant selector would flatten the split. */
+.actionBar > :global(button),
+.repostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.actionBar > :global(button):hover,
+.repostBtn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* Matches the card pills, which grow for a thumb at the same breakpoint */
+@media (hover: none) {
+  .actionBar > :global(button),
+  .repostBtn { min-height: 38px; padding: 0 15px; font-size: 12.5px; }
+}
+
 /* ── Comments ─────────────────────────────────────────────────────────── */
 
 .commentsWrap {
@@ -396,6 +425,7 @@
   .backdrop { padding: 0; }
   .modal { width: 100%; height: 100%; border-radius: 0; }
   .article { padding: 18px 20px 8px; }
+  .actionBar { padding: 16px 20px 0; }
   .commentsWrap { padding: 22px 20px 32px; }
   .title { font-size: 24px; }
   .prose { font-size: 15.5px; }

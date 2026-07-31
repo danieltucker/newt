@@ -1,9 +1,25 @@
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { perUserLimiter } from '../lib/rateLimit';
 
 const router = Router();
 router.use(requireAuth);
+
+// Saved articles carry notes of up to 50,000 characters each, so this is the
+// heaviest per-row table a user can grow at will. Same reasoning as the bookmark
+// cap: bound it per account, not just per IP. The GET already takes 500, so
+// anything past that was invisible in the UI anyway.
+const MAX_READING_LIST_ITEMS = 1000;
+
+const readingWriteLimiter = perUserLimiter({
+  windowMs: 60 * 60_000, max: 600,
+  message: 'Too many changes — please slow down for a moment.',
+});
+router.use((req, res, next) => {
+  if (req.method === 'GET') { next(); return; }
+  readingWriteLimiter(req, res, next);
+});
 
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const items = await prisma.readingListItem.findMany({
@@ -37,6 +53,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   if (image === null) { res.status(400).json({ error: 'imageUrl must be an http(s) URL ≤2048 characters' }); return; }
   if (notes !== undefined && (typeof notes !== 'string' || notes.length > 50000)) {
     res.status(400).json({ error: 'notes must be a string ≤50,000 characters' }); return;
+  }
+
+  const owned = await prisma.readingListItem.count({ where: { userId: req.userId! } });
+  if (owned >= MAX_READING_LIST_ITEMS) {
+    res.status(409).json({ error: `You've reached the limit of ${MAX_READING_LIST_ITEMS} saved articles.` });
+    return;
   }
 
   // Deleting is immediate — the greyed-out card the list leaves behind is only a

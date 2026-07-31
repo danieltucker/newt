@@ -9,6 +9,14 @@
     <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon-180.png">
     <link rel="manifest" href="/manifest.webmanifest">
     <!-- Apply theme before first paint - prevents flash on both dark↔light toggle and page load -->
+    <!--
+      CSP-HASHED - do not edit without reading this.
+      The Content-Security-Policy in client/nginx.conf allows the script below by
+      the sha256 of its exact contents. Changing so much as a space here makes the
+      browser refuse to run it, silently: the app still loads and the only symptom
+      is a flash of the wrong theme on first paint.
+      After editing, run `npm run csp:hash` and paste the new value into nginx.conf.
+    -->
     <script>
       (function () {
         var t = localStorage.getItem('theme') || 'dark';

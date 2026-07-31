@@ -15,16 +15,25 @@ import { EmbedData } from './noteEmbed';
 export interface PageMeta {
   title: string | null;
   image: string | null;
+  /** og:description and friends, already collapsed and capped server-side. */
+  description: string | null;
 }
+
+/** Nothing known about the page. What a failed or unattempted fetch yields. */
+export const EMPTY_PAGE_META: PageMeta = { title: null, image: null, description: null };
 
 export async function fetchPageMeta(url: string): Promise<PageMeta> {
   try {
     const res = await apiFetch(`/api/v1/util/page-meta?url=${encodeURIComponent(url)}`);
-    if (!res.ok) return { title: null, image: null };
+    if (!res.ok) return EMPTY_PAGE_META;
     const data = await res.json();
-    return { title: data?.title ?? null, image: data?.image ?? null };
+    return {
+      title: data?.title ?? null,
+      image: data?.image ?? null,
+      description: data?.description ?? null,
+    };
   } catch {
-    return { title: null, image: null };
+    return EMPTY_PAGE_META;
   }
 }
 
@@ -73,5 +82,8 @@ export function pageEmbed(url: string, meta: PageMeta, title?: string): EmbedDat
     title: (title || '').trim() || meta.title || host,
     source: host,
     image: meta.image || undefined,
+    // Only the large card shows this, and only if the page offered one - see
+    // EmbedData.description.
+    description: meta.description || undefined,
   };
 }

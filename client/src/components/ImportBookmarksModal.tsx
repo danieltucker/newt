@@ -4,6 +4,7 @@ import { parseBookmarkHTML, ParsedBookmark } from '../utils/parseBookmarks';
 import { Folder } from '../types';
 import { apiFetch } from '../services/api';
 import { faviconUrl } from '../utils/color';
+import CloseButton from './CloseButton';
 
 interface Props {
   folders: Folder[];
@@ -86,7 +87,7 @@ export default function ImportBookmarksModal({ folders, activeFolderId, onClose,
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
         <div className={styles.header}>
           <div className={styles.title}>Import bookmarks</div>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <CloseButton onClick={onClose} />
         </div>
 
         {step === 'pick' && (
