@@ -1,0 +1,31 @@
+# Both images build from the repo ROOT (they need the root package-lock.json —
+# see server/Dockerfile for why), so the build context is the whole repo. Keep
+# it small, and above all keep host node_modules out: they are Windows/arm64
+# builds and would overwrite what npm ci installs for linux/amd64.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+
+.env
+.env.*
+!.env.example
+!.env.truenas.example
+
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+
+coverage/
+playwright-report/
+test-results/
+*.log
+
+# Not needed to build or run the app
+docs/
+design_handoff_new_tab/
+newt-brand/
+scripts/

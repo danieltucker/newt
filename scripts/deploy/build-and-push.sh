@@ -2,8 +2,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Build the server & client images for linux/amd64 (TrueNAS) and push to GHCR.
 #
-# Your dev machine is arm64 (Apple Silicon) and TrueNAS is amd64, so we
-# cross-build with buildx and push straight to the registry.
+# FALLBACK ONLY. The normal path is .github/workflows/publish.yml, which builds
+# on GitHub's native amd64 runners and needs no local Docker and no PAT. Use
+# this script only to publish from a machine that has Docker — the primary dev
+# box (Windows/arm64) has none, and an arm64 host cross-building amd64 here goes
+# through QEMU and is slow.
 #
 # One-time prerequisites:
 #   1. Create a GitHub Personal Access Token (classic) with the 'write:packages' scope.
@@ -29,15 +32,19 @@ if ! docker buildx inspect newtab-builder >/dev/null 2>&1; then
 fi
 docker buildx use newtab-builder
 
+# Both builds take the repo ROOT as context: this is an npm-workspaces monorepo
+# and the only lockfile lives there. See server/Dockerfile.
 echo "==> server  ->  $REGISTRY/$GHCR_OWNER/newtab-server:$TAG  ($PLATFORM)"
 docker buildx build --platform "$PLATFORM" \
+  -f "$ROOT/server/Dockerfile" \
   -t "$REGISTRY/$GHCR_OWNER/newtab-server:$TAG" \
-  --push "$ROOT/server"
+  --push "$ROOT"
 
 echo "==> client  ->  $REGISTRY/$GHCR_OWNER/newtab-client:$TAG  ($PLATFORM)"
 docker buildx build --platform "$PLATFORM" \
+  -f "$ROOT/client/Dockerfile" \
   -t "$REGISTRY/$GHCR_OWNER/newtab-client:$TAG" \
-  --push "$ROOT/client"
+  --push "$ROOT"
 
 echo
 echo "==> Done. Pushed:"

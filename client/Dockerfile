@@ -1,15 +1,29 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Build context is the REPO ROOT, not ./client:
+#     docker build -f client/Dockerfile .
+#
+# See server/Dockerfile for the full reasoning. Short version: the root
+# package-lock.json is the only validated dependency tree in this workspace,
+# and `npm ci --workspace=client` is what reproduces it.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Build stage ───────────────────────────────────────────────────────────────
 FROM node:20-slim AS builder
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json package-lock.json ./
+COPY client/package.json client/package.json
+COPY server/package.json server/package.json
 
-COPY . .
-RUN npm run build
+# Install scripts run deliberately: esbuild (under vite) fetches its platform
+# binary in a postinstall, and the build fails without it.
+RUN npm ci --workspace=client
 
-# ── Runtime stage (nginx) ──────────────────────────────────────────────────────
+COPY client/ client/
+RUN npm run build --workspace=client
+
+# ── Runtime stage (nginx) ─────────────────────────────────────────────────────
 FROM nginx:alpine AS runner
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/client/dist /usr/share/nginx/html
+COPY client/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
