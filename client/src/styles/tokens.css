@@ -78,6 +78,35 @@ body {
   min-height: 100vh;
 }
 
+/* ── iOS focus-zoom ──
+   WebKit on iOS silently zooms the whole page in whenever you focus a form
+   control whose computed font-size is under 16px, and it does not zoom back out
+   when you leave the field. Every browser on iOS is WebKit, so this is Safari,
+   Arc, Chrome and the rest alike. The symptom is not "the keyboard looks odd":
+   the app stays scaled up afterwards, so the chrome is cut off at both edges and
+   the page has picked up a horizontal scroll it never had.
+
+   Almost every control here is under the threshold (search was 14px, the sign-in
+   inputs 15px, the comment title 13px), so this is one rule rather than thirty
+   edits - and, more to the point, a new input added later inherits the fix
+   instead of quietly reintroducing the bug.
+
+   The !important is load-bearing. These are CSS-module class selectors
+   (`.input { font-size: 14px }`), so an element selector cannot outrank them,
+   and the whole point is to beat every one of them at once. It is scoped to
+   `pointer: coarse` so the desktop type scale is untouched - a mouse-driven
+   browser never does this, and 16px search text would be too big there.
+
+   Do not "fix" this instead by adding `maximum-scale=1` or `user-scalable=no`
+   to the viewport meta: that stops the auto-zoom by taking pinch-zoom away from
+   everyone, which fails WCAG 1.4.4 and is a worse trade than a slightly larger
+   font on a phone. */
+@media (pointer: coarse) {
+  input, textarea, select, [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
 /* Keyframes */
 @keyframes rise {
   from { opacity: 0; transform: translateY(16px); }

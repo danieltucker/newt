@@ -1,9 +1,12 @@
 import nodeFetch from 'node-fetch';
+import { Prisma } from '@prisma/client';
 import prisma from './prisma';
 import { parseFeed, parseFeedTitle, canonicalFeedKey } from './feedUtils';
 import { canonicalArticleKey } from './comments';
 import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
+import { recordError, errorMessage } from './errorLog';
+import { notifyAdminsOfFeedFailure, shouldAlertForFeed } from './adminAlerts';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number; size?: number };
 
@@ -32,6 +35,70 @@ export interface RefreshableFeed {
   lastCheckedAt: Date | null;
   etag: string | null;
   lastModified: string | null;
+}
+
+// ── Feed health ───────────────────────────────────────────────────────────
+// A failing feed used to be silent. `if (!resp.ok) return` and the catch below
+// both dropped the failure on the floor (the catch at least logged it), so a
+// feed that had started 404ing was indistinguishable from a feed that just
+// hadn't published anything — no signal in the UI, none in the admin panel, and
+// a pino line nobody was tailing.
+//
+// Every exit from doRefresh now ends in exactly one of noteSuccess or
+// noteFailure, which is the property to preserve when editing it.
+
+async function noteSuccess(feedId: string, now: Date, data: Prisma.FeedUpdateInput = {}): Promise<void> {
+  try {
+    await prisma.feed.update({
+      where: { id: feedId },
+      data: {
+        ...data,
+        lastSuccessAt: now,
+        // Cleared, not decremented: the count measures the *current* broken run,
+        // and clearing the alert stamp is what lets a feed that breaks again
+        // later be reported again.
+        consecutiveFailures: 0,
+        lastError: null,
+        lastErrorAt: null,
+        failureAlertedAt: null,
+      },
+    });
+  } catch (err) {
+    logger.warn({ err, feedId }, 'Could not record feed success');
+  }
+}
+
+async function noteFailure(feed: RefreshableFeed, reason: string): Promise<void> {
+  try {
+    const updated = await prisma.feed.update({
+      where: { id: feed.id },
+      data: {
+        consecutiveFailures: { increment: 1 },
+        lastError: reason,
+        lastErrorAt: new Date(),
+      },
+      select: { consecutiveFailures: true, failureAlertedAt: true, title: true },
+    });
+
+    await recordError({
+      source: 'feed',
+      message: reason,
+      detail: `${updated.consecutiveFailures} consecutive failure(s)`,
+      feedUrl: feed.fetchUrl,
+    });
+
+    if (shouldAlertForFeed(updated.consecutiveFailures, updated.failureAlertedAt)) {
+      await notifyAdminsOfFeedFailure(feed.fetchUrl, updated.title, updated.consecutiveFailures);
+      // Stamped after the alert lands, so a failed send is retried next tick
+      // rather than swallowed by a stamp that says it was already reported.
+      await prisma.feed.update({
+        where: { id: feed.id },
+        data: { failureAlertedAt: new Date() },
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, feedUrl: feed.fetchUrl }, 'Could not record feed failure');
+  }
 }
 
 // Run `fn` over `items` with at most `concurrency` in flight — a bounded
@@ -88,8 +155,10 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
   if (blogTarget) {
     try {
       await refreshBlogFeed(feed.id, blogTarget, now);
+      await noteSuccess(feed.id, now);
     } catch (err) {
       logger.warn({ err, feedUrl: feed.fetchUrl }, 'Blog feed refresh failed');
+      await noteFailure(feed, errorMessage(err));
     }
     return;
   }
@@ -114,13 +183,33 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
       // fetchedAt to keep the TTL sweep from eventually deleting a feed that
       // simply hasn't published in a while.
       await prisma.feedItem.updateMany({ where: { feedId: feed.id }, data: { fetchedAt: now } });
+      // A 304 is the origin working correctly, so it counts as a success. Not
+      // counting it would let a healthy, rarely-updated feed drift into the
+      // failing list purely for not having changed.
+      await noteSuccess(feed.id, now);
       return;
     }
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      // This was a bare `return`. A feed answering 404 or 403 forever therefore
+      // looked exactly like a feed with nothing new — the single most likely way
+      // for a subscription to be broken, and the one that reported nothing.
+      await noteFailure(feed, `HTTP ${resp.status} ${resp.statusText}`.trim());
+      return;
+    }
 
     const xml = await resp.text();
     const items = parseFeed(xml, 50);
-    const title = parseFeedTitle(xml) || new URL(feed.fetchUrl).hostname.replace(/^www\./, '');
+    const parsedTitle = parseFeedTitle(xml);
+    const title = parsedTitle || new URL(feed.fetchUrl).hostname.replace(/^www\./, '');
+
+    // 200 with nothing parseable is the other quiet failure: a login wall, an
+    // HTML error page served with a 200, or a feed whose XML has broken. An
+    // empty feed is legal, so this only judges a document that yielded no items
+    // *and* no title - a real feed always has at least the latter.
+    if (items.length === 0 && !parsedTitle) {
+      await noteFailure(feed, 'Response was not a readable feed');
+      return;
+    }
 
     // Process upserts in small chunks to avoid overwhelming the DB connection pool
     for (let i = 0; i < items.length; i += UPSERT_CHUNK) {
@@ -140,18 +229,17 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
     await prisma.feedItem.deleteMany({ where: { feedId: feed.id, fetchedAt: { lt: new Date(now.getTime() - FEED_TTL_MS) } } });
 
     // Store fresh validators for next time (null them out if the origin stopped
-    // sending them, so we don't send stale conditional headers).
-    await prisma.feed.update({
-      where: { id: feed.id },
-      data: {
-        title,
-        lastCheckedAt: now,
-        etag: resp.headers.get('etag'),
-        lastModified: resp.headers.get('last-modified'),
-      },
+    // sending them, so we don't send stale conditional headers). Folded into
+    // noteSuccess so the health columns and the validators land in one write.
+    await noteSuccess(feed.id, now, {
+      title,
+      lastCheckedAt: now,
+      etag: resp.headers.get('etag'),
+      lastModified: resp.headers.get('last-modified'),
     });
   } catch (err) {
     logger.warn({ err, feedUrl: feed.fetchUrl }, 'Feed refresh failed');
+    await noteFailure(feed, errorMessage(err));
   }
 }
 

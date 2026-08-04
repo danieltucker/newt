@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+newt-brand/
 
 # Env. The bare `.env` rule already covers server/.env and client/.env (a
 # pattern with no slash matches at every level), but it did NOT cover

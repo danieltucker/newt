@@ -23,6 +23,7 @@ import profileRoutes from './routes/profiles';
 import notificationRoutes from './routes/notifications';
 import blockRoutes from './routes/blocks';
 import reportRoutes from './routes/reports';
+import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
 // scheduler, no signal handlers. Those live in index.ts.
@@ -91,5 +92,10 @@ app.use('/api/v1/blocks', apiLimiter, blockRoutes);
 app.use('/api/v1/reports', apiLimiter, reportRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Last, and after every route — an error handler mounted above them would never
+// see anything. Turns an unhandled throw into a logged, recorded 500 instead of
+// Express's default empty one. See middleware/errorHandler.ts.
+app.use(errorHandler);
 
 export default app;

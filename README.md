@@ -9,7 +9,7 @@ A browser new tab replacement that turns your new tab page into a personal produ
 ## Features
 
 - **Bookmarks** — Organize into color-coded folders with drag-and-drop reordering. Import from an HTML bookmark file.
-- **RSS Feeds** — Auto-discover feeds from bookmarked sites and read articles per folder.
+- **Feeds** — One combined feed of everything you follow, newest first. Paste a site address and Newt finds its feed; group feeds into your own categories and filter by category, site or topic. Feeds on bookmarked sites are auto-discovered and offered for import.
 - **Reading List** — Save articles with tags, notes, and estimated read time.
 - **Favorite Tags** — Star a tag to have matching articles flagged in the feed and reading list. Matching is by whole word, so "Apple" catches "Apple News" and "apple-tv" but not "Snapple".
 - **Notes** — A notes console with folders, rich text, and recently deleted.

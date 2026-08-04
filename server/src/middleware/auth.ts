@@ -9,6 +9,11 @@ export interface AuthRequest extends Request {
   // moderation flag, for one) cost no extra query. Authorisation still goes
   // through requireAdmin; this is only for shaping a response.
   isAdmin?: boolean;
+  // Same free ride: the ban check already reads this row, so carrying the name
+  // costs one more column rather than another query. Nothing authorises on it —
+  // it exists so the error handler can say *who* hit a 500 without having to go
+  // back to the database on a path that is already failing.
+  username?: string;
 }
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -28,7 +33,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   // one indexed PK lookup per request.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { bannedAt: true, isAdmin: true },
+    select: { bannedAt: true, isAdmin: true, username: true },
   });
   if (!user || user.bannedAt) {
     res.status(401).json({ error: 'Account unavailable' });
@@ -36,6 +41,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
   req.userId = userId;
   req.isAdmin = user.isAdmin;
+  req.username = user.username;
   next();
 }
 
@@ -50,9 +56,13 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
     const userId = verifyAccess(header.slice(7)).sub;
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { bannedAt: true, isAdmin: true },
+      select: { bannedAt: true, isAdmin: true, username: true },
     });
-    if (user && !user.bannedAt) { req.userId = userId; req.isAdmin = user.isAdmin; }
+    if (user && !user.bannedAt) {
+      req.userId = userId;
+      req.isAdmin = user.isAdmin;
+      req.username = user.username;
+    }
   } catch {
     // Anonymous — fall through with no userId.
   }

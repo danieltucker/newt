@@ -241,7 +241,7 @@ export const SECTIONS: Section[] = [
             'Six outlets cover the thing they care about, and checking all six daily is a chore ' +
             'nobody keeps up for long.',
           answer:
-            'One folder, six sites, one list of headlines in date order. Star the tags you’re ' +
+            'One category, six sites, one list of headlines in date order. Star the tags you’re ' +
             'watching and matching stories flag themselves.',
         },
         {
@@ -251,7 +251,7 @@ export const SECTIONS: Section[] = [
             'in a tab they never visit.',
           answer:
             'There is no app to open. The feeds sit on the page the browser already puts in ' +
-            'front of you, and the count only ever covers sites you’ve bookmarked.',
+            'front of you, and the count only ever covers sites you chose to follow.',
         },
       ],
       details: [
@@ -280,7 +280,7 @@ export const SECTIONS: Section[] = [
       title: 'RSS, discovered for you',
       size: '1200 × 800',
       capture: [
-        'A folder’s article list with real headlines',
+        'The combined feed with real headlines from several sites',
         'At least two unread indicators',
         'A favourited tag chip, so the gold is visible',
       ],

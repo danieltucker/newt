@@ -143,6 +143,12 @@ export default function NotificationsModal({
                 // and the content is one click away from there. Everything else
                 // links out to the article the comment sits on.
                 const report = n.type === 'report_new' && n.reportId && onOpenReport ? n.reportId : null;
+                // A failing-feed alert carries which feed and how many checks it
+                // has missed in articleTitle, and the feed URL in articleUrl.
+                // That detail is the whole content of the alert - "A feed is
+                // failing to load" on its own says nothing actionable - so it
+                // gets the same treatment an article link does.
+                const failingFeed = n.type === 'feed_failing' && n.articleUrl ? n.articleUrl : null;
                 return (
                   <div key={n.id} className={`${styles.row} ${n.read ? '' : styles.rowUnread}`}>
                     <Avatar user={n.actor} onView={onViewProfile} />
@@ -158,6 +164,10 @@ export default function NotificationsModal({
                         >
                           {n.articleTitle || 'Open report'} →
                         </button>
+                      ) : failingFeed ? (
+                        <a className={styles.articleLink} href={failingFeed} target="_blank" rel="noopener noreferrer">
+                          {n.articleTitle || failingFeed}
+                        </a>
                       ) : isComment && n.articleUrl ? (
                         <a className={styles.articleLink} href={n.articleUrl} target="_blank" rel="noopener noreferrer">
                           {n.articleTitle || 'Open article'}

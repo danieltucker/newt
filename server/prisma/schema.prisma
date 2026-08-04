@@ -295,9 +295,77 @@ model Feed {
   // bookmark). The background scheduler only refreshes feeds demanded recently,
   // so feeds nobody looks at go dormant and stop costing outbound requests.
   lastRequestedAt DateTime?
+
+  // ── Health ──
+  // A feed that stops resolving used to be invisible: doRefresh logged a warning
+  // and returned, so the articles simply stopped arriving and nothing anywhere
+  // said why. These four columns are what the admin panel reads to answer "which
+  // feeds are broken, and since when".
+  //
+  // `consecutiveFailures` is the one that matters — it resets to 0 on every
+  // success, so it measures *currently* broken rather than ever-broken. A feed
+  // with 40 lifetime failures that worked five minutes ago is healthy; this is
+  // the number that says so. It's also what the admin alert thresholds on, since
+  // one timeout on a flaky origin is not news.
+  lastSuccessAt       DateTime?
+  lastError           String?
+  lastErrorAt         DateTime?
+  consecutiveFailures Int       @default(0)
+  // When admins were last told about this feed, so a feed that stays broken
+  // doesn't refill the bell on every scheduler tick. Cleared on recovery.
+  failureAlertedAt    DateTime?
+
   items         FeedItem[]
 
   @@index([lastCheckedAt])
+  // The admin panel's failing-feeds query: worst first.
+  @@index([consecutiveFailures])
+}
+
+// Errors worth showing an admin, kept because pino alone couldn't answer the
+// question that matters: "is anything broken for my users right now?" Log lines
+// scroll away, live in a container, and say nothing about *whose* request failed.
+//
+// This is deliberately not a general log sink. Only two things write here — the
+// Express error handler (an unhandled 5xx) and the feed refresher (a feed that
+// wouldn't load) — and both record something a person can act on. Ordinary 4xx
+// responses are a user typing something wrong, not an incident, and are not
+// recorded.
+//
+// Rows expire: recordError prunes past ERROR_LOG_RETENTION_DAYS. Nothing here is
+// evidence, unlike AdminAction, so it is safe to let it age out and it must, or
+// one bad deploy fills the table.
+model ErrorLog {
+  id        String   @id @default(cuid())
+
+  // 'server' — an unhandled exception in a route
+  // 'feed'   — a subscription that failed to fetch or parse
+  source    String
+  message   String
+  // Stack trace for a server error, response body or parse detail for a feed.
+  // Truncated on write (see MAX_DETAIL) — the point is a diagnosis, not an
+  // archive, and an error from a loop must not be able to fill the disk.
+  detail    String?
+
+  // Request context. All null for a feed error, which has no request behind it.
+  method    String?
+  path      String?
+  status    Int?
+
+  // Who hit it, denormalised the same way and for the same reason as
+  // AdminAction.actorUsername: knowing an error only ever hits one account is
+  // half the diagnosis, and deleting that account shouldn't erase the record.
+  userId    String?
+  username  String?
+
+  // The feed's URL, for source='feed'. A plain string, not a relation — a feed
+  // row can be pruned by the TTL sweep and that must not take its errors with it.
+  feedUrl   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([source, createdAt])
 }
 
 model FeedItem {

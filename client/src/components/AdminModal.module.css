@@ -196,6 +196,16 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   opacity: 0.7;
 }
 
+/* Positioning context for the hover readout, and the surface the pointer
+   handlers are attached to - the plot has gaps between its marks and the
+   readout has to work over all of it, not just where there is ink. */
+.chartWrap {
+  position: relative;
+  /* The SVG is the whole box, so a pointer anywhere in the block is over a day.
+     Without this the guide only appears once the cursor is over the plot. */
+  touch-action: pan-y;
+}
+
 .chart {
   display: block;
   width: 100%;
@@ -209,6 +219,70 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 
 .barEmpty {
   fill: var(--border);
+}
+
+/* ── Hover readout ── */
+
+/* Full opacity against the 0.85 the other bars sit at, so the hovered day
+   separates without changing size - a bar that grew on hover would misreport
+   its own value. */
+.barHover { opacity: 1; }
+
+/* The column being read. Faint on purpose: it locates the day, the readout
+   states it. */
+.chartBand {
+  fill: var(--accent);
+  opacity: 0.1;
+}
+
+.chartGuide {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.45;
+  stroke-dasharray: 3 3;
+}
+
+.chartMarker {
+  fill: var(--accent);
+  stroke: var(--surface2);
+  stroke-width: 2;
+}
+
+/* Sits above the plot rather than beside the cursor: at the top of a 140px
+   chart it never covers the line it is describing, and it doesn't jump
+   vertically as the series rises and falls. Inline `left`/`transform` place it
+   - see ChartTooltip. */
+.chartTip {
+  position: absolute;
+  top: -6px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px var(--shadow);
+  white-space: nowrap;
+  /* It follows the pointer, so it must never be under it: a tooltip that can
+     take a pointerleave from the element it is positioned by flickers. */
+  pointer-events: none;
+}
+
+.chartTipValue {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chartTipLabel {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .axisLabel {
@@ -443,6 +517,89 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-size: 13px;
   color: var(--muted);
   text-align: center;
+}
+
+/* ── Errors ───────────────────────────────────────────────────────────────
+   The one tab that holds two lists rather than one - current feed health, then
+   the log of individual failures - so it is also the only one that needs
+   headings inside the body to say which is which. */
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 22px 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* First heading in the body shouldn't push off the content header above it. */
+.sectionTitle:first-child { margin-top: 0; }
+
+.sectionNote {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Deliberately not .filterCount, which is the red report badge. These chips
+   filter a list rather than raise an alarm - and "All 0" in alarm red is a
+   contradiction. The nav badge is where this tab does its shouting. */
+.errorCount {
+  padding: 0 5px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface2);
+}
+
+.filterChipActive .errorCount {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.errorLink {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+.errorLink:hover { text-decoration: underline; }
+
+.traceToggle {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.traceToggle:hover { color: var(--text); }
+
+/* A stack trace is pre-formatted text of unbounded width in a table cell, which
+   is the classic way to make a panel scroll sideways. It scrolls within itself
+   instead, and is capped so one trace can't take the whole viewport. */
+.trace {
+  max-height: 260px;
+  margin: 2px 0 8px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ── Reports ──────────────────────────────────────────────────────────────

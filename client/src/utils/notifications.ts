@@ -18,6 +18,11 @@ export function notifAction(type: AppNotification['type']): string {
     // Moderator-only, and deliberately actorless: the subject is the report,
     // not the person who filed it.
     case 'report_new':     return 'was reported for review';
+    // Admin-only. The new account *is* the actor, so this one reads with a name
+    // in front of it the way the friend notifications do.
+    case 'user_new':       return 'created an account';
+    // Admin-only and actorless, like a report: a feed is not a person.
+    case 'feed_failing':   return 'is failing to load';
     default:               return '';
   }
 }
@@ -26,7 +31,11 @@ export function notifAction(type: AppNotification['type']): string {
 // (deleted account) or was never set.
 export function notifActor(n: Pick<AppNotification, 'type' | 'actor'>): string {
   if (n.actor) return n.actor.displayName;
-  return n.type === 'report_new' ? 'Content' : 'Someone';
+  // The two actorless admin types each name their own subject, so that the
+  // sentence says what happened rather than "Someone was reported for review".
+  if (n.type === 'report_new') return 'Content';
+  if (n.type === 'feed_failing') return 'A feed';
+  return 'Someone';
 }
 
 // Human-readable one-liner for a notification, given its type and actor.

@@ -9,6 +9,8 @@ import { canonicalArticleKey } from '../lib/comments';
 import { excerptOf } from '../lib/blog';
 import { recordAdminAction, ADMIN_ACTIONS, actionLabel, isDestructive } from '../lib/adminAudit';
 import { categoryLabel, isResolution, MAX_REPORT_NOTE } from '../lib/reports';
+import { ERROR_LOG_RETENTION_DAYS } from '../lib/errorLog';
+import { FEED_FAILURE_ALERT_THRESHOLD } from '../lib/adminAlerts';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -33,6 +35,12 @@ const AUDIT_PAGE = 50;
 // The report queue pages for the same reason: it is work to get through, and a
 // cap would silently hide the oldest thing waiting.
 const REPORT_PAGE = 50;
+// The error log pages too — the first occurrence of a fault is often the most
+// informative one, and it's the one a cap would cut.
+const ERROR_PAGE = 50;
+// Failing feeds don't page: the list is standing state, not history, and if it
+// is longer than this the problem isn't a particular feed.
+const FAILING_FEED_LIMIT = 100;
 
 const VISIBILITIES = ['public', 'friends', 'private'] as const;
 type VisibilityCounts = Record<(typeof VISIBILITIES)[number], number>;
@@ -850,6 +858,99 @@ router.get('/audit', async (req: AuthRequest, res: Response): Promise<void> => {
     });
   } catch (err) {
     logger.error(err, 'Admin audit error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Errors ───────────────────────────────────────────────────────────────────
+// What's broken, in two halves that answer different questions: the incidents
+// themselves (ErrorLog), and the standing health of the feed subscriptions,
+// which is state rather than history and so doesn't belong in a log.
+
+// GET /api/v1/admin/errors?cursor=&source=
+// Paged like the audit trail, for the same reason: a cap would hide the oldest
+// thing without saying so, and here the oldest thing may be the first symptom.
+router.get('/errors', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { cursor, source } = req.query as Record<string, string | undefined>;
+  try {
+    const where = source === 'server' || source === 'feed' ? { source } : {};
+
+    const [rows, counts] = await Promise.all([
+      prisma.errorLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: ERROR_PAGE + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      }),
+      // Unfiltered on purpose: the tallies label the filter chips, so they have
+      // to describe the whole log rather than the slice currently shown.
+      prisma.errorLog.groupBy({ by: ['source'], _count: { _all: true } }),
+    ]);
+
+    const page = rows.slice(0, ERROR_PAGE);
+    res.json({
+      entries: page.map(r => ({
+        id: r.id,
+        source: r.source,
+        message: r.message,
+        detail: r.detail,
+        method: r.method,
+        path: r.path,
+        status: r.status,
+        username: r.username,
+        feedUrl: r.feedUrl,
+        createdAt: r.createdAt,
+      })),
+      counts: {
+        server: counts.find(c => c.source === 'server')?._count._all ?? 0,
+        feed: counts.find(c => c.source === 'feed')?._count._all ?? 0,
+      },
+      retentionDays: ERROR_LOG_RETENTION_DAYS,
+      nextCursor: rows.length > ERROR_PAGE ? page[page.length - 1].id : null,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin error log error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/feeds/health — the feeds currently failing, worst first.
+// Only feeds with a live failure run: a feed that broke last month and has
+// worked ever since has consecutiveFailures 0 and is not a problem to show.
+router.get('/feeds/health', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const [failing, total, healthy] = await Promise.all([
+      prisma.feed.findMany({
+        where: { consecutiveFailures: { gt: 0 } },
+        orderBy: [{ consecutiveFailures: 'desc' }, { lastErrorAt: 'desc' }],
+        take: FAILING_FEED_LIMIT,
+        select: {
+          id: true, fetchUrl: true, title: true, consecutiveFailures: true,
+          lastError: true, lastErrorAt: true, lastSuccessAt: true,
+        },
+      }),
+      prisma.feed.count(),
+      prisma.feed.count({ where: { consecutiveFailures: 0 } }),
+    ]);
+
+    res.json({
+      feeds: failing.map(f => ({
+        id: f.id,
+        url: f.fetchUrl,
+        title: f.title,
+        consecutiveFailures: f.consecutiveFailures,
+        lastError: f.lastError,
+        lastErrorAt: f.lastErrorAt,
+        lastSuccessAt: f.lastSuccessAt,
+        // Crossing the alert threshold is what an admin was told about, so the
+        // list marks the same line rather than making them count.
+        alerting: f.consecutiveFailures >= FEED_FAILURE_ALERT_THRESHOLD,
+      })),
+      total,
+      healthy,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin feed health error');
     res.status(500).json({ error: 'Server error' });
   }
 });

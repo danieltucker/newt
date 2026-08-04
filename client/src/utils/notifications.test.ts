@@ -21,7 +21,10 @@ describe('notifAction', () => {
   // so the split has to hold: name + ' ' + action must reproduce notifText.
   it('composes back into the full sentence', () => {
     const types: NotificationType[] = [
-      'friend_request', 'friend_accept', 'comment_reply', 'friend_comment', 'friend_post',
+      // 'user_new' belongs in this list and not the actorless one below: the new
+      // account is the actor, so the admin's alert reads "Jane Doe created an
+      // account" with the name linking to the profile.
+      'friend_request', 'friend_accept', 'comment_reply', 'friend_comment', 'friend_post', 'user_new',
     ];
     for (const type of types) {
       expect(notifText({ type, actor })).toBe(`Jane Doe ${notifAction(type)}`);
@@ -30,7 +33,8 @@ describe('notifAction', () => {
 
   it('never names the actor - that half belongs to notifActor', () => {
     const types: NotificationType[] = [
-      'friend_request', 'friend_accept', 'comment_reply', 'friend_comment', 'friend_post', 'report_new',
+      'friend_request', 'friend_accept', 'comment_reply', 'friend_comment', 'friend_post',
+      'report_new', 'user_new', 'feed_failing',
     ];
     for (const type of types) {
       expect(notifAction(type)).not.toMatch(/Jane|Someone/);
@@ -58,6 +62,13 @@ describe('notifActor', () => {
     // review" would read as though a person had been identified.
     expect(notifActor({ type: 'report_new', actor: null })).toBe('Content');
     expect(notifText({ type: 'report_new', actor: null })).toBe('Content was reported for review');
+  });
+
+  it('says "A feed" for a failing-feed alert, which is actorless too', () => {
+    // Same reasoning as the report notice, for a different reason there is no
+    // actor: a feed isn't a person. "Someone is failing to load" is nonsense.
+    expect(notifActor({ type: 'feed_failing', actor: null })).toBe('A feed');
+    expect(notifText({ type: 'feed_failing', actor: null })).toBe('A feed is failing to load');
   });
 });
 

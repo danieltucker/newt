@@ -665,6 +665,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Nothing in here may shrink. As one row with the visibility switch there was
+     never quite enough width on a phone, and flex resolved that by squeezing
+     the buttons instead of wrapping - which is why they came out at three
+     different widths with the labels clipped. */
+  flex-shrink: 0;
 }
 
 .charCount {
@@ -711,18 +716,61 @@
   background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
-/* Below a narrow composer, drop the labels and keep just the icons */
-@media (max-width: 380px) {
-  .visOptionLabel { display: none; }
+/* ── The composer footer on a phone ──
+   The switch and the buttons don't fit on one row at this width: the row ran
+   past the right edge, taking Cancel and Post off the screen and parking what
+   was left under the floating notes button in the corner. Stacking them gives
+   the switch its own line and puts the buttons on the next one, left-aligned -
+   which is also what moves them out from under that button, since it is pinned
+   bottom-*right*. */
+@media (max-width: 560px) {
+  .composerFoot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .composerBtns { justify-content: flex-start; }
+
+  /* The switch is a segmented control, not a block: stretching it would leave
+     three buttons floating in a track the width of the page. */
+  .visSwitch { align-self: flex-start; }
+
+  /* Reordered past the buttons rather than left where the markup puts it: with
+     the buttons packed left, a count between them and the edge would read as a
+     label on Post. `order` moves it to the end of the row and the auto margin
+     pins it to the right, which is where a counter belongs. */
+  .charCount { order: 1; margin-left: auto; margin-right: 0; }
+
+  /* Comfortable thumb targets now that there's room for them. */
+  .postBtn, .cancelBtn { min-height: 36px; padding: 8px 18px; font-size: 12.5px; }
 }
 
+/* There was a `@media (max-width: 380px) { .visOptionLabel { display: none } }`
+   here, dropping the switch to bare icons on the narrowest screens. It is gone
+   because the stack above supersedes it: a media query measures the viewport,
+   not the composer, so it only ever fired on phones - and on a phone the switch
+   now has a row to itself, where the labels fit down past 320px. (A composer
+   squeezed narrow by deep reply indentation on a wide screen was never covered
+   by it either way; that would want a container query.) */
+
+/* One box for both, so Cancel and Post are the same button in two colours
+   rather than two buttons that happen to sit together. The explicit height and
+   centring are what make that true regardless of which one has a border - the
+   1px on Cancel alone used to make it a pixel taller than Post. */
 .postBtn,
 .cancelBtn {
-  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 14px;
   border-radius: 8px;
   font: inherit;
   font-size: 11.5px;
   font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: opacity 0.15s ease, background 0.15s ease;
 }

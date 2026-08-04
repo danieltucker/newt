@@ -7,6 +7,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* The card was a flat 400px, which is wider than a phone. It overflowed the
+     viewport rather than fitting it, so the page scrolled sideways and the form
+     sat half off the screen. The gutter is the page's job - the card only needs
+     to know it can't have all of it (see .card width). */
+  padding: 0 16px;
   background: var(--bg);
   animation: fade 0.3s ease;
 }
@@ -41,17 +46,32 @@
 
 @media (max-width: 560px) {
   .home { top: 12px; left: 12px; }
+  /* 36px of padding either side of a 343px card leaves the inputs about as wide
+     as the word "Password". */
+  .card { padding: 28px 20px; }
 }
 
 .card {
+  position: relative;   /* containing block for the close button */
   margin: auto;   /* centres in the space above the footer */
-  width: 400px;
+  width: min(400px, 100%);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 36px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
   animation: pop 0.28s ease;
+}
+
+/* Top-right of the card, where a dialog's dismiss always is. The "what is
+   newt?" pill in the page corner went to the same place, but nobody reads a
+   link in the margin as the way out of the thing in the middle of the screen. */
+.close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  /* The card is the surface; a button in --surface on top of it is invisible. */
+  background: var(--surface2);
 }
 
 .logo {

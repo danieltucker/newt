@@ -92,7 +92,39 @@ interface AdminBlogPost {
 import { summarizeMetadata } from '../utils/auditMetadata';
 import { ModerationReport, ReportStatus, AdminThread, AdminThreadComment } from '../types';
 
-type Tab = 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'audit';
+type Tab = 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'errors' | 'audit';
+
+// Sits beside the audit log in the nav but is its opposite: the audit trail is
+// what admins did and is kept forever, this is what broke and ages out.
+interface ErrorEntry {
+  id: string;
+  source: 'server' | 'feed';
+  message: string;
+  detail: string | null;
+  method: string | null;
+  path: string | null;
+  status: number | null;
+  // Who hit it. Null for a feed error, and for anything an anonymous request
+  // triggered - which is itself worth seeing, so it renders as "anonymous"
+  // rather than being hidden.
+  username: string | null;
+  feedUrl: string | null;
+  createdAt: string;
+}
+
+// The standing health of one feed, as opposed to the individual failures
+// ErrorEntry records. A feed appears here only while it is currently failing.
+interface FeedHealth {
+  id: string;
+  url: string;
+  title: string;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  lastSuccessAt: string | null;
+  /** Has crossed the threshold at which admins are alerted. */
+  alerting: boolean;
+}
 
 // One entry in the moderation record. `metadata` is whatever the server thought
 // worth preserving for that action - shape varies by action, so it's rendered
@@ -117,6 +149,7 @@ const TAB_TITLES: Record<Tab, string> = {
   reports: 'Reports',
   comments: 'Comments',
   blog: 'Posts',
+  errors: 'Errors',
   audit: 'Audit log',
 };
 
@@ -496,8 +529,84 @@ function TrendBadge({ points }: { points: HistoryPoint[] }) {
   return <span className={`${styles.trendBadge} ${cls}`}>{text}</span>;
 }
 
+/* ── Chart hover ─────────────────────────────────────────────────────────────
+   Both charts had a `<title>` on the last point and on each bar, which is the
+   cheapest tooltip there is and not really one: it only appears over the mark
+   itself (a 4px dot, or a bar 2px wide on a 90-day window), it waits out the
+   browser's delay, and it can't be styled. So the answer to "how many users
+   joined on that day" was a hit-testing exercise. This is a readout that
+   follows the pointer anywhere over the plot and always names a day.
+
+   The charts stretch with `preserveAspectRatio="none"`, so the x axis maps
+   linearly from rendered pixels to viewBox units, and one fraction serves for
+   both the SVG guide line and the HTML tooltip's `left`. That's the whole
+   reason this can be a fraction rather than two coordinate systems. */
+
+interface ChartHover { index: number; frac: number }
+
+/**
+ * @param count  number of data points
+ * @param mode   'nearest' snaps to the closest point (a line's vertices);
+ *               'band' picks the slot the pointer is inside (a bar's column).
+ */
+function useChartHover(count: number, mode: 'nearest' | 'band') {
+  const [hover, setHover] = useState<ChartHover | null>(null);
+
+  // Pointer events rather than mouse events: the same handler then covers a
+  // finger on the touchscreen, where there is no hover at all and a tap is the
+  // only way to ask.
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (count === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const index = mode === 'nearest'
+      ? Math.round(frac * (count - 1))
+      : Math.min(count - 1, Math.floor(frac * count));
+    setHover({ index, frac });
+  }
+
+  return {
+    hover,
+    handlers: {
+      onPointerMove,
+      onPointerLeave: () => setHover(null),
+      // A finger that has left the glass isn't pointing at anything any more,
+      // and without this the readout stays stuck on a touchscreen.
+      onPointerCancel: () => setHover(null),
+    },
+  };
+}
+
+function chartDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
+
+/** The floating readout. `frac` positions it; the ends flip it so it stays in. */
+function ChartTooltip({ frac, label, value }: { frac: number; label: string; value: string }) {
+  // Nudged rather than measured: at the edges the tooltip is anchored by its
+  // near side instead of its centre, which keeps it inside the card without
+  // needing to know how wide it came out.
+  const align = frac < 0.15 ? 'translateX(0)'
+    : frac > 0.85 ? 'translateX(-100%)'
+    : 'translateX(-50%)';
+  return (
+    <div className={styles.chartTip} style={{ left: `${frac * 100}%`, transform: align }}>
+      <span className={styles.chartTipValue}>{value}</span>
+      <span className={styles.chartTipLabel}>{label}</span>
+    </div>
+  );
+}
+
 /* Hand-rolled line chart with area fill - one point per day */
-function LineChart({ points, gradientId }: { points: HistoryPoint[]; gradientId: string }) {
+function LineChart({ points, gradientId, noun }: {
+  points: HistoryPoint[];
+  gradientId: string;
+  /** What one unit is, for the readout: "users", "bookmarks", "comments". */
+  noun: string;
+}) {
   const W = 600, H = 140, PAD_B = 18, PAD_T = 10;
   const totals = points.map(p => p.total);
   const min = Math.min(...totals);
@@ -512,29 +621,56 @@ function LineChart({ points, gradientId }: { points: HistoryPoint[]; gradientId:
   const area = `0,${H - PAD_B} ${line} ${W},${H - PAD_B}`;
   const lastPt = points[points.length - 1];
 
+  const { hover, handlers } = useChartHover(points.length, 'nearest');
+  const hovered = hover ? points[hover.index] : null;
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="none" aria-label="Cumulative total over the last 90 days">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" className={styles.areaTop} />
-          <stop offset="100%" className={styles.areaBottom} />
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill={`url(#${gradientId})`} />
-      <polyline points={line} className={styles.line} fill="none" vectorEffect="non-scaling-stroke" />
-      {lastPt && (
-        <circle cx={W} cy={y(lastPt.total)} r={3.5} className={styles.lineDot}>
-          <title>{`${lastPt.date}: ${lastPt.total}`}</title>
-        </circle>
+    <div className={styles.chartWrap} {...handlers}>
+      <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="none" aria-label="Cumulative total over the last 90 days">
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" className={styles.areaTop} />
+            <stop offset="100%" className={styles.areaBottom} />
+          </linearGradient>
+        </defs>
+        <polygon points={area} fill={`url(#${gradientId})`} />
+        <polyline points={line} className={styles.line} fill="none" vectorEffect="non-scaling-stroke" />
+
+        {/* The guide is drawn at the snapped point, not under the cursor: it has
+            to agree with the number in the readout, or it reads as lag. */}
+        {hovered && (
+          <>
+            <line
+              x1={x(hover!.index)} y1={PAD_T} x2={x(hover!.index)} y2={H - PAD_B}
+              className={styles.chartGuide} vectorEffect="non-scaling-stroke"
+            />
+            <circle cx={x(hover!.index)} cy={y(hovered.total)} r={4} className={styles.chartMarker} />
+          </>
+        )}
+
+        {/* The end-of-series dot is redundant while a point is being inspected,
+            and two dots on one line invite the question of which is which. */}
+        {lastPt && !hovered && (
+          <circle cx={W} cy={y(lastPt.total)} r={3.5} className={styles.lineDot} />
+        )}
+
+        {points.map((p, i) => (
+          i % 30 === 0 && (
+            <text key={p.date} x={Math.max(x(i), 24)} y={H - 4} className={styles.axisLabel} textAnchor="middle">
+              {new Date(p.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+            </text>
+          )
+        ))}
+      </svg>
+
+      {hovered && (
+        <ChartTooltip
+          frac={hover!.frac}
+          label={chartDate(hovered.date)}
+          value={`${hovered.total.toLocaleString()} ${noun}`}
+        />
       )}
-      {points.map((p, i) => (
-        i % 30 === 0 && (
-          <text key={p.date} x={Math.max(x(i), 24)} y={H - 4} className={styles.axisLabel} textAnchor="middle">
-            {new Date(p.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}
-          </text>
-        )
-      ))}
-    </svg>
+    </div>
   );
 }
 
@@ -544,32 +680,53 @@ function SignupChart({ signups }: { signups: AdminStats['signups'] }) {
   const max = Math.max(1, ...signups.map(s => s.count));
   const barW = W / signups.length;
 
+  const { hover, handlers } = useChartHover(signups.length, 'band');
+  const hovered = hover ? signups[hover.index] : null;
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="none" aria-label="Signups per day, last 30 days">
-      {signups.map((s, i) => {
-        const h = (s.count / max) * (H - PAD_B - 8);
-        const x = i * barW;
-        return (
-          <g key={s.date}>
-            <rect
-              x={x + barW * 0.18}
-              y={H - PAD_B - h}
-              width={barW * 0.64}
-              height={Math.max(h, s.count > 0 ? 3 : 1.5)}
-              rx={2}
-              className={s.count > 0 ? styles.bar : styles.barEmpty}
-            >
-              <title>{`${s.date}: ${s.count} signup${s.count === 1 ? '' : 's'}`}</title>
-            </rect>
-            {i % 7 === 0 && (
-              <text x={x + barW / 2} y={H - 4} className={styles.axisLabel} textAnchor="middle">
-                {new Date(s.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+    <div className={styles.chartWrap} {...handlers}>
+      <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="none" aria-label="Signups per day, last 30 days">
+        {/* Behind the bars: the highlight is a full-height band so a day with
+            no signups still has something to point at. A zero bar is 1.5px
+            tall, which is nothing to aim a cursor at and, on the day you most
+            want to check, exactly what you'd be aiming at. */}
+        {hover && (
+          <rect
+            x={hover.index * barW} y={0} width={barW} height={H - PAD_B}
+            className={styles.chartBand}
+          />
+        )}
+        {signups.map((s, i) => {
+          const h = (s.count / max) * (H - PAD_B - 8);
+          const x = i * barW;
+          return (
+            <g key={s.date}>
+              <rect
+                x={x + barW * 0.18}
+                y={H - PAD_B - h}
+                width={barW * 0.64}
+                height={Math.max(h, s.count > 0 ? 3 : 1.5)}
+                rx={2}
+                className={`${s.count > 0 ? styles.bar : styles.barEmpty} ${hover?.index === i ? styles.barHover : ''}`}
+              />
+              {i % 7 === 0 && (
+                <text x={x + barW / 2} y={H - 4} className={styles.axisLabel} textAnchor="middle">
+                  {new Date(s.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {hovered && (
+        <ChartTooltip
+          frac={hover!.frac}
+          label={chartDate(hovered.date)}
+          value={`${hovered.count} new ${hovered.count === 1 ? 'user' : 'users'}`}
+        />
+      )}
+    </div>
   );
 }
 
@@ -585,6 +742,17 @@ export default function AdminModal({
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [auditCursor, setAuditCursor] = useState<string | null>(null);
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
+  const [errors, setErrors] = useState<ErrorEntry[]>([]);
+  const [errorCounts, setErrorCounts] = useState({ server: 0, feed: 0 });
+  const [errorCursor, setErrorCursor] = useState<string | null>(null);
+  const [errorsLoadingMore, setErrorsLoadingMore] = useState(false);
+  const [errorSource, setErrorSource] = useState<'all' | 'server' | 'feed'>('all');
+  const [retentionDays, setRetentionDays] = useState(30);
+  const [feedHealth, setFeedHealth] = useState<FeedHealth[]>([]);
+  const [feedTotals, setFeedTotals] = useState({ total: 0, healthy: 0 });
+  // Which stack trace is unrolled. One at a time - a trace is tall enough that
+  // two open at once turns the table into scrolling.
+  const [openTrace, setOpenTrace] = useState<string | null>(null);
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [reportCursor, setReportCursor] = useState<string | null>(null);
   const [reportsLoadingMore, setReportsLoadingMore] = useState(false);
@@ -734,6 +902,61 @@ export default function AdminModal({
         .catch(() => setError('Could not load the audit log'));
     }
   }, [tab, loadedComments, loadedPosts, loadedAudit]);
+
+  // Unlike the tabs above, this one has no one-shot "loaded" guard: the source
+  // filter goes to the server (the counts have to describe the whole log, not
+  // the page), so switching it refetches - the same shape the report queue uses.
+  useEffect(() => {
+    if (tab !== 'errors') return;
+    let cancelled = false;
+    const q = errorSource === 'all' ? '' : `?source=${errorSource}`;
+    apiGet<{
+      entries: ErrorEntry[];
+      counts: { server: number; feed: number };
+      retentionDays: number;
+      nextCursor: string | null;
+    }>(`/api/v1/admin/errors${q}`)
+      .then(d => {
+        if (cancelled) return;
+        setErrors(d.entries);
+        setErrorCounts(d.counts);
+        setRetentionDays(d.retentionDays);
+        setErrorCursor(d.nextCursor);
+      })
+      .catch(() => { if (!cancelled) setError('Could not load the error log'); });
+    return () => { cancelled = true; };
+  }, [tab, errorSource]);
+
+  // Feed health is standing state rather than a log, so it doesn't care about
+  // the source filter. Fetched on mount rather than when the tab opens, because
+  // the count badges the nav - a badge that only appears after you've visited
+  // the tab is no use as the reason to visit it.
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ feeds: FeedHealth[]; total: number; healthy: number }>('/api/v1/admin/feeds/health')
+      .then(d => {
+        if (cancelled) return;
+        setFeedHealth(d.feeds);
+        setFeedTotals({ total: d.total, healthy: d.healthy });
+      })
+      .catch(() => { if (!cancelled) setError('Could not load feed health'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function loadMoreErrors() {
+    if (!errorCursor) return;
+    setErrorsLoadingMore(true);
+    try {
+      const src = errorSource === 'all' ? '' : `source=${errorSource}&`;
+      const d = await apiGet<{ entries: ErrorEntry[]; nextCursor: string | null }>(
+        `/api/v1/admin/errors?${src}cursor=${encodeURIComponent(errorCursor)}`);
+      setErrors(prev => [...prev, ...d.entries]);
+      setErrorCursor(d.nextCursor);
+    } catch {
+      setError('Could not load more of the error log');
+    }
+    setErrorsLoadingMore(false);
+  }
 
   async function loadMoreAudit() {
     if (!auditCursor) return;
@@ -950,6 +1173,14 @@ export default function AdminModal({
           <button className={`${styles.navItem} ${tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
             Posts
           </button>
+          {/* Badged like Reports, and for the same reason: a failing feed is
+              work waiting, and the count is why you'd open the tab. Only feeds
+              are counted - a server error is already in the past by the time
+              it's recorded, whereas a failing feed is still failing. */}
+          <button className={`${styles.navItem} ${tab === 'errors' ? styles.navActive : ''}`} onClick={() => switchTab('errors')}>
+            Errors
+            {feedHealth.length > 0 && <span className={styles.navBadge}>{feedHealth.length}</span>}
+          </button>
           <button className={`${styles.navItem} ${tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
             Audit log
           </button>
@@ -1012,6 +1243,13 @@ export default function AdminModal({
                   <span className={styles.statValue}>{stats.totals.openReports}</span>
                   <span className={styles.statLabel}>Open reports</span>
                 </button>
+                {/* Same idea as Open reports above - a number that is only
+                    interesting when it isn't zero, wired to the tab that
+                    explains it. */}
+                <button className={styles.statCard} onClick={() => switchTab('errors')}>
+                  <span className={styles.statValue}>{feedHealth.length}</span>
+                  <span className={styles.statLabel}>Failing feeds</span>
+                </button>
                 <div className={styles.statCard}>
                   <span className={styles.statValue}>{formatBytes(stats.totals.imageBytes)}</span>
                   <span className={styles.statLabel}>Images ({stats.totals.images})</span>
@@ -1031,7 +1269,7 @@ export default function AdminModal({
                   Total users - last 90 days
                   <TrendBadge points={stats.history.users} />
                 </div>
-                <LineChart points={stats.history.users} gradientId="admin-users-grad" />
+                <LineChart points={stats.history.users} gradientId="admin-users-grad" noun="users" />
               </div>
 
               <div className={styles.chartBlock}>
@@ -1039,7 +1277,7 @@ export default function AdminModal({
                   Total bookmarks - last 90 days
                   <TrendBadge points={stats.history.bookmarks} />
                 </div>
-                <LineChart points={stats.history.bookmarks} gradientId="admin-bookmarks-grad" />
+                <LineChart points={stats.history.bookmarks} gradientId="admin-bookmarks-grad" noun="bookmarks" />
               </div>
 
               <div className={styles.chartBlock}>
@@ -1047,7 +1285,7 @@ export default function AdminModal({
                   Total comments - last 90 days
                   <TrendBadge points={stats.history.comments} />
                 </div>
-                <LineChart points={stats.history.comments} gradientId="admin-comments-grad" />
+                <LineChart points={stats.history.comments} gradientId="admin-comments-grad" noun="comments" />
                 <VisibilityMeter counts={stats.visibility.comments} />
                 <div className={styles.chartFacts}>
                   <span>{stats.totals.commentReplies} replies</span>
@@ -1062,7 +1300,7 @@ export default function AdminModal({
                   Total posts - last 90 days
                   <TrendBadge points={stats.history.blogPosts} />
                 </div>
-                <LineChart points={stats.history.blogPosts} gradientId="admin-blog-grad" />
+                <LineChart points={stats.history.blogPosts} gradientId="admin-blog-grad" noun="posts" />
                 <VisibilityMeter counts={stats.visibility.blogPosts} />
                 <div className={styles.chartFacts}>
                   <span>{stats.totals.publishedPosts} published</span>
@@ -1477,6 +1715,160 @@ export default function AdminModal({
                 <div className={styles.emptyResult}>
                   {query ? `No posts match "${query}"` : 'No posts yet'}
                 </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'errors' && (
+            <div className={styles.body}>
+              {/* Health first, log second. "Which of my feeds are broken right
+                  now" is the standing question; the log below is what you read
+                  once you want to know why. */}
+              <div className={styles.sectionTitle}>
+                Feed health
+                <span className={styles.sectionNote}>
+                  {feedTotals.healthy} of {feedTotals.total} feeds fetching normally
+                </span>
+              </div>
+              {feedHealth.length === 0 ? (
+                <div className={styles.emptyResult}>Every feed fetched successfully on its last check</div>
+              ) : (
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Feed</th>
+                      <th>Failures</th>
+                      <th>Last error</th>
+                      <th>Last worked</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feedHealth.map(f => (
+                      <tr key={f.id}>
+                        <td className={styles.emailCell}>
+                          <a className={styles.errorLink} href={f.url} target="_blank" rel="noopener noreferrer">
+                            {f.title || f.url}
+                          </a>
+                          {f.title && <div className={styles.mutedText}>{f.url}</div>}
+                        </td>
+                        <td>
+                          {/* Marked once it has been reported to the admins, so
+                              the row and the bell agree about what counts. */}
+                          <span className={f.alerting ? styles.auditDestructive : styles.auditAction}>
+                            {f.consecutiveFailures} in a row
+                          </span>
+                        </td>
+                        <td className={styles.emailCell}>
+                          <span className={styles.mutedText}>{f.lastError || '-'}</span>
+                          {f.lastErrorAt && (
+                            <div className={styles.mutedText} title={new Date(f.lastErrorAt).toLocaleString()}>
+                              {relativeDate(f.lastErrorAt)}
+                            </div>
+                          )}
+                        </td>
+                        <td title={f.lastSuccessAt ? new Date(f.lastSuccessAt).toLocaleString() : undefined}>
+                          {/* No success ever recorded is a different problem
+                              from one that stopped working - most likely a URL
+                              that was never a feed. */}
+                          {f.lastSuccessAt
+                            ? relativeDate(f.lastSuccessAt)
+                            : <span className={styles.mutedText}>never</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div className={styles.sectionTitle}>Recent errors</div>
+              <div className={styles.filterRow}>
+                {(['all', 'server', 'feed'] as const).map(s => (
+                  <button
+                    key={s}
+                    className={`${styles.filterChip} ${errorSource === s ? styles.filterChipActive : ''}`}
+                    onClick={() => setErrorSource(s)}
+                  >
+                    {s === 'all' ? 'All' : s === 'server' ? 'Server' : 'Feeds'}
+                    <span className={styles.errorCount}>
+                      {s === 'all' ? errorCounts.server + errorCounts.feed : errorCounts[s]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className={styles.tableNote}>
+                Unhandled server errors and feeds that failed to load, newest first.
+                Entries older than {retentionDays} days are removed automatically -
+                this is a diagnostic log, not a record like the audit trail.
+                Requests that failed because someone asked for something invalid
+                (a 4xx) aren't errors and aren't listed.
+              </div>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Source</th>
+                    <th>What happened</th>
+                    <th>Where</th>
+                    <th>User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {errors.map(e => (
+                    <Fragment key={e.id}>
+                      <tr>
+                        <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
+                        <td>
+                          <span className={e.source === 'server' ? styles.auditDestructive : styles.auditAction}>
+                            {e.source === 'server' ? `Server${e.status ? ` ${e.status}` : ''}` : 'Feed'}
+                          </span>
+                        </td>
+                        <td className={styles.emailCell}>
+                          {e.message}
+                          {/* A stack trace is the reason this table exists, but
+                              it's also twenty lines - so it unrolls under the
+                              row rather than living in a cell. */}
+                          {e.detail && (
+                            <button
+                              className={styles.traceToggle}
+                              onClick={() => setOpenTrace(openTrace === e.id ? null : e.id)}
+                            >
+                              {openTrace === e.id ? 'Hide detail' : 'Show detail'}
+                            </button>
+                          )}
+                        </td>
+                        <td className={styles.emailCell}>
+                          {e.source === 'feed'
+                            ? (e.feedUrl
+                                ? <a className={styles.errorLink} href={e.feedUrl} target="_blank" rel="noopener noreferrer">{e.feedUrl}</a>
+                                : <span className={styles.mutedText}>-</span>)
+                            : <span className={styles.mutedText}>{e.method} {e.path}</span>}
+                        </td>
+                        <td>
+                          {e.username
+                            ? <Handle username={e.username} exists onView={onViewProfile} />
+                            : <span className={styles.mutedText}>{e.source === 'feed' ? '-' : 'anonymous'}</span>}
+                        </td>
+                      </tr>
+                      {openTrace === e.id && e.detail && (
+                        <tr>
+                          <td colSpan={5}><pre className={styles.trace}>{e.detail}</pre></td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+              {errors.length === 0 && (
+                <div className={styles.emptyResult}>
+                  {errorSource === 'all'
+                    ? 'Nothing has gone wrong in the retention window'
+                    : `No ${errorSource === 'server' ? 'server' : 'feed'} errors recorded`}
+                </div>
+              )}
+              {errorCursor && (
+                <button className={styles.moreBtn} disabled={errorsLoadingMore} onClick={loadMoreErrors}>
+                  {errorsLoadingMore ? 'Loading…' : 'Load older entries'}
+                </button>
               )}
             </div>
           )}

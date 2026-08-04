@@ -11,6 +11,14 @@ import { accountMenuItems, ShellMenuItem } from '../utils/shellNav';
 // either/or.
 export const RAIL_NARROW = '(max-width: 900px)';
 
+// Below this the bar can't carry the brand, the search box and three actions on
+// one row and leave search wide enough to read what you typed - on a phone it
+// came out around 130px, narrower than most of the hints it rotates through. So
+// search stops being a permanent box down here and becomes a magnifier that
+// expands over the whole row when tapped, which is the trade every mobile
+// chrome makes: search is the widest thing in the bar or it isn't in the bar.
+const SEARCH_NARROW = '(max-width: 620px)';
+
 // The compact chrome for reading views - a profile, a post, the blog manager.
 // The new tab keeps its tall greeting header; those pages don't want 120px of
 // salutation above the thing you actually came to read, so everything collapses
@@ -105,7 +113,11 @@ export default function ShellBar({
 }: Props) {
   const [navOpen, setNavOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const railNarrow = useMediaQuery(RAIL_NARROW);
+  const searchNarrow = useMediaQuery(SEARCH_NARROW);
+  const searchExpanded = searchNarrow && searchOpen;
+  const centerRef = useRef<HTMLDivElement>(null);
 
   // Publish the bar's height so anything pinned beneath it can clear it. The
   // bar grows and shrinks with its own breakpoints (and with the search box's
@@ -134,6 +146,30 @@ export default function ShellBar({
     if (!showNav) setNavOpen(false);
   }, [showNav]);
 
+  // Widening past the breakpoint puts the permanent search box back, so the
+  // expanded state has to go with it - otherwise the desktop bar comes back with
+  // its brand and actions hidden behind a search box nobody can dismiss.
+  useEffect(() => {
+    if (!searchNarrow) setSearchOpen(false);
+  }, [searchNarrow]);
+
+  // Expanding is a tap that means "I want to type", so the caret has to land in
+  // the box - on a phone that is also what raises the keyboard. The search box
+  // arrives as an opaque ReactNode (see the `search` prop), so there's no ref to
+  // forward; reaching for its input through the wrapper is the price of ShellBar
+  // not having to know how SearchBar is built.
+  useEffect(() => {
+    if (!searchExpanded) return;
+    centerRef.current?.querySelector('input')?.focus();
+  }, [searchExpanded]);
+
+  useEffect(() => {
+    if (!searchExpanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSearchOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [searchExpanded]);
+
   // One menu at a time - two open dropdowns on the same row read as a bug.
   function openNav() { setAcctOpen(false); setNavOpen(o => !o); }
   function openAcct() { setNavOpen(false); setAcctOpen(o => !o); }
@@ -153,7 +189,7 @@ export default function ShellBar({
 
   return (
     <header className={styles.bar} ref={barRef}>
-      <div className={styles.inner}>
+      <div className={`${styles.inner} ${searchExpanded ? styles.innerSearching : ''}`}>
         {/* ── Left: who we are, and where you can go ── */}
         <div className={styles.left}>
           <button className={styles.brand} onClick={() => navigate('/')} title="Newt - home">
@@ -194,11 +230,41 @@ export default function ShellBar({
           )}
         </div>
 
-        {/* ── Middle: search, the widest thing that will fit ── */}
-        <div className={styles.center}>{search}</div>
+        {/* ── Middle: search, the widest thing that will fit ──
+            Below SEARCH_NARROW this is hidden until the magnifier on the right
+            expands it, at which point it claims the whole row. Kept mounted
+            either way: unmounting would throw away whatever had been typed, and
+            remounting is what would need the ref this deliberately doesn't
+            have. */}
+        <div className={styles.center} ref={centerRef}>{search}</div>
+
+        {/* Only reachable while search is expanded, and the only way back - the
+            row's other controls are hidden behind it. */}
+        <button
+          className={styles.searchCancel}
+          onClick={() => setSearchOpen(false)}
+          aria-label="Close search"
+        >
+          Cancel
+        </button>
 
         {/* ── Right: what you can do ── */}
         <div className={styles.right}>
+          {/* Search's stand-in on a narrow bar. Leads the action row because
+              that is where it came from - the box used to sit to its left. */}
+          <button
+            className={`${styles.iconBtn} ${styles.searchBtn}`}
+            onClick={() => setSearchOpen(true)}
+            aria-expanded={searchExpanded}
+            title="Search"
+            aria-label="Search"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+          </button>
+
           <button className={styles.createBtn} onClick={() => navigate('/blog/new')} title="Write a post">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" />

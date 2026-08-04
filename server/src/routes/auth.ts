@@ -4,6 +4,7 @@ import prisma from '../lib/prisma';
 import { signAccess, signRefresh, verifyRefresh, signTotpPending, verifyTotpPending, REFRESH_TTL_MS } from '../lib/jwt';
 import speakeasy from 'speakeasy';
 import logger from '../lib/logger';
+import { notifyAdminsOfSignup } from '../lib/adminAlerts';
 
 const router = Router();
 
@@ -65,6 +66,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     });
     res.cookie('refreshToken', refreshToken, COOKIE_OPTS);
     res.status(201).json({ accessToken, username: user.username, isAdmin: user.isAdmin });
+
+    // After the response, not before it: telling the admins is bookkeeping, and
+    // nobody signing up should wait on it. notifyAdminsOfSignup swallows its own
+    // failures, so there is nothing here that can reject.
+    void notifyAdminsOfSignup(user.id, user.username);
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'P2002') {
       res.status(409).json({ error: 'Username already taken' });

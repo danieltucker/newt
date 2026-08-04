@@ -56,6 +56,32 @@
   min-width: 0;
 }
 
+/* ── Search's narrow-bar form ──
+   Both of these are the collapsed/expanded chrome for SEARCH_NARROW and don't
+   exist above it: the wide bar has a permanent search box and needs neither a
+   way in nor a way out. The media query at the bottom is what turns them on.
+
+   .searchBtn's `display: none` is NOT here with the rest of its styling, and
+   must not be moved here: the magnifier also carries .iconBtn, which sets
+   `display: inline-flex` further down this file. Two single-class selectors tie
+   on specificity, so the later one wins and the button would show at every
+   width. It is hidden just below .iconBtn instead — see there. */
+.searchCancel {
+  display: none;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.searchCancel:hover { color: var(--text); }
+
 /* ── Brand ──
    Mark plus wordmark, leading the bar and doubling as the way home. Reads as
    identity rather than a control, so it carries no chrome until hovered. */
@@ -113,6 +139,13 @@
   color: var(--text);
 }
 .iconBtnActive { color: var(--accent); }
+
+/* The search magnifier is an .iconBtn that only exists on a narrow bar, so it
+   starts hidden and the 620px query below turns it on. This has to sit *after*
+   .iconBtn's `display: inline-flex` above — same specificity, later wins — which
+   is why it isn't up with the rest of .searchBtn's siblings. Moving it back
+   there puts a magnifier in the desktop bar next to a search box. */
+.searchBtn { display: none; }
 
 .notifBadge {
   position: absolute;
@@ -303,6 +336,27 @@
      search is already living on the remainder. */
   .createLabel { display: none; }
   .createBtn { padding: 0 9px; }
+}
+
+/* ── Search on a narrow bar (SEARCH_NARROW in ShellBar.tsx) ──
+   Collapsed, search is a magnifier in the action row and the box isn't
+   rendered at all. Expanded (.innerSearching), it is the row: brand, hamburger
+   and every action step aside so the box gets the full width less the Cancel
+   that puts them back. Sharing the row three ways is what left search too
+   narrow to use in the first place, so the expanded state doesn't try to. */
+@media (max-width: 620px) {
+  .center { display: none; }
+  .searchBtn { display: inline-flex; }
+
+  .innerSearching .left,
+  .innerSearching .right { display: none; }
+
+  .innerSearching .center {
+    display: block;
+    flex: 1 1 auto;
+  }
+
+  .innerSearching .searchCancel { display: inline-flex; align-items: center; }
 }
 
 @media (max-width: 560px) {

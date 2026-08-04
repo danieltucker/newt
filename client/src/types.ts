@@ -249,7 +249,11 @@ export type NotificationType =
   | 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'friend_post'
   // Moderator-only: a user filed a report. Carries no actor - see
   // notifyAdminsOfReport in server/src/routes/reports.ts.
-  | 'report_new';
+  | 'report_new'
+  // Admin-only, both from server/src/lib/adminAlerts.ts. 'user_new' carries the
+  // new account as its actor, so the bell links to their profile; 'feed_failing'
+  // is actorless (a feed is not a person) and puts the feed URL in articleUrl.
+  | 'user_new' | 'feed_failing';
 
 export interface AppNotification {
   id: string;

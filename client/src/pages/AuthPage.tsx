@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import styles from './AuthPage.module.css';
 import SiteFooter from '../components/SiteFooter';
 import NewtMark from '../components/NewtMark';
+import CloseButton from '../components/CloseButton';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<{ requiresTotp: true; totpToken: string; username: string } | void>;
@@ -30,6 +31,20 @@ export default function AuthPage({
   useEffect(() => {
     if (totpPending) totpRef.current?.focus();
   }, [totpPending]);
+
+  // The card reads as a dialog - it is a panel floating over a dimmed page - so
+  // it has to behave like one. It is really a route, though, and there is no
+  // page underneath to return to, so closing means leaving for the landing page
+  // rather than dismissing an overlay. Absent when there is nowhere to go
+  // (`navigate` unset), which is the only case where a close would be a lie.
+  const close = useCallback(() => navigate?.('/'), [navigate]);
+
+  useEffect(() => {
+    if (!navigate) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navigate, close]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -88,6 +103,7 @@ export default function AuthPage({
     return (
       <div className={styles.page}>
         <div className={styles.card}>
+          {navigate && <CloseButton onClick={close} label="Close and go back" className={styles.close} />}
           <div className={styles.logo}>New Tab</div>
           <div className={styles.subtitle}>Enter the 6-digit code from your authenticator app.</div>
           <form onSubmit={handleTotpSubmit}>
@@ -135,6 +151,7 @@ export default function AuthPage({
         </a>
       )}
       <div className={styles.card}>
+        {navigate && <CloseButton onClick={close} label="Close and go back" className={styles.close} />}
         <div className={styles.logo}>New Tab</div>
         <div className={styles.subtitle}>Your bookmarks and reading list, anywhere.</div>
 
