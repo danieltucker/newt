@@ -1,26 +1,22 @@
+// Bookmark folders only. Feeds moved out of here in v1.11.0 — they live under
+// /api/v1/feeds now, filed into their own categories, because being *in* a
+// folder should never have been the price of seeing what a site published.
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
-import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
-import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
-import { syncBookmarkBadges } from '../lib/unread';
-import {
-  FEED_SELECT, withFeedUrls, folderFeedUrls,
-  MAX_FEEDS_PER_FOLDER, MAX_FEED_URL, MAX_FEED_NAME,
-} from '../lib/folderFeeds';
+import { requireAuth, AuthRequest } from '../middleware/auth';
+import { ensureFeeds } from '../lib/feedRefresh';
+import { canonicalFeedKey } from '../lib/feedUtils';
 import logger from '../lib/logger';
 
 const router = Router();
 router.use(requireAuth);
 
-const FEEDS_INCLUDE = { feeds: { orderBy: { position: 'asc' }, select: FEED_SELECT } } as const;
-
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const folders = await prisma.folder.findMany({
     where: { userId: req.userId! },
     orderBy: { position: 'asc' },
-    include: FEEDS_INCLUDE,
   });
-  res.json(folders.map(withFeedUrls));
+  res.json(folders);
 });
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -30,9 +26,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const count = await prisma.folder.count({ where: { userId: req.userId! } });
   const folder = await prisma.folder.create({
     data: { userId: req.userId!, name, color, position: count },
-    include: FEEDS_INCLUDE,
   });
-  res.status(201).json(withFeedUrls(folder));
+  res.status(201).json(folder);
 });
 
 router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -47,8 +42,6 @@ router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> =>
 });
 
 router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  // Feeds are edited through the /feeds endpoints below, not as part of the
-  // folder — they are rows with their own identity now, not an array field.
   const { name, color, backgroundImage } = req.body;
   try {
     const data: Record<string, unknown> = {};
@@ -76,34 +69,13 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
   res.json({ ok: true });
 });
 
-// ── Feeds within a folder ────────────────────────────────────────────────────
-
-// Feeds are fetched server-side, so a URL that isn't plain http(s) has no
-// meaning here beyond being a way to point the fetcher somewhere odd.
-function normalizeFeedUrl(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const url = raw.trim();
-  if (!url || url.length > MAX_FEED_URL) return null;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
-  } catch { return null; }
-}
-
-// Prisma's unique-constraint code. The @@unique([folderId, url]) index is the
-// real guard against a folder listing a feed twice; the explicit lookups below
-// exist to give a readable message, and this catches the race between them.
-const P2002 = 'P2002';
-function isDuplicate(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === P2002;
-}
-
-router.post('/:id/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const url = normalizeFeedUrl(body.url);
-  if (!url) { res.status(400).json({ error: 'A valid http(s) feed URL is required' }); return; }
-  const name = typeof body.name === 'string' ? body.name.trim().slice(0, MAX_FEED_NAME) : '';
-
+// Clears the unread badges on every bookmark in the folder. The badge derives
+// from read-state, so clearing it durably means marking those sites' feed items
+// read too — which keeps the feed in step, and is why this reaches for feed
+// rows at all now that folders don't own any. The sites in question come from
+// the bookmarks themselves: a bookmark records the feed discovery found for it,
+// whether or not the user subscribed to it in the reader.
+router.post('/:id/mark-read', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const folder = await prisma.folder.findFirst({
       where: { id: req.params.id, userId: req.userId! },
@@ -111,359 +83,48 @@ router.post('/:id/feeds', async (req: AuthRequest, res: Response): Promise<void>
     });
     if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
 
-    const count = await prisma.folderFeed.count({ where: { folderId: folder.id } });
-    if (count >= MAX_FEEDS_PER_FOLDER) {
-      res.status(400).json({ error: `Maximum ${MAX_FEEDS_PER_FOLDER} feeds per folder` });
-      return;
-    }
-
-    const feed = await prisma.folderFeed.create({
-      data: { userId: req.userId!, folderId: folder.id, url, name, position: count },
-      select: FEED_SELECT,
+    const bookmarks = await prisma.bookmark.findMany({
+      where: { folderId: folder.id, userId: req.userId!, NOT: { feedUrl: null } },
+      select: { feedUrl: true },
     });
-    // The folder's feeds changed, so make the next article load refetch.
-    await prisma.folder.update({ where: { id: folder.id }, data: { feedLastCheckedAt: null } });
-    res.status(201).json(feed);
-  } catch (err) {
-    if (isDuplicate(err)) { res.status(409).json({ error: 'That feed is already in this folder' }); return; }
-    logger.error(err, 'Add folder feed error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
-// Rename a feed, re-point it at a different URL, or move it to another folder.
-// The row survives all three, which is the reason it exists: a feed that moves
-// or changes address is still the same subscription, and keeps its name.
-router.patch('/feeds/:feedId', async (req: AuthRequest, res: Response): Promise<void> => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  try {
-    const existing = await prisma.folderFeed.findFirst({
-      where: { id: req.params.feedId, userId: req.userId! },
-      select: { id: true, folderId: true, url: true },
-    });
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    const urls = [...new Set(bookmarks.map(b => b.feedUrl!))];
+    if (urls.length > 0) {
+      // Resolve through the shared Feed table rather than re-fetching: the items
+      // are already there, and this must not fan out into one request per tile.
+      const keys = new Set(urls.map(canonicalFeedKey));
+      const feeds = await ensureFeeds(urls);
+      const feedIds = feeds.filter(f => keys.has(canonicalFeedKey(f.fetchUrl))).map(f => f.id);
 
-    const data: Record<string, unknown> = {};
-
-    if ('name' in body) {
-      if (typeof body.name !== 'string') { res.status(400).json({ error: 'name must be a string' }); return; }
-      data.name = body.name.trim().slice(0, MAX_FEED_NAME);
-    }
-
-    if ('url' in body) {
-      const url = normalizeFeedUrl(body.url);
-      if (!url) { res.status(400).json({ error: 'A valid http(s) feed URL is required' }); return; }
-      data.url = url;
-    }
-
-    if ('folderId' in body) {
-      if (typeof body.folderId !== 'string') { res.status(400).json({ error: 'folderId must be a string' }); return; }
-      const target = await prisma.folder.findFirst({
-        where: { id: body.folderId, userId: req.userId! },
-        select: { id: true },
-      });
-      if (!target) { res.status(404).json({ error: 'Target folder not found' }); return; }
-      if (target.id !== existing.folderId) {
-        const count = await prisma.folderFeed.count({ where: { folderId: target.id } });
-        if (count >= MAX_FEEDS_PER_FOLDER) {
-          res.status(400).json({ error: `Maximum ${MAX_FEEDS_PER_FOLDER} feeds per folder` });
-          return;
+      if (feedIds.length > 0) {
+        const items = await prisma.feedItem.findMany({
+          where: {
+            feedId: { in: feedIds },
+            reads: { none: { userId: req.userId! } },
+            dismissals: { none: { userId: req.userId! } },
+          },
+          select: { id: true },
+          take: 5000,
+        });
+        if (items.length > 0) {
+          await prisma.readFeedItem.createMany({
+            data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
+            skipDuplicates: true,
+          });
         }
-        // Land it at the end of the target folder's list.
-        data.folderId = target.id;
-        data.position = count;
       }
     }
 
-    const folderId = (data.folderId as string) ?? existing.folderId;
-    const feed = await prisma.folderFeed.update({
-      where: { id: existing.id },
-      data,
-      select: FEED_SELECT,
+    await prisma.bookmark.updateMany({
+      where: { folderId: folder.id, userId: req.userId! },
+      data: { unreadCount: 0 },
     });
-
-    // Both folders need to re-check: one lost a feed, one gained it. Deduped so
-    // a rename (where they're the same folder) doesn't list it twice.
-    const touched = [...new Set([existing.folderId, folderId])];
-    await prisma.folder.updateMany({ where: { id: { in: touched } }, data: { feedLastCheckedAt: null } });
-
-    res.json({ ...feed, folderId });
-  } catch (err) {
-    if (isDuplicate(err)) { res.status(409).json({ error: 'That feed is already in that folder' }); return; }
-    logger.error(err, 'Update folder feed error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.delete('/feeds/:feedId', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const result = await prisma.folderFeed.deleteMany({
-      where: { id: req.params.feedId, userId: req.userId! },
-    });
-    if (result.count === 0) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ ok: true });
   } catch (err) {
-    logger.error(err, 'Delete folder feed error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Clears the unread badges on every bookmark in the folder. Because the badge
-// now derives from read-state, clearing it durably means marking the folder's
-// feed items read too — which also keeps the RSS reader in step, so "mark read"
-// on the bookmarks side and the feed side mean the same thing.
-router.post('/:id/mark-read', async (req: AuthRequest, res: Response): Promise<void> => {
-  const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
-  if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-
-  const markUrls = await folderFeedUrls(req.params.id);
-  if (markUrls.length > 0) {
-    const feeds = await ensureFeeds(markUrls);
-    const items = await prisma.feedItem.findMany({
-      where: {
-        feedId: { in: feeds.map(f => f.id) },
-        reads: { none: { userId: req.userId! } },
-        dismissals: { none: { userId: req.userId!, folderId: req.params.id } },
-      },
-      select: { id: true },
-      take: 5000,
-    });
-    if (items.length > 0) {
-      await prisma.readFeedItem.createMany({
-        data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
-        skipDuplicates: true,
-      });
-    }
-  }
-
-  await prisma.bookmark.updateMany({
-    where: { folderId: req.params.id, userId: req.userId! },
-    data: { unreadCount: 0 },
-  });
-  res.json({ ok: true });
-});
-
-// Admin-only: force-refreshing every feed fans one action out into many
-// outbound requests, so it stays behind requireAdmin to avoid abuse/amplification.
-router.post('/refresh-all', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const rows = await prisma.folderFeed.findMany({
-    where: { userId: req.userId! },
-    select: { url: true },
-  });
-  if (rows.length === 0) {
-    res.json({ refreshed: 0 });
-    return;
-  }
-  const feeds = await ensureFeeds(rows.map(r => r.url));
-  // Force refresh regardless of staleness — this is an explicit user action.
-  // Still claim-protected + concurrency-limited inside refreshStaleFeeds.
-  await refreshStaleFeeds(feeds, { force: true });
-  res.json({ refreshed: feeds.length });
-});
-
-router.get('/:id/articles', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const offset     = Math.max(0, parseInt(req.query.offset as string || '0') || 0);
-  const limit      = Math.min(200, Math.max(1, parseInt(req.query.limit as string || '10') || 10));
-  const includeAll = req.query.includeAll === 'true';
-
-  try {
-    const folder = await prisma.folder.findFirst({ where: { id, userId: req.userId! } });
-    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-
-    const urls = await folderFeedUrls(id);
-    if (urls.length === 0) {
-      res.json({ articles: [], total: 0, hasMore: false });
-      return;
-    }
-
-    const feeds = await ensureFeeds(urls);
-    const neverFetched = feeds.some(f => !f.lastCheckedAt);
-    if (neverFetched) {
-      // First load of at least one feed — wait so the user doesn't see an empty list
-      await refreshStaleFeeds(feeds);
-    } else {
-      // Data exists — serve immediately, refresh stale feeds behind the scenes
-      refreshStaleFeeds(feeds).catch(() => {});
-    }
-
-    const feedIds = feeds.map(f => f.id);
-    const feedById = new Map(feeds.map(f => [f.id, f]));
-    const where = {
-      feedId: { in: feedIds },
-      ...(includeAll ? {} : { dismissals: { none: { userId: req.userId!, folderId: id } } }),
-    };
-    // `unread` spans the whole folder, not the page being returned. The client
-    // shows it on the Unread filter chip, which sits next to site tiles whose
-    // badges are counted the same way (see lib/unread.ts) - a chip counting only
-    // the ten loaded articles would say "1" beside a tile saying "19".
-    const [items, total, unread] = await Promise.all([
-      prisma.feedItem.findMany({
-        where,
-        orderBy: [{ pubDate: 'desc' }, { fetchedAt: 'desc' }],
-        skip: offset,
-        take: limit,
-      }),
-      prisma.feedItem.count({ where }),
-      prisma.feedItem.count({ where: { ...where, reads: { none: { userId: req.userId! } } } }),
-    ]);
-
-    const reads = await prisma.readFeedItem.findMany({
-      where: { userId: req.userId!, itemId: { in: items.map(i => i.id) } },
-      select: { itemId: true },
-    });
-    const readIds = new Set(reads.map(r => r.itemId));
-
-    const articles = items.map(i => {
-      const feed = feedById.get(i.feedId);
-      return {
-        read: readIds.has(i.id),
-        id: i.id,
-        feedUrl: feed?.fetchUrl ?? '',
-        title: i.title,
-        link: i.link,
-        source: feed?.title || '',
-        pubDate: i.pubDate,
-        fetchedAt: i.fetchedAt,
-        readTime: i.readTime,
-        snippet: i.snippet,
-        imageUrl: i.imageUrl,
-        categories: i.categories,
-      };
-    });
-
-    res.json({ articles, total, unread, hasMore: offset + articles.length < total });
-  } catch (err) {
-    logger.error(err, 'Feed articles error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Marks every article in the folder's feeds read in one shot — including the
-// pages the client hasn't scrolled to yet, which is the point of "mark all
-// read". Badge clearing is left to POST /:id/mark-read so the two concerns stay
-// separate; the client fires both. Returns the ids so the open feed can drop
-// its unread outlines without a refetch.
-router.post('/:id/articles/read-all', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
-    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-    const urls = await folderFeedUrls(req.params.id);
-    if (urls.length === 0) { res.json({ itemIds: [] }); return; }
-
-    const feeds = await ensureFeeds(urls);
-    const items = await prisma.feedItem.findMany({
-      where: {
-        feedId: { in: feeds.map(f => f.id) },
-        dismissals: { none: { userId: req.userId!, folderId: req.params.id } },
-      },
-      select: { id: true },
-      take: 5000,
-    });
-    if (items.length === 0) { res.json({ itemIds: [] }); return; }
-
-    await prisma.readFeedItem.createMany({
-      data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
-      skipDuplicates: true,
-    });
-
-    res.json({ itemIds: items.map(i => i.id) });
-  } catch (err) {
-    logger.error(err, 'Mark all articles read error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Marks items read for this user (idempotent) and redraws the unread badge on
-// the site tiles whose feed those items belong to. The badge is recomputed from
-// read-state rather than decremented, so it always matches what the feed reader
-// shows. Returns the bookmarks whose counts changed so the client can sync
-// badges without a refetch.
-router.post('/:id/articles/read', async (req: AuthRequest, res: Response): Promise<void> => {
-  const ids: unknown = req.body?.itemIds;
-  if (!Array.isArray(ids) || ids.some(i => typeof i !== 'string')) {
-    res.status(400).json({ error: 'itemIds must be an array of strings' });
-    return;
-  }
-  const itemIds = (ids as string[]).slice(0, 200);
-  if (itemIds.length === 0) { res.json({ bookmarks: [] }); return; }
-
-  try {
-    const folder = await prisma.folder.findFirst({ where: { id: req.params.id, userId: req.userId! } });
-    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-
-    // Only items becoming read for the first time can move a badge; a re-scroll
-    // over already-read items is a no-op.
-    const already = await prisma.readFeedItem.findMany({
-      where: { userId: req.userId!, itemId: { in: itemIds } },
-      select: { itemId: true },
-    });
-    const alreadyRead = new Set(already.map(r => r.itemId));
-    const fresh = itemIds.filter(id => !alreadyRead.has(id));
-    if (fresh.length === 0) { res.json({ bookmarks: [] }); return; }
-
-    const items = await prisma.feedItem.findMany({
-      where: { id: { in: fresh } },
-      select: { id: true, feedId: true },
-    });
-    await prisma.readFeedItem.createMany({
-      data: items.map(i => ({ userId: req.userId!, itemId: i.id })),
-      skipDuplicates: true,
-    });
-
-    const feedIds = [...new Set(items.map(i => i.feedId))];
-    const updates = await syncBookmarkBadges(req.userId!, feedIds);
-    res.json({ bookmarks: updates });
-  } catch (err) {
-    logger.error(err, 'Mark articles read error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// A site tile's badge counts items that are neither read nor dismissed, so
-// dismissing one has to recompute it — otherwise the tile keeps advertising an
-// article the feed no longer shows, and only a later read-flush (which calls
-// syncBookmarkBadges) would quietly put it right. Returned the same shape as
-// the read endpoint so the client applies it the same way.
-async function badgesForItem(userId: string, itemId: string) {
-  const item = await prisma.feedItem.findUnique({ where: { id: itemId }, select: { feedId: true } });
-  if (!item) return [];
-  return syncBookmarkBadges(userId, [item.feedId]);
-}
-
-// "Dismiss" marks the shared item hidden for this user+folder only
-router.delete('/:id/articles/:articleId', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id, articleId } = req.params;
-  try {
-    const folder = await prisma.folder.findFirst({ where: { id, userId: req.userId! } });
-    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-    await prisma.dismissedFeedItem.createMany({
-      data: [{ userId: req.userId!, folderId: id, itemId: articleId }],
-      skipDuplicates: true,
-    });
-    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, articleId) });
-  } catch (err) {
-    logger.error(err, 'Dismiss article error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Undo of the above. A dismissed card stays on screen greyed out until the feed
-// is reloaded, and this is what its Undo calls — lifting the dismissal puts the
-// item back in the folder's next fetch, and back on the tile's badge.
-router.post('/:id/articles/:articleId/restore', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id, articleId } = req.params;
-  try {
-    const folder = await prisma.folder.findFirst({ where: { id, userId: req.userId! } });
-    if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
-    await prisma.dismissedFeedItem.deleteMany({
-      where: { userId: req.userId!, folderId: id, itemId: articleId },
-    });
-    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, articleId) });
-  } catch (err) {
-    logger.error(err, 'Restore article error');
+    logger.error(err, 'Folder mark-read error');
     res.status(500).json({ error: 'Server error' });
   }
 });
 
 export default router;
+

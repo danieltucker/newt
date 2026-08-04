@@ -259,15 +259,14 @@ const COMMANDS: Record<string, Command> = {
   refresh: {
     desc: 'Force-refresh all RSS feeds',
     admin: true,
-    help: ['Re-fetches every folder that has RSS feeds configured, right now,', 'instead of waiting for the periodic refresh. Takes no arguments.'],
-    run: async (_args, { folders, onRefreshFeeds }) => {
-      const feedFolders = folders.filter(f => f.feedUrls && f.feedUrls.length > 0);
-      if (feedFolders.length === 0) return 'No folders have RSS feeds configured.';
-      const res = await apiFetch('/api/v1/folders/refresh-all', { method: 'POST' });
+    help: ['Re-fetches every feed you follow, right now, instead of waiting for', 'the periodic refresh. Takes no arguments.'],
+    run: async (_args, { onRefreshFeeds }) => {
+      const res = await apiFetch('/api/v1/feeds/refresh-all', { method: 'POST' });
       if (!res.ok) return 'Refresh failed - check server logs.';
       const d = await res.json() as { refreshed: number };
+      if (d.refreshed === 0) return "You aren't following any feeds yet.";
       onRefreshFeeds();
-      return `Refreshed ${d.refreshed} folder${d.refreshed === 1 ? '' : 's'}.`;
+      return `Refreshed ${d.refreshed} feed${d.refreshed === 1 ? '' : 's'}.`;
     },
   },
 

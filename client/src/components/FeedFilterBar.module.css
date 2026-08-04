@@ -1,0 +1,314 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+
+/* Matches the chips it replaced, so the row still reads as the same furniture. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip:disabled { opacity: 0.45; cursor: default; }
+
+.chipActive {
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.unreadChip { gap: 6px; }
+
+.chipCount {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 16%, transparent);
+}
+
+/* ── The dropdown ───────────────────────────────────────── */
+
+.filterWrap { position: relative; }
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: var(--z-content-overlay);
+  width: 250px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px var(--shadow);
+  overflow: hidden;
+  animation: pop 0.14s ease;
+}
+
+.groupList { padding: 5px; }
+
+.groupRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.groupRow:hover { background: var(--surface2); }
+
+.groupLabel { font-weight: 600; flex: none; }
+
+.groupValue {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.groupChevron {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transform: rotate(-90deg);
+  flex: none;
+}
+
+.clearAll {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 9px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.12s;
+}
+
+.clearAll:hover { color: var(--accent); }
+
+.backRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.backRow:hover { color: var(--text); }
+
+.backChevron {
+  display: grid;
+  place-items: center;
+  transform: rotate(90deg);
+}
+
+.search {
+  width: calc(100% - 16px);
+  margin: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  color: var(--text);
+  outline: none;
+}
+
+.search:focus { border-color: var(--accent); }
+
+.optionList {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.option:hover { background: var(--surface2); }
+
+.optionActive {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* A starrable row is two buttons sharing one row's worth of hover, so the
+   padding moves onto the inner pick button. */
+.optionStarrable {
+  padding: 0 4px 0 0;
+  gap: 2px;
+}
+
+.optionPick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 5px 7px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.starBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 26px;
+  flex: none;
+  padding: 0 0 0 7px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: color 0.12s, opacity 0.12s;
+}
+
+.starBtn:hover { color: var(--fav); opacity: 1; }
+
+.starOn {
+  color: var(--fav);
+  opacity: 1;
+}
+
+.optionDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.optionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionHint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+
+.noMatch {
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── Active filter pills ────────────────────────────────── */
+
+.activePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 11px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
+  transition: filter 0.12s;
+}
+
+.activePill:hover { filter: brightness(1.15); }
+
+.pillLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

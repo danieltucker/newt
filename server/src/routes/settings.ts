@@ -35,6 +35,9 @@ export interface UserSettings {
   // Tags the user wants flagged when they turn up. Matched client-side by
   // token (see client utils/favoriteTags) — the server only stores the list.
   favoriteTags?: string[];
+  // Set once the first-run feed picker has been shown - by following something
+  // or by skipping it. Its absence is what triggers the picker.
+  feedOnboarded?: boolean;
   rssFeedUrls: string[];
 }
 
@@ -89,7 +92,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys

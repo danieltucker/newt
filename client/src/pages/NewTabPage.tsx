@@ -17,7 +17,9 @@ import ImportBookmarksModal from '../components/ImportBookmarksModal';
 import ArticleModal from '../components/ArticleModal';
 import Console from '../components/Console';
 import NotesConsole from '../components/NotesConsole';
-import FolderArticles from '../components/FolderArticles';
+import FeedPanel from '../components/FeedPanel';
+import FeedManagerModal from '../components/FeedManagerModal';
+import FeedOnboarding from '../components/FeedOnboarding';
 import SaveArticleModal from '../components/SaveArticleModal';
 import AdminModal from '../components/AdminModal';
 import NotificationsModal from '../components/NotificationsModal';
@@ -28,9 +30,11 @@ import MyBlogPage from './MyBlogPage';
 import BlogEditorPage from './BlogEditorPage';
 import { parseArticlePath } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
+import { canonicalFeedUrl } from '../utils/feedKey';
 import { articleEmbed } from '../utils/noteEmbed';
 import { stashSeed } from '../utils/composerSeed';
 import { useFolders } from '../hooks/useFolders';
+import { useFeeds, useImportableFeeds, useSuggestedFeeds } from '../hooks/useFeeds';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
@@ -112,7 +116,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
   const {
     folders, createFolder, updateFolder, deleteFolder, reorderFolders,
-    addFeed, updateFeed, deleteFeed,
   } = useFolders(accessToken);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
@@ -121,6 +124,24 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       setActiveFolderId(folders[0].id);
     }
   }, [folders, activeFolderId]);
+
+  // ── Feeds ──────────────────────────────────────────────────────────────
+  // Independent of bookmark folders since v1.11.0: one river, filed into its
+  // own categories, managed from its own modal.
+  const {
+    subscriptions, folders: feedFolders, loaded: feedsLoaded,
+    addFeed, addFeeds, updateFeed, removeFeed,
+    createFolder: createFeedFolder, updateFolder: updateFeedFolder, removeFolder: removeFeedFolder,
+  } = useFeeds(accessToken);
+  const [showFeedManager, setShowFeedManager] = useState(false);
+  const rssOn = settings.rssEnabled !== false;
+
+  // The picker is a first-run thing, so it only asks the server for suggestions
+  // when it's actually going to appear; the manager asks whenever it's open.
+  const needsOnboarding = rssOn && settingsLoaded && feedsLoaded
+    && settings.feedOnboarded !== true && subscriptions.length === 0;
+  const { importable, reload: reloadImportable } = useImportableFeeds(accessToken, showFeedManager);
+  const { suggested } = useSuggestedFeeds(accessToken, showFeedManager || needsOnboarding);
 
   const { bookmarks, setBookmarks, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, markVisited } = useBookmarks(accessToken, activeFolderId);
   // Held whole as well as destructured: the embedded ProfilePage takes the
@@ -570,6 +591,24 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     });
   }
 
+  // "Mark all read" in the feed clears every site badge in the rail. The server
+  // has already recomputed them and hands back only what changed, but that list
+  // covers subscribed feeds - a bookmark whose site you don't follow keeps its
+  // own badge, so this zeroes what the feed can actually speak for rather than
+  // wiping the rail wholesale.
+  const handleAllFeedsMarkedRead = useCallback(() => {
+    const followed = new Set(subscriptions.map(s => canonicalFeedUrl(s.url)));
+    const clear = (b: Bookmark) =>
+      b.feedUrl && followed.has(canonicalFeedUrl(b.feedUrl)) ? { ...b, unreadCount: 0 } : b;
+    setBookmarks(prev => prev.map(clear));
+    setBookmarksByFolder(prev => {
+      const next: Record<string, Bookmark[]> = {};
+      for (const [fid, list] of Object.entries(prev)) next[fid] = list.map(clear);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [subscriptions, setBookmarks]);
+
   // Scrolling past a feed article draws down the badge on the site it came
   // from; the server does the article→site matching and reports the new counts
   const handleUnreadCountsChange = useCallback((updates: { id: string; unreadCount: number }[]) => {
@@ -851,10 +890,14 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onSetFavoriteTags={handleSetFavoriteTags}
               />
             </div>
-            {settings.rssEnabled !== false && activeFolderId && (activeFolder?.feedUrls?.length ?? 0) > 0 && (
-              <FolderArticles
-                key={activeFolderId}
-                folderId={activeFolderId}
+            {/* No longer gated on the active folder having feeds: the feed is
+                the whole account's, and the panel handles its own empty state
+                (which is the one that offers to fix it). */}
+            {rssOn && (
+              <FeedPanel
+                feedFolders={feedFolders}
+                subscriptionCount={subscriptions.length}
+                onManageFeeds={() => setShowFeedManager(true)}
                 onSaveArticle={async (a, markSaved, dest) => {
                   const fields = {
                     url: a.url,
@@ -897,7 +940,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 markReadOnScroll={settings.markReadOnScroll !== false}
                 onUnreadCountsChange={handleUnreadCountsChange}
                 commentPrefs={commentPrefs}
-                onFolderMarkedRead={handleMarkFolderRead}
+                onAllMarkedRead={handleAllFeedsMarkedRead}
                 onViewProfile={onViewProfile}
                 favoriteTags={settings.favoriteTags ?? []}
                 onToggleFavoriteTag={handleToggleFavoriteTag}
@@ -965,16 +1008,44 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       {editingFolder && (
         <EditFolderModal
           folder={editingFolder}
-          folders={folders}
-          bookmarkFeeds={(bookmarksByFolder[editingFolder.id] ?? [])
-            .filter(b => !!b.feedUrl)
-            .map(b => ({ name: b.name, domain: b.domain, feedUrl: b.feedUrl! }))}
           onSave={handleSaveFolder}
-          onAddFeed={addFeed}
-          onUpdateFeed={updateFeed}
-          onDeleteFeed={deleteFeed}
           onDelete={handleDeleteFolder}
           onClose={() => setEditingFolder(null)}
+        />
+      )}
+
+      {showFeedManager && (
+        <FeedManagerModal
+          subscriptions={subscriptions}
+          folders={feedFolders}
+          importable={importable}
+          suggested={suggested}
+          onAddFeed={addFeed}
+          onAddFeeds={addFeeds}
+          onUpdateFeed={updateFeed}
+          onRemoveFeed={removeFeed}
+          onCreateFolder={createFeedFolder}
+          onUpdateFolder={updateFeedFolder}
+          onRemoveFolder={removeFeedFolder}
+          onRefreshImportable={reloadImportable}
+          onClose={() => {
+            setShowFeedManager(false);
+            // Whatever changed, the river changed with it.
+            setFeedRefreshKey(k => k + 1);
+          }}
+        />
+      )}
+
+      {/* First run only. Marked seen whichever way it's dismissed, so it can
+          never come back and ask twice. */}
+      {needsOnboarding && (
+        <FeedOnboarding
+          suggested={suggested}
+          onFollow={feeds => addFeeds(feeds)}
+          onDone={() => {
+            updateSetting({ feedOnboarded: true });
+            setFeedRefreshKey(k => k + 1);
+          }}
         />
       )}
 

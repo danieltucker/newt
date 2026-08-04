@@ -41,7 +41,8 @@ model User {
   createdAt     DateTime          @default(now())
   folders       Folder[]
   readingFolders ReadingFolder[]
-  folderFeeds   FolderFeed[]
+  feedFolders   FeedFolder[]
+  feedSubscriptions FeedSubscription[]
   blogPosts     BlogPost[]
   bookmarks     Bookmark[]
   readingList   ReadingListItem[]
@@ -214,42 +215,66 @@ model Folder {
   name              String
   color             String
   position          Int
+  // Vestigial: feeds stopped belonging to bookmark folders in v1.11.0 and
+  // nothing reads this. Kept so the column doesn't need a destructive drop.
   feedLastCheckedAt DateTime?
   backgroundImage   String?
   bookmarks         Bookmark[]
-  feeds             FolderFeed[]
-  dismissedFeedItems DismissedFeedItem[]
   createdAt         DateTime      @default(now())
 
   @@index([userId])
 }
 
-// One feed subscribed to inside a folder. This replaced a bare
-// Folder.feedUrls String[]: a row of its own is what lets a subscription carry
-// a user-set name, be re-pointed at a different URL, and move between folders
-// while staying the same subscription. The Feed itself (and its items) is still
-// shared across every user — this is only the per-user reference to it.
-model FolderFeed {
-  id        String   @id @default(cuid())
-  folderId  String
-  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  // Denormalised from the folder so ownership checks don't need a join, the
-  // same way Bookmark carries it.
+// A category in the feed reader — "Tech news", "Local", "Auto". Deliberately
+// NOT a bookmark Folder: as of v1.11.0 the feed is one unified river that is
+// read on its own terms, and which folder a *bookmark* lives in says nothing
+// about how its publisher should be filed. Mirrors ReadingFolder, which split
+// off from bookmark folders for the same reason.
+//
+// A null FeedSubscription.feedFolderId means Uncategorised, which is a real
+// state (the default one), not a missing value.
+model FeedFolder {
+  id        String             @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  url       String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String
+  position  Int
+  feeds     FeedSubscription[]
+  createdAt DateTime           @default(now())
+
+  @@index([userId])
+}
+
+// One feed a user subscribes to. A row of its own is what lets a subscription
+// carry a user-set name, be re-pointed at a different URL, and move between
+// categories while staying the same subscription. The Feed itself (and its
+// items) is still shared across every user — this is only the per-user
+// reference to it.
+model FeedSubscription {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Null = Uncategorised. A category is deleted without taking its feeds with
+  // it (ON DELETE SET NULL) — they fall back to Uncategorised, the same bargain
+  // ReadingFolder strikes with its articles.
+  feedFolderId String?
+  feedFolder   FeedFolder? @relation(fields: [feedFolderId], references: [id], onDelete: SetNull)
+  url          String
   // User-set display name. "" means "derive it" — the matching bookmark's name,
   // then the feed's own title, then the hostname.
-  name      String   @default("")
-  position  Int      @default(0)
-  createdAt DateTime @default(now())
+  name         String      @default("")
+  position     Int         @default(0)
+  createdAt    DateTime    @default(now())
 
-  // A folder subscribes to a given URL once. Note this is the literal URL, not
-  // canonicalFeedKey: two spellings of one feed dedupe at the Feed level, and
-  // blocking them here would reject a legitimate re-point to a moved URL.
-  @@unique([folderId, url])
+  // One subscription per URL per user, now that the feed is unified: the same
+  // URL filed in two categories would deal every one of its articles twice into
+  // the same river. Note this is the literal URL, not canonicalFeedKey — two
+  // spellings of one feed dedupe at the Feed level, and blocking them here
+  // would reject a legitimate re-point to a moved URL.
+  @@unique([userId, url])
   @@index([userId])
-  @@index([folderId])
+  @@index([feedFolderId])
 }
 
 // Feeds and their items are shared across all users — one fetch per feed
@@ -301,22 +326,25 @@ model FeedItem {
   @@index([linkKey])
 }
 
-// Per-user, per-folder state on shared items (dismissed / saved-away)
+// "I'm done with this article" on a shared item. Per-user and, since v1.11.0,
+// nothing narrower: the feed is one river, so an item dismissed there is
+// dismissed, full stop. It used to be keyed per bookmark folder, which meant the
+// same article could be waved away in one folder and still be waiting in
+// another — an artefact of feeds having lived inside folders, never something
+// anyone asked for.
 model DismissedFeedItem {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folderId  String
-  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
   itemId    String
   item      FeedItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
-  @@id([userId, folderId, itemId])
-  @@index([folderId, userId])
+  @@id([userId, itemId])
+  @@index([userId])
 }
 
-// Read state is per-user but NOT per-folder: an item you scrolled past in one
-// folder stays read everywhere it appears.
+// Read state is per-user: an item you scrolled past stays read everywhere it
+// appears.
 model ReadFeedItem {
   userId String
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -13,13 +13,13 @@ import {
   prepareFavorites, favoritesFor, isFavoriteTag, coveringFavorites, PreparedFavorite,
 } from '../utils/favoriteTags';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
-import FilterDropdown from './FilterDropdown';
+import FeedFilterBar from './FeedFilterBar';
 import SaveButton, { SaveDestination } from './SaveButton';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
-// Above this many tags, the chip row collapses into a searchable dropdown
-const MAX_TAG_CHIPS = 12;
+// Past this many options a filter list grows a search box.
+const SEARCHABLE_AT = 8;
 
 const LAYOUT_OPTIONS = [
   { value: 'list' as const,     title: 'List',     icon: <ListIcon /> },
@@ -598,6 +598,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const active = items.filter(i => !i.inLibrary);
@@ -606,7 +607,15 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const libraryCount = items.length - active.length;
 
   // All unique tags from active items
-  const allTags = Array.from(new Set(active.flatMap(i => parseTags(i.tag))));
+  const allTags = Array.from(new Set(active.flatMap(i => parseTags(i.tag)))).sort();
+
+  // Where the saved articles came from. Same filter the feed offers, over the
+  // same kind of value - a reading list of forty things is as worth narrowing
+  // by publication as the feed is.
+  const allSources = useMemo(
+    () => Array.from(new Set(active.map(i => i.source.trim()).filter(Boolean))).sort(),
+    [active], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Tokenize the favorites once per change, not once per card.
   const favorites = useMemo(() => prepareFavorites(favoriteTags), [favoriteTags]);
@@ -628,8 +637,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
 
   const matchesFilters = useCallback((i: ReadingListItem) =>
     (!activeTag || parseTags(i.tag).includes(activeTag)) &&
+    (!activeSource || i.source.trim() === activeSource) &&
     (!favoritesOnly || favHits.has(i.id)),
-  [activeTag, favoritesOnly, favHits]);
+  [activeTag, activeSource, favoritesOnly, favHits]);
 
   const filtered = active.filter(matchesFilters);
 
@@ -655,9 +665,15 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     );
   }, [filtered, ghosts, matchesFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A filter has to go when its last match does, or you're left staring at an
+  // empty list with no obvious way out.
   useEffect(() => {
     if (activeTag && !allTags.includes(activeTag)) setActiveTag(null);
   }, [allTags, activeTag]);
+
+  useEffect(() => {
+    if (activeSource && !allSources.includes(activeSource)) setActiveSource(null);
+  }, [allSources, activeSource]);
 
   // The filter has to go when its last match does, or you're left staring at an
   // empty list with no obvious way out.
@@ -774,15 +790,48 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
       {/* Collapsed keeps only the heading - chips, form, cards and archive all go */}
       {!collapsed && <>
 
-      {allTags.length > 0 && (
-        <div className={styles.chips}>
-          <button
-            className={`${styles.chip} ${activeTag === null ? styles.chipActive : ''}`}
-            onClick={() => setActiveTag(null)}
-          >
-            All
-          </button>
-          {onToggleFavoriteTag && (favoriteTags.length > 0 || activeFavCount > 0) && (
+      {/* Same control the feed uses, for the same reason: a row of every tag in
+          the list was the loudest thing on screen and put the filters in a
+          different shape on each surface. Topics keep their stars here - the
+          tags printed on a card aren't buttons (see ReadingCard), so this is
+          still the reading list's favoriting surface. */}
+      {(allTags.length > 0 || allSources.length > 1) && (
+        <FeedFilterBar
+          groups={[
+            {
+              id: 'topic',
+              label: 'Topic',
+              allLabel: 'All topics',
+              value: activeTag,
+              onChange: setActiveTag,
+              searchable: allTags.length > SEARCHABLE_AT,
+              onToggleStar: onToggleFavoriteTag,
+              options: allTags.map(t => {
+                const covering = onToggleFavoriteTag ? coveringFavorites(favoriteTags, t) : [];
+                const starred = covering.length > 0;
+                return {
+                  value: t,
+                  label: t,
+                  starred,
+                  starTitle: starred
+                    ? (covering[0].toLowerCase() !== t.toLowerCase()
+                        ? `Matched by your favorite “${covering[0]}” - click to remove it`
+                        : `Remove “${t}” from favorites`)
+                    : `Favorite “${t}” - articles tagged this way get flagged`,
+                };
+              }),
+            },
+            {
+              id: 'site',
+              label: 'Site',
+              allLabel: 'All sites',
+              value: activeSource,
+              onChange: setActiveSource,
+              searchable: allSources.length > SEARCHABLE_AT,
+              options: allSources.map(s => ({ value: s, label: s })),
+            },
+          ]}
+          favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || activeFavCount > 0) ? (
             <FavoritesControl
               favorites={favoriteTags}
               onChange={onSetFavoriteTags ?? (() => {})}
@@ -792,52 +841,8 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
               chipClassName={`${styles.chip} ${styles.favChip}`}
               chipActiveClassName={styles.favChipActive}
             />
-          )}
-          {allTags.length <= MAX_TAG_CHIPS ? (
-            // Two buttons in one pill: the star favorites the tag, the label
-            // filters by it. This is the reading list's favoriting surface -
-            // the tags on a card can't be buttons (see ReadingCard).
-            allTags.map(t => {
-              const covering = onToggleFavoriteTag ? coveringFavorites(favoriteTags, t) : [];
-              const starred = covering.length > 0;
-              return (
-                <span
-                  key={t}
-                  className={`${styles.chip} ${styles.tagChip} ${activeTag === t ? styles.chipActive : ''} ${starred ? styles.tagChipFav : ''}`}
-                >
-                  {onToggleFavoriteTag && (
-                    <button
-                      className={styles.tagChipStar}
-                      onClick={() => onToggleFavoriteTag(t)}
-                      aria-pressed={starred}
-                      title={starred
-                        ? (covering[0].toLowerCase() !== t.toLowerCase()
-                            ? `Matched by your favorite “${covering[0]}” - click to remove it`
-                            : `Remove “${t}” from favorites`)
-                        : `Favorite “${t}” - articles tagged this way get flagged`}
-                    >
-                      <StarIcon filled={starred} />
-                    </button>
-                  )}
-                  <button
-                    className={styles.tagChipLabel}
-                    onClick={() => setActiveTag(activeTag === t ? null : t)}
-                  >
-                    {t}
-                  </button>
-                </span>
-              );
-            })
-          ) : (
-            <FilterDropdown
-              label="Topics"
-              options={allTags}
-              value={activeTag}
-              onChange={setActiveTag}
-              searchable
-            />
-          )}
-        </div>
+          ) : undefined}
+        />
       )}
 
       {expanded && (

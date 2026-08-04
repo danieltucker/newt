@@ -7,7 +7,7 @@ import { isWalledOff } from '../lib/blocks';
 import { canonicalArticleKey, isBlankHtml } from '../lib/comments';
 import { perUserLimiter } from '../lib/rateLimit';
 import { ensureFeeds } from '../lib/feedRefresh';
-import { addFolderFeed } from '../lib/folderFeeds';
+import { addFeedSubscription } from '../lib/feedSubscriptions';
 import {
   renderBlogFeed,
   blogFeedUrlFor,
@@ -440,7 +440,7 @@ router.post('/:username/follow', requireAuth, async (req: AuthRequest, res: Resp
 
     // Seed the feed's name from the author's display name — a person's blog
     // reads better under their name than under the hostname it derives from.
-    await addFolderFeed(req.userId!, folder.id, feedUrl, displayNameOf(owner));
+    await addFeedSubscription(req.userId!, feedUrl, displayNameOf(owner));
     // Register the Feed row and pull the posts in now, so the folder isn't empty
     // on the first look.
     await ensureFeeds([feedUrl]);
@@ -478,7 +478,7 @@ router.post('/:username/follow', requireAuth, async (req: AuthRequest, res: Resp
 router.delete('/:username/follow', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const feedUrl = blogFeedUrlFor(req.params.username);
-    await prisma.folderFeed.deleteMany({ where: { userId: req.userId!, url: feedUrl } });
+    await prisma.feedSubscription.deleteMany({ where: { userId: req.userId!, url: feedUrl } });
     await prisma.bookmark.deleteMany({ where: { userId: req.userId!, feedUrl } });
     res.json({ ok: true });
   } catch (err) {
@@ -491,7 +491,7 @@ router.delete('/:username/follow', requireAuth, async (req: AuthRequest, res: Re
 router.get('/:username/follow', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const feedUrl = blogFeedUrlFor(req.params.username);
-    const count = await prisma.folderFeed.count({
+    const count = await prisma.feedSubscription.count({
       where: { userId: req.userId!, url: feedUrl },
     });
     res.json({ following: count > 0, feedUrl });

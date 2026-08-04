@@ -41,4 +41,19 @@ describe('feedLabel', () => {
   it('handles a missing name field', () => {
     expect(feedLabel({ url: 'https://arstechnica.com/feed/' }, bookmarks)).toBe('Ars Technica');
   });
+
+  it("falls back to the publisher's own title before the hostname", () => {
+    expect(feedLabel({ name: '', url: 'https://www.example.com/feed', title: 'Example Daily' }))
+      .toBe('Example Daily');
+  });
+
+  it('still prefers a matching bookmark over the publisher title', () => {
+    const feed = { name: '', url: 'https://arstechnica.com/feed/', title: 'Ars Technica - All content' };
+    expect(feedLabel(feed, bookmarks)).toBe('Ars Technica');
+  });
+
+  it('ignores a whitespace-only title', () => {
+    expect(feedLabel({ name: '', url: 'https://www.example.com/feed', title: '  ' }))
+      .toBe('example.com');
+  });
 });

@@ -20,8 +20,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
       # Bind-mount to a real TrueNAS dataset so the DB is covered by snapshots/backups
-      # (create the dataset first, e.g. /mnt/tank/apps/newtab/pgdata).
-      - ${PGDATA_HOST_PATH:?Set PGDATA_HOST_PATH to a TrueNAS dataset path}:/var/lib/postgresql/data
+      # (create the dataset first, e.g. /mnt/Core Storage/Containers/newt/pgdata).
+      #
+      # Long syntax rather than the usual "source:target" shorthand because this
+      # pool's name contains a space. The shorthand is split on ":" and quoting a
+      # path with spaces through .env -> compose -> Docker is fragile; naming the
+      # fields explicitly removes the ambiguity entirely.
+      - type: bind
+        source: ${PGDATA_HOST_PATH:?Set PGDATA_HOST_PATH to a TrueNAS dataset path}
+        target: /var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U newtab -d newtab"]
       interval: 10s

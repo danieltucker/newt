@@ -264,8 +264,8 @@ export const SECTIONS: Section[] = [
           body: 'A mark appears when the newest post is newer than your last visit, and clears when you go.',
         },
         {
-          title: 'Read by folder',
-          body: 'Every article from every site in a folder, newest first, so a folder doubles as a section front.',
+          title: 'One feed, filed how you like',
+          body: 'Everything you follow in one river, newest first - narrowed to a category, a site or a topic when you want it.',
         },
         {
           title: 'Straight to the publisher',

@@ -112,7 +112,7 @@ newt/
 │
 ├── server/               # Express backend
 │   ├── src/
-│   │   ├── routes/       # auth, folders, bookmarks, reading-list, totp, widgets...
+│   │   ├── routes/       # auth, folders, feeds, bookmarks, reading-list, totp...
 │   │   ├── middleware/   # Auth guards
 │   │   └── lib/          # Logger, DB client
 │   ├── prisma/

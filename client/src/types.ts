@@ -3,14 +3,48 @@
 import type { ProfileLink } from './utils/profileLinks';
 export type { ProfileLink };
 
-// One feed subscription inside a folder. It has an id of its own so it can be
-// renamed, re-pointed at a new URL, or moved to another folder and still be the
-// same subscription. `name` is "" when the user hasn't set one - see feedLabel.
-export interface FolderFeed {
+// One feed the user follows. It has an id of its own so it can be renamed,
+// re-pointed at a new URL, or moved to another category and still be the same
+// subscription. `name` is "" when the user hasn't set one - see feedLabel.
+export interface FeedSubscription {
   id: string;
   url: string;
   name: string;
   position: number;
+  /** Which category it's filed under. Null is Uncategorised, a real place. */
+  feedFolderId: string | null;
+  /** The publisher's own title, from the shared Feed row. May be "". */
+  title?: string;
+  lastCheckedAt?: string | null;
+}
+
+/**
+ * A category in the feed reader - "Tech news", "Local", "Auto". Deliberately
+ * separate from bookmark `Folder`: the feed is one river you read on its own
+ * terms, and where a *link* is filed says nothing about its publisher.
+ */
+export interface FeedFolder {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+}
+
+/** A bookmark whose site has a feed the user isn't following yet. */
+export interface ImportableFeed {
+  id: string;
+  name: string;
+  domain: string;
+  feedUrl: string;
+}
+
+/** One of the curated starter feeds offered on first run. */
+export interface SuggestedFeed {
+  name: string;
+  url: string;
+  site: string;
+  blurb: string;
+  category: string;
 }
 
 export interface Folder {
@@ -18,10 +52,6 @@ export interface Folder {
   name: string;
   color: string;
   position: number;
-  feeds: FolderFeed[];
-  // Derived server-side from `feeds`, for the places that only want the URLs.
-  feedUrls: string[];
-  feedLastCheckedAt?: string | null;
 }
 
 export interface FeedArticle {
@@ -30,6 +60,8 @@ export interface FeedArticle {
   title: string;
   link: string;
   source: string;
+  /** The category of the subscription it arrived through, for filtering. */
+  feedFolderId?: string | null;
   pubDate: string | null;
   fetchedAt: string;
   readTime: number | null;

@@ -1,93 +1,12 @@
 import { Router, Response } from 'express';
-import type { Readable } from 'stream';
-import nodeFetch from 'node-fetch';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { isSafeUrl } from '../lib/isSafeUrl';
-import { canonicalFeedKey } from '../lib/feedUtils';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
-import { addFolderFeed } from '../lib/folderFeeds';
+import { discoverFeed } from '../lib/feedDiscovery';
+import { addFeedSubscription } from '../lib/feedSubscriptions';
 import { feedUnreadCount } from '../lib/unread';
 import { perUserLimiter } from '../lib/rateLimit';
 import logger from '../lib/logger';
-
-type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
-
-// ── Feed utilities ────────────────────────────────────────────────────────────
-
-const FEED_PATHS = ['/feed', '/feed.xml', '/rss', '/rss.xml', '/atom.xml', '/index.xml', '/blog/feed', '/feed/rss'];
-
-function findFeedInHtml(html: string, base: string): string | null {
-  for (const [, attrs] of html.matchAll(/<link([^>]+)>/gi)) {
-    const isAlternate = /rel=["']alternate["']/i.test(attrs);
-    const isFeed = /type=["'](application\/(rss|atom)\+xml)["']/i.test(attrs);
-    if (isAlternate && isFeed) {
-      const m = attrs.match(/href=["']([^"']+)["']/i);
-      if (m) return m[1].startsWith('http') ? m[1] : new URL(m[1], base).toString();
-    }
-  }
-  return null;
-}
-
-// Read at most `maxBytes` of a remote document. The byte budget is the point:
-// the URL is attacker-chosen (anyone can add a bookmark for any domain), so an
-// endless or enormous response must not be allowed to buffer into the heap.
-//
-// Reaching the cap resolves with what we have *and destroys the stream* — without
-// that the socket stays open and the origin keeps sending forever, since the 5s
-// timeout only fires on an idle socket, not a slow-but-steady one.
-async function fetchXml(url: string, maxBytes = 150_000): Promise<string | null> {
-  try {
-    const res = await nodeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' } } as FetchOptions);
-    // node-fetch v2 hands back a Node Readable at runtime; the ambient DOM lib
-    // types it as a web ReadableStream, which has no destroy().
-    const body = res.body as unknown as Readable | null;
-    if (!res.ok) { body?.destroy(); return null; }
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let settled = false;
-    return await new Promise<string | null>(resolve => {
-      const finish = (v: string | null) => {
-        if (settled) return;
-        settled = true;
-        body!.destroy();
-        resolve(v);
-      };
-      res.body!.on('data', (c: Buffer) => { if (settled) return; chunks.push(c); size += c.length; if (size >= maxBytes) finish(Buffer.concat(chunks).toString('utf8')); });
-      res.body!.on('end', () => finish(Buffer.concat(chunks).toString('utf8')));
-      res.body!.on('error', () => finish(null));
-    });
-  } catch { return null; }
-}
-
-function isFeedXml(text: string): boolean {
-  const t = text.trimStart();
-  return (t.startsWith('<?xml') || t.startsWith('<rss') || t.startsWith('<feed')) &&
-    (text.includes('<item') || text.includes('<entry') || text.includes('<channel'));
-}
-
-async function discoverFeed(domain: string): Promise<string | null> {
-  const base = `https://${domain}`;
-  // 1. Parse homepage HTML for <link rel="alternate">
-  if (await isSafeUrl(base)) {
-    const html = await fetchXml(base, 500_000);
-    if (html) {
-      const found = findFeedInHtml(html, base);
-      if (found && await isSafeUrl(found)) {
-        const xml = await fetchXml(found, 8_000);
-        if (xml && isFeedXml(xml)) return found;
-      }
-    }
-  }
-  // 2. Try common paths
-  for (const path of FEED_PATHS) {
-    const url = `${base}${path}`;
-    if (!(await isSafeUrl(url))) continue;
-    const xml = await fetchXml(url, 8_000);
-    if (xml && isFeedXml(xml)) return url;
-  }
-  return null;
-}
 
 const router = Router();
 router.use(requireAuth);
@@ -211,15 +130,15 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   });
   res.status(201).json(bookmark);
 
-  // Fire-and-forget: discover the site's RSS feed and add it to the folder,
-  // so feed articles appear automatically. Removable from the folder's edit
-  // modal; disabled entirely when the user turns RSS off in settings.
-  autoAddFeed(req.userId!, bookmark.id, folderId, domain).catch(err =>
+  // Fire-and-forget: discover the site's RSS feed and subscribe to it, so its
+  // articles turn up in the feed automatically. Manageable from the feed
+  // manager; disabled entirely when the user turns RSS off in settings.
+  autoAddFeed(req.userId!, bookmark.id, name, domain).catch(err =>
     logger.warn(err, 'Feed auto-add failed')
   );
 });
 
-async function autoAddFeed(userId: string, bookmarkId: string, folderId: string, domain: string) {
+async function autoAddFeed(userId: string, bookmarkId: string, bookmarkName: string, domain: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { settings: true } });
   const settings = user?.settings as { rssEnabled?: boolean } | null;
   if (settings?.rssEnabled === false) return;
@@ -227,17 +146,15 @@ async function autoAddFeed(userId: string, bookmarkId: string, folderId: string,
   const feedUrl = await discoverFeed(domain);
   if (!feedUrl) return;
 
-  // Remember it on the bookmark (drives the unread badge)
+  // Remembered on the bookmark whatever happens next: it drives the tile's
+  // unread badge, and it is what makes the site offerable in the manager's
+  // "from your bookmarks" list if the subscription is later removed.
   await prisma.bookmark.updateMany({ where: { id: bookmarkId, userId }, data: { feedUrl } });
 
-  const folder = await prisma.folder.findFirst({ where: { id: folderId, userId }, select: { id: true } });
-  if (!folder) return;
-  // Compare canonically so a folder already subscribed via a different spelling
-  // of the same feed doesn't pick up a duplicate.
-  const key = canonicalFeedKey(feedUrl);
-  const existing = await prisma.folderFeed.findMany({ where: { folderId }, select: { url: true } });
-  if (existing.some(f => canonicalFeedKey(f.url) === key)) return;
-  await addFolderFeed(userId, folderId, feedUrl);
+  // Lands Uncategorised — a bookmark's folder says where the *link* belongs,
+  // which is no guide at all to how its publisher should be filed in a reader.
+  // addFeedSubscription dedupes canonically and respects the per-user cap.
+  await addFeedSubscription(userId, feedUrl, bookmarkName);
 }
 
 router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -313,7 +230,7 @@ router.post('/:id/check-feed', async (req: AuthRequest, res: Response): Promise<
   let unreadCount = 0;
   let feedLatestAt: Date | undefined;
   if (feed) {
-    unreadCount = await feedUnreadCount(req.userId!, feed.id, bookmark.folderId);
+    unreadCount = await feedUnreadCount(req.userId!, feed.id);
     const latest = await prisma.feedItem.findFirst({
       where: { feedId: feed.id },
       orderBy: { pubDate: 'desc' },

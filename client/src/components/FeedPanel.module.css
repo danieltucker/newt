@@ -66,6 +66,31 @@
   cursor: default;
 }
 
+/* Same shape as Mark all read - it belongs to the same strip of feed-level
+   actions, and lives here because this is the only place you're looking at
+   feeds. It is present in every state, empty ones included. */
+.manageBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.manageBtn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
 .sectionLabel {
   font-size: 12px;
   font-weight: 600;
@@ -698,6 +723,60 @@
 }
 
 .statusError { font-size: 13px; color: #e44; padding: 2px 0; }
+
+/* A link-weight button for the way out of an over-narrow filter. */
+.inlineBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Following nothing gets a pitch rather than a shrug: it's the one empty state
+   with an obvious next step. */
+.emptyPitch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 26px 24px 28px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--surface2) 55%, transparent);
+}
+
+.emptyTitle {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.emptyText {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+.emptyBtn {
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.emptyBtn:hover { filter: brightness(1.1); }
 
 .spinner {
   width: 14px;

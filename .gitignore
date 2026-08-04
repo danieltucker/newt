@@ -11,6 +11,14 @@ build/
 !.env.example
 !.env.truenas.example
 
+# Deployment runbook. Untracked on purpose: it is written against the real
+# production environment and names the NAS user, its LAN address and the storage
+# layout. This repo is public, and none of that should be. The generic parts
+# (compose file, Dockerfiles, publish workflow) stay tracked; the host-specific
+# instructions live only on the machine that does the deploying, alongside
+# C:\Users\danie\dev\newtab-launch\.
+docs/go-live.md
+
 # Test and tooling output
 coverage/
 playwright-report/

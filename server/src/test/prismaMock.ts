@@ -15,7 +15,7 @@ import { vi } from 'vitest';
 const MODELS = [
   'user', 'friendship', 'notification', 'block', 'report', 'bookmark', 'folder',
   'readingListItem', 'readingFolder', 'comment', 'blogPost', 'image', 'feed',
-  'feedItem', 'folderFeed', 'readFeedItem', 'dismissedFeedItem', 'refreshToken',
+  'feedItem', 'feedSubscription', 'feedFolder', 'readFeedItem', 'dismissedFeedItem', 'refreshToken',
   'adminAction', 'commentRevision',
 ] as const;
 

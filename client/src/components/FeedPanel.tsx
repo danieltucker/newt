@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiFetch } from '../services/api';
-import { FeedArticle, CommentPrefs, ReadingFolder } from '../types';
+import { FeedArticle, CommentPrefs, ReadingFolder, FeedFolder } from '../types';
 import { faviconUrl } from '../utils/color';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
@@ -8,12 +8,12 @@ import { useCommentCounts } from '../hooks/useCommentCounts';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
-import FilterDropdown from './FilterDropdown';
+import FeedFilterBar, { FilterGroup } from './FeedFilterBar';
 import TagChip from './TagChip';
 import FavoritesControl from './FavoritesControl';
 import SaveButton, { SaveDestination } from './SaveButton';
 import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
-import styles from './FolderArticles.module.css';
+import styles from './FeedPanel.module.css';
 
 export type RssLayout = 'list' | 'cards' | 'magazine';
 
@@ -23,8 +23,8 @@ const LAYOUT_OPTIONS = [
   { value: 'magazine' as const, title: 'Magazine', icon: <MagazineIcon /> },
 ];
 
-// Above this many topics, the chip row collapses into a searchable dropdown
-const MAX_TOPIC_CHIPS = 12;
+// Past this many options a filter list grows a search box.
+const SEARCHABLE_AT = 8;
 
 // How long to sit on newly-read ids before sending them up, so a fast scroll
 // through a screenful costs one request instead of a dozen
@@ -46,7 +46,15 @@ interface Ghost {
 }
 
 interface Props {
-  folderId: string;
+  /** The reader's own categories, offered as one of the filters. */
+  feedFolders: FeedFolder[];
+  /** How many feeds are followed. Zero gets the "add some feeds" empty state
+      rather than the "nothing published yet" one - they are different problems
+      and only one of them has a button that helps. */
+  subscriptionCount: number;
+  /** Opens the feed manager. The feed is the only place that knows you're
+      looking at feeds, so it's where managing them belongs. */
+  onManageFeeds: () => void;
   /** `dest` is set only when the reader picked a Library shelf over the
       reading list; a null folderId inside it means Unsorted. */
   onSaveArticle: (
@@ -66,8 +74,8 @@ interface Props {
   markReadOnScroll?: boolean;
   onUnreadCountsChange?: (updates: { id: string; unreadCount: number }[]) => void;
   commentPrefs: CommentPrefs;
-  // Clears the folder's site badges once its articles have been marked read
-  onFolderMarkedRead?: (folderId: string) => void;
+  /** Marking everything read clears the rail's site badges too. */
+  onAllMarkedRead?: () => void;
   onViewProfile?: (username: string) => void;
   /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
   favoriteTags?: string[];
@@ -127,6 +135,14 @@ const CheckAllIcon = () => (
   </svg>
 );
 
+const SlidersIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
+    <path d="M1 14h6M9 8h6M17 16h6" />
+  </svg>
+);
+
 function domainOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
@@ -178,8 +194,8 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FolderArticles({ folderId, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onFolderMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
-  const seededFolders = useRef<Set<string>>(new Set());
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+  const seeded = useRef(false);
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
   const [total, setTotal]               = useState(0);
@@ -188,6 +204,11 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
   const [error, setError]               = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
+  // The category filter is the one that goes to the server. Site and topic sift
+  // what has already been fetched, the way they always have; a category has to
+  // narrow the query itself, because `total` and `unread` are counted against
+  // it and paging measures against `total`.
+  const [activeFeedFolder, setActiveFeedFolder] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [ghosts, setGhosts] = useState<Map<string, Ghost>>(new Map());
@@ -254,7 +275,8 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     offset === 0 ? setLoading(true) : setLoadingMore(true);
     setError('');
     try {
-      const r = await apiFetch(`/api/v1/folders/${folderId}/articles?offset=${offset}&limit=${pageSize}`);
+      const scope = activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '';
+      const r = await apiFetch(`/api/v1/feeds/articles?offset=${offset}&limit=${pageSize}${scope}`);
       if (!r.ok) { setError('Could not load feed'); return; }
       const data: { articles: FeedArticle[]; total: number; unread?: number } = await r.json();
       const merged = offset === 0 ? data.articles : [...existing, ...data.articles];
@@ -271,12 +293,14 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [folderId]);
+  }, [activeFeedFolder, pageSize]);
 
   useEffect(() => {
     setArticles([]);
     setTotal(0);
     setReadIds(new Set());
+    // The client-side filters are cleared with the list they were filtering: a
+    // site or topic chosen in Tech usually isn't even present in Local.
     setActiveCategory(null);
     setActiveSource(null);
     // A reload is exactly what clears the placeholders - the dismissed items
@@ -286,10 +310,10 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     setUnreadPinned(new Set());
     unreadJudged.current = new Set();
     // Cleared here rather than in its own effect so it happens before the read
-    // sweep seeds it - the other order wiped the seeding on every folder switch.
+    // sweep seeds it - the other order wiped the seeding on every reload.
     seenRef.current = new Set();
     load(0, []);
-  }, [folderId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFeedFolder, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Read-on-scroll ────────────────────────────────────────────────────
   // A card flips to read once it has been on screen and then leaves past the
@@ -329,7 +353,7 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     if (itemIds.length === 0) return;
     pendingRef.current.clear();
     try {
-      const r = await apiFetch(`/api/v1/folders/${folderId}/articles/read`, {
+      const r = await apiFetch(`/api/v1/feeds/articles/read`, {
         method: 'POST',
         body: JSON.stringify({ itemIds }),
       });
@@ -344,7 +368,7 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     } catch {
       // Read state is disposable - a failed flush just means it re-marks later
     }
-  }, [folderId, onUnreadCountsChange]);
+  }, [onUnreadCountsChange]);
 
   // Keeps unmount/visibility handlers off the flushRead identity
   const flushRef = useRef(flushRead);
@@ -403,7 +427,7 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
-  }, [markReadOnScroll, folderId, sweepRead]);
+  }, [markReadOnScroll, sweepRead]);
 
   // Newly appended pages need seeding too, or the first card of a page fetched
   // while you were already scrolled down would be above the fold on its very
@@ -413,7 +437,7 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     sweepRead();
   }, [articles, markReadOnScroll, sweepRead]);
 
-  // Don't lose queued ids to a tab close or a folder switch
+  // Don't lose queued ids to a tab close or a category switch
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') flushRef.current(); };
     document.addEventListener('visibilitychange', onHide);
@@ -421,7 +445,7 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
       document.removeEventListener('visibilitychange', onHide);
       flushRef.current();
     };
-  }, [folderId]);
+  }, [activeFeedFolder]);
 
 
   const observeCard = useCallback((el: HTMLDivElement | null, id: string) => {
@@ -443,17 +467,18 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     return () => obs.disconnect();
   }, [hasMore, loading, loadingMore, articles, load]);
 
-  // Background load for search seeding - fires at most once per folder per session
+  // Background load for search seeding - fires once per session, unscoped, so
+  // search reaches the whole feed rather than whichever category is on screen.
   useEffect(() => {
-    if (!onArticlesLoaded || seededFolders.current.has(folderId)) return;
-    seededFolders.current.add(folderId);
-    apiFetch(`/api/v1/folders/${folderId}/articles?includeAll=true&limit=200`)
+    if (!onArticlesLoaded || seeded.current) return;
+    seeded.current = true;
+    apiFetch('/api/v1/feeds/articles?includeAll=true&limit=200')
       .then(r => r.ok ? r.json() : null)
       .then((data: { articles: FeedArticle[] } | null) => {
         if (data?.articles?.length) onArticlesLoaded(data.articles);
       })
       .catch(() => {});
-  }, [folderId, onArticlesLoaded]);
+  }, [onArticlesLoaded]);
 
   const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(
     useMemo(() => articles.map(a => a.link), [articles])
@@ -462,9 +487,11 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
   // The article open in the reader modal
   const [reading, setReading] = useState<FeedArticle | null>(null);
 
-  // ── Mark every article in this folder read ────────────────────────────
+  // ── Mark everything read ──────────────────────────────────────────────
   // Covers the pages that haven't been scrolled to yet, which is the whole
-  // point - the server walks the folder's feeds rather than the loaded list.
+  // point - the server walks the subscriptions rather than the loaded list.
+  // Scoped to the active category, so clearing Tech doesn't quietly wipe the
+  // news you hadn't got to.
   const [markingAll, setMarkingAll] = useState(false);
   const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id) && !ghosts.has(a.id));
 
@@ -475,15 +502,19 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     pendingRef.current.clear();
     if (flushTimer.current) { clearTimeout(flushTimer.current); flushTimer.current = null; }
     try {
-      const r = await apiFetch(`/api/v1/folders/${folderId}/articles/read-all`, { method: 'POST' });
+      const r = await apiFetch('/api/v1/feeds/articles/read-all', {
+        method: 'POST',
+        body: JSON.stringify({ folder: activeFeedFolder ?? 'all' }),
+      });
       if (r.ok) {
-        const data: { itemIds: string[] } = await r.json();
+        const data: { itemIds: string[]; bookmarks?: { id: string; unreadCount: number }[] } = await r.json();
         for (const id of data.itemIds ?? []) readIdsRef.current.add(id);
         // Whatever is on screen is read now, even if the feed shifted mid-call
         for (const a of articles) readIdsRef.current.add(a.id);
         setReadIds(new Set(readIdsRef.current));
         setUnreadTotal(0);
-        onFolderMarkedRead?.(folderId);
+        if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
+        onAllMarkedRead?.();
       }
     } catch {
       // Read state is disposable - scrolling will re-mark on the next pass
@@ -522,14 +553,14 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     setGhosts(prev => new Map(prev).set(articleId, { kind, dest }));
     // Only an unread article was being counted, so only that one moves the chip.
     if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => Math.max(0, n - 1));
-    apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}`, { method: 'DELETE' })
+    apiFetch(`/api/v1/feeds/articles/${articleId}`, { method: 'DELETE' })
       .then(applyBadges).catch(() => {});
   }
 
   function handleUndoDismiss(articleId: string) {
     setGhosts(prev => { const m = new Map(prev); m.delete(articleId); return m; });
     if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => n + 1);
-    apiFetch(`/api/v1/folders/${folderId}/articles/${articleId}/restore`, { method: 'POST' })
+    apiFetch(`/api/v1/feeds/articles/${articleId}/restore`, { method: 'POST' })
       .then(applyBadges).catch(() => {});
   }
 
@@ -545,24 +576,85 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
     setUnreadOnly(true);
   }
 
+  // The header is the same in every state, including the ones that render
+  // nothing else: "Manage feeds" has to be reachable precisely when the feed is
+  // empty, which is when the old per-folder UI was hardest to find.
+  const header = (
+    <div className={styles.headerRow}>
+      <div className={styles.sectionLabel}>
+        Feed
+        {/* `total` still counts the placeholders, because it's also what
+            paging measures against - articles.length includes them too, so
+            decrementing it here would strand the last page. Only the label
+            nets them out. */}
+        {articles.length > 0 && <span className={styles.count}>{Math.max(0, total - ghosts.size)}</span>}
+      </div>
+      <div className={styles.headerActions}>
+        {markReadOnScroll && articles.length > 0 && (
+          <button
+            className={styles.markAllBtn}
+            onClick={handleMarkAllRead}
+            disabled={markingAll || !unreadShowing}
+            title={activeFeedFolder
+              ? 'Mark every article in this category as read'
+              : 'Mark every article in your feed as read'}
+          >
+            <CheckAllIcon />
+            {markingAll ? 'Marking…' : 'Mark all read'}
+          </button>
+        )}
+        <button className={styles.manageBtn} onClick={onManageFeeds} title="Add, rename or remove feeds">
+          <SlidersIcon />
+          Manage feeds
+        </button>
+        {onLayoutChange && articles.length > 0 && (
+          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
+        )}
+      </div>
+    </div>
+  );
+
   if (loading) return (
     <div className={styles.wrap}>
-      <div className={styles.sectionLabel}>Feed Articles</div>
+      {header}
       <div className={styles.status}><span className={styles.spinner} /> Fetching feeds…</div>
     </div>
   );
 
   if (error) return (
     <div className={styles.wrap}>
-      <div className={styles.sectionLabel}>Feed Articles</div>
+      {header}
       <div className={styles.statusError}>{error}</div>
+    </div>
+  );
+
+  // Following nothing and following feeds that haven't published are different
+  // problems: only the first one has an answer the user can act on.
+  if (subscriptionCount === 0) return (
+    <div className={styles.wrap}>
+      {header}
+      <div className={styles.emptyPitch}>
+        <div className={styles.emptyTitle}>Your feed is empty</div>
+        <div className={styles.emptyText}>
+          Follow a few sites and their new articles land here — no need to go
+          looking for them.
+        </div>
+        <button className={styles.emptyBtn} onClick={onManageFeeds}>Add feeds</button>
+      </div>
     </div>
   );
 
   if (articles.length === 0) return (
     <div className={styles.wrap}>
-      <div className={styles.sectionLabel}>Feed Articles</div>
-      <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
+      {header}
+      {activeFeedFolder ? (
+        <div className={styles.status} style={{ opacity: 0.45 }}>
+          Nothing in this category yet.{' '}
+          <button className={styles.inlineBtn} onClick={() => setActiveFeedFolder(null)}>Show all feeds</button>
+        </div>
+      ) : (
+        <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
+      )}
     </div>
   );
 
@@ -572,108 +664,66 @@ export default function FolderArticles({ folderId, onSaveArticle, readingFolders
 
   const variants = layout === 'magazine' ? magazineVariants(displayed) : null;
 
+  // Category, site and topic are one control now. They used to be two chips
+  // sitting beside a row of every topic in the feed, which made the tags the
+  // loudest thing on the page and left the controls scattered across it.
+  const filterGroups: FilterGroup[] = [
+    {
+      id: 'category',
+      label: 'Category',
+      allLabel: 'All feeds',
+      value: activeFeedFolder,
+      onChange: setActiveFeedFolder,
+      searchable: feedFolders.length > SEARCHABLE_AT,
+      options: feedFolders.map(f => ({ value: f.id, label: f.name, color: f.color })),
+    },
+    {
+      id: 'site',
+      label: 'Site',
+      allLabel: 'All sites',
+      value: activeSource,
+      onChange: setActiveSource,
+      searchable: allSources.length > SEARCHABLE_AT,
+      options: allSources.map(s => ({ value: s, label: s })),
+    },
+    {
+      id: 'topic',
+      label: 'Topic',
+      allLabel: 'All topics',
+      value: activeCategory,
+      onChange: setActiveCategory,
+      searchable: allCategories.length > SEARCHABLE_AT,
+      options: allCategories.map(c => ({ value: c, label: c })),
+    },
+  ];
+
   return (
     <div className={styles.wrap}>
-      <div className={styles.headerRow}>
-        <div className={styles.sectionLabel}>
-          Feed Articles
-          {/* `total` still counts the placeholders, because it's also what
-              paging measures against - articles.length includes them too, so
-              decrementing it here would strand the last page. Only the label
-              nets them out. */}
-          <span className={styles.count}>{Math.max(0, total - ghosts.size)}</span>
-        </div>
-        <div className={styles.headerActions}>
-          {markReadOnScroll && (
-            <button
-              className={styles.markAllBtn}
-              onClick={handleMarkAllRead}
-              disabled={markingAll || !unreadShowing}
-              title="Mark every article in this folder as read"
-            >
-              <CheckAllIcon />
-              {markingAll ? 'Marking…' : 'Mark all read'}
-            </button>
-          )}
-          {onLayoutChange && (
-            <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
-          )}
-        </div>
-      </div>
+      {header}
 
-      {(allCategories.length > 1 || allSources.length > 1 || favHits.size > 0 || markReadOnScroll) && (
-        <div className={styles.chips}>
-          {/* Read state is only tracked when read-on-scroll is on, so without it
-              there is no such thing as unread here to filter to. */}
-          {markReadOnScroll && (
-            <button
-              className={`${styles.chip} ${styles.unreadChip} ${unreadOnly ? styles.chipActive : ''}`}
-              onClick={toggleUnreadOnly}
-              aria-pressed={unreadOnly}
-              disabled={!unreadOnly && unreadTotal === 0}
-              title={unreadOnly
-                ? 'Show every article again'
-                : `Show only articles you haven’t read yet (${unreadTotal} in this folder)`}
-            >
-              Unread
-              <span className={styles.chipCount}>{unreadTotal}</span>
-            </button>
-          )}
-          {/* Shown whenever there's a list to manage, not only when something
-              matches - otherwise a favorite that has stopped matching becomes
-              unreachable from the page it's affecting. The filter button
-              disables itself at zero. */}
-          {onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) && (
-            <FavoritesControl
-              favorites={favoriteTags}
-              onChange={onSetFavoriteTags ?? (() => {})}
-              count={favHits.size}
-              filterOn={favoritesOnly}
-              onToggleFilter={() => setFavoritesOnly(v => !v)}
-              chipClassName={`${styles.chip} ${styles.favChip}`}
-              chipActiveClassName={styles.favChipActive}
-            />
-          )}
-          {allCategories.length > 1 && (
-            <button
-              className={`${styles.chip} ${activeCategory === null ? styles.chipActive : ''}`}
-              onClick={() => setActiveCategory(null)}
-            >
-              All
-            </button>
-          )}
-          {allCategories.length > 1 && allCategories.length <= MAX_TOPIC_CHIPS && allCategories.map(c => (
-            <button
-              key={c}
-              className={`${styles.chip} ${activeCategory === c ? styles.chipActive : ''}`}
-              onClick={() => setActiveCategory(activeCategory === c ? null : c)}
-            >
-              {c}
-            </button>
-          ))}
-          {allCategories.length > MAX_TOPIC_CHIPS && (
-            <FilterDropdown
-              label="Topics"
-              options={allCategories}
-              value={activeCategory}
-              onChange={setActiveCategory}
-              searchable
-            />
-          )}
-          {allSources.length > 1 && (
-            <div className={styles.sourceFilter}>
-              <FilterDropdown
-                label="All sites"
-                options={allSources}
-                value={activeSource}
-                onChange={setActiveSource}
-                searchable={allSources.length > 8}
-                align="right"
-              />
-            </div>
-          )}
-        </div>
-      )}
+      <FeedFilterBar
+        groups={filterGroups}
+        // Read state is only tracked when read-on-scroll is on, so without it
+        // there is no such thing as unread here to filter to.
+        unread={markReadOnScroll
+          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
+          : undefined}
+        // Shown whenever there's a list to manage, not only when something
+        // matches - otherwise a favorite that has stopped matching becomes
+        // unreachable from the page it's affecting. The control disables its
+        // own filter at zero.
+        favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
+          <FavoritesControl
+            favorites={favoriteTags}
+            onChange={onSetFavoriteTags ?? (() => {})}
+            count={favHits.size}
+            filterOn={favoritesOnly}
+            onToggleFilter={() => setFavoritesOnly(v => !v)}
+            chipClassName={`${styles.chip} ${styles.favChip}`}
+            chipActiveClassName={styles.favChipActive}
+          />
+        ) : undefined}
+      />
 
       <div className={gridClass}>
         {displayed.length === 0 ? (

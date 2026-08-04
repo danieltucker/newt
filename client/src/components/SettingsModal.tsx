@@ -687,7 +687,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                     <div>
                       <div className={styles.rowLabel}>RSS feeds</div>
                       <div className={styles.rowHint}>
-                        Show feed articles in folders and auto-detect feeds when you add a bookmark.
+                        Show your feed and auto-detect feeds when you add a bookmark.
                         Turning this off hides all feed content.
                       </div>
                     </div>
@@ -885,7 +885,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                 </div>
 
                 <div className={styles.sectionBlock}>
-                  <div className={styles.blockTitle}>Feed articles per page</div>
+                  <div className={styles.blockTitle}>Articles per page</div>
                   <div className={styles.pageSizeRow}>
                     {([5, 10, 20, 50] as const).map(n => (
                       <button

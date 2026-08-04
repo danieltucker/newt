@@ -9,17 +9,12 @@ import { canonicalFeedKey } from './feedUtils';
 // user already cleared. Capped at 100 (the tile renders ∞ past 99).
 export const UNREAD_CAP = 100;
 
-export async function feedUnreadCount(
-  userId: string,
-  feedId: string,
-  folderId: string | null,
-): Promise<number> {
+export async function feedUnreadCount(userId: string, feedId: string): Promise<number> {
   const n = await prisma.feedItem.count({
     where: {
       feedId,
       reads: { none: { userId } },
-      // Dismissals are per-folder; a bookmark carries the folder it lives in
-      ...(folderId ? { dismissals: { none: { userId, folderId } } } : {}),
+      dismissals: { none: { userId } },
     },
   });
   return Math.min(n, UNREAD_CAP);
@@ -37,7 +32,7 @@ export async function syncBookmarkBadges(
 
   const bookmarks = await prisma.bookmark.findMany({
     where: { userId, NOT: { feedUrl: null } },
-    select: { id: true, feedUrl: true, folderId: true, unreadCount: true },
+    select: { id: true, feedUrl: true, unreadCount: true },
   });
   if (bookmarks.length === 0) return [];
 
@@ -53,7 +48,7 @@ export async function syncBookmarkBadges(
   for (const b of bookmarks) {
     const fid = feedIdByKey.get(canonicalFeedKey(b.feedUrl!));
     if (!fid || !feedIdSet.has(fid)) continue;
-    const next = await feedUnreadCount(userId, fid, b.folderId);
+    const next = await feedUnreadCount(userId, fid);
     if (next !== b.unreadCount) {
       await prisma.bookmark.update({ where: { id: b.id }, data: { unreadCount: next } });
       changed.push({ id: b.id, unreadCount: next });

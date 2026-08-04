@@ -50,6 +50,10 @@ export interface UserSettings {
   // utils/favoriteTags. Decoration only: it marks what's on screen, it does not
   // reorder or filter the server's pages.
   favoriteTags?: string[];
+  /** Set once the first-run feed picker has been shown - by following
+      something or by skipping it. Its absence is what triggers the picker, so
+      it must be written in both cases. */
+  feedOnboarded?: boolean;
   rssFeedUrls: string[];
   rssFeedPageSize?: 5 | 10 | 20 | 50;
 }

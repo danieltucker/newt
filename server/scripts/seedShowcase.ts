@@ -400,11 +400,21 @@ async function main() {
   const feedByUrl = new Map(feedRows.map(f => [f.fetchUrl, f]));
 
   const folderIds: Record<string, string> = {};
+  // Feed subscriptions are unique per (user, url) now and live in their own
+  // categories, so position counts across the whole account rather than
+  // restarting inside each bookmark folder.
+  const seededFeedUrls = new Set<string>();
+  let feedPosition = 0;
+
   for (const [fi, f] of FOLDERS.entries()) {
     const folder = await prisma.folder.create({
-      data: { userId: marenId, name: f.name, color: f.color, position: fi, feedLastCheckedAt: new Date() },
+      data: { userId: marenId, name: f.name, color: f.color, position: fi },
     });
     folderIds[f.name] = folder.id;
+
+    // Mirrors the bookmark folder, created only if it turns out to hold feeds —
+    // an empty category would be noise in the filter bar.
+    let feedFolderId: string | null = null;
 
     for (const [si, s] of f.sites.entries()) {
       await prisma.bookmark.create({
@@ -417,10 +427,17 @@ async function main() {
           lastVisitedAt: new Date(Date.now() - si * 3_600_000),
         },
       });
-      if (s.feed) {
-        await prisma.folderFeed.create({
-          data: { folderId: folder.id, userId: marenId, url: s.feed, name: s.name, position: si },
+      if (s.feed && !seededFeedUrls.has(s.feed)) {
+        if (!feedFolderId) {
+          const cat = await prisma.feedFolder.create({
+            data: { userId: marenId, name: f.name, color: f.color, position: fi },
+          });
+          feedFolderId = cat.id;
+        }
+        await prisma.feedSubscription.create({
+          data: { userId: marenId, feedFolderId, url: s.feed, name: s.name, position: feedPosition++ },
         });
+        seededFeedUrls.add(s.feed);
       }
     }
   }
