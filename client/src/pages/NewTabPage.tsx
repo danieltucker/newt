@@ -27,9 +27,11 @@ import ArticleDetailModal from '../components/ArticleDetailModal';
 import ProfilePage from './ProfilePage';
 import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
+import SitePage from './SitePage';
 import BlogEditorPage from './BlogEditorPage';
 import { parseArticlePath } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
+import { sitePathFor } from '../utils/siteUrl';
 import { canonicalFeedUrl } from '../utils/feedKey';
 import { articleEmbed } from '../utils/noteEmbed';
 import { stashSeed } from '../utils/composerSeed';
@@ -65,6 +67,7 @@ const BLOB_LEAN = [-18, 32, 56] as const;
 export type ShellView =
   | { kind: 'profile'; username: string; tab?: string | null }
   | { kind: 'post'; username: string; slug: string }
+  | { kind: 'site'; domain: string }
   | { kind: 'myblog' }
   | { kind: 'editor'; postId: string | null };
 
@@ -271,8 +274,32 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [showImport, setShowImport] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
-  // If the app was opened on a shared article link (/a/<id>), open that reader.
-  const [deepLinkUrl, setDeepLinkUrl] = useState<string | null>(() => parseArticlePath(window.location.pathname));
+  // The thread reader: opened on a shared article link (/a/<id>) the app was
+  // loaded at, or from a comment card on a profile, which also names the comment
+  // to land on. It is an overlay rather than a shell view, so it carries its own
+  // state instead of routing - ArticleDetailModal owns the /a/<id> history entry
+  // while it is up, and putting it in the router as well would leave two things
+  // pushing the same URL.
+  const [thread, setThread] = useState<{ url: string; commentId?: string } | null>(() => {
+    const url = parseArticlePath(window.location.pathname);
+    if (!url) return null;
+    const c = new URLSearchParams(window.location.search).get('c');
+    return { url, commentId: c ?? undefined };
+  });
+  const openThread = useCallback((url: string, commentId?: string) => setThread({ url, commentId }), []);
+
+  // A publisher's page is a real route, unlike the reader above: it is a page
+  // you scroll and can link to, not an overlay over the one you were on.
+  const goSite = useCallback((domain: string) => navigate(sitePathFor(domain)), [navigate]);
+
+  // Following from a site page goes through the shell's subscription list, so
+  // the feed panel, the manager and the category filter all see the new feed
+  // without a reload. The URL handed over is the site's front page - the server
+  // does its own feed discovery, and rejects with a message if there's nothing
+  // to find. Uncategorised on purpose: filing it is a separate decision.
+  const handleFollowSite = useCallback(async (siteUrl: string) => {
+    await addFeed(siteUrl);
+  }, [addFeed]);
 
   // Profile (avatar) for the top bar; kept in sync by SettingsModal's Account tab
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -810,6 +837,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 navigate={navigate}
                 library={readingListBinding}
                 onOpenArticle={setArticleUrl}
+                onOpenThread={openThread}
                 initialTab={view.tab}
                 // Clicking your own avatar lands on Account, where the photo,
                 // the cover and the links all live.
@@ -823,6 +851,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 slug={view.slug}
                 accessToken={accessToken}
                 navigate={navigate}
+              />
+            )}
+            {view.kind === 'site' && (
+              // Keyed on the domain: following a byline from one site page to
+              // another changes the prop, and every piece of state in there
+              // (the loaded pages, a subscribe error) belongs to the old site.
+              <SitePage
+                key={view.domain}
+                domain={view.domain}
+                navigate={navigate}
+                onOpenThread={openThread}
+                onFollowSite={handleFollowSite}
               />
             )}
             {view.kind === 'myblog' && (
@@ -859,6 +899,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onDeleteBookmark={handleDeleteBookmark}
                 onVisit={markVisited}
                 onPin={handlePinBookmark}
+                onOpenSite={goSite}
                 bookmarkOpenMode={settings.bookmarkOpenMode}
               />
             )}
@@ -885,6 +926,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
                 commentPrefs={commentPrefs}
                 onViewProfile={onViewProfile}
+                onOpenSite={goSite}
                 favoriteTags={settings.favoriteTags ?? []}
                 onToggleFavoriteTag={handleToggleFavoriteTag}
                 onSetFavoriteTags={handleSetFavoriteTags}
@@ -942,6 +984,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 commentPrefs={commentPrefs}
                 onAllMarkedRead={handleAllFeedsMarkedRead}
                 onViewProfile={onViewProfile}
+                onOpenSite={goSite}
                 favoriteTags={settings.favoriteTags ?? []}
                 onToggleFavoriteTag={handleToggleFavoriteTag}
                 onSetFavoriteTags={handleSetFavoriteTags}
@@ -1145,13 +1188,15 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         />
       )}
 
-      {/* Reader opened from a shared /a/<id> link - resolves content by URL */}
-      {deepLinkUrl && (
+      {/* Reader opened from a shared /a/<id> link, or from a comment card on a
+          profile - resolves content by URL either way. */}
+      {thread && (
         <ArticleDetailModal
-          url={deepLinkUrl}
+          url={thread.url}
           title=""
           prefs={commentPrefs}
-          onClose={() => setDeepLinkUrl(null)}
+          focusCommentId={thread.commentId}
+          onClose={() => setThread(null)}
           onViewProfile={onViewProfile}
         />
       )}

@@ -2,7 +2,7 @@ import nodeFetch from 'node-fetch';
 import { Prisma } from '@prisma/client';
 import prisma from './prisma';
 import { parseFeed, parseFeedTitle, canonicalFeedKey } from './feedUtils';
-import { canonicalArticleKey } from './comments';
+import { canonicalArticleKey, articleHost } from './comments';
 import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
 import { recordError, errorMessage } from './errorLog';
@@ -165,7 +165,7 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
 
   try {
     const headers: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0; +RSS)',
+      'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0; +RSS)',
     };
     // Conditional GET: let the origin answer 304 when nothing changed.
     if (feed.etag) headers['If-None-Match'] = feed.etag;
@@ -217,10 +217,10 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
       await Promise.all(chunk.map(item =>
         prisma.feedItem.upsert({
           where: { feedId_link: { feedId: feed.id, link: item.link } },
-          create: { feedId: feed.id, title: item.title, link: item.link, linkKey: canonicalArticleKey(item.link), pubDate: item.date, fetchedAt: now, readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
-          // linkKey/content are refreshed too, so rows stored before those
+          create: { feedId: feed.id, title: item.title, link: item.link, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), pubDate: item.date, fetchedAt: now, readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
+          // linkKey/linkHost/content are refreshed too, so rows stored before those
           // columns existed backfill on the next poll
-          update: { fetchedAt: now, title: item.title, linkKey: canonicalArticleKey(item.link), readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
+          update: { fetchedAt: now, title: item.title, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
         }).catch(() => {})
       ));
     }

@@ -29,7 +29,7 @@ interface Props {
   accessToken: string | null;
   navigate: (to: string) => void;
   // Rendered inside the app shell (NewTabPage) rather than as its own page -
-  // see ShellView. Drops the full-height background and the "← New Tab" bar,
+  // see ShellView. Drops the full-height background and the "← Newt" bar,
   // which the shell already provides.
   embedded?: boolean;
 }
@@ -97,7 +97,7 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
 
   useEffect(() => {
     if (post) document.title = post.title;
-    return () => { document.title = 'New Tab'; };
+    return () => { document.title = 'Newt'; };
   }, [post]);
 
   if (state === 'loading') {
@@ -132,7 +132,7 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
             page's only exit. */}
         {!embedded && (
           <button className={styles.backBtn} onClick={() => navigate('/')}>
-            {accessToken ? '← New Tab' : '← Sign in'}
+            {accessToken ? '← Newt' : '← Sign in'}
           </button>
         )}
         {post.isSelf && (

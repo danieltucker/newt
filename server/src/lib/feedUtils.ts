@@ -224,7 +224,7 @@ export async function checkFeed(feedUrl: string, since: Date | null): Promise<Fe
     // feedRefresh for the same reasoning.
     size: 2_000_000,
     redirect: 'follow',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0; +Feed)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0; +Feed)' },
   } as FetchOptions);
   if (!resp.ok) throw new Error(`Feed returned ${resp.status}`);
 

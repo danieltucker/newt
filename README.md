@@ -11,6 +11,7 @@ A browser new tab replacement that turns your new tab page into a personal produ
 - **Bookmarks** — Organize into color-coded folders with drag-and-drop reordering. Import from an HTML bookmark file.
 - **Feeds** — One combined feed of everything you follow, newest first. Paste a site address and Newt finds its feed; group feeds into your own categories and filter by category, site or topic. Feeds on bookmarked sites are auto-discovered and offered for import.
 - **Reading List** — Save articles with tags, notes, and estimated read time.
+- **Site pages** — Click a site name on any card for `/s/<domain>`: everything that publisher has put in your feed, everything you've saved from it, and where it sits in your folders and categories.
 - **Favorite Tags** — Star a tag to have matching articles flagged in the feed and reading list. Matching is by whole word, so "Apple" catches "Apple News" and "apple-tv" but not "Snapple".
 - **Notes** — A notes console with folders, rich text, and recently deleted.
 - **Search** — Quick search bar supporting Google, DuckDuckGo, Bing, and Brave.

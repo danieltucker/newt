@@ -129,7 +129,7 @@ const COMMANDS: Record<string, Command> = {
 
   version: {
     desc: 'Show app version',
-    run: () => `Newt.ab v${__APP_VERSION__}`,
+    run: () => `Newt v${__APP_VERSION__}`,
   },
 
   clear: {

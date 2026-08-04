@@ -27,6 +27,15 @@ export function articlePathFor(url: string): string {
   return PREFIX + encodeArticleId(url);
 }
 
+// The same link, aimed at one comment in the thread rather than the top of it.
+// The comment id rides in the query string, not the path, so parseArticlePath
+// keeps matching on the pathname alone and every existing /a/<id> link is
+// unchanged - a missing or stale ?c= just opens the thread normally.
+export function threadPathFor(url: string, commentId?: string | null): string {
+  const path = articlePathFor(url);
+  return commentId ? `${path}?c=${encodeURIComponent(commentId)}` : path;
+}
+
 // The article URL encoded in a path like /a/<id>, or null if the path isn't one.
 export function parseArticlePath(pathname: string): string | null {
   if (!pathname.startsWith(PREFIX)) return null;

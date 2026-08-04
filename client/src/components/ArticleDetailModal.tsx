@@ -53,6 +53,9 @@ interface Props {
   onViewProfile?: (username: string) => void;
   // Logged-out reader: comments are read-only (view a public thread, can't post).
   readOnly?: boolean;
+  // Opened from one particular comment (a card on a profile): the thread scrolls
+  // to it and flashes it rather than leaving the reader at the top of the page.
+  focusCommentId?: string | null;
 }
 
 // History bookkeeping for the reader's /a/<id> URL. Module-level (only one reader
@@ -77,6 +80,7 @@ function longDate(iso: string | null | undefined): string {
 export default function ArticleDetailModal({
   url, title, source, imageUrl, categories, readTime, pubDate,
   prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onClose, onViewProfile, readOnly,
+  focusCommentId,
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -285,6 +289,7 @@ export default function ArticleDetailModal({
               onLegacyNoteMigrated={onLegacyNoteMigrated}
               onViewProfile={onViewProfile}
               readOnly={readOnly}
+              focusCommentId={focusCommentId}
             />
           </div>
         </div>

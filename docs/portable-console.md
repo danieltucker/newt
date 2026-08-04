@@ -1,8 +1,8 @@
 # Portable drop-in console
 
-The Newt.ab console as a self-contained React component you can carry into any project.
+The Newt console as a self-contained React component you can carry into any project.
 It has no external dependencies beyond React — commands are plugged in from the host app,
-so none of the Newt.ab-specific behavior comes along.
+so none of the Newt-specific behavior comes along.
 
 ## How it works
 
@@ -531,5 +531,5 @@ function App() {
   that string from your own commands.
 - Colors are hard-coded to a GitHub-dark palette so the console looks the same in any
   host theme. Swap the hex values (or replace them with your design tokens) to theme it.
-- Commands that hit privileged endpoints (ping/traceroute in Newt.ab) belong on your
+- Commands that hit privileged endpoints (ping/traceroute in Newt) belong on your
   server behind auth — never shell out from anything reachable by unauthenticated users.

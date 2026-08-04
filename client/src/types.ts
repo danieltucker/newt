@@ -347,3 +347,46 @@ export interface BlogPost extends BlogPostSummary {
 export type ProfileActivityItem =
   | { kind: 'post'; at: string; post: BlogPostSummary }
   | { kind: 'comment'; at: string; comment: ProfileComment };
+
+// ── Site pages (/s/<domain>) ────────────────────────────────────────────────
+// One publisher's corner of this account: what it has dealt into the feed, and
+// what the user saved from it. Assembled by the server from three records that
+// share no id - a subscription, a bookmark and saved articles - only a hostname.
+
+export interface SiteSubscription {
+  id: string;
+  url: string;
+  name: string;
+  /** The feed category it's filed under. Null is Uncategorised, a real state. */
+  folder: { id: string; name: string; color: string } | null;
+  lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  /** Broken *now* - three consecutive failures or more. See the Feed model. */
+  failing: boolean;
+}
+
+export interface SiteBookmark {
+  id: string;
+  name: string;
+  pinned: boolean;
+  unreadCount: number;
+  folder: { id: string; name: string; color: string } | null;
+}
+
+/** A feed item on a site page. Carries `dismissed` because this page shows
+ *  dismissed articles - the river doesn't. */
+export interface SiteArticle extends FeedArticle {
+  dismissed?: boolean;
+}
+
+export interface SiteOverview {
+  domain: string;
+  name: string;
+  homeUrl: string;
+  bookmark: SiteBookmark | null;
+  subscriptions: SiteSubscription[];
+  counts: { articles: number; unread: number; saved: number; library: number };
+  articles: SiteArticle[];
+  hasMore: boolean;
+  saved: ReadingListItem[];
+}

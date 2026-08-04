@@ -201,7 +201,7 @@ export function MarketingPage({ title, tint, navigate, active, signedIn, childre
 
   useEffect(() => {
     document.title = title;
-    return () => { document.title = 'New Tab'; };
+    return () => { document.title = 'Newt'; };
   }, [title]);
 
   return (

@@ -145,6 +145,24 @@
   gap: 4px;
 }
 
+/* The comment a link led to. Added for a couple of seconds after the thread
+   scrolls to it, then dropped - a permanent marker would still be sitting there
+   long after it had answered the only question it was asked. The padding and
+   offset are negative-margined back out so nothing on the page shifts when the
+   highlight appears. */
+.focused {
+  border-radius: 8px;
+  margin: -6px -10px;
+  padding: 6px 10px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+  transition: background 240ms ease, box-shadow 240ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focused { transition: none; }
+}
+
 .commentHead {
   display: flex;
   align-items: center;

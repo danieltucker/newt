@@ -7,7 +7,7 @@ import {
 } from '../types';
 import { linkIcon, linkLabel } from '../utils/profileLinks';
 import { relTime } from '../utils/notifications';
-import { articlePathFor } from '../utils/articleUrl';
+import { threadPathFor } from '../utils/articleUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
@@ -27,7 +27,7 @@ interface Props {
   currentUsername: string | null;
   navigate: (to: string) => void;
   // Rendered inside the app shell (NewTabPage) rather than as its own page.
-  // Drops the full-height background and the "← New Tab" bar, because the shell
+  // Drops the full-height background and the "← Newt" bar, because the shell
   // already supplies both - the header, search and consoles stay on screen.
   embedded?: boolean;
   // Embedded in the app shell, the shell already owns the reading list - take
@@ -36,6 +36,14 @@ interface Props {
   library?: ReadingListBinding;
   /** Open an article the way the shell does. Standalone falls back to a tab. */
   onOpenArticle?: (url: string) => void;
+  /**
+   * Open an article's comment thread in the shell's reader, landing on one
+   * comment. Supplied only when embedded: the shell owns that reader and, more
+   * to the point, it is the only place a client-side navigation to /a/<id> is
+   * *not* how you get there. Standalone this is absent and the cards navigate,
+   * which is what a logged-out visitor on a shared profile link needs.
+   */
+  onOpenThread?: (url: string, commentId?: string) => void;
   /** Raw ?tab= value from the URL. Unrecognised values fall back to Posts. */
   initialTab?: string | null;
   /** Open Settings on the Account section, where the photo, cover and links are
@@ -104,7 +112,7 @@ function Shell({ embedded, children }: { embedded?: boolean; children: ReactNode
   );
 }
 
-export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, initialTab, onEditProfile }: Props) {
+export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, onOpenThread, initialTab, onEditProfile }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromParam(initialTab));
@@ -154,10 +162,20 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
 
   useEffect(() => {
     if (profile) document.title = `${profile.displayName} · Profile`;
-    return () => { document.title = 'New Tab'; };
+    return () => { document.title = 'Newt'; };
   }, [profile]);
 
-  const goArticle = useCallback((url: string) => navigate(articlePathFor(url)), [navigate]);
+  // A comment card leads to the conversation it came from - the article's
+  // reader, scrolled to that comment. Inside the shell the reader is an overlay
+  // the shell owns, so it is opened directly; standalone there is no shell and
+  // /a/<id>?c=<comment> is a page of its own.
+  const goComment = useCallback(
+    (url: string, commentId: string) => {
+      if (onOpenThread) onOpenThread(url, commentId);
+      else navigate(threadPathFor(url, commentId));
+    },
+    [navigate, onOpenThread],
+  );
   const goPost = useCallback(
     (slug: string) => navigate(blogPathFor(username, slug)),
     [navigate, username],
@@ -194,7 +212,7 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
       {!embedded && (
         <div className={styles.topbar}>
           <button className={styles.backBtn} onClick={() => navigate('/')}>
-            {accessToken ? '← New Tab' : '← Sign in'}
+            {accessToken ? '← Newt' : '← Sign in'}
           </button>
         </div>
       )}
@@ -241,10 +259,10 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
           )}
           {tab === 'history' && (
             <HistoryTab username={profile.username} authKey={accessToken}
-              onOpenArticle={goArticle} onOpenPost={goPost} />
+              onOpenComment={goComment} onOpenPost={goPost} />
           )}
           {tab === 'comments' && (
-            <CommentsTab username={profile.username} authKey={accessToken} onOpen={goArticle} />
+            <CommentsTab username={profile.username} authKey={accessToken} onOpen={goComment} />
           )}
           {tab === 'friends' && profile.isSelf && (
             <FriendsPanel
@@ -346,7 +364,7 @@ function ProfileTabs({ tabs, active, onSelect }: {
 
 // ── Library tab ───────────────────────────────────────────────────────────────
 // Takes the shell's reading list when embedded so a Restore here shows up on the
-// New Tab page immediately. Standalone there is no shell, so it loads its own.
+// new tab page immediately. Standalone there is no shell, so it loads its own.
 function LibraryTab({ accessToken, binding, onOpenArticle }: {
   accessToken: string | null;
   binding?: ReadingListBinding;
@@ -706,10 +724,10 @@ function PostCard({ post, onOpen }: { post: BlogPostSummary; onOpen: (slug: stri
 // was removed.
 // The profile's main page: everything this person made or shared - blog posts
 // and shared comments - in one timeline. The API route is still /activity.
-function HistoryTab({ username, authKey, onOpenArticle, onOpenPost }: {
+function HistoryTab({ username, authKey, onOpenComment, onOpenPost }: {
   username: string;
   authKey: string | null;
-  onOpenArticle: (url: string) => void;
+  onOpenComment: (url: string, commentId: string) => void;
   onOpenPost: (slug: string) => void;
 }) {
   const [items, setItems] = useState<ProfileActivityItem[]>([]);
@@ -733,7 +751,7 @@ function HistoryTab({ username, authKey, onOpenArticle, onOpenPost }: {
     <div className={styles.list}>
       {items.map(item => item.kind === 'post'
         ? <PostCard key={`p${item.post.id}`} post={item.post} onOpen={onOpenPost} />
-        : <CommentCard key={`c${item.comment.id}`} comment={item.comment} onOpen={onOpenArticle} />)}
+        : <CommentCard key={`c${item.comment.id}`} comment={item.comment} onOpen={onOpenComment} />)}
     </div>
   );
 }
@@ -824,10 +842,10 @@ function PostsTab({ username, authKey, onOpen }: {
 // ── One comment, as a card ───────────────────────────────────────────────────
 function CommentCard({ comment: c, onOpen }: {
   comment: ProfileComment;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, commentId: string) => void;
 }) {
   return (
-    <button className={styles.commentCard} onClick={() => onOpen(c.articleUrl)}>
+    <button className={styles.commentCard} onClick={() => onOpen(c.articleUrl, c.id)}>
       <div className={styles.commentTop}>
         <span className={styles.articleTitle}>{c.articleTitle || hostOf(c.articleUrl)}</span>
         <span className={styles.dot}>·</span>
@@ -845,7 +863,7 @@ function CommentCard({ comment: c, onOpen }: {
 function CommentsTab({ username, authKey, onOpen }: {
   username: string;
   authKey: string | null;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, commentId: string) => void;
 }) {
   const [comments, setComments] = useState<ProfileComment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 {
-  "name": "Newt.ab",
-  "short_name": "Newt.ab",
+  "name": "Newt",
+  "short_name": "Newt",
   "description": "A personal new tab page",
   "start_url": "/",
   "display": "standalone",

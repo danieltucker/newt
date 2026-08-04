@@ -2,6 +2,57 @@
 
 Notable changes to Newt, newest first.
 
+## v1.11.2 — Site pages, and calling things by their name
+
+**2026-08-04**
+
+### Site pages
+
+Every publisher now has a page of its own at `/s/<domain>` — `newt.page/s/arstechnica.com`,
+say. It gathers up everything this account holds from that one site: what its
+feed has published, what you saved from it, whether you follow it, which
+category it's filed under, whether it's bookmarked, and whether its feed is
+currently broken.
+
+The domain is the key because it's the only identifier a feed subscription, a
+bookmark tile and a saved article all already carry — they share no id.
+
+You get there by clicking the site name on a card. On a feed card the byline
+used to go straight out to the site's front page, which was the one destination
+the card already offered (the headline is the article, and the article is on the
+site). It now answers the more useful question — what else has this lot
+published, and what have I kept from them — with a **Visit site** button one
+click away. Reading-list cards' source lines are links now too, and bookmark
+tiles have a **Site page** entry in their menu.
+
+If you don't follow the site, the page offers to start.
+
+### Comment links on profiles went nowhere
+
+Clicking a comment on a profile changed the address bar and left you looking at
+the same page. The reader is an overlay the app shell owns, and nothing was
+watching for a same-page navigation to `/a/<id>` — so the URL moved and nothing
+opened. It now opens the article's thread and scrolls to the comment you
+clicked, flashing it briefly so it's obvious which one that was. Shared links
+carry the comment too (`/a/<id>?c=<comment>`).
+
+### Reading-list nudge counts the pile
+
+Half the rotating nudges above the reading list quoted only a duration — "about
+40 minutes of saved reading" doesn't tell you whether that's one long read or
+eight short ones. Every one of them names both now: "Your reading list has 5
+articles which should be about 17 minutes."
+
+### Naming
+
+The browser tab said **Newt.ab**; it says **Newt - a new tab worth opening**.
+The installed-app name is **Newt**. The sign-in card said "New Tab", the "back"
+buttons on profiles and posts said "← New Tab", and the console's `version`
+command answered `Newt.ab` — all of them are the product's actual name now. Two
+places nobody looks also stopped saying it: the user-agent Newt sends when
+fetching a feed, and the issuer in new authenticator-app enrolments (existing
+enrolments keep the label your app already stored).
+
 ## v1.11.1 — Phones, and knowing what broke
 
 **2026-08-05**

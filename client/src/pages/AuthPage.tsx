@@ -104,7 +104,7 @@ export default function AuthPage({
       <div className={styles.page}>
         <div className={styles.card}>
           {navigate && <CloseButton onClick={close} label="Close and go back" className={styles.close} />}
-          <div className={styles.logo}>New Tab</div>
+          <div className={styles.logo}>Newt</div>
           <div className={styles.subtitle}>Enter the 6-digit code from your authenticator app.</div>
           <form onSubmit={handleTotpSubmit}>
             <div className={styles.field}>
@@ -152,7 +152,7 @@ export default function AuthPage({
       )}
       <div className={styles.card}>
         {navigate && <CloseButton onClick={close} label="Close and go back" className={styles.close} />}
-        <div className={styles.logo}>New Tab</div>
+        <div className={styles.logo}>Newt</div>
         <div className={styles.subtitle}>Your bookmarks and reading list, anywhere.</div>
 
         <div className={styles.tabs}>

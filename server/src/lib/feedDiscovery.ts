@@ -34,7 +34,7 @@ export function findFeedInHtml(html: string, base: string): string | null {
 // timeout only fires on an idle socket, not a slow-but-steady one.
 export async function fetchXml(url: string, maxBytes = 150_000): Promise<string | null> {
   try {
-    const res = await nodeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' } } as FetchOptions);
+    const res = await nodeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)' } } as FetchOptions);
     // node-fetch v2 hands back a Node Readable at runtime; the ambient DOM lib
     // types it as a web ReadableStream, which has no destroy().
     const body = res.body as unknown as Readable | null;

@@ -14,7 +14,7 @@ interface Props {
   username: string;
   navigate: (to: string) => void;
   // Rendered inside the app shell (NewTabPage) rather than as its own page -
-  // see ShellView. Drops the full-height background and the "← New Tab" bar.
+  // see ShellView. Drops the full-height background and the "← Newt" bar.
   embedded?: boolean;
 }
 
@@ -41,7 +41,7 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
       {/* The shell has its own way back; this bar is the standalone page's. */}
       {!embedded && (
         <div className={styles.topbar}>
-          <button className={styles.backBtn} onClick={() => navigate('/')}>← New Tab</button>
+          <button className={styles.backBtn} onClick={() => navigate('/')}>← Newt</button>
         </div>
       )}
 

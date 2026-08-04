@@ -159,7 +159,7 @@ router.get('/page-meta', requireAuth, async (req: AuthRequest, res: Response): P
       agent: safeAgent,
       timeout: 5000,
       redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)' },
     } as FetchOptions);
 
     const contentType = response.headers.get('content-type') || '';
@@ -231,7 +231,7 @@ router.get('/check-frame', requireAuth, async (req: AuthRequest, res: Response):
       method: 'HEAD',
       timeout: 5000,
       redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)' },
     } as FetchOptions);
 
     if (headResp.status === 405) {
@@ -240,7 +240,7 @@ router.get('/check-frame', requireAuth, async (req: AuthRequest, res: Response):
         method: 'GET',
         timeout: 5000,
         redirect: 'follow',
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewTab/1.0)', Range: 'bytes=0-0' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)', Range: 'bytes=0-0' },
       } as FetchOptions);
       headers = getResp.headers;
     } else {

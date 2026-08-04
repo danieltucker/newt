@@ -69,3 +69,18 @@ export async function apiDelete<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+/**
+ * The readable message out of an api* rejection.
+ *
+ * The helpers above reject with `new Error(await res.text())`, so `.message` is
+ * the raw JSON body - showing it to a user puts `{"error":"…"}` on screen. This
+ * unwraps it, falling back for a body that isn't the shape the server promises
+ * (a proxy's HTML 502, an empty response).
+ */
+export function apiErrorText(e: unknown, fallback: string): string {
+  if (e instanceof Error) {
+    try { return (JSON.parse(e.message).error as string) || fallback; } catch { /* not JSON */ }
+  }
+  return fallback;
+}

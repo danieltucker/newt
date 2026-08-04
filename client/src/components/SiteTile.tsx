@@ -12,10 +12,13 @@ interface Props {
   onDelete?: (id: string) => void;
   onVisit?: (id: string) => void;
   onPin?: (id: string) => void;
+  /** Open this site's page (/s/<domain>) - what it has published and what you
+   *  kept. The tile itself still goes to the site; this is the other question. */
+  onOpenSite?: (domain: string) => void;
   openMode?: 'same-tab' | 'new-tab';
 }
 
-export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVisit, onPin, openMode = 'same-tab' }: Props) {
+export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVisit, onPin, onOpenSite, openMode = 'same-tab' }: Props) {
   const unreadCount = bookmark.unreadCount ?? 0;
   const hasNewContent = unreadCount > 0;
   const [faviconFailed, setFaviconFailed] = useState(false);
@@ -101,7 +104,7 @@ export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVi
       </div>
       <span className={styles.name}>{bookmark.name}</span>
 
-      {(onEdit || onDelete || onPin) && (
+      {(onEdit || onDelete || onPin || onOpenSite) && (
         <div className={styles.menuWrap} ref={menuRef}>
           <button
             className={styles.menuTrigger}
@@ -113,6 +116,14 @@ export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVi
           </button>
           {menuOpen && (
             <div className={styles.dropdown}>
+              {onOpenSite && (
+                <button
+                  className={styles.dropdownItem}
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuOpen(false); onOpenSite(bookmark.domain); }}
+                >
+                  Site page
+                </button>
+              )}
               {onPin && (
                 <button
                   className={styles.dropdownItem}

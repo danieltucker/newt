@@ -1021,6 +1021,19 @@
   color: var(--muted);
 }
 
+/* The publisher's name, leading to its page. Carries no link colour at rest -
+   it sits in a muted meta line and colouring it would make the byline the
+   loudest thing on a card whose point is the headline. */
+.sourceLink {
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sourceLink:hover { color: var(--accent); }
+
 .sourceFavicon {
   width: 14px;
   height: 14px;

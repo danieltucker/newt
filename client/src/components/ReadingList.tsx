@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import styles from './ReadingList.module.css';
 import { ReadingListItem, ReadingFolder, CommentPrefs } from '../types';
 import { parseDomain } from '../utils/color';
+import { sitePathFor, siteDomainOf } from '../utils/siteUrl';
 import { apiFetch } from '../services/api';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { CommentBar } from './CommentsPanel';
@@ -84,14 +85,19 @@ function formatDuration(mins: number): string {
 }
 
 // Same nudge all day, a different one tomorrow - so it doesn't read like a
-// static label but also doesn't reshuffle under you mid-session
+// static label but also doesn't reshuffle under you mid-session.
+//
+// Every one of these names the count as well as the time. Half of them used to
+// quote minutes alone, which is the harder of the two numbers to act on: "about
+// 40 minutes" doesn't tell you whether that's one long read or eight short ones,
+// and the pile is what you're deciding about.
 const NUDGES: ((d: React.ReactNode, n: number) => React.ReactNode)[] = [
-  d => <>You have about {d} of reading saved up - good time to start one.</>,
-  (d, n) => <>{d} across {n} saved article{n === 1 ? '' : 's'}. Pick one off the pile?</>,
-  d => <>That's roughly {d} of articles waiting on you.</>,
-  d => <>About {d} of saved reading. Now's as good a time as any.</>,
-  (d, n) => <>{n} article{n === 1 ? '' : 's'} queued up, near enough {d}. Fancy a read?</>,
-  d => <>Your reading list is holding about {d}. Maybe clear one out.</>,
+  (d, n) => <>Your reading list has {n} article{n === 1 ? '' : 's'} in it, which should be about {d}. Good time to start one.</>,
+  (d, n) => <>{n} article{n === 1 ? '' : 's'} saved, roughly {d} of reading. Pick one off the pile?</>,
+  (d, n) => <>That's {n} article{n === 1 ? '' : 's'} waiting on you - somewhere around {d}.</>,
+  (d, n) => <>{n} article{n === 1 ? '' : 's'} on the list, near enough {d}. Now's as good a time as any.</>,
+  (d, n) => <>{n} article{n === 1 ? '' : 's'} queued up, about {d} all told. Fancy a read?</>,
+  (d, n) => <>Your reading list is holding {n} article{n === 1 ? '' : 's'}, near enough {d}. Maybe clear one out.</>,
 ];
 
 function nudgeForToday(duration: React.ReactNode, count: number): React.ReactNode {
@@ -184,6 +190,9 @@ interface Props {
   onSetFavoriteTags?: (tags: string[]) => void;
   /** Make a new Library shelf and resolve to its id, from the Save menu. */
   onCreateFolder?: (name: string) => Promise<string>;
+  /** Open a publisher's page (/s/<domain>) from a card's source line. Absent
+   *  leaves the source as plain text, which is what it was. */
+  onOpenSite?: (domain: string) => void;
 }
 
 function parseTags(tag: string): string[] {
@@ -253,9 +262,10 @@ interface CardProps {
   favorites?: PreparedFavorite[];
   readingFolders?: ReadingFolder[];
   onCreateFolder?: (name: string) => Promise<string>;
+  onOpenSite?: (domain: string) => void;
 }
 
-function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
 
@@ -372,7 +382,24 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             alt=""
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
-          {item.source}{item.readTime ? ` · ${item.readTime}` : ''}
+          {/* The domain comes from the URL, not from `source`: an article saved
+              off a feed card carries that feed's display name ("Ars Technica")
+              rather than a hostname, and the site page is keyed on the host.
+              The label stays whatever the item says - the name is the useful
+              part to read, the host is only how the link is built.
+              Sits outside the card's <a> (see .cardFooter), so this is a link
+              beside a link rather than one nested in another. */}
+          {onOpenSite && siteDomainOf(item.url) ? (
+            <a
+              className={styles.sourceLink}
+              href={sitePathFor(item.url)}
+              title={`Everything from ${siteDomainOf(item.url)}`}
+              onClick={e => { e.preventDefault(); onOpenSite(siteDomainOf(item.url)); }}
+            >
+              {item.source}
+            </a>
+          ) : <span>{item.source}</span>}
+          {item.readTime ? <span>· {item.readTime}</span> : null}
         </div>
       </div>
 
@@ -461,7 +488,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
   // Cards that have left the list but are still drawn where they were. Local
   // and deliberately not persisted: a reload is what clears them, which is also
   // the moment the list re-lays out. Keyed by the id the item had at the time.
@@ -916,6 +943,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             favorites={favorites}
             readingFolders={readingFolders}
             onCreateFolder={onCreateFolder}
+            onOpenSite={onOpenSite}
           />
         ))}
       </div>

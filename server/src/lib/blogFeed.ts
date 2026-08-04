@@ -1,6 +1,6 @@
 import prisma from './prisma';
 import { publicOrigin } from './blog';
-import { canonicalArticleKey } from './comments';
+import { canonicalArticleKey, articleHost } from './comments';
 import { friendIdsOf, displayNameOf, PUBLIC_USER_SELECT } from './friends';
 import logger from './logger';
 
@@ -222,7 +222,7 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
       where: { feedId_link: { feedId, link: item.link } },
       create: {
         feedId, title: item.title, link: item.link,
-        linkKey: canonicalArticleKey(item.link),
+        linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link),
         pubDate: item.pubDate, fetchedAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
         // Site-relative, and stays that way: subscribers render it from this
@@ -230,7 +230,7 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
         content: item.content, imageUrl: item.heroImage || null, categories: [],
       },
       update: {
-        title: item.title, linkKey: canonicalArticleKey(item.link),
+        title: item.title, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link),
         pubDate: item.pubDate, fetchedAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
         content: item.content, imageUrl: item.heroImage || null,

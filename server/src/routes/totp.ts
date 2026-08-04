@@ -29,8 +29,8 @@ router.post('/enroll', async (req: AuthRequest, res: Response): Promise<void> =>
   });
 
   const otpauthUrl =
-    `otpauth://totp/${encodeURIComponent(`NewTab:${user.username}`)}` +
-    `?secret=${secret.base32}&issuer=NewTab&algorithm=SHA1&digits=6&period=30`;
+    `otpauth://totp/${encodeURIComponent(`Newt:${user.username}`)}` +
+    `?secret=${secret.base32}&issuer=Newt&algorithm=SHA1&digits=6&period=30`;
 
   const qrDataUrl = await QRCode.toDataURL(otpauthUrl, { width: 256, errorCorrectionLevel: 'M' });
   // Return secret so the user can type it in manually if QR scan fails

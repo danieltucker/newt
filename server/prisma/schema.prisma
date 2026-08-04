@@ -376,6 +376,13 @@ model FeedItem {
   // Canonical form of link — lets an article be found from any URL spelling,
   // the same key comments are threaded on
   linkKey    String?
+  // The host `link` points at, lowercased and www-stripped: the site page key
+  // (/s/<domain>). Stored rather than derived at query time because a feed's own
+  // address is often not the site's — Ars Technica publishes at
+  // feeds.arstechnica.com, and matching on that would make the obvious
+  // /s/arstechnica.com answer nothing. Nullable only for rows written before
+  // this column existed; every write sets it.
+  linkHost   String?
   title      String
   pubDate    DateTime?
   fetchedAt  DateTime  @default(now())
@@ -392,6 +399,9 @@ model FeedItem {
   @@unique([feedId, link])
   @@index([feedId])
   @@index([linkKey])
+  // Compound, and in this order: every site-page query is "this user's feeds,
+  // this host", and the feed filter is the selective half.
+  @@index([feedId, linkHost])
 }
 
 // "I'm done with this article" on a shared item. Per-user and, since v1.11.0,

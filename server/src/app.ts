@@ -23,6 +23,7 @@ import profileRoutes from './routes/profiles';
 import notificationRoutes from './routes/notifications';
 import blockRoutes from './routes/blocks';
 import reportRoutes from './routes/reports';
+import siteRoutes from './routes/sites';
 import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
@@ -90,6 +91,7 @@ app.use('/api/v1/profiles', apiLimiter, profileRoutes);
 app.use('/api/v1/notifications', apiLimiter, notificationRoutes);
 app.use('/api/v1/blocks', apiLimiter, blockRoutes);
 app.use('/api/v1/reports', apiLimiter, reportRoutes);
+app.use('/api/v1/sites', apiLimiter, siteRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

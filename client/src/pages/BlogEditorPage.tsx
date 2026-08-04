@@ -249,7 +249,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
 
   useEffect(() => {
     document.title = isNew ? 'New post' : 'Edit post';
-    return () => { document.title = 'New Tab'; };
+    return () => { document.title = 'Newt'; };
   }, [isNew, seed]);
 
   const handleBody = useCallback((html: string) => {

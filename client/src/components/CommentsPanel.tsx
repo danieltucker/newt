@@ -30,6 +30,11 @@ interface Props {
   onViewProfile?: (username: string) => void;
   // Logged-out viewers can read a public thread but not post/reply/edit/delete.
   readOnly?: boolean;
+  // One comment to scroll to and flash once the thread has loaded - set when
+  // the reader was opened *from* a specific comment (a card on a profile).
+  // A thread can be long, and landing at the top of one leaves you hunting for
+  // the comment you clicked.
+  focusCommentId?: string | null;
 }
 
 function countTree(nodes: ArticleComment[]): number {
@@ -257,7 +262,10 @@ function CommentItem({
   }
 
   return (
-    <div className={styles.comment}>
+    // data-comment-id, not an element id: the same thread can be mounted twice
+    // (a reader over a page that already lists it), and duplicate ids would make
+    // the focus lookup below pick whichever one happened to be first in the DOM.
+    <div className={styles.comment} data-comment-id={node.id}>
       <div className={styles.commentHead}>
         {(() => {
           const avatarEl = node.deleted
@@ -518,6 +526,7 @@ function CommentHistoryPanel({ loading, error, history }: {
 
 export default function CommentsPanel({
   articleUrl, articleTitle, prefs, onCountChange, legacyNote, onLegacyNoteMigrated, onViewProfile, readOnly,
+  focusCommentId,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -527,6 +536,7 @@ export default function CommentsPanel({
   const [editing, setEditing] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const rootRef = useRef<HTMLElement>(null);
   const migratedRef = useRef(false);
   const legacyRef = useRef({ legacyNote, onLegacyNoteMigrated });
   legacyRef.current = { legacyNote, onLegacyNoteMigrated };
@@ -584,6 +594,23 @@ export default function CommentsPanel({
     })();
     return () => { cancelled = true; };
   }, [articleUrl, articleTitle, fetchThread, publish]);
+
+  // Scroll to the comment the reader was opened from, and flash it so it is
+  // obvious which one that was. Runs once the thread has rendered - `comments`
+  // is in the deps rather than `loading`, because the nodes don't exist until
+  // the tree is on screen. The class is removed on a timer rather than left to
+  // an animation end event, so a re-render mid-flash can't strand it.
+  //
+  // Replies render expanded, so a nested comment needs no unfolding to be found.
+  useEffect(() => {
+    if (!focusCommentId || comments.length === 0) return;
+    const el = rootRef.current?.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(focusCommentId)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add(styles.focused);
+    const t = setTimeout(() => el.classList.remove(styles.focused), 2400);
+    return () => clearTimeout(t);
+  }, [focusCommentId, comments]);
 
   const reload = useCallback(async () => {
     const tree = await fetchThread();
@@ -671,7 +698,7 @@ export default function CommentsPanel({
   const total = countTree(comments);
 
   return (
-    <section className={styles.panel}>
+    <section className={styles.panel} ref={rootRef}>
       <div className={styles.panelHead}>
         <h2 className={styles.panelTitle}>
           Comments

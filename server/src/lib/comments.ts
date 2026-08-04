@@ -187,6 +187,25 @@ export function canonicalArticleKey(raw: string): string {
   }
 }
 
+/**
+ * Just the host an article URL points at, normalised the same way
+ * canonicalArticleKey normalises its host half: lowercased, `www.` stripped.
+ *
+ * This is the site-page key (/s/<domain>). It lives beside the key above rather
+ * than in the sites route because it is written on ingest, by the feed
+ * refresher — the two must normalise identically or a stored FeedItem.linkHost
+ * would never match a request for the domain printed on its own card.
+ *
+ * Returns '' for anything that isn't a URL, which is a value no lookup matches.
+ */
+export function articleHost(raw: string): string {
+  try {
+    return new URL(raw.trim()).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
 export function isHttpUrl(raw: unknown): raw is string {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2048) return false;
   try {

@@ -12,6 +12,8 @@ import styles from './PublicArticlePage.module.css';
 interface Props {
   url: string;
   navigate: (to: string) => void;
+  /** ?c=<id> - one comment to scroll to once the thread loads. */
+  focusCommentId?: string | null;
 }
 
 // Anonymous defaults: show public comments, newest first. There's no account to
@@ -23,13 +25,14 @@ const ANON_PREFS: CommentPrefs = {
   autoExpand: true,
 };
 
-export default function PublicArticlePage({ url, navigate }: Props) {
+export default function PublicArticlePage({ url, navigate, focusCommentId }: Props) {
   return (
     <div className={styles.page}>
       <ArticleDetailModal
         url={url}
         title=""
         prefs={ANON_PREFS}
+        focusCommentId={focusCommentId}
         readOnly
         onViewProfile={name => navigate(profilePathFor(name))}
         onClose={() => navigate('/')}

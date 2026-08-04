@@ -10,6 +10,7 @@ import FeaturePage from './pages/FeaturePage';
 import SelfHostPage from './pages/SelfHostPage';
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
+import { parseSitePath } from './utils/siteUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
 import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
 
@@ -135,8 +136,19 @@ export default function App() {
         />
       );
     }
+    // ?c=<id> aims the thread at one comment - what a comment card on a shared
+    // profile links to. Unknown ids are harmless: the reader just opens at the
+    // top, which is where it opened before this existed.
     const articleUrl = parseArticlePath(path);
-    if (articleUrl) return <PublicArticlePage url={articleUrl} navigate={navigate} />;
+    if (articleUrl) {
+      return (
+        <PublicArticlePage
+          url={articleUrl}
+          focusCommentId={new URLSearchParams(search).get('c')}
+          navigate={navigate}
+        />
+      );
+    }
 
     // The sign-in form is now a destination rather than the default: a visitor
     // who has never been here gets told what this is first.
@@ -167,11 +179,19 @@ export default function App() {
   // *from*, and having to leave the post to read one was the worse trade. The
   // bare-letter shortcuts already stand down inside a text field (see
   // isTypingTarget), so they never fire mid-sentence.
+  //
+  // A site page (/s/<domain>) is signed-in only and has no public counterpart:
+  // everything on it - which feed deals this publisher, what you saved from it -
+  // is one account's own record. For a signed-out visitor the path falls through
+  // to the landing page above, which is the honest answer rather than an empty
+  // page behind a sign-in wall.
   const editId = parseBlogEditPath(path);
+  const siteDomain = parseSitePath(path);
   const view: ShellView | null =
     editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab }
+    : siteDomain ? { kind: 'site', domain: siteDomain }
     : (path === '/blog' || path === '/blog/') ? { kind: 'myblog' }
     : null;
 

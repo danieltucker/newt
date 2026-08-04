@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { FeedSubscription, FeedFolder, ImportableFeed, SuggestedFeed } from '../types';
 import { feedLabel, feedHost } from '../utils/feedLabel';
+import { apiErrorText } from '../services/api';
 import styles from './FeedManagerModal.module.css';
 
 const PALETTE = [
@@ -26,15 +27,6 @@ interface Props {
   onRemoveFolder: (id: string) => Promise<void>;
   onRefreshImportable: () => void;
   onClose: () => void;
-}
-
-// Pulls the readable message out of an api* rejection, whose Error.message is
-// the raw JSON error body.
-function errText(e: unknown, fallback: string): string {
-  if (e instanceof Error) {
-    try { return (JSON.parse(e.message).error as string) || fallback; } catch { /* not JSON */ }
-  }
-  return fallback;
 }
 
 const XIcon = () => (
@@ -96,7 +88,7 @@ function FeedRow({ feed, folders, onUpdate, onRemove }: {
       await onUpdate(feed.id, updates);
       setEditing(false);
     } catch (e) {
-      setError(errText(e, 'Could not save that change'));
+      setError(apiErrorText(e, 'Could not save that change'));
     } finally {
       setBusy(false);
     }
@@ -107,7 +99,7 @@ function FeedRow({ feed, folders, onUpdate, onRemove }: {
     try {
       await onRemove(feed.id);
     } catch (e) {
-      setError(errText(e, 'Could not remove that feed'));
+      setError(apiErrorText(e, 'Could not remove that feed'));
       setBusy(false);
     }
   }
@@ -294,7 +286,7 @@ export default function FeedManagerModal({
       setTab('feeds');
       urlRef.current?.focus();
     } catch (err) {
-      setAddError(errText(err, 'Could not add that feed'));
+      setAddError(apiErrorText(err, 'Could not add that feed'));
     } finally {
       setChecking(false);
     }
@@ -342,7 +334,7 @@ export default function FeedManagerModal({
       );
       if (added.length > 0) setTab('feeds');
     } catch (err) {
-      setAddError(errText(err, 'Could not add those feeds'));
+      setAddError(apiErrorText(err, 'Could not add those feeds'));
     } finally {
       setImporting(false);
     }

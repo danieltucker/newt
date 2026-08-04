@@ -4,6 +4,7 @@ import { FeedArticle, CommentPrefs, ReadingFolder, FeedFolder } from '../types';
 import { faviconUrl } from '../utils/color';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
+import { sitePathFor } from '../utils/siteUrl';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
@@ -77,6 +78,9 @@ interface Props {
   /** Marking everything read clears the rail's site badges too. */
   onAllMarkedRead?: () => void;
   onViewProfile?: (username: string) => void;
+  /** Open a publisher's page (/s/<domain>) from a card's byline. Absent means
+   *  the byline stays a plain link out to the site, which is what it was. */
+  onOpenSite?: (domain: string) => void;
   /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
   favoriteTags?: string[];
   /** Star/unstar one tag, from a tag chip. */
@@ -194,7 +198,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const seeded = useRef(false);
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
@@ -747,6 +751,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
             commentCount={commentCounts[a.link] ?? 0}
             onOpenReader={() => setReading(a)}
             onViewProfile={onViewProfile}
+            onOpenSite={onOpenSite}
             favHits={favHits.get(a.id)}
             favoriteTags={favoriteTags}
             onToggleFavoriteTag={onToggleFavoriteTag}
@@ -813,7 +818,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   );
 }
 
-function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onViewProfile, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onViewProfile, onOpenSite, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   /** Set when this card is a placeholder for something already dealt with. */
   ghost?: Ghost;
@@ -825,6 +830,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   commentCount: number;
   onOpenReader: () => void;
   onViewProfile?: (username: string) => void;
+  onOpenSite?: (domain: string) => void;
   /** Favorites this article matched, if any - the parent did the matching. */
   favHits?: string[];
   favoriteTags?: string[];
@@ -924,8 +930,14 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
         <div className={styles.cardBottom}>
           <div className={styles.meta}>
             {favicon && <img src={favicon} alt="" className={styles.favicon} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-            {/* The byline is a link either way: an @handle opens that person's
-                profile in this app, a hostname opens that site. */}
+            {/* The byline is a link either way, and both now lead *into* the
+                app: an @handle opens that person's profile, a hostname opens
+                that publisher's page. It used to send you straight out to the
+                site's front page, which was the one destination the card
+                already offered - the title is the article, and the article is
+                on the site. What the byline can answer instead is "what else
+                has this lot published, and what have I kept from them". The
+                site's own home is one button away there. */}
             {blogAuthor ? (
               <a
                 className={styles.handle}
@@ -938,15 +950,26 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
                 @{blogAuthor}
               </a>
             ) : domain ? (
-              <a
-                className={styles.domain}
-                href={siteHomeOf(article.link) || `https://${domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`Visit ${domain}`}
-              >
-                {domain}
-              </a>
+              onOpenSite ? (
+                <a
+                  className={styles.domain}
+                  href={sitePathFor(domain)}
+                  title={`Everything from ${domain}`}
+                  onClick={e => { e.preventDefault(); onOpenSite(domain); }}
+                >
+                  {domain}
+                </a>
+              ) : (
+                <a
+                  className={styles.domain}
+                  href={siteHomeOf(article.link) || `https://${domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Visit ${domain}`}
+                >
+                  {domain}
+                </a>
+              )
             ) : null}
           </div>
           <div className={styles.cardRight}>
