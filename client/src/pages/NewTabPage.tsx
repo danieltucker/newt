@@ -940,7 +940,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 feedFolders={feedFolders}
                 subscriptionCount={subscriptions.length}
                 onManageFeeds={() => setShowFeedManager(true)}
-                onSaveArticle={async (a, markSaved, dest) => {
+                onSaveArticle={async (a, card, dest) => {
                   const fields = {
                     url: a.url,
                     title: a.title,
@@ -949,27 +949,43 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                     tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
                     imageUrl: a.imageUrl ?? '',
                   };
+                  // Both committed paths grey the card first and talk to the
+                  // server after. They used to wait for the round trip - two of
+                  // them, for a shelf - which left the card looking untouched
+                  // for as long as the network took, so the press read as
+                  // having missed. Every other write in the reading list
+                  // already commits locally and reconciles behind the scenes
+                  // (see useReadingList); this is the one that didn't.
+                  //
                   // Picking a shelf is already a decision about this article, so
                   // it never stops for the dialog - and it skips the reading
                   // list, since filing it there first would only mean fishing it
                   // back out again.
                   if (dest) {
+                    card.markSaved();
                     try {
                       const created = await saveItem(fields);
                       if (dest.folderId) await moveToFolder(created.id, dest.folderId);
                       else await setInLibrary(created.id, true);
-                      markSaved();
-                    } catch {}
+                    } catch {
+                      card.restore();
+                    }
                     return;
                   }
                   if ((settings.saveArticleMode ?? 'dialog') === 'instant') {
                     // Save with the article's own metadata - no dialog
+                    card.markSaved();
                     try {
                       await saveItem(fields);
-                      markSaved();
-                    } catch {}
+                    } catch {
+                      card.restore();
+                    }
                   } else {
-                    setSavingArticle({ ...a, markSaved });
+                    // The dialog is its own feedback: it holds the screen while
+                    // it saves and stays open if that fails. So this one waits
+                    // for the real answer - by the time the dialog is out of the
+                    // way the card behind it is already grey.
+                    setSavingArticle({ ...a, markSaved: card.markSaved });
                   }
                 }}
                 readingFolders={readingFolders}

@@ -3,10 +3,18 @@
    the blog editor and the comment composer alike, and none of those should have
    to import the notes tree's stylesheet to get it.
 
-   The surface is "paper": it sets its own light background colours rather than
-   reading the theme variables, so an editor looks the same wherever it is
-   embedded. Hosts pin a white background behind it for that reason (see
-   .editorShell in BlogEditorPage.module.css and CommentsPanel.module.css).
+   The surface is "paper", and paper follows the theme. It used to set its own
+   light colours on the theory that an editor should look the same wherever it
+   is embedded, which in a dark app meant a white slab in the middle of the
+   screen - the one surface you stare at for an hour was the one that never
+   turned the lights off. The values now come from the --paper-* ramp in
+   styles/tokens.css, which has a set per theme. Hosts pin var(--paper) behind
+   the editor for the same reason they used to pin white (see .editorShell in
+   BlogEditorPage.module.css and CommentsPanel.module.css).
+
+   It stays its own ramp rather than reusing --surface/--text because a document
+   surface needs finer gradations than page chrome does, and slightly more
+   contrast.
 
    The :global blocks near the bottom are deliberate: to-do, table and reference
    markup is written into saved note/post HTML, so those class names are part of
@@ -15,14 +23,26 @@
 
 /* ── Formatting toolbar (utility bar above the note, and the selection
    bubble - they share button styling) ── */
+/* Sticky by default, at the top of whatever contains it. In the notes console
+   and the comment composer that costs nothing - the scrolling happens in
+   .editorScroll below, so the bar was never going anywhere. In the blog editor
+   the page itself scrolls, and the bar used to leave with it: you would be four
+   paragraphs into a post with no way to reach bold but the keyboard. Hosts that
+   have chrome of their own above the editor set --editor-toolbar-top to say
+   where it should come to rest (see .editorShell in BlogEditorPage). */
 .toolbar {
+  position: sticky;
+  top: var(--editor-toolbar-top, 0px);
+  z-index: 4;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 2px;
   padding: 6px 32px 8px;
-  border-bottom: 1px solid #ebedf1;
+  /* Opaque, or the text scrolling underneath shows through it. */
+  background: var(--paper);
+  border-bottom: 1px solid var(--paper-line);
 }
 
 .bubble {
@@ -36,10 +56,10 @@
   width: max-content;
   max-width: calc(100vw - 16px);
   padding: 4px 6px;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 9px;
-  box-shadow: 0 8px 24px rgba(20, 22, 30, 0.18);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 47%, transparent);
   animation: popIn 0.1s ease;
 }
 
@@ -53,7 +73,7 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #5c6270;
+  color: var(--paper-muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   line-height: 1;
@@ -61,11 +81,11 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.tbBtn:hover { background: #f2f3f7; color: #2b2f3a; }
+.tbBtn:hover { background: var(--paper-2); color: var(--paper-text-2); }
 
 .tbBtnActive {
-  background: #ecebff;
-  color: #5b5be6;
+  background: var(--paper-accent-wash-2);
+  color: var(--paper-accent);
 }
 
 /* The table controls sit on their own line under the formatting buttons */
@@ -76,7 +96,7 @@
   gap: 2px;
   margin-top: 5px;
   padding-top: 6px;
-  border-top: 1px solid #f1f2f6;
+  border-top: 1px solid var(--paper-2);
 }
 
 /* Spelled-out table actions - words, not 14px glyphs nobody can tell apart */
@@ -89,7 +109,7 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #5c6270;
+  color: var(--paper-muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
   font-weight: 500;
@@ -99,24 +119,108 @@
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 
-.tbWordBtn:hover { background: #f2f3f7; color: #2b2f3a; }
-.tbWordBtnDanger:hover { background: #fdeaea; color: #d64545; }
+.tbWordBtn:hover { background: var(--paper-2); color: var(--paper-text-2); }
+.tbWordBtnDanger:hover { background: var(--paper-danger-wash); color: var(--paper-danger); }
 
 /* The one action that discards the whole table reads as a distinct button */
 .tbWordBtnChip {
   margin-left: 4px;
-  border: 1px solid #e6e7ec;
-  background: #ffffff;
+  border: 1px solid var(--paper-line);
+  background: var(--paper);
 }
 
-.tbWordBtnChip:hover { border-color: #f3cdcd; }
+.tbWordBtnChip:hover { border-color: var(--paper-danger-line); }
 
 .tbSep {
   width: 1px;
   height: 16px;
   margin: 0 5px;
-  background: #e6e7ec;
+  background: var(--paper-line);
 }
+
+/* ── Heading picker ──
+   The selection bubble used to carry a lone "H2" button, which was a strange
+   offer: of the editor's three heading levels, one was reachable from the bar
+   that appears when you select text and the other two were not. This is that
+   button opened up - it reports the level you are on and offers all of them,
+   plus the way back to body text. */
+.headingPick {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The caret is what says the button opens onto something. Small and dimmed:
+   the letter is the control, this is a footnote to it. */
+.headingCaret {
+  margin-left: 3px;
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+/* Hangs below the bubble. The bubble is fixed and sets no overflow, so this can
+   simply escape it rather than needing a portal of its own. */
+.headingMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
+  border-radius: 9px;
+  box-shadow: 0 10px 30px color-mix(in oklab, var(--shadow) 47%, transparent);
+  animation: popIn 0.1s ease;
+}
+
+.headingItem {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--paper-body);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.headingItem:hover {
+  background: var(--paper-2);
+  color: var(--paper-text-2);
+}
+
+.headingItemOn {
+  background: var(--paper-accent-wash-2);
+  color: var(--paper-accent);
+}
+
+/* Each row's badge is set at the weight and size the level produces, so the
+   choice can be seen rather than read. */
+.headingSample {
+  flex-shrink: 0;
+  width: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--paper-text-2);
+}
+
+.headingItemOn .headingSample { color: var(--paper-accent); }
+
+.headingSample.h1 { font-size: 17px; letter-spacing: -0.02em; }
+.headingSample.h2 { font-size: 15px; letter-spacing: -0.01em; }
+.headingSample.h3 { font-size: 13px; }
+.headingSample.text { font-size: 14px; font-weight: 500; }
+
+.headingLabel { white-space: nowrap; }
 
 /* ── Emoji picker ──
    Portalled and fixed, like the selection bubble: hosts wrap this editor in a
@@ -132,16 +236,16 @@
   max-height: 236px;
   overflow-y: auto;
   padding: 4px 8px 8px;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgb(24 27 36 / 0.16);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 42%, transparent);
   scrollbar-width: thin;
-  scrollbar-color: #d3d6de transparent;
+  scrollbar-color: var(--paper-line-2) transparent;
 }
 
 .emojiPanel::-webkit-scrollbar { width: 8px; }
-.emojiPanel::-webkit-scrollbar-thumb { background: #d3d6de; border-radius: 4px; }
+.emojiPanel::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }
 
 .emojiGroupLabel {
   padding: 7px 2px 3px;
@@ -149,7 +253,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
 .emojiGrid {
@@ -173,7 +277,7 @@
   transition: background 0.1s;
 }
 
-.emojiBtn:hover { background: #f2f3f7; }
+.emojiBtn:hover { background: var(--paper-2); }
 
 @media (hover: none) {
   .emojiBtn { height: 34px; }
@@ -187,18 +291,18 @@
   max-width: 40vw;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 .linkTextInput:focus {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
@@ -214,7 +318,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   padding: 0 4px;
 }
 
@@ -225,11 +329,11 @@
   overflow-y: auto;
   min-height: 0;
   scrollbar-width: thin;
-  scrollbar-color: #d3d6de transparent;
+  scrollbar-color: var(--paper-line-2) transparent;
 }
 
 .editorScroll::-webkit-scrollbar { width: 8px; }
-.editorScroll::-webkit-scrollbar-thumb { background: #d3d6de; border-radius: 4px; }
+.editorScroll::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }
 
 .editor {
   position: relative;
@@ -239,14 +343,14 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 15px;
   line-height: 1.65;
-  color: #2b2f3a;
-  caret-color: #5b5be6;
+  color: var(--paper-text-2);
+  caret-color: var(--paper-accent);
 }
 
 .editor:global(.note-empty)::before {
   content: 'Type / for commands, or just start writing…';
   position: absolute;
-  color: #b3b8c4;
+  color: var(--paper-ghost);
   pointer-events: none;
 }
 
@@ -265,13 +369,13 @@
    them through untouched (verified in the built CSS), so the warning is noise -
    don't "fix" it by renaming the selector. */
 ::highlight(note-find) {
-  background: #fdf0c4;
-  color: #2b2f3a;
+  background: var(--paper-mark);
+  color: var(--paper-text-2);
 }
 
 ::highlight(note-find-current) {
-  background: #ffca4a;
-  color: #1c2029;
+  background: var(--paper-mark-2);
+  color: var(--paper-text);
 }
 
 .findBar {
@@ -280,8 +384,8 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 32px;
-  background: #f7f8fb;
-  border-bottom: 1px solid #ebedf1;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--paper-line);
   animation: findDrop 0.12s ease;
 }
 
@@ -302,12 +406,12 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
-.findToggle:hover { background: #eef0f4; color: #444b5a; }
+.findToggle:hover { background: var(--paper-3); color: var(--paper-body); }
 .findToggleIcon { transition: transform 0.12s; }
 .findToggleIconOpen { transform: rotate(90deg); }
 
@@ -337,27 +441,27 @@
 .findInput {
   width: 100%;
   padding: 5px 62px 5px 10px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.findInput::placeholder { color: #b5bac6; }
+.findInput::placeholder { color: var(--paper-ghost); }
 
 .findInput:focus {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
 /* No match is a dead end, not an error - a warm border, no red alarm */
 .findInputEmpty {
-  border-color: #f0d3a8;
-  background: #fffdf7;
+  border-color: var(--paper-mark-2);
+  background: var(--paper-note);
 }
 
 /* Sits inside the field so the count never pushes the layout around */
@@ -366,7 +470,7 @@
   right: 10px;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
@@ -380,10 +484,10 @@
   height: 26px;
   flex-shrink: 0;
   padding: 0 6px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 6px;
-  background: #ffffff;
-  color: #6b7180;
+  background: var(--paper);
+  color: var(--paper-muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
   line-height: 1;
@@ -392,7 +496,7 @@
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.findBtn:hover:not(:disabled) { border-color: #c9c9f5; background: #f4f4fe; color: #5b5be6; }
+.findBtn:hover:not(:disabled) { border-color: var(--paper-accent-line); background: var(--paper-accent-wash); color: var(--paper-accent); }
 
 .findBtn:disabled {
   opacity: 0.45;
@@ -407,9 +511,9 @@
 }
 
 .findFlagOn {
-  border-color: #c9c9f5;
-  background: #ecebfd;
-  color: #5b5be6;
+  border-color: var(--paper-accent-line);
+  background: var(--paper-accent-wash-2);
+  color: var(--paper-accent);
 }
 
 .findClose {
@@ -423,12 +527,12 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
-.findClose:hover { background: #eef0f4; color: #444b5a; }
+.findClose:hover { background: var(--paper-3); color: var(--paper-body); }
 
 /* ── Rendered blocks inside the editor ── */
 .editor > * { margin: 0 0 6px; }
@@ -458,24 +562,24 @@
 }
 
 .uploadNote {
-  color: #5a5f6e;
-  background: #f1f2f6;
+  color: var(--paper-body);
+  background: var(--paper-2);
 }
 
 .uploadError {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #b4292d;
-  background: #fdeaea;
-  border: 1px solid #f5c2c4;
+  color: var(--paper-danger-2);
+  background: var(--paper-danger-wash);
+  border: 1px solid var(--paper-danger-line);
 }
 
 .uploadDismiss {
   margin-left: auto;
   border: none;
   background: transparent;
-  color: #b4292d;
+  color: var(--paper-danger-2);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
@@ -486,7 +590,7 @@
 .editor h1, .editor h2, .editor h3 {
   font-family: 'Bricolage Grotesque', sans-serif;
   font-weight: 600;
-  color: #1c2029;
+  color: var(--paper-text);
   line-height: 1.25;
   margin: 16px 0 4px;
 }
@@ -580,41 +684,41 @@
 .editor [data-indent='5'] { margin-left: 130px; }
 
 .editor blockquote {
-  border-left: 3px solid #5b5be6;
+  border-left: 3px solid var(--paper-accent);
   margin: 4px 0 8px;
   padding: 2px 14px;
-  color: #6b7180;
+  color: var(--paper-muted);
 }
 
 .editor pre {
-  background: #f6f7fa;
-  border: 1px solid #e6e7ec;
+  background: var(--paper-2);
+  border: 1px solid var(--paper-line);
   border-radius: 8px;
   padding: 10px 14px;
   overflow-x: auto;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 13px;
   line-height: 1.5;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
 }
 
 .editor hr {
   border: none;
-  border-top: 1px solid #dfe1e8;
+  border-top: 1px solid var(--paper-line-2);
   margin: 14px 0;
 }
 
-.editor a { color: #5b5be6; text-decoration: underline; }
+.editor a { color: var(--paper-accent); text-decoration: underline; }
 
 /* Inline code span - distinct from the .editor pre block above */
 .editor code {
-  background: #f2f3f7;
-  border: 1px solid #e6e7ec;
+  background: var(--paper-2);
+  border: 1px solid var(--paper-line);
   border-radius: 4px;
   padding: 1px 5px;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.88em;
-  color: #d6336c;
+  color: var(--paper-code);
 }
 
 .editor pre code {
@@ -639,16 +743,16 @@
   top: 0.28em;
   width: 16px;
   height: 16px;
-  border: 1.6px solid #c2c6d2;
+  border: 1.6px solid var(--paper-line-2);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--paper);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
 
 :global(.note-todo)[data-checked='true']::before {
-  background: #5b5be6;
-  border-color: #5b5be6;
+  background: var(--paper-accent);
+  border-color: var(--paper-accent);
 }
 
 :global(.note-todo)[data-checked='true']::after {
@@ -658,14 +762,14 @@
   top: calc(0.28em + 3px);
   width: 4px;
   height: 8px;
-  border: solid #ffffff;
+  border: solid var(--paper);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   pointer-events: none;
 }
 
 :global(.note-todo)[data-checked='true'] {
-  color: #9aa0b0;
+  color: var(--paper-faint);
   text-decoration: line-through;
 }
 
@@ -679,7 +783,7 @@
 
 :global(table.note-table) th,
 :global(table.note-table) td {
-  border: 1px solid #e2e4ea;
+  border: 1px solid var(--paper-line);
   padding: 7px 10px;
   text-align: left;
   vertical-align: top;
@@ -688,9 +792,9 @@
 }
 
 :global(table.note-table) th {
-  background: #f6f7fa;
+  background: var(--paper-2);
   font-weight: 600;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
 }
 
 :global(table.note-table) p { margin: 0; }
@@ -730,7 +834,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  color: #1c2029;
+  color: var(--paper-text);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -741,7 +845,7 @@
   gap: 5px;
   font-size: 11.5px;
   line-height: 1.4;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -752,11 +856,11 @@
 
 :global(.note-embed[data-variant='link'] .note-embed-a) {
   display: inline;
-  color: #4b4bd8;
+  color: var(--paper-accent-2);
   transition: background 0.12s;
 }
 
-:global(.note-embed[data-variant='link']:hover .note-embed-a) { background: #f2f2fe; }
+:global(.note-embed[data-variant='link']:hover .note-embed-a) { background: var(--paper-accent-wash); }
 
 :global(.note-embed[data-variant='link'] .note-embed-fav) {
   margin-right: 5px;
@@ -770,11 +874,11 @@
   display: inline;
   font-weight: 500;
   color: inherit;
-  border-bottom: 1px solid #d5d6f7;
+  border-bottom: 1px solid var(--paper-accent-line);
   transition: border-color 0.12s;
 }
 
-:global(.note-embed[data-variant='link']:hover .note-embed-title) { border-bottom-color: #5b5be6; }
+:global(.note-embed[data-variant='link']:hover .note-embed-title) { border-bottom-color: var(--paper-accent); }
 
 /* ── Size: small ── thumbnail beside the title, one line of provenance ──
    The box is drawn on the wrapper rather than on the anchor, because the
@@ -784,15 +888,15 @@
   display: flex;
   align-items: stretch;
   margin: 8px 0;
-  border: 1px solid #e6e7ec;
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
-  background: #ffffff;
+  background: var(--paper);
   transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
 :global(.note-embed[data-variant='small']:hover) {
-  border-color: #c9c9f5;
-  background: #fbfbff;
+  border-color: var(--paper-accent-line);
+  background: var(--paper-2);
   box-shadow: 0 2px 10px rgba(91, 91, 230, 0.08);
 }
 
@@ -830,15 +934,15 @@
 :global(.note-embed[data-variant='large']) {
   display: block;
   margin: 12px 0;
-  border: 1px solid #e6e7ec;
+  border: 1px solid var(--paper-line);
   border-radius: 12px;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--paper);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 :global(.note-embed[data-variant='large']:hover) {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 4px 16px rgba(91, 91, 230, 0.1);
 }
 
@@ -867,7 +971,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #5b5be6;
+  color: var(--paper-accent);
 }
 
 :global(.note-embed[data-variant='large'] .note-embed-title) {
@@ -888,7 +992,7 @@
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.45;
-  color: #6b7180;
+  color: var(--paper-muted);
 }
 
 :global(.note-embed[data-variant='large'] .note-embed-meta) { margin-top: 8px; }
@@ -908,13 +1012,13 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #5b5be6;
+  color: var(--paper-accent);
   white-space: nowrap;
   transition: background 0.12s;
 }
 
 :global(.note-embed .note-embed-comments:hover) {
-  background: #f2f2fe;
+  background: var(--paper-accent-wash);
 }
 
 :global(.note-embed .note-embed-comments)::before {
@@ -934,13 +1038,13 @@
 :global(.note-embed[data-variant='small'] .note-embed-comments) {
   flex-shrink: 0;
   padding: 0 12px;
-  border-left: 1px solid #eef0f4;
+  border-left: 1px solid var(--paper-3);
 }
 
 /* Large: a footer strip under the body, the full width of the card. */
 :global(.note-embed[data-variant='large'] .note-embed-comments) {
   padding: 10px 14px;
-  border-top: 1px solid #eef0f4;
+  border-top: 1px solid var(--paper-3);
 }
 
 /* A kind with no comment box of its own - a link to somewhere on the open web -
@@ -962,10 +1066,10 @@
   width: 288px;
   max-height: 280px;
   overflow-y: auto;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(20, 22, 30, 0.18);
+  box-shadow: 0 10px 30px color-mix(in oklab, var(--shadow) 47%, transparent);
   z-index: calc(var(--z-top) + 1);
   padding-bottom: 4px;
   animation: popIn 0.1s ease;
@@ -981,7 +1085,7 @@
 .slashEmpty {
   padding: 12px;
   font-size: 12.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   text-align: center;
 }
 
@@ -990,7 +1094,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   padding: 8px 12px 4px;
 }
 
@@ -1008,39 +1112,39 @@
 }
 
 .slashItem:hover,
-.slashItemSel { background: #f2f3f7; }
+.slashItemSel { background: var(--paper-2); }
 
 .slashBadge {
   flex-shrink: 0;
   width: 26px;
   height: 22px;
-  background: #f2f3f7;
-  border: 1px solid #e6e7ec;
+  background: var(--paper-2);
+  border: 1px solid var(--paper-line);
   border-radius: 5px;
   font-size: 10px;
   font-weight: 700;
   font-family: 'IBM Plex Mono', monospace;
-  color: #5b5be6;
+  color: var(--paper-accent);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .slashItemSel .slashBadge {
-  background: #ecebfd;
-  border-color: #5b5be6;
+  background: var(--paper-accent-wash-2);
+  border-color: var(--paper-accent);
 }
 
 .slashLabel {
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   flex-shrink: 0;
 }
 
 .slashHintText {
   font-size: 11px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1054,7 +1158,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 22, 30, 0.28);
+  background: color-mix(in oklab, var(--shadow) 73%, transparent);
   animation: linkFade 0.12s ease;
 }
 
@@ -1064,10 +1168,10 @@
   width: 380px;
   max-width: calc(100vw - 32px);
   padding: 18px;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 12px;
-  box-shadow: 0 18px 44px rgba(20, 22, 30, 0.24);
+  box-shadow: 0 18px 44px color-mix(in oklab, var(--shadow) 62%, transparent);
   animation: popIn 0.12s ease;
 }
 
@@ -1075,7 +1179,7 @@
   font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 15px;
   font-weight: 600;
-  color: #1c2029;
+  color: var(--paper-text);
   margin-bottom: 14px;
 }
 
@@ -1090,27 +1194,27 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   margin-bottom: 4px;
 }
 
 .linkInput {
   width: 100%;
   padding: 7px 10px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.linkInput::placeholder { color: #b5bac6; }
+.linkInput::placeholder { color: var(--paper-ghost); }
 
 .linkInput:focus {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
@@ -1121,9 +1225,9 @@
   display: flex;
   gap: 2px;
   padding: 2px;
-  border: 1px solid #e6e7ec;
+  border: 1px solid var(--paper-line);
   border-radius: 8px;
-  background: #f6f7fa;
+  background: var(--paper-2);
 }
 
 .linkSize {
@@ -1134,18 +1238,18 @@
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
-  color: #6b7180;
+  color: var(--paper-muted);
   cursor: pointer;
   transition: background 0.12s, color 0.12s, box-shadow 0.12s;
 }
 
-.linkSize:hover { color: #2b2f3a; }
+.linkSize:hover { color: var(--paper-text-2); }
 
 .linkSizeOn {
-  background: #ffffff;
-  color: #5b5be6;
+  background: var(--paper);
+  color: var(--paper-accent);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(20, 22, 30, 0.1);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--shadow) 26%, transparent);
 }
 
 .linkActions {
@@ -1175,34 +1279,34 @@
 }
 
 .linkCancel {
-  border: 1px solid #e0e2e9;
-  background: #ffffff;
-  color: #6b7180;
+  border: 1px solid var(--paper-line-2);
+  background: var(--paper);
+  color: var(--paper-muted);
 }
 
-.linkCancel:hover { background: #f2f3f7; color: #2b2f3a; }
+.linkCancel:hover { background: var(--paper-2); color: var(--paper-text-2); }
 
 .linkApply {
-  border: 1px solid #5b5be6;
-  background: #5b5be6;
-  color: #ffffff;
+  border: 1px solid var(--paper-accent);
+  background: var(--paper-accent);
+  color: #fff;
 }
 
-.linkApply:hover { background: #4a4ad8; border-color: #4a4ad8; }
+.linkApply:hover { background: var(--paper-accent-2); border-color: var(--paper-accent-2); }
 
 .linkApply:disabled {
-  background: #d9daf7;
-  border-color: #d9daf7;
+  background: var(--paper-accent-line);
+  border-color: var(--paper-accent-line);
   cursor: not-allowed;
 }
 
 .linkRemove {
   border: 1px solid transparent;
   background: none;
-  color: #d64545;
+  color: var(--paper-danger);
 }
 
-.linkRemove:hover { background: #fdeaea; }
+.linkRemove:hover { background: var(--paper-danger-wash); }
 
 /* ── Reference picker ──
    Same shell as the link dialog (overlay, card, action row), sized for a list
@@ -1221,18 +1325,18 @@
   margin-top: 10px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #d3d6de transparent;
+  scrollbar-color: var(--paper-line-2) transparent;
 }
 
 .refList::-webkit-scrollbar { width: 8px; }
-.refList::-webkit-scrollbar-thumb { background: #d3d6de; border-radius: 4px; }
+.refList::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }
 
 .refEmpty {
   padding: 26px 16px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   text-align: center;
 }
 
@@ -1250,7 +1354,7 @@
   transition: background 0.1s, border-color 0.1s;
 }
 
-.refItemSel { background: #f2f3f7; border-color: #e2e3ee; }
+.refItemSel { background: var(--paper-2); border-color: var(--paper-line); }
 
 .refThumb,
 .refThumbBlank {
@@ -1263,7 +1367,7 @@
 
 /* Art-less items keep the same rhythm as the ones that have a thumbnail */
 .refThumbBlank {
-  background: repeating-linear-gradient(-45deg, #f2f3f7 0 6px, #eceef4 6px 12px);
+  background: repeating-linear-gradient(-45deg, var(--paper-2) 0 6px, var(--paper-3) 6px 12px);
 }
 
 .refText {
@@ -1277,7 +1381,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13.5px;
   font-weight: 600;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1288,7 +1392,7 @@
 .refMeta {
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 11.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1298,9 +1402,9 @@
   display: flex;
   gap: 2px;
   padding: 2px;
-  border: 1px solid #e6e7ec;
+  border: 1px solid var(--paper-line);
   border-radius: 8px;
-  background: #f6f7fa;
+  background: var(--paper-2);
 }
 
 .refSize {
@@ -1313,17 +1417,17 @@
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
-  color: #6b7180;
+  color: var(--paper-muted);
   cursor: pointer;
   transition: background 0.12s, color 0.12s, box-shadow 0.12s;
 }
 
-.refSize:hover { color: #2b2f3a; }
+.refSize:hover { color: var(--paper-text-2); }
 
 .refSizeOn {
-  background: #ffffff;
-  color: #5b5be6;
-  box-shadow: 0 1px 3px rgba(20, 22, 30, 0.1);
+  background: var(--paper);
+  color: var(--paper-accent);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--shadow) 26%, transparent);
 }
 
 /* ── Narrow screens ──

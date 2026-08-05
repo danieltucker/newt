@@ -668,7 +668,7 @@
   height: 190px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--paper);
   overflow: hidden;
 }
 

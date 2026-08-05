@@ -479,33 +479,42 @@
    Saved, rather than dismissed. Greyed like a ghost so the slot reads as
    handled, but every control on it still works: the article is in your reading
    list now, which is a reason to want to read it, comment on it or file it
-   somewhere else - not a reason to be locked out of it. Lighter than a ghost
-   because it is not a stand-in for something gone, and it lifts back towards
-   full strength under the pointer, which is what says "still live".
+   somewhere else - not a reason to be locked out of it.
 
    The fade is applied to the card's contents rather than to the card, and it
    skips the two rows that are buttons. Fading the whole card took the controls
    down with it - a working Save pill at 50% opacity and no colour looks exactly
    like a disabled one, so the state that was meant to say "handled, carry on"
    was reading as "handled, hands off". Everything that is *about* the article
-   greys; everything you can still press keeps its colour. */
+   greys; everything you can still press keeps its colour.
+
+   No transition, deliberately. This is the receipt for a button you just
+   pressed, and a quarter-second cross-fade on a confirmation reads as lag
+   rather than as polish - you are still looking at a card that has not
+   obviously reacted for a fifth of a second after you clicked it. It snaps.
+
+   There is no hover state either, and that is the other half of the same
+   problem. It used to lift back towards full strength under the pointer, on
+   the reasoning that it was what said "still live". But the pointer is on the
+   card at the moment you press Save - that is how it got pressed - so the card
+   went straight into the lifted state and only greyed properly once you moved
+   the mouse away, which made a save look like it had not registered until you
+   stopped looking at it. The coloured controls say "still live" now, all the
+   time, without needing to be hovered to say it. */
 .spent .card > *:not(.commentRow):not(.cardActions) {
   opacity: 0.5;
   filter: grayscale(0.9);
-  transition: opacity 0.25s ease, filter 0.25s ease;
 }
 
 /* The card itself keeps full opacity now, so the "handled" reading has to come
-   from the surface it is drawn on rather than from a fade over the lot. */
+   from the surface it is drawn on rather than from a fade over the lot.
+   The base .card transitions background and border-color over 0.35s, which
+   would put the same lag back into the half of the change this rule owns; only
+   box-shadow stays animated, since that one belongs to hover. */
 .spent .card {
   background: color-mix(in oklab, var(--surface2) 70%, var(--surface));
   border-color: color-mix(in oklab, var(--border) 70%, transparent);
-}
-
-.spent:hover .card > *:not(.commentRow):not(.cardActions),
-.spent:focus-within .card > *:not(.commentRow):not(.cardActions) {
-  opacity: 0.9;
-  filter: grayscale(0.25);
+  transition: box-shadow 0.35s ease;
 }
 
 /* Blocks the card underneath while staying invisible itself - only the pill is

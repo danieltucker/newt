@@ -251,11 +251,10 @@
 }
 .urlNote { opacity: 0.85; }
 
-/* RichEditor scrolls inside this box, so it needs a definite height.
-   The background is white in both themes on purpose: RichEditor.module.css
-   hardcodes dark slate text on .editor and light separators on the toolbar. The
-   comment composer's .editorShell pins #fff for the same reason - the editor is
-   "paper" wherever it appears. */
+/* RichEditor scrolls inside this box, so it needs a definite height, and it
+   needs the paper surface behind it: the editor's own rules paint text and
+   separators from the --paper-* ramp, and this is the sheet they sit on. The
+   comment composer's .editorShell does the same. */
 .editorShell {
   display: flex;
   flex-direction: column;
@@ -263,8 +262,17 @@
   min-height: 420px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: #fff;
-  overflow: hidden;
+  background: var(--paper);
+  /* `clip`, not `hidden`. Both crop the editor to the rounded corners, but
+     `hidden` makes this a scroll container, and the formatting toolbar inside
+     it is sticky - it would then stick to the top of this box, which never
+     scrolls, and sail off the screen with it. `clip` doesn't scroll, so the
+     toolbar resolves against the page and stays put. Same distinction as the
+     note on `html` in styles/tokens.css. */
+  overflow: clip;
+  /* Where that toolbar comes to rest: under the shell bar, under the action
+     bar, which publishes its own measured height (see BlogEditorPage). */
+  --editor-toolbar-top: calc(var(--shellbar-h, 56px) + var(--composer-bar-h, 46px));
 }
 
 .foot {

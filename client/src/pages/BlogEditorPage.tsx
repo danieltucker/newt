@@ -186,6 +186,13 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   // uncontrolled and reads initialHtml on mount, so a seed arriving afterwards
   // would never reach it. takeSeed is idempotent for exactly this reason -
   // StrictMode runs this initialiser twice and keeps one of the two answers.
+  // The formatting toolbar sticks directly under this bar, which itself sticks
+  // under the shell bar, so it needs this one's height. Measured and published
+  // rather than assumed - the bar wraps to two rows on a narrow window, and a
+  // constant would leave the toolbar overlapping it exactly when there is least
+  // room to spare. Same arrangement ShellBar uses for --shellbar-h.
+  const actionBarRef = useRef<HTMLDivElement>(null);
+
   const [seed] = useState(() => (isNew ? takeSeed() : null));
   // Once this composer has the seed, nothing else should get it: without this,
   // leaving and choosing "New post" again would reopen the same draft.
@@ -193,6 +200,24 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
 
   const [state, setState] = useState<LoadState>(isNew ? 'ready' : 'loading');
   const [post, setPost] = useState<BlogPost | null>(null);
+
+  // The formatting toolbar sticks directly under the action bar, which itself
+  // sticks under the shell bar, so it needs this one's height. Measured and
+  // published rather than assumed - the bar wraps to two rows on a narrow
+  // window, and a constant would leave the toolbar overlapping it exactly when
+  // there is least room to spare. Same arrangement ShellBar uses for
+  // --shellbar-h, scoped to .wrap rather than the document root because it is a
+  // fact about this page and shouldn't outlive it.
+  useEffect(() => {
+    const el = actionBarRef.current;
+    const scope = el?.parentElement;
+    if (!el || !scope) return;
+    const publish = () => scope.style.setProperty('--composer-bar-h', `${el.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [state]);
 
   const [title, setTitle] = useState(seed?.title ?? '');
   const [heroImage, setHeroImage] = useState('');
@@ -434,7 +459,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
       {/* Not a page header - the shell bar above already is one. This is the row
           of controls that act on the post: who gets to see it, and whether it
           has been written down yet. */}
-      <div className={styles.actionBar}>
+      <div className={styles.actionBar} ref={actionBarRef}>
         <div className={styles.actionLeft}>
           <button className={styles.backBtn} onClick={() => navigate('/blog')}>← My posts</button>
           <SaveState

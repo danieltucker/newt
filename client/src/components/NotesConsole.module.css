@@ -14,7 +14,7 @@
   height: 52vh;
   min-height: 340px;
   border-radius: 12px;
-  box-shadow: 0 -2px 10px rgba(20, 22, 30, 0.12), 0 -14px 44px rgba(20, 22, 30, 0.22);
+  box-shadow: 0 -2px 10px color-mix(in oklab, var(--shadow) 31%, transparent), 0 -14px 44px color-mix(in oklab, var(--shadow) 57%, transparent);
   transform-origin: bottom center;
   will-change: transform, opacity;
   animation: shellUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -56,8 +56,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -68,8 +68,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 9px 16px;
-  background: #f7f8fb;
-  border-bottom: 1px solid #ebedf1;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--paper-line);
   flex-shrink: 0;
 }
 
@@ -78,7 +78,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: #5b5be6;
+  color: var(--paper-accent);
 }
 
 .headerRight {
@@ -89,7 +89,7 @@
 
 .savedBadge {
   font-size: 11px;
-  color: #5b5be6;
+  color: var(--paper-accent);
   opacity: 0.85;
   animation: fadeIn 0.15s ease;
 }
@@ -104,20 +104,20 @@
   align-items: center;
   gap: 7px;
   font-size: 11px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
 .headerHints kbd {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
-  color: #6b7180;
-  background: #eef0f4;
-  border: 1px solid #e0e2e9;
+  color: var(--paper-muted);
+  background: var(--paper-3);
+  border: 1px solid var(--paper-line-2);
   border-radius: 4px;
   padding: 1px 5px;
 }
 
-.dot { color: #d3d6de; }
+.dot { color: var(--paper-line-2); }
 
 .closeBtn {
   display: flex;
@@ -129,12 +129,12 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
-.closeBtn:hover { background: #eef0f4; color: #444b5a; }
+.closeBtn:hover { background: var(--paper-3); color: var(--paper-body); }
 
 /* ── Body: tree | editor ── */
 .body {
@@ -150,8 +150,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #fafbfc;
-  border-right: 1px solid #ebedf1;
+  background: var(--paper-2);
+  border-right: 1px solid var(--paper-line);
 }
 
 /* Draggable divider on the tree's right edge - a wide invisible hit area with a
@@ -180,7 +180,7 @@
 
 .resizer:hover::after,
 .resizer:active::after {
-  background: #c9c9f5;
+  background: var(--paper-accent-line);
 }
 
 .treeHead {
@@ -195,7 +195,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
 .addBtn {
@@ -205,15 +205,15 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 6px;
-  background: #ffffff;
-  color: #6b7180;
+  background: var(--paper);
+  color: var(--paper-muted);
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
-.addBtn:hover { color: #5b5be6; border-color: #c9c9f5; background: #f4f4fe; }
+.addBtn:hover { color: var(--paper-accent); border-color: var(--paper-accent-line); background: var(--paper-accent-wash); }
 
 /* ── Note search ── */
 .searchWrap {
@@ -226,27 +226,27 @@
 .searchIcon {
   position: absolute;
   left: 9px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   pointer-events: none;
 }
 
 .searchInput {
   width: 100%;
   padding: 6px 24px 6px 27px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.searchInput::placeholder { color: #b5bac6; }
+.searchInput::placeholder { color: var(--paper-ghost); }
 
 .searchInput:focus {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
@@ -262,16 +262,16 @@
   border: none;
   border-radius: 4px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
 }
 
-.searchClear:hover { background: #eef0f4; color: #444b5a; }
+.searchClear:hover { background: var(--paper-3); color: var(--paper-body); }
 
 .treeEmpty {
   padding: 10px 8px;
   font-size: 12px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   line-height: 1.5;
 }
 
@@ -280,11 +280,11 @@
   overflow-y: auto;
   padding: 2px 8px 10px;
   scrollbar-width: thin;
-  scrollbar-color: #d3d6de transparent;
+  scrollbar-color: var(--paper-line-2) transparent;
 }
 
 .treeList::-webkit-scrollbar { width: 6px; }
-.treeList::-webkit-scrollbar-thumb { background: #d3d6de; border-radius: 3px; }
+.treeList::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 3px; }
 
 .treeItem {
   display: flex;
@@ -296,25 +296,25 @@
   transition: background 0.1s;
 }
 
-.treeItem:hover { background: #eef0f4; }
+.treeItem:hover { background: var(--paper-3); }
 
 .treeItemDragging {
   opacity: 0.55;
-  background: #eef0f4;
+  background: var(--paper-3);
   cursor: grabbing;
 }
 
 .treeItemActive,
 .treeItemActive:hover {
-  background: #ecebfd;
+  background: var(--paper-accent-wash-2);
 }
 
 .treeIcon {
   flex-shrink: 0;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
-.treeItemActive .treeIcon { color: #5b5be6; }
+.treeItemActive .treeIcon { color: var(--paper-accent); }
 
 .treeText {
   flex: 1;
@@ -327,13 +327,13 @@
 .treeName {
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.treeItemActive .treeName { color: #1c2029; font-weight: 500; }
+.treeItemActive .treeName { color: var(--paper-text); font-weight: 500; }
 
 /* Body-text hit: the row grows a line of context under the title */
 .treeItemHit { align-items: flex-start; padding-top: 6px; padding-bottom: 6px; }
@@ -343,7 +343,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 11px;
   line-height: 1.35;
-  color: #8a91a2;
+  color: var(--paper-faint);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -360,7 +360,7 @@
   border: none;
   border-radius: 5px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
@@ -368,7 +368,7 @@
 }
 
 .treeItem:hover .treeDelete { opacity: 0.6; }
-.treeDelete:hover { opacity: 1; background: #fdeaea; color: #e44; }
+.treeDelete:hover { opacity: 1; background: var(--paper-danger-wash); color: var(--paper-danger); }
 
 /* ── Folders ── */
 .treeHeadBtns {
@@ -387,10 +387,10 @@
 
 /* The copy that rides the cursor in the DragOverlay - lifted off the tree */
 .dragOverlayItem {
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 7px;
-  box-shadow: 0 8px 24px rgba(20, 22, 30, 0.18);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 47%, transparent);
   cursor: grabbing;
 }
 
@@ -408,7 +408,7 @@
   transition: background 0.1s, box-shadow 0.1s;
 }
 
-.folderHead:hover { background: #eef0f4; }
+.folderHead:hover { background: var(--paper-3); }
 
 .folderIcon { flex-shrink: 0; }
 
@@ -418,7 +418,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 500;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,7 +427,7 @@
 .folderCount {
   font-size: 10px;
   font-weight: 600;
-  color: #b5bac6;
+  color: var(--paper-ghost);
   letter-spacing: 0.04em;
 }
 
@@ -451,23 +451,23 @@
   border: none;
   border-radius: 5px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
-.folderActBtn:hover { background: #e7e9ef; color: #5b5be6; }
+.folderActBtn:hover { background: var(--paper-line); color: var(--paper-accent); }
 
 /* Folder highlighted while a note is being dragged into it (projected parent) */
 .folderDropActive {
-  background: #ecebfd;
-  box-shadow: inset 0 0 0 1.5px #c9c9f5;
+  background: var(--paper-accent-wash-2);
+  box-shadow: inset 0 0 0 1.5px var(--paper-accent-line);
 }
 
 /* A note that belongs to a folder: indented, with a guide line up to its header */
 .treeItemNested {
   margin-left: 19px;
-  border-left: 1px solid #ebedf1;
+  border-left: 1px solid var(--paper-line);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
@@ -481,10 +481,10 @@
   z-index: calc(var(--z-top) + 1);
   margin-top: 2px;
   padding: 10px;
-  background: #ffffff;
-  border: 1px solid #e6e7ec;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(20, 22, 30, 0.18);
+  box-shadow: 0 10px 30px color-mix(in oklab, var(--shadow) 47%, transparent);
   animation: popIn 0.1s ease;
 }
 
@@ -498,18 +498,18 @@
 .folderNameInput {
   width: 100%;
   padding: 6px 9px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 .folderNameInput:focus {
-  border-color: #c9c9f5;
+  border-color: var(--paper-accent-line);
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
@@ -533,8 +533,8 @@
 .folderSwatch:hover { transform: scale(1.12); }
 
 .folderSwatchSel {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 2px #5b5be6;
+  border-color: var(--paper);
+  box-shadow: 0 0 0 2px var(--paper-accent);
 }
 
 .folderPopActions {
@@ -551,27 +551,27 @@
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
-  color: #d64545;
+  color: var(--paper-danger);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
 
-.folderDeleteBtn:hover { background: #fdeaea; }
-.folderDeleteBtnArmed { border-color: #f3cdcd; background: #fdeaea; font-weight: 600; }
+.folderDeleteBtn:hover { background: var(--paper-danger-wash); }
+.folderDeleteBtnArmed { border-color: var(--paper-danger-line); background: var(--paper-danger-wash); font-weight: 600; }
 
 .folderDoneBtn {
   padding: 5px 14px;
-  border: 1px solid #5b5be6;
+  border: 1px solid var(--paper-accent);
   border-radius: 7px;
-  background: #5b5be6;
+  background: var(--paper-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
-  color: #ffffff;
+  color: var(--paper);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
 
-.folderDoneBtn:hover { background: #4a4ad8; border-color: #4a4ad8; }
+.folderDoneBtn:hover { background: var(--paper-accent-2); border-color: var(--paper-accent-2); }
 
 /* ── Document pane ── */
 .docPane {
@@ -589,7 +589,7 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #c2c6d2;
+  color: var(--paper-line-2);
   user-select: none;
 }
 
@@ -597,22 +597,22 @@
   margin: 0;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
 .docEmptyBtn {
   padding: 7px 16px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  color: #5b5be6;
+  color: var(--paper-accent);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
 
-.docEmptyBtn:hover { background: #f4f4fe; border-color: #c9c9f5; }
+.docEmptyBtn:hover { background: var(--paper-accent-wash); border-color: var(--paper-accent-line); }
 
 /* The title and what you can do with the note, on one line. The padding moved
    up here from .docTitle so the button sits on the title's baseline rather than
@@ -634,11 +634,11 @@
   font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 24px;
   font-weight: 600;
-  color: #1c2029;
+  color: var(--paper-text);
   padding: 0;
 }
 
-.docTitle::placeholder { color: #cdd0d9; }
+.docTitle::placeholder { color: var(--paper-line-2); }
 
 /* Quiet until wanted: this is a deliberate act taken now and then, not one of
    the note's everyday controls, so it doesn't compete with the words. */
@@ -647,9 +647,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #e3e5ea;
-  background: #fff;
-  color: #6b7280;
+  border: 1px solid var(--paper-line);
+  background: var(--paper);
+  color: var(--paper-muted);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -659,9 +659,9 @@
   cursor: pointer;
 }
 .docHeadBtn:hover {
-  color: #1c2029;
-  border-color: #c7cad2;
-  background: #f7f8fa;
+  color: var(--paper-text);
+  border-color: var(--paper-line-2);
+  background: var(--paper-2);
 }
 
 @media (max-width: 620px) {
@@ -674,7 +674,7 @@
 
 /* ── Recently deleted ── */
 .trashSection {
-  border-top: 1px solid #ebedf1;
+  border-top: 1px solid var(--paper-line);
   margin-top: 6px;
   padding-top: 4px;
 }
@@ -688,7 +688,7 @@
   border: none;
   border-radius: 7px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 10px;
   font-weight: 700;
@@ -698,7 +698,7 @@
   transition: background 0.1s, color 0.12s;
 }
 
-.trashHead:hover { background: #eef0f4; color: #6b7180; }
+.trashHead:hover { background: var(--paper-3); color: var(--paper-muted); }
 
 .trashChevron {
   flex-shrink: 0;
@@ -711,16 +711,16 @@
   margin-left: auto;
   font-size: 10px;
   font-weight: 600;
-  color: #b5bac6;
+  color: var(--paper-ghost);
   letter-spacing: 0.04em;
 }
 
-.trashItem .treeName { color: #6b7180; }
+.trashItem .treeName { color: var(--paper-muted); }
 
 .trashMeta {
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 10.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
 }
 
 .trashActions {
@@ -744,36 +744,36 @@
   border: none;
   border-radius: 5px;
   background: none;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
-.trashBtn:hover { background: #e7e9ef; color: #444b5a; }
-.trashBtnDanger:hover { background: #fdeaea; color: #e44; }
+.trashBtn:hover { background: var(--paper-line); color: var(--paper-body); }
+.trashBtnDanger:hover { background: var(--paper-danger-wash); color: var(--paper-danger); }
 
 .trashEmptyBtn {
   display: block;
   width: calc(100% - 4px);
   margin: 4px 2px 2px;
   padding: 5px 8px;
-  border: 1px dashed #e0e2e9;
+  border: 1px dashed var(--paper-line-2);
   border-radius: 7px;
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 11.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.trashEmptyBtn:hover { border-color: #f3cdcd; background: #fdf3f3; color: #d64545; }
-.trashEmptyBtnArmed { border-style: solid; border-color: #f3cdcd; background: #fdeaea; color: #d64545; }
+.trashEmptyBtn:hover { border-color: var(--paper-danger-line); background: var(--paper-danger-wash); color: var(--paper-danger); }
+.trashEmptyBtnArmed { border-style: solid; border-color: var(--paper-danger-line); background: var(--paper-danger-wash); color: var(--paper-danger); }
 
 .trashNote {
   padding: 6px 8px 10px;
   font-size: 11.5px;
-  color: #9aa0b0;
+  color: var(--paper-faint);
   line-height: 1.5;
 }
 
@@ -785,32 +785,32 @@
   flex-shrink: 0;
   margin: 14px 32px 0;
   padding: 9px 12px;
-  border: 1px solid #f0e2c8;
+  border: 1px solid var(--paper-note-line);
   border-radius: 9px;
-  background: #fdf7ec;
+  background: var(--paper-note);
 }
 
 .trashBannerText {
   flex: 1;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
-  color: #8a6d3b;
+  color: var(--paper-mark-text);
 }
 
 .trashBannerBtn {
   padding: 5px 11px;
-  border: 1px solid #e0e2e9;
+  border: 1px solid var(--paper-line-2);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--paper);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
-  color: #2b2f3a;
+  color: var(--paper-text-2);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.trashBannerBtn:hover { border-color: #c9c9f5; color: #5b5be6; background: #f4f4fe; }
-.trashBannerBtnDanger:hover { border-color: #f3cdcd; color: #d64545; background: #fdf3f3; }
+.trashBannerBtn:hover { border-color: var(--paper-accent-line); color: var(--paper-accent); background: var(--paper-accent-wash); }
+.trashBannerBtnDanger:hover { border-color: var(--paper-danger-line); color: var(--paper-danger); background: var(--paper-danger-wash); }
 
 /* ── Narrow screens: collapse the tree to a horizontal strip ── */
 /* The way back from a note to the tree. Hidden on the two-column layout, where
@@ -829,11 +829,11 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;
-  color: #5b5be6;
+  color: var(--paper-accent);
   cursor: pointer;
 }
 
-.backBtn:active { background: #eef0f4; }
+.backBtn:active { background: var(--paper-3); }
 
 /* ── Narrow layout ──
    A phone can't hold the tree and the editor side by side, and stacking them

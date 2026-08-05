@@ -7,6 +7,7 @@ import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/noteFind';
 import { modLabel } from '../utils/platform';
 import { PageMeta, EMPTY_PAGE_META, pageEmbed, isBareUrl } from '../utils/pageMeta';
+import { markdownToHtml, looksLikeMarkdown } from '../utils/markdown';
 import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
@@ -132,6 +133,45 @@ const MD_RULES: { re: RegExp; id: BlockId }[] = [
   { re: /^```$/,                   id: 'code' },
   { re: /^(---|\*\*\*|___)$/,      id: 'hr' },
 ];
+
+// The inline half of the same idea: closing a pair of markers formats what is
+// between them, in place, as you type. The command menu has advertised this all
+// along - every inline entry in CMDS lists its markdown in the hint - and it
+// simply was not wired up.
+//
+// Ordered longest marker first, so "**" is claimed before the "*" that is its
+// prefix. The content class excludes the marker character, which is what stops
+// a run from swallowing the pair beside it, and both ends must be non-space, so
+// "2 * 3 * 4" is arithmetic rather than emphasis.
+//
+// Cost is one regex list walk on the keystrokes that type a marker character
+// and no others - see maybeInlineFormat, which returns before any of this runs
+// unless the character just typed was one of `*_~\``.
+// `cmds` are execCommand names rather than tag names on purpose. Writing the
+// markup by hand and dropping the caret after it looks right and behaves
+// wrongly: contentEditable sticks a collapsed caret to the element on its left,
+// so everything typed next lands *inside* the bold that was just closed, and
+// the run swallows the rest of the sentence. Going through execCommand means
+// the browser owns the mark state, and toggling the same command again once the
+// caret is collapsed is what turns it back off. `code` has no execCommand, so
+// it is the one that has to be wrapped by hand - see wrapCaretRunInCode.
+//
+// There is deliberately no "***both***" rule. On an empty line "***" is already
+// the horizontal rule trigger (see MD_RULES, which runs first and wins), so it
+// could only ever fire mid-sentence, and a rule that works in one half of a
+// paragraph and not the other is worse than not having it. Pasted markdown
+// still handles it - see utils/markdown.
+const INLINE_MD: { re: RegExp; cmds: string[]; solo: string | null }[] = [
+  { re: /\*\*([^*\s](?:[^*]*[^*\s])?)\*\*$/,     cmds: ['bold'],           solo: null },
+  { re: /__([^_\s](?:[^_]*[^_\s])?)__$/,         cmds: ['bold'],           solo: null },
+  { re: /~~([^~\s](?:[^~]*[^~\s])?)~~$/,         cmds: ['strikeThrough'],  solo: null },
+  { re: /\*([^*\s](?:[^*]*[^*\s])?)\*$/,         cmds: ['italic'],         solo: '*' },
+  { re: /_([^_\s](?:[^_]*[^_\s])?)_$/,           cmds: ['italic'],         solo: '_' },
+  { re: /`([^`\s](?:[^`]*[^`\s])?)`$/,           cmds: [],                 solo: '`' },
+];
+
+// The characters worth looking at all. Anything else returns immediately.
+const INLINE_MD_TRIGGERS = '*_~`';
 
 // ── List repair ───────────────────────────────────────────────────────
 // execCommand can leave a list holding raw text instead of <li> children -
@@ -704,6 +744,11 @@ export default function RichEditor({
   const [slashIdx, setSlashIdx] = useState(0);
   const [menuPos, setMenuPos] = useState<MenuPos>({ left: 0, top: 0, bottom: null, maxHeight: 280 });
   const [marks, setMarks] = useState<Marks>(NO_MARKS);
+  // nodeName of the block the caret is in, for the bubble's heading control.
+  const [blockTag, setBlockTag] = useState('P');
+  // Whether that control's menu is open. Local to the bubble, and closed
+  // whenever the bubble itself goes.
+  const [headingOpen, setHeadingOpen] = useState(false);
   const [inTable, setInTable] = useState(false);
   const [bubble, setBubble] = useState<BubblePos | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -1011,7 +1056,12 @@ export default function RichEditor({
     const el = ref.current;
     if (!el) return;
     el.classList.toggle('note-empty', isBlank(el));
-    onChange(el.innerHTML);
+    // Zero-width spaces are a caret-parking device, not content: they are how a
+    // code span stays selectable and how the caret gets back out of one (see
+    // toggleInlineCode and wrapSelectionInCode). They must not reach storage,
+    // where they would show up as invisible junk in every text length check and
+    // every search.
+    onChange(el.innerHTML.replace(/​/g, ''));
     // Editing moves the text the highlights are painted over, so the hit list
     // is stale the moment the document changes. Only costs a walk while the
     // find bar is actually open with something in it.
@@ -1040,11 +1090,20 @@ export default function RichEditor({
     } catch { return NO_MARKS; }
   }
 
+  // The inline marks and the shape of the block the caret is in, refreshed
+  // together because every place that wanted one now wants both: the bubble's
+  // heading control reports the current level, not just offers a new one.
+  function refreshMarks() {
+    setMarks(readMarks());
+    const editor = ref.current;
+    setBlockTag(editor ? (getBlock(editor)?.nodeName ?? 'P') : 'P');
+  }
+
   function execInline(command: string, value?: string) {
     ref.current?.focus();
     record('struct');
     document.execCommand(command, false, value);
-    setMarks(readMarks());
+    refreshMarks();
     emit();
   }
 
@@ -1195,7 +1254,7 @@ export default function RichEditor({
     } else {
       document.execCommand('createLink', false, href);
     }
-    setMarks(readMarks());
+    refreshMarks();
     emit();
     closeLink();
   }
@@ -1290,7 +1349,41 @@ export default function RichEditor({
       void insertImages(files);
       return;
     }
-    if (pasteUrl(e)) e.preventDefault();
+    if (pasteUrl(e)) { e.preventDefault(); return; }
+    if (pasteMarkdown(e)) e.preventDefault();
+  }
+
+  /**
+   * Markdown on the clipboard becomes formatted blocks rather than a wall of
+   * asterisks. Returns whether it handled the paste.
+   *
+   * Only when the clipboard has no HTML of its own: copying from a web page or
+   * another editor puts both `text/html` and a plain-text fallback on the
+   * clipboard, and the HTML is the better source - it is what the browser's own
+   * paste already uses, and running the fallback through a markdown reader
+   * instead would throw away formatting the page had spelled out properly.
+   * This is for the case where plain text is all there is, which is what you get
+   * from a terminal, a code editor, a chat window or a `.md` file.
+   *
+   * `looksLikeMarkdown` is the other half of the guard: prose pastes as prose.
+   */
+  function pasteMarkdown(e: React.ClipboardEvent): boolean {
+    const text = e.clipboardData?.getData('text/plain');
+    const html = e.clipboardData?.getData('text/html');
+    if (html?.trim() || !text || !looksLikeMarkdown(text)) return false;
+
+    record('struct');
+    document.execCommand('insertHTML', false, markdownToHtml(text));
+    const editor = ref.current;
+    if (editor) {
+      // Pasted lists arrive as well-formed markup, but insertHTML merges them
+      // into whatever list the caret was already in, which is where the stray
+      // text-in-a-list shapes come from.
+      normalizeLists(editor);
+      hydrateEmbeds(editor);
+    }
+    emit();
+    return true;
   }
 
   /**
@@ -1544,7 +1637,7 @@ export default function RichEditor({
       if (!el || !sel || sel.rangeCount === 0) { setBubble(null); setEmbedEl(null); closeLinkBar(); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
-      setMarks(readMarks());
+      refreshMarks();
       setInTable(!!cellAtCaret(el));
       // An embed takes the bar over: formatting means nothing inside an atomic
       // island, and its own controls are what the selection is asking for.
@@ -1581,6 +1674,10 @@ export default function RichEditor({
   }, [readOnly]);
 
   // The command menu and the bubble should never be up at the same time
+  // The heading menu belongs to the bubble, so it goes when the bubble does -
+  // otherwise it would be left hanging over the page with nothing under it.
+  useEffect(() => { if (!bubble) setHeadingOpen(false); }, [bubble]);
+
   useEffect(() => { if (slashOpen) setBubble(null); }, [slashOpen]);
 
   // …nor should the bubble sit over the link dialog
@@ -1620,11 +1717,86 @@ export default function RichEditor({
     return true;
   }
 
+  /**
+   * Closing a pair of inline markdown markers formats the text between them.
+   * Returns true if it fired, so the caller skips the rest of the input pass.
+   *
+   * Everything about this is written to cost nothing on the keystrokes that
+   * aren't a marker: one character comparison and out. Only when the character
+   * just typed is one of `*_~\`` does it look at the line at all, and then only
+   * at the text before the caret in the current node.
+   */
+  function maybeInlineFormat(): boolean {
+    const editor = ref.current!;
+    const sel = window.getSelection();
+    if (!sel || !sel.isCollapsed || !sel.anchorNode) return false;
+
+    const node = sel.anchorNode;
+    if (node.nodeType !== Node.TEXT_NODE) return false;
+    const offset = sel.anchorOffset;
+    const text = node.textContent ?? '';
+    if (offset === 0 || !INLINE_MD_TRIGGERS.includes(text[offset - 1])) return false;
+
+    // Inside a code span or a code block the markers are the content. Same
+    // reasoning as the block rules refusing to fire inside a list or a quote.
+    const host = node.parentElement;
+    if (!host || !editor.contains(host)) return false;
+    if (host.closest('code, pre')) return false;
+
+    const before = text.slice(0, offset);
+    for (const rule of INLINE_MD) {
+      const m = rule.re.exec(before);
+      if (!m) continue;
+      const start = before.length - m[0].length;
+      // A one-character marker must not be the tail of a longer one, or typing
+      // the fourth character of "**bold**" would italicise "*bold" on the way
+      // past. It must not follow a word character either, which is what keeps
+      // snake_case identifiers and 3*4*5 out of it.
+      if (rule.solo) {
+        const prev = start > 0 ? before[start - 1] : '';
+        if (prev === rule.solo || /\w/.test(prev)) continue;
+      }
+
+      record('struct');
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, offset);
+      range.deleteContents();
+
+      // Swap "**text**" for "text", select exactly that, and let the browser
+      // format it - the same path the toolbar buttons take.
+      const content = document.createTextNode(m[1]);
+      range.insertNode(content);
+
+      const pick = document.createRange();
+      pick.setStart(content, 0);
+      pick.setEnd(content, m[1].length);
+      sel.removeAllRanges();
+      sel.addRange(pick);
+
+      if (rule.cmds.length) {
+        for (const cmd of rule.cmds) document.execCommand(cmd);
+        sel.collapseToEnd();
+        // Toggling each one off again at the collapsed caret is what stops the
+        // formatting running on into whatever gets typed next.
+        for (const cmd of rule.cmds) document.execCommand(cmd);
+      } else {
+        wrapSelectionInCode();
+      }
+
+      refreshMarks();
+      emit();
+      return true;
+    }
+    return false;
+  }
+
   function handleInput() {
     const editor = ref.current!;
     const sel = window.getSelection();
 
     if (!slashOpenRef.current && maybeAutoformat()) return;   // applyBlock emits
+    if (!slashOpenRef.current && maybeInlineFormat()) return;  // emits its own
 
     if (slashOpenRef.current && slashInfo.current) {
       // Track the query typed after "/"
@@ -1882,7 +2054,7 @@ export default function RichEditor({
       case 'link':       closeSlash(); applyLink(); return;
     }
     closeSlash();
-    setMarks(readMarks());
+    refreshMarks();
     emit();
   }
 
@@ -1911,6 +2083,35 @@ export default function RichEditor({
       range.insertNode(code);
       placeCaret(code, false);
     }
+  }
+
+  // Wrap the current selection in a code span and leave the caret *after* it.
+  //
+  // toggleInlineCode parks the caret inside, which is right when you pressed
+  // the button and are about to type code. Here the span is already complete -
+  // you typed the closing backtick - and what comes next is prose again.
+  //
+  // The caret goes into a text node of its own rather than at the element
+  // boundary: contentEditable adopts a collapsed caret into the element on its
+  // left, so a bare setStartAfter would put the next keystroke back inside the
+  // code. The node is a zero-width space, which is the same device
+  // toggleInlineCode already uses, and it is stripped on the way out (see
+  // emit) so it never reaches storage.
+  function wrapSelectionInCode() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const code = document.createElement('code');
+    code.appendChild(range.extractContents());
+    range.insertNode(code);
+
+    const tail = document.createTextNode('​');
+    code.parentNode?.insertBefore(tail, code.nextSibling);
+    const after = document.createRange();
+    after.setStart(tail, 1);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
   }
 
   function applyBlock(id: BlockId) {
@@ -2481,7 +2682,12 @@ export default function RichEditor({
             <>
               {inlineBtns}
               <span className={styles.tbSep} />
-              <TBtn title="Heading 2" onRun={() => applyBlock('h2')}>H2</TBtn>
+              <HeadingPicker
+                current={blockTag}
+                open={headingOpen}
+                onToggle={() => setHeadingOpen(o => !o)}
+                onPick={id => { setHeadingOpen(false); applyBlock(id); }}
+              />
               <TBtn title="Quote" onRun={() => applyBlock('quote')}><QuoteIcon /></TBtn>
               <span className={styles.tbSep} />
               {linkBtns}
@@ -2868,6 +3074,67 @@ function WordBtn({ title, onRun, danger, chip, children }: {
     >
       {children}
     </button>
+  );
+}
+
+// The heading control in the selection bubble.
+//
+// It used to be a lone "H2" button, which was an odd thing to offer: of the
+// three heading levels the editor has, one of them was reachable from the bar
+// that appears when you select text and the other two were not. This shows
+// which level the selection is already at and opens onto all of them, plus the
+// way back to body text.
+const HEADING_LEVELS: { id: BlockId; label: string; badge: string }[] = [
+  { id: 'h1',   label: 'Heading 1',  badge: 'H1' },
+  { id: 'h2',   label: 'Heading 2',  badge: 'H2' },
+  { id: 'h3',   label: 'Heading 3',  badge: 'H3' },
+  { id: 'text', label: 'Plain text', badge: '¶'  },
+];
+
+function HeadingPicker({ current, open, onToggle, onPick }: {
+  /** nodeName of the block the caret is in, e.g. 'H2'. */
+  current: string;
+  open: boolean;
+  onToggle: () => void;
+  onPick: (id: BlockId) => void;
+}) {
+  const level = /^H[123]$/.test(current) ? current : null;
+  return (
+    <span className={styles.headingPick}>
+      <button
+        type="button"
+        className={`${styles.tbBtn} ${level ? styles.tbBtnActive : ''}`}
+        title="Heading level"
+        aria-label="Heading level"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onMouseDown={e => e.preventDefault()}
+        onClick={onToggle}
+      >
+        {/* The current level, so the button reports as well as offers. */}
+        {level ?? 'H'}
+        <span className={styles.headingCaret} aria-hidden>▾</span>
+      </button>
+      {open && (
+        <span className={styles.headingMenu} role="menu">
+          {HEADING_LEVELS.map(h => (
+            <button
+              key={h.id}
+              type="button"
+              role="menuitem"
+              className={`${styles.headingItem} ${current === h.id.toUpperCase() ? styles.headingItemOn : ''}`}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => onPick(h.id)}
+            >
+              {/* Each row is set at the size it produces, so the choice is
+                  visible rather than read. */}
+              <span className={`${styles.headingSample} ${styles[h.id]}`}>{h.badge}</span>
+              <span className={styles.headingLabel}>{h.label}</span>
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 

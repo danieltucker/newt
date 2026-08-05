@@ -72,10 +72,13 @@ interface Props {
       looking at feeds, so it's where managing them belongs. */
   onManageFeeds: () => void;
   /** `dest` is set only when the reader picked a Library shelf over the
-      reading list; a null folderId inside it means Unsorted. */
+      reading list; a null folderId inside it means Unsorted.
+      `card` is how the save reports back to the tile it came from. Call
+      `markSaved` as soon as the save is committed to - not when it lands - and
+      `restore` if it turns out not to have. See handleSave. */
   onSaveArticle: (
     a: { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null },
-    markSaved: () => void,
+    card: { markSaved: () => void; restore: () => void },
     dest?: { folderId: string | null },
   ) => void;
   /** Library shelves, offered behind the Save button's caret. */
@@ -547,11 +550,18 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // the reading list entirely - the article is one you're filing, not one
   // you're queueing to read.
   function handleSave(a: FeedArticle, dest?: { folderId: string | null; label: string }) {
+    // Whether this card was already spent before this save. If it was, a
+    // failure has nothing to put back: the earlier state is still the true one,
+    // and restoring would pull an article that did save back into the feed.
+    const wasGhosted = ghosts.has(a.id);
     onSaveArticle(
       { id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories, readTime: a.readTime, imageUrl: a.imageUrl },
-      // Once it's saved it leaves the feed (dismissed server-side, so it stays
-      // gone across refreshes)
-      () => handleDismiss(a.id, 'saved', dest?.label ?? 'reading list'),
+      {
+        // Once it's saved it leaves the feed (dismissed server-side, so it
+        // stays gone across refreshes).
+        markSaved: () => handleDismiss(a.id, 'saved', dest?.label ?? 'reading list'),
+        restore: () => { if (!wasGhosted) handleUndoDismiss(a.id); },
+      },
       dest ? { folderId: dest.folderId } : undefined
     );
   }

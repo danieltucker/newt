@@ -23,6 +23,45 @@
   --pile-2: #5BC8E6;
   --pile-3: #9B8CFF;
   --pile-4: #C77DFF;
+
+  /* ── Paper ──
+     The writing surfaces: the block editor, the notes console, the comment
+     composer. These were hardcoded light values on the theory that an editor
+     is "paper" and should look the same wherever it is embedded. In practice
+     that meant a white slab in the middle of a dark app - the one screen you
+     stare at for an hour was the one that never turned the lights off.
+
+     Kept as their own ramp rather than folded into --surface/--text because
+     the editor needs finer gradations than the rest of the app does (three
+     surface levels, five text weights) and because a document surface wants
+     slightly more contrast than page chrome. */
+  --paper: #16181f;
+  --paper-2: #1b1e26;
+  --paper-3: #212530;
+  --paper-line: #262a34;
+  --paper-line-2: #333846;
+  --paper-text: #eceef6;
+  --paper-text-2: #dfe2ec;
+  --paper-body: #c3c8d6;
+  --paper-muted: #8b93a7;
+  --paper-faint: #6d7488;
+  --paper-ghost: #565d70;
+  --paper-accent: #9b9bff;
+  --paper-accent-2: #b0b0ff;
+  --paper-accent-wash: #23233a;
+  --paper-accent-wash-2: #2b2b47;
+  --paper-accent-line: #3d3d66;
+  --paper-danger: #f06a6a;
+  --paper-danger-2: #ff8f8f;
+  --paper-danger-wash: #2e1c1e;
+  --paper-danger-line: #4a2a2d;
+  --paper-mark: #6b5410;
+  --paper-mark-2: #a37c14;
+  --paper-mark-text: #ffe9a8;
+  --paper-note: #201d16;
+  --paper-note-line: #3a3222;
+  --paper-code: #ff9ec4;
+  --paper-shadow: rgba(0, 0, 0, 0.5);
   --border: rgba(255, 255, 255, 0.08);
   --shadow: rgba(0, 0, 0, 0.4);
   --overlay: rgba(8, 9, 12, 0.62);
@@ -52,6 +91,37 @@
   --pile-2: #1B87B0;
   --pile-3: #6B5BE6;
   --pile-4: #9333EA;
+
+  /* The paper ramp in light, which is the set the editor always had - these
+     are the values that were hardcoded through its stylesheets. See the note
+     in the dark block above. */
+  --paper: #ffffff;
+  --paper-2: #f7f8fa;
+  --paper-3: #eef0f4;
+  --paper-line: #ebedf1;
+  --paper-line-2: #e0e2e9;
+  --paper-text: #1c2029;
+  --paper-text-2: #2b2f3a;
+  --paper-body: #444b5a;
+  --paper-muted: #6b7180;
+  --paper-faint: #9aa0b0;
+  --paper-ghost: #b5bac6;
+  --paper-accent: #5b5be6;
+  --paper-accent-2: #4a4ad8;
+  --paper-accent-wash: #f4f4fe;
+  --paper-accent-wash-2: #ecebfd;
+  --paper-accent-line: #c9c9f5;
+  --paper-danger: #d64545;
+  --paper-danger-2: #b4292d;
+  --paper-danger-wash: #fdeaea;
+  --paper-danger-line: #f3cdcd;
+  --paper-mark: #fdf0c4;
+  --paper-mark-2: #ffca4a;
+  --paper-mark-text: #8a6d3b;
+  --paper-note: #fffdf7;
+  --paper-note-line: #f0e2c8;
+  --paper-code: #d6336c;
+  --paper-shadow: rgba(20, 22, 30, 0.18);
   --border: rgba(20, 22, 30, 0.09);
   --shadow: rgba(20, 22, 30, 0.10);
   --overlay: rgba(20, 22, 30, 0.35);

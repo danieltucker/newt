@@ -2,6 +2,106 @@
 
 Notable changes to Newt, newest first.
 
+## v1.12.2 - The editor, in the dark and in markdown
+
+**2026-08-05**
+
+### The writing surfaces follow the theme
+
+The block editor, the notes console and the comment composer set their own
+light colours, on the theory that an editor is "paper" and should look the same
+wherever it is embedded. In a dark app that meant a white slab in the middle of
+the screen: the one surface you stare at for an hour was the one that never
+turned the lights off.
+
+Paper is a theme now. The values live in `styles/tokens.css` as a `--paper-*`
+ramp with a set per theme, the way `--fav` and `--draft` already do it. It
+stays its own ramp rather than folding into the page's `--surface`/`--text`
+because a document surface needs finer gradations than chrome does - three
+surface levels, five weights of text - and a little more contrast. Light is
+unchanged, to the pixel: those are the values that were hardcoded.
+
+### Pasting markdown
+
+The editor has always understood markdown as you type - `## ` makes a heading,
+`- ` makes a list. What it could not do was take a whole document at once, so
+pasting anything written elsewhere (a note from another app, a chunk of a
+README, an answer from a chatbot) dropped a wall of asterisks into the page and
+left you to reformat it by hand.
+
+It now converts on the way in: headings, both kinds of list, to-dos with their
+checked state, quotes, fenced and indented code, rules, tables, and the inline
+run of bold, italic, strike, code and links.
+
+Two guards keep it out of the way. Prose pastes as prose - the trigger is a
+construct unambiguous at the start of a line, or a paired marker, not a stray
+asterisk or a hyphen. And a clipboard carrying real HTML is left to the
+browser, since that is the better source; this is for the case where plain text
+is all there is.
+
+Anything it does not recognise survives as a paragraph with its text intact. A
+paste never loses words.
+
+### Markdown as you type, inline
+
+Closing a pair of markers formats what is between them: `**bold**`, `*italic*`,
+`_italic_`, `__bold__`, `~~struck~~`, `` `code` ``. The command menu has
+advertised this all along - every inline entry lists its markdown in the hint -
+and it simply was not wired up.
+
+It costs one character comparison on every keystroke that is not a marker, and
+a short regex list walk on the few that are, so it is not something you will
+feel. `some_file_name` and `2 * 3 * 4` are left alone, and nothing fires inside
+a code span or a code block, where the markers are the content.
+
+There is no `***both***`: on an empty line `***` is already the horizontal rule
+trigger, and a rule that works in one half of a paragraph and not the other is
+worse than not having it. Pasted markdown still handles it.
+
+### The formatting bar stays put
+
+In the blog composer the page scrolls, and the formatting toolbar used to leave
+with it - four paragraphs into a post there was no way to reach bold but the
+keyboard. It now sticks under the action bar, which sticks under the shell bar.
+The action bar publishes its own measured height rather than being assumed,
+because it wraps to two rows on a narrow window.
+
+### Heading levels in the selection bubble
+
+The bar that appears when you select text carried a lone **H2** button, which
+was an odd offer: of the editor's three heading levels, one was reachable there
+and the other two were not. It is a picker now. It reports the level you are
+on, and opens onto all three plus the way back to body text, each row set at
+the size it produces.
+
+## v1.12.1 - Saving a feed article shows up straight away
+
+**2026-08-05**
+
+Pressing **Save** on a feed card greys it out to say the article is dealt with.
+Three separate things were standing between the press and the grey.
+
+The card was waiting for the server. It only changed once the save had been
+written and acknowledged, and if you picked a shelf from the caret menu it
+waited on two round trips, not one. It commits locally now and reconciles
+behind the scenes, which is what every other write in the reading list already
+did. If the save turns out to have failed, the card comes back: full colour,
+receipt gone, unread count restored, still in your feed.
+
+The grey then cross-faded in over a quarter of a second. This is the receipt
+for a button you just pressed, so it snaps.
+
+And the card had a hover state that lifted it back to nearly full colour. The
+pointer is on the card at the moment you press Save, because that is how Save
+got pressed, so a saved article went straight into the lifted state and only
+greyed properly once you moved the mouse away. It is gone. The controls keeping
+their colour is what says the card is still live, and they say it whether or
+not you are hovering.
+
+The dialog is left alone. It holds the screen while it saves and stays open if
+that fails, so it is already its own feedback, and by the time it is out of the
+way the card behind it has changed.
+
 ## v1.12.0 - The reading list gets a room of its own
 
 **2026-08-05**
