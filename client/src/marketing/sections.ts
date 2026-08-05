@@ -727,7 +727,7 @@ export const HERO_SHOT: ShotSpec = {
   size: '1600 × 1000',
   capture: [
     'Dark theme, a full folder of bookmarks, sidebar open',
-    'Reading list showing 3–4 cards with artwork',
+    'The reading list launcher, with a count on it and its meter part-filled',
     'An RSS folder with a couple of unread dots',
     'Search bar empty - it is the first thing the eye lands on',
   ],

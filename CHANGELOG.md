@@ -2,6 +2,74 @@
 
 Notable changes to Newt, newest first.
 
+## v1.12.0 - The reading list gets a room of its own
+
+**2026-08-05**
+
+### The reading list is a place you go into now
+
+It used to be a section on the new tab that unfolded behind a chevron. Both
+states were wrong. Collapsed, it was the word "Reading list" and a number, and
+nothing about it said whether you were keeping up. Expanded, it was a wall of
+cards between the bookmarks and the feed, and the only way past it was to
+scroll.
+
+The new tab carries a launcher instead. The count sits in a tile at a size you
+can read across the room with its unit under it, beside the reading time, the
+line that says whether to worry, and a short stack of covers showing what is
+actually on the pile. A meter runs along the bottom edge.
+
+It changes colour as the pile grows, walking Newt's own gradient backwards:
+teal while the list is short, sky as it builds, violet past nine articles and a
+brighter orchid past fifteen. So the state of your reading is something you
+take in rather than something you go and check, and it never has to borrow the
+colours of a warning to say so. A stack of things you chose to keep is not an
+error.
+
+Opening it gives you the whole thing: the pile, and every folder you have filed
+into, in one rail across the top. That was the half a collapsible section could
+never carry. The articles you kept were here and the folders you put them in
+were on your profile, and nothing showed you both. Filters, the layout switch
+and **Save article** sit in one strip that stays put while the cards scroll
+under it.
+
+On a phone it takes the whole screen, which is the right answer for the one
+surface in the app you open in order to read.
+
+The numbers on the launcher count the pile only. A folder is somewhere you put
+something on purpose, and counting it back at you as unfinished business would
+punish the tidying.
+
+### Site pages draw themselves three ways
+
+`/s/<domain>` had one shape: a column of rows. It now takes the same **List /
+Cards / Magazine** switch the feed and the reading list have, remembered as its
+own setting, because a river you skim and one publisher's back catalogue don't
+want the same layout. Magazine gives the lead piece the width and turns
+art-less articles into text cards; both lists on the page follow the one switch.
+
+### Done with this?
+
+The prompt you get back to after reading an article had a gold button and a red
+one, both gradients, neither of which is a colour used anywhere else in Newt.
+It read as a cookie banner sitting on the card. It is the same pair of pills the
+rest of the app uses now: **Keep** filled in the accent, **Remove** bordered and
+going red only on approach. It wraps onto a second line on a narrow card rather
+than rendering the question as "Don…".
+
+### Saved cards keep their buttons
+
+Saving an article from the feed greys the card, which is right: it says the
+thing is dealt with. But the fade was applied to the whole card, so the Save
+pill, the comment bar and the dismiss button greyed out with it, and a working
+control at half opacity with no colour looks exactly like a disabled one. The
+article and its artwork fade; everything you can still press keeps its colour.
+
+### Also
+
+- The post-read prompt no longer gets swallowed on a same-tab return. It was
+  consumed by a check that ran before the reading list had finished loading.
+
 ## v1.11.2 — Site pages, and calling things by their name
 
 **2026-08-04**

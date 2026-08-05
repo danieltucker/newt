@@ -278,12 +278,17 @@ const SHOTS = {
     await shoot(page, 'feeds');
   } },
 
-  // Magazine layout. The seed floats a feature-worthy article to the top; this
-  // scrolls so the list fills the frame instead of the bookmark grid.
+  // Magazine layout. The seed floats a feature-worthy article to the top.
+  //
+  // The list is a modal since v1.12.0 — the new tab carries a launcher showing
+  // the count and the time, and the cards live behind it. So this opens it
+  // rather than scrolling to it: the shot is about the cards, and there is no
+  // longer any scroll position on the new tab that shows them.
   reading: { user: 'maren', async run(page) {
-    // 110px clears the sticky top bar — at a smaller offset the section header
-    // slides under it and shows through the translucency as a smear.
-    await scrollTo(page, page.getByText('READING LIST').first(), 110);
+    await page.getByRole('button', { name: /^Open reading list/ }).click();
+    // The grid mounts with the modal; the artwork is what takes a moment.
+    await settle(page);
+    await page.waitForTimeout(600);
     await describe(page, 'reading');
     await shoot(page, 'reading');
   } },

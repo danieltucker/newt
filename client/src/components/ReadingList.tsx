@@ -16,6 +16,9 @@ import {
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FeedFilterBar from './FeedFilterBar';
 import SaveButton, { SaveDestination } from './SaveButton';
+import CloseButton from './CloseButton';
+import ReadingListLauncher from './ReadingListLauncher';
+import { totalMinutes, formatDuration } from '../utils/readingTime';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
@@ -66,23 +69,29 @@ function magazineVariants(items: ReadingListItem[]): MagVariant[] {
   });
 }
 
+// ── Shelves ──
+// What the list is showing. The pile is the reading list proper - saved and not
+// yet dealt with, and the only thing the launcher outside counts. Everything
+// else is a Library shelf: `lib:` on its own is Unsorted, `lib:<id>` a folder.
+//
+// Encoded as one string so it can be a single piece of state and compared with
+// `===`; a tagged object would have needed an equality helper everywhere the
+// rail draws a selected chip.
+type ShelfKey = string;
+
+const PILE: ShelfKey = 'pile';
+
+function libKey(folderId: string | null): ShelfKey {
+  return `lib:${folderId ?? ''}`;
+}
+
+function itemsOn(items: ReadingListItem[], key: ShelfKey): ReadingListItem[] {
+  if (key === PILE) return items.filter(i => !i.inLibrary);
+  const folderId = key.slice(4) || null;
+  return items.filter(i => i.inLibrary && (i.folderId ?? null) === folderId);
+}
+
 // ── "You have N minutes saved" nudge ──
-
-// Manually saved articles often have no read time; assume a middling article
-// so the total still means something
-const DEFAULT_MINUTES = 5;
-
-function totalMinutes(items: ReadingListItem[]): number {
-  return items.reduce((sum, i) => sum + (parseInt(i.readTime, 10) || DEFAULT_MINUTES), 0);
-}
-
-function formatDuration(mins: number): string {
-  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'}`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  const hours = `${h} hour${h === 1 ? '' : 's'}`;
-  return m ? `${hours} ${m} min` : hours;
-}
 
 // Same nudge all day, a different one tomorrow - so it doesn't read like a
 // static label but also doesn't reshuffle under you mid-session.
@@ -103,6 +112,18 @@ const NUDGES: ((d: React.ReactNode, n: number) => React.ReactNode)[] = [
 function nudgeForToday(duration: React.ReactNode, count: number): React.ReactNode {
   const day = Math.floor(Date.now() / 86_400_000);
   return NUDGES[day % NUDGES.length](duration, count);
+}
+
+// Marks the post-read prompt. The one spot of accent in a bar that is otherwise
+// the card's own surface - enough to catch the eye coming back from an article
+// without tinting the whole strip.
+function CheckCircleIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7" cy="7" r="5.5" />
+      <path d="M4.6 7.1l1.7 1.7 3.1-3.4" />
+    </svg>
+  );
 }
 
 function ClockIcon() {
@@ -172,14 +193,13 @@ interface Props {
   /** Library shelves, for filing a just-shelved article without leaving here. */
   readingFolders?: ReadingFolder[];
   onMoveToFolder?: (id: string, folderId: string | null) => void;
-  /** Open the Library (the profile tab). Without it the count renders inert. */
+  /** Open the Library page, where folders are made, renamed and coloured. The
+   *  shelves themselves are browsable in here; managing them is not. */
   onOpenLibrary?: () => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
   onOpenArticle?: (url: string) => void;
   layout?: ReadingListLayout;
   onLayoutChange?: (layout: ReadingListLayout) => void;
-  collapsed?: boolean;
-  onCollapsedChange?: (collapsed: boolean) => void;
   commentPrefs: CommentPrefs;
   onViewProfile?: (username: string) => void;
   /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
@@ -459,6 +479,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
           right below it is already showing that. */}
       {isPostRead && !isGhost && (
         <div className={styles.postReadOverlay}>
+          <span className={styles.postReadIcon} aria-hidden><CheckCircleIcon /></span>
           <span className={styles.postReadTitle}>Done with this?</span>
           <div className={styles.postReadBtns}>
             {/* Was "Library", the name of where it goes; "Keep" is what you're
@@ -490,7 +511,11 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
+  // The list is a room you go into now, not a drawer under the feed. See
+  // ReadingListLauncher for why.
+  const [open, setOpen] = useState(false);
+  const [shelfKey, setShelfKey] = useState<ShelfKey>(PILE);
   // Cards that have left the list but are still drawn where they were. Local
   // and deliberately not persisted: a reload is what clears them, which is also
   // the moment the list re-lays out. Keyed by the id the item had at the time.
@@ -573,33 +598,58 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     try { sessionStorage.setItem('rl-post-read', JSON.stringify({ id, ts: Date.now() })); } catch {}
   }
 
-  useEffect(() => {
-    function check() {
-      if (document.visibilityState === 'hidden') return;
-      let raw: string | null = null;
-      try { raw = sessionStorage.getItem('rl-post-read'); } catch {}
-      if (!raw) return;
-      try { sessionStorage.removeItem('rl-post-read'); } catch {}
-      try {
-        const { id, ts } = JSON.parse(raw) as { id: string; ts: number };
-        // Only for recent reads on articles that still exist and aren't shelved
-        if (Date.now() - ts < 60 * 60 * 1000 && itemsRef.current.some(i => i.id === id && !i.inLibrary)) {
-          setPostRead(id);
-        }
-      } catch {}
-    }
-    check(); // same-tab navigation returns to a fresh mount
-    document.addEventListener('visibilitychange', check);
-    window.addEventListener('focus', check);
-    window.addEventListener('pageshow', check);
-    window.addEventListener('article-reader-closed', check);
-    return () => {
-      document.removeEventListener('visibilitychange', check);
-      window.removeEventListener('focus', check);
-      window.removeEventListener('pageshow', check);
-      window.removeEventListener('article-reader-closed', check);
-    };
+  const forget = useCallback(() => {
+    try { sessionStorage.removeItem('rl-post-read'); } catch {}
   }, []);
+
+  const checkPostRead = useCallback(() => {
+    if (document.visibilityState === 'hidden') return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem('rl-post-read'); } catch {}
+    if (!raw) return;
+
+    let id: string, ts: number;
+    try { ({ id, ts } = JSON.parse(raw) as { id: string; ts: number }); }
+    catch { forget(); return; }
+
+    // Too long ago to be "you just got back from this".
+    if (Date.now() - ts >= 60 * 60 * 1000) { forget(); return; }
+
+    // The note is deliberately left in place when the article isn't in the list
+    // yet. On a same-tab return this runs before the first fetch lands, and
+    // consuming it here is what used to swallow the prompt on exactly the
+    // journey it was written for; the effect below re-checks when the items
+    // arrive. An article that never turns up (deleted elsewhere) ages out on
+    // the hour above.
+    if (!itemsRef.current.some(i => i.id === id && !i.inLibrary)) return;
+
+    forget();
+    setPostRead(id);
+    // The prompt lives on the card, and the cards live in the list now, so a
+    // shut list would swallow it. Opening to the pile is also the right answer
+    // to what just happened: you finished something, and the next question is
+    // what to do with it.
+    setOpen(true);
+    setShelfKey(PILE);
+  }, [forget]);
+
+  useEffect(() => {
+    checkPostRead(); // same-tab navigation returns to a fresh mount
+    document.addEventListener('visibilitychange', checkPostRead);
+    window.addEventListener('focus', checkPostRead);
+    window.addEventListener('pageshow', checkPostRead);
+    window.addEventListener('article-reader-closed', checkPostRead);
+    return () => {
+      document.removeEventListener('visibilitychange', checkPostRead);
+      window.removeEventListener('focus', checkPostRead);
+      window.removeEventListener('pageshow', checkPostRead);
+      window.removeEventListener('article-reader-closed', checkPostRead);
+    };
+  }, [checkPostRead]);
+
+  // See the note above: the reading list is fetched, so the mount-time check
+  // almost always runs against an empty list.
+  useEffect(() => { checkPostRead(); }, [items, checkPostRead]);
 
   // Dismissal is driven by the countdown bar in the overlay itself - it runs
   // down while the overlay is ignored and pauses under the pointer, so leaving
@@ -630,20 +680,47 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
-  const active = items.filter(i => !i.inLibrary);
-  // Not rendered here any more - the Library has its own home on the profile.
-  // Only the count is needed, to label the link.
-  const libraryCount = items.length - active.length;
+  // The pile: what the launcher counts, and what the list opens onto. Kept
+  // separate from `shelfItems` below because the launcher's numbers must not
+  // move when you wander off into a folder.
+  const pile = useMemo(() => items.filter(i => !i.inLibrary), [items]);
+  const filedCount = items.length - pile.length;
 
-  // All unique tags from active items
-  const allTags = Array.from(new Set(active.flatMap(i => parseTags(i.tag)))).sort();
+  // How many articles sit on each shelf, for the rail. Derived from the loaded
+  // items rather than a server count, so an optimistic move retunes the rail in
+  // the same commit that moves the card.
+  const shelfCounts = useMemo(() => {
+    const m = new Map<ShelfKey, number>();
+    for (const i of items) {
+      const key = i.inLibrary ? libKey(i.folderId ?? null) : PILE;
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }, [items]);
+
+  // A folder can be deleted from the Library page while its shelf is the one on
+  // screen, which would leave the rail with nothing selected and the grid empty
+  // for no stated reason. Fall back to the pile.
+  useEffect(() => {
+    if (shelfKey === PILE || shelfKey === libKey(null)) return;
+    const id = shelfKey.slice(4);
+    if (!readingFolders.some(f => f.id === id)) setShelfKey(PILE);
+  }, [shelfKey, readingFolders]);
+
+  const shelfItems = useMemo(() => itemsOn(items, shelfKey), [items, shelfKey]);
+
+  // All unique tags on the shelf being shown
+  const allTags = useMemo(
+    () => Array.from(new Set(shelfItems.flatMap(i => parseTags(i.tag)))).sort(),
+    [shelfItems],
+  );
 
   // Where the saved articles came from. Same filter the feed offers, over the
   // same kind of value - a reading list of forty things is as worth narrowing
   // by publication as the feed is.
   const allSources = useMemo(
-    () => Array.from(new Set(active.map(i => i.source.trim()).filter(Boolean))).sort(),
-    [active], // eslint-disable-line react-hooks/exhaustive-deps
+    () => Array.from(new Set(shelfItems.map(i => i.source.trim()).filter(Boolean))).sort(),
+    [shelfItems],
   );
 
   // Tokenize the favorites once per change, not once per card.
@@ -662,7 +739,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     return m;
   }, [items, favorites]);
 
-  const activeFavCount = active.filter(i => favHits.has(i.id)).length;
+  const activeFavCount = shelfItems.filter(i => favHits.has(i.id)).length;
 
   const matchesFilters = useCallback((i: ReadingListItem) =>
     (!activeTag || parseTags(i.tag).includes(activeTag)) &&
@@ -670,7 +747,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     (!favoritesOnly || favHits.has(i.id)),
   [activeTag, activeSource, favoritesOnly, favHits]);
 
-  const filtered = active.filter(matchesFilters);
+  const filtered = shelfItems.filter(matchesFilters);
 
   // What actually gets drawn: the live list with the placeholders slotted back
   // into the spots they held. Both lists are savedAt-descending already (the
@@ -687,12 +764,16 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     // placeholder is never on screen alongside the card that replaced it.
     const liveUrls = new Set(filtered.map(i => i.url));
     const placeheld = [...ghosts.values()]
-      .filter(g => matchesFilters(g.item) && !liveUrls.has(g.item.url))
+      // The snapshot is the item as it was when it left, so it holds a slot on
+      // the shelf it left from - not on the one it was filed onto, where it is
+      // about to turn up as a real card.
+      .filter(g => itemsOn([g.item], shelfKey).length > 0
+        && matchesFilters(g.item) && !liveUrls.has(g.item.url))
       .map(g => ({ item: g.item, ghost: g as Ghost | undefined }));
     return [...live, ...placeheld].sort(
       (a, b) => new Date(b.item.savedAt).getTime() - new Date(a.item.savedAt).getTime()
     );
-  }, [filtered, ghosts, matchesFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, ghosts, matchesFilters, shelfKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A filter has to go when its last match does, or you're left staring at an
   // empty list with no obvious way out.
@@ -714,6 +795,19 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const nudge = useMemo(
     () => nudgeForToday(<span className={styles.timeAmount}>{formatDuration(savedMinutes)}</span>, filtered.length),
     [savedMinutes, filtered.length]
+  );
+
+  // The launcher's numbers. Unfiltered and pile-only on purpose: it stands
+  // outside the list and has to say the same thing whatever you last narrowed
+  // the view to, or the count on the door disagrees with the room.
+  const pileMinutes = useMemo(() => totalMinutes(pile), [pile]);
+
+  // The newest few, for the launcher's cover stack. `pile` is already
+  // savedAt-descending (the server orders that way), so the top of it is the
+  // top of the stack.
+  const pilePreview = useMemo(
+    () => pile.slice(0, 4).map(i => ({ id: i.id, title: i.title, url: i.url, imageUrl: i.imageUrl })),
+    [pile],
   );
 
   const gridClass = layout === 'list' ? styles.gridList
@@ -769,12 +863,29 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     }
   }
 
-  // Collapsing takes the add form down with it - a half-typed article hidden
-  // behind a chevron would come back as a surprise on the next expand.
-  function toggleCollapsed() {
-    if (!collapsed) handleCancel();
-    onCollapsedChange?.(!collapsed);
-  }
+  // Closing takes the add form down with it - a half-typed article hidden
+  // behind a shut modal would come back as a surprise on the next open.
+  const close = useCallback(() => {
+    setOpen(false);
+    setExpanded(false);
+    setUrl(''); setTitle(''); setTags([]); setTagInput('');
+    setTitleEdited(false);
+    setFetchedImage('');
+  }, []);
+
+  // Escape closes, and the page behind must not scroll while the list is up -
+  // the same bargain every other full overlay in the app makes.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, close]);
 
   function handleCancel() {
     setExpanded(false);
@@ -783,49 +894,107 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     setFetchedImage('');
   }
 
+  const shelfLabel = shelfKey === PILE
+    ? 'Reading list'
+    : shelfKey === libKey(null)
+      ? 'Unsorted'
+      : readingFolders.find(f => f.id === shelfKey.slice(4))?.name ?? 'Unsorted';
+
   return (
-    <div className={styles.section}>
-      <div className={styles.headerRow}>
-        {onCollapsedChange ? (
-          <button
-            className={styles.sectionToggle}
-            onClick={toggleCollapsed}
-            aria-expanded={!collapsed}
-            title={collapsed ? 'Expand reading list' : 'Collapse reading list'}
-          >
-            <span className={`${styles.chevron} ${collapsed ? '' : styles.chevronOpen}`} aria-hidden>▶</span>
-            <span className={styles.sectionLabel}>Reading list</span>
-            {collapsed && active.length > 0 && (
-              <span className={styles.sectionCount}>{active.length}</span>
-            )}
-          </button>
-        ) : (
-          <div className={styles.sectionLabel}>Reading list</div>
+    <>
+      <ReadingListLauncher
+        count={pile.length}
+        minutes={pileMinutes}
+        filedCount={filedCount}
+        preview={pilePreview}
+        onOpen={() => setOpen(true)}
+      />
+
+      {!open ? null : (
+      /* mousedown, not click: a drag that starts on a card and ends on the
+         backdrop is not a request to close. */
+      <div
+        className={styles.backdrop}
+        onMouseDown={e => { if (e.target === e.currentTarget) close(); }}
+      >
+      <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Reading list">
+      <div className={styles.modalHead}>
+        <div className={styles.modalHeadText}>
+          <h2 className={styles.modalTitle}>{shelfLabel}</h2>
+          {/* The nudge belongs to the pile. A folder is a place you put things
+              on purpose, and counting it back at you as unfinished business
+              would punish the tidying. */}
+          {/* The nudge is wrapped rather than dropped straight in: this row is a
+              flex container with a gap, and a bare fragment would make every
+              text run and every <span> in it a flex item with 8px between them,
+              which spaces the sentence out mid-word. */}
+          {shelfKey === PILE && filtered.length > 0 && (
+            <p className={styles.modalNudge}><ClockIcon /><span>{nudge}</span></p>
+          )}
+        </div>
+        <CloseButton onClick={close} label="Close reading list" />
+      </div>
+
+      {/* ── The shelves ──
+          The pile first, then everything filed. This is the half of the ask a
+          collapsible section could never carry: what you kept and where you put
+          it, in one place, rather than a list here and folders on the profile. */}
+      <div className={styles.shelfRail} role="tablist" aria-label="Shelves">
+        <ShelfChip
+          label="Reading list"
+          count={shelfCounts.get(PILE) ?? 0}
+          color="var(--accent)"
+          active={shelfKey === PILE}
+          onClick={() => setShelfKey(PILE)}
+        />
+        {(filedCount > 0 || readingFolders.length > 0) && (
+          <>
+            <span className={styles.railDivider} aria-hidden />
+            <ShelfChip
+              label="Unsorted"
+              count={shelfCounts.get(libKey(null)) ?? 0}
+              color="var(--muted)"
+              hollow
+              active={shelfKey === libKey(null)}
+              onClick={() => setShelfKey(libKey(null))}
+            />
+            {readingFolders.map(f => (
+              <ShelfChip
+                key={f.id}
+                label={f.name}
+                count={shelfCounts.get(libKey(f.id)) ?? 0}
+                color={f.color}
+                active={shelfKey === libKey(f.id)}
+                onClick={() => setShelfKey(libKey(f.id))}
+              />
+            ))}
+          </>
         )}
-        {!collapsed && (
-          <div className={styles.headerActions}>
-            {onLayoutChange && (
-              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
-            )}
-            {!expanded ? (
-              <button className={styles.addBtn} onClick={() => setExpanded(true)}>+ Save article</button>
-            ) : (
-              <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
-            )}
-          </div>
+        {/* Browsing shelves happens here; making, renaming and colouring them
+            stays on the Library page, which is already built for it. */}
+        {onOpenLibrary && (
+          <button
+            className={styles.manageLink}
+            onClick={() => { close(); onOpenLibrary(); }}
+          >
+            Manage folders <span aria-hidden>→</span>
+          </button>
         )}
       </div>
 
-      {/* Collapsed keeps only the heading - chips, form, cards and archive all go */}
-      {!collapsed && <>
-
-      {/* Same control the feed uses, for the same reason: a row of every tag in
-          the list was the loudest thing on screen and put the filters in a
-          different shape on each surface. Topics keep their stars here - the
-          tags printed on a card aren't buttons (see ReadingCard), so this is
-          still the reading list's favoriting surface. */}
-      {(allTags.length > 0 || allSources.length > 1) && (
-        <FeedFilterBar
+      {/* One control strip: what you're narrowing to on the left, how it's drawn
+          and how to add to it on the right. The filters used to sit inside the
+          scrolling body, which meant they left the screen as soon as you started
+          reading and there was no way back to them but scrolling up. */}
+      <div className={styles.modalToolbar}>
+        {/* Same control the feed uses, for the same reason: a row of every tag in
+            the list was the loudest thing on screen and put the filters in a
+            different shape on each surface. Topics keep their stars here - the
+            tags printed on a card aren't buttons (see ReadingCard), so this is
+            still the reading list's favoriting surface. */}
+        <div className={styles.toolbarFilters}>
+          {(allTags.length > 0 || allSources.length > 1) && (
+            <FeedFilterBar
           groups={[
             {
               id: 'topic',
@@ -871,8 +1040,21 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
               chipActiveClassName={styles.favChipActive}
             />
           ) : undefined}
-        />
-      )}
+            />
+          )}
+        </div>
+
+        {onLayoutChange && (
+          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
+        )}
+        {!expanded ? (
+          <button className={styles.addBtn} onClick={() => setExpanded(true)}>+ Save article</button>
+        ) : (
+          <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
+        )}
+      </div>
+
+      <div className={styles.modalBody}>
 
       {expanded && (
         <div className={styles.addForm}>
@@ -908,19 +1090,14 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         </div>
       )}
 
-      {filtered.length > 0 && (
-        <div className={styles.timeBanner}>
-          <ClockIcon />
-          <span>{nudge}</span>
-        </div>
-      )}
-
       <div className={gridClass}>
         {rows.length === 0 && !expanded ? (
           <div className={styles.empty}>
             {favoritesOnly ? 'No saved articles match your favorite tags.'
               : activeTag ? `No articles tagged "${activeTag}".`
-              : 'No saved articles yet.'}
+              : shelfKey === PILE ? 'Nothing on the pile. Save an article from your feed and it lands here.'
+              : shelfKey === libKey(null) ? 'Nothing unsorted. Articles you keep land here until you file them.'
+              : `Nothing in ${shelfLabel} yet. File an article here from any Save button.`}
           </div>
         ) : rows.map(({ item, ghost }, i) => (
           <ReadingCard
@@ -950,19 +1127,15 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         ))}
       </div>
 
-      {/* The Library used to expand inline here. It has folders and a page of
-          its own now, so this is a doorway rather than a drawer. */}
-      {libraryCount > 0 && onOpenLibrary && (
-        <button className={styles.libraryLink} onClick={onOpenLibrary}>
-          <FolderIcon />
-          <span>Saved articles</span>
-          <span className={styles.libraryCount}>{libraryCount}</span>
-          <span className={styles.libraryArrow} aria-hidden="true">→</span>
-        </button>
+      {/* closes .modalBody, .modal, .backdrop */}
+      </div>
+      </div>
+      </div>
       )}
 
-      </>}
-
+      {/* Outside the modal, and last in the tree so it paints over it: the
+          reader is opened from a card in there and has to sit on top of the
+          thing that raised it. */}
       {reading && (
         <ArticleDetailModal
           url={reading.url}
@@ -1000,6 +1173,38 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
           }
         />
       )}
-    </div>
+    </>
+  );
+}
+
+// One shelf in the rail. A dot in the folder's own colour, its name, and how
+// much is on it - the same three things the Library page's rail shows, because
+// they are the same shelves and recognising them by colour only works if the
+// colour follows them here.
+function ShelfChip({ label, count, color, hollow, active, onClick }: {
+  label: string;
+  count: number;
+  color: string;
+  /** Unsorted has no colour of its own - an outline says "no folder". */
+  hollow?: boolean;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={`${styles.shelfChip} ${active ? styles.shelfChipActive : ''}`}
+      style={{ '--shelf': color } as React.CSSProperties}
+      onClick={onClick}
+    >
+      <span
+        className={`${styles.shelfDot} ${hollow ? styles.shelfDotHollow : ''}`}
+        style={hollow ? undefined : { background: color }}
+      />
+      <span className={styles.shelfName}>{label}</span>
+      <span className={styles.shelfCount}>{count}</span>
+    </button>
   );
 }

@@ -37,7 +37,10 @@ export interface UserSettings {
   backgroundGradient?: 'none' | 'default';
   rssLayout?: 'list' | 'cards' | 'magazine';
   readingListLayout?: 'list' | 'cards' | 'magazine';
-  readingListCollapsed?: boolean;
+  /** How a publisher's page (/s/<domain>) draws its articles. Separate from
+      the feed's: a site page is one publisher's output, which people read
+      differently from the river. */
+  siteLayout?: 'list' | 'cards' | 'magazine';
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
@@ -75,7 +78,7 @@ const DEFAULTS: UserSettings = {
   backgroundGradient: 'default',
   rssLayout: 'magazine',
   readingListLayout: 'magazine',
-  readingListCollapsed: false,
+  siteLayout: 'list',
   rssEnabled: true,
   saveArticleMode: 'dialog',
   markReadOnScroll: true,

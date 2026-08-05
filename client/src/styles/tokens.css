@@ -13,6 +13,16 @@
      published post at a glance, and every other state in the list already wears
      --accent. Amber reads as "not finished" without reading as an error. */
   --draft: #E8A33D;
+  /* Reading-list pressure. Four steps that walk the brand gradient (see
+     NewtMark) backwards, teal through sky to violet and then a brighter
+     orchid: the pile changes colour as it grows without ever leaving Newt's
+     palette. Amber and red were the obvious ramp and the wrong one - they are
+     the colours of a warning, and a stack of things you chose to save is not
+     an error state. */
+  --pile-1: #36D6A6;
+  --pile-2: #5BC8E6;
+  --pile-3: #9B8CFF;
+  --pile-4: #C77DFF;
   --border: rgba(255, 255, 255, 0.08);
   --shadow: rgba(0, 0, 0, 0.4);
   --overlay: rgba(8, 9, 12, 0.62);
@@ -36,6 +46,12 @@
   --fav: #C68A15;
   /* Same amber, taken down until it carries on white - see --fav above. */
   --draft: #A76A08;
+  /* The same four steps, deepened until each one carries as text on white.
+     The dark values are all well over 60% lightness and would read as tints. */
+  --pile-1: #0E9E76;
+  --pile-2: #1B87B0;
+  --pile-3: #6B5BE6;
+  --pile-4: #9333EA;
   --border: rgba(20, 22, 30, 0.09);
   --shadow: rgba(20, 22, 30, 0.10);
   --overlay: rgba(20, 22, 30, 0.35);

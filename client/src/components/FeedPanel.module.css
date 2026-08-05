@@ -481,16 +481,29 @@
    list now, which is a reason to want to read it, comment on it or file it
    somewhere else - not a reason to be locked out of it. Lighter than a ghost
    because it is not a stand-in for something gone, and it lifts back towards
-   full strength under the pointer, which is what says "still live". */
-.spent .card {
+   full strength under the pointer, which is what says "still live".
+
+   The fade is applied to the card's contents rather than to the card, and it
+   skips the two rows that are buttons. Fading the whole card took the controls
+   down with it - a working Save pill at 50% opacity and no colour looks exactly
+   like a disabled one, so the state that was meant to say "handled, carry on"
+   was reading as "handled, hands off". Everything that is *about* the article
+   greys; everything you can still press keeps its colour. */
+.spent .card > *:not(.commentRow):not(.cardActions) {
   opacity: 0.5;
   filter: grayscale(0.9);
-  transition: opacity 0.25s ease, filter 0.25s ease,
-              box-shadow 0.35s ease, border-color 0.35s ease, background 0.35s ease;
+  transition: opacity 0.25s ease, filter 0.25s ease;
 }
 
-.spent:hover .card,
-.spent:focus-within .card {
+/* The card itself keeps full opacity now, so the "handled" reading has to come
+   from the surface it is drawn on rather than from a fade over the lot. */
+.spent .card {
+  background: color-mix(in oklab, var(--surface2) 70%, var(--surface));
+  border-color: color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+.spent:hover .card > *:not(.commentRow):not(.cardActions),
+.spent:focus-within .card > *:not(.commentRow):not(.cardActions) {
   opacity: 0.9;
   filter: grayscale(0.25);
 }

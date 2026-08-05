@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from './SitePage.module.css';
 import { apiGet, apiErrorText } from '../services/api';
 import { SiteOverview, SiteArticle, ReadingListItem } from '../types';
 import { faviconUrl } from '../utils/color';
 import { relTime } from '../utils/notifications';
 import { threadPathFor } from '../utils/articleUrl';
+import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from '../components/LayoutSwitch';
 
 // One publisher, gathered up. Reached from any byline in the app: the domain
 // printed on a feed card, the source on a reading-list card, a bookmark tile.
@@ -18,11 +19,24 @@ import { threadPathFor } from '../utils/articleUrl';
 // It renders inside the app shell (see NewTabPage's ShellView) - the rail, the
 // search bar and the consoles all stay where they are.
 
+export type SiteLayout = 'list' | 'cards' | 'magazine';
+
+const LAYOUT_OPTIONS = [
+  { value: 'list' as const,     title: 'List',     icon: <ListIcon /> },
+  { value: 'cards' as const,    title: 'Cards',    icon: <CardsIcon /> },
+  { value: 'magazine' as const, title: 'Magazine', icon: <MagazineIcon /> },
+];
+
 interface Props {
   domain: string;
   navigate: (to: string) => void;
   /** Open an article's reader (and its comment thread) over the shell. */
   onOpenThread: (url: string) => void;
+  /** How the two lists below draw themselves. Its own setting rather than the
+   *  feed's: this page is one publisher, and a river you skim and a back
+   *  catalogue you browse don't want the same shape. */
+  layout?: SiteLayout;
+  onLayoutChange?: (layout: SiteLayout) => void;
   /**
    * Subscribe to this site's feed. Goes through the shell rather than being
    * posted from here, because the shell holds the subscription list the feed
@@ -44,12 +58,84 @@ function readTimeLabel(mins: number | null | undefined): string {
   return mins === 1 ? '1 min read' : `${mins} min read`;
 }
 
-export default function SitePage({ domain, navigate, onOpenThread, onFollowSite }: Props) {
+// One article, flattened. Both lists on this page - what the feed brought and
+// what you kept - are the same handful of fields once you stop caring which
+// table they came out of, and the three layouts below only ever wanted this.
+// Keeping the shapes apart would have meant writing every layout twice.
+interface Entry {
+  key: string;
+  title: string;
+  /** The publisher's copy. */
+  href: string;
+  snippet: string | null;
+  imageUrl: string | null;
+  meta: string[];
+  /** The reader, over the shell - the other destination every row offers. */
+  threadHref: string;
+  unread: boolean;
+}
+
+function feedEntry(a: SiteArticle): Entry {
+  return {
+    key: a.id,
+    title: a.title,
+    href: a.link,
+    snippet: a.snippet,
+    imageUrl: a.imageUrl,
+    meta: [
+      a.pubDate ? relTime(a.pubDate) : '',
+      readTimeLabel(a.readTime),
+      a.dismissed ? 'dismissed' : '',
+    ].filter(Boolean),
+    threadHref: threadPathFor(a.link),
+    unread: !a.read,
+  };
+}
+
+function savedEntry(item: ReadingListItem): Entry {
+  return {
+    key: item.id,
+    title: item.title || hostOf(item.url),
+    href: item.url,
+    snippet: null,
+    imageUrl: item.imageUrl || null,
+    meta: [
+      relTime(item.savedAt),
+      item.readTime,
+      // A reading-list item and one filed on a shelf are different states, and
+      // flattening them would leave you unable to tell what you'd already dealt
+      // with.
+      item.inLibrary ? 'in your saved articles' : 'on your reading list',
+    ].filter(Boolean),
+    threadHref: threadPathFor(item.url),
+    unread: false,
+  };
+}
+
+// Magazine variants. Deliberately thinner than the feed's: a site page is one
+// publisher, so there is no mix of sources to break up and the only thing worth
+// varying is which pieces get to be big. The first article with art leads, the
+// rest fall back to whether they have a picture at all.
+type MagVariant = 'feature' | 'standard' | 'text';
+
+function magazineVariants(entries: Entry[]): MagVariant[] {
+  let led = false;
+  return entries.map(e => {
+    if (!e.imageUrl) return 'text';
+    if (!led) { led = true; return 'feature'; }
+    return 'standard';
+  });
+}
+
+export default function SitePage({ domain, navigate, onOpenThread, onFollowSite, layout = 'list', onLayoutChange }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [site, setSite] = useState<SiteOverview | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [subscribeError, setSubscribeError] = useState('');
+
+  const feedEntries = useMemo(() => (site?.articles ?? []).map(feedEntry), [site]);
+  const savedEntries = useMemo(() => (site?.saved ?? []).map(savedEntry), [site]);
 
   const load = useCallback(async (signal: { cancelled: boolean }) => {
     try {
@@ -201,12 +287,16 @@ export default function SitePage({ domain, navigate, onOpenThread, onFollowSite 
 
       {site.articles.length > 0 && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>From the feed</h2>
-          <div className={styles.list}>
-            {site.articles.map(a => (
-              <ArticleRow key={a.id} article={a} onOpenThread={onOpenThread} />
-            ))}
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>From the feed</h2>
+            {/* One switch for the page, parked on whichever section comes
+                first. Two of them - one per list - would be two controls that
+                have to agree about the same thing. */}
+            {onLayoutChange && (
+              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Site layout" />
+            )}
           </div>
+          <EntryList entries={feedEntries} layout={layout} onOpenThread={onOpenThread} />
           {site.hasMore && (
             <button className={styles.moreBtn} disabled={loadingMore} onClick={loadMore}>
               {loadingMore ? 'Loading…' : 'Load more'}
@@ -217,87 +307,137 @@ export default function SitePage({ domain, navigate, onOpenThread, onFollowSite 
 
       {site.saved.length > 0 && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>You saved</h2>
-          <div className={styles.list}>
-            {site.saved.map(item => (
-              <SavedRow key={item.id} item={item} onOpenThread={onOpenThread} />
-            ))}
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>You saved</h2>
+            {onLayoutChange && site.articles.length === 0 && (
+              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Site layout" />
+            )}
           </div>
+          <EntryList entries={savedEntries} layout={layout} onOpenThread={onOpenThread} />
         </section>
       )}
     </div>
   );
 }
 
-// One article, as a row rather than a card: this is a list of one publisher's
+// The three shapes. They differ in what they draw around a title, not in what
+// they know: a row, a card with its cover, or an editorial grid where the lead
+// piece gets the width.
+function EntryList({ entries, layout, onOpenThread }: {
+  entries: Entry[];
+  layout: SiteLayout;
+  onOpenThread: (url: string) => void;
+}) {
+  const variants = useMemo(
+    () => (layout === 'magazine' ? magazineVariants(entries) : null),
+    [layout, entries],
+  );
+
+  if (layout === 'list') {
+    return (
+      <div className={styles.list}>
+        {entries.map(e => <EntryRow key={e.key} entry={e} onOpenThread={onOpenThread} />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className={layout === 'magazine' ? styles.gridMagazine : styles.gridCards}>
+      {entries.map((e, i) => (
+        <EntryCard
+          key={e.key}
+          entry={e}
+          variant={variants?.[i]}
+          onOpenThread={onOpenThread}
+        />
+      ))}
+    </div>
+  );
+}
+
+// One article, as a row: the default, because this is a list of one publisher's
 // output, where the covers would all be the same shape and the titles are the
 // only thing that distinguishes one line from the next.
 //
 // The title opens the source, and a second link opens the reader - the same
 // split every card in the app makes, for the same reason: the story is at the
 // publisher, the conversation is here.
-function ArticleRow({ article, onOpenThread }: {
-  article: SiteArticle;
+function EntryRow({ entry, onOpenThread }: { entry: Entry; onOpenThread: (url: string) => void }) {
+  return (
+    <div className={`${styles.row} ${entry.unread ? styles.rowUnread : ''}`}>
+      <a className={styles.rowTitle} href={entry.href} target="_blank" rel="noopener noreferrer">
+        {entry.title}
+      </a>
+      {entry.snippet && <p className={styles.rowSnippet}>{entry.snippet}</p>}
+      <EntryMeta entry={entry} onOpenThread={onOpenThread} />
+    </div>
+  );
+}
+
+// The card the other two layouts are made of. `variant` is only set in
+// magazine - in cards every tile is the same size, which is the point of it.
+function EntryCard({ entry, variant, onOpenThread }: {
+  entry: Entry;
+  variant?: MagVariant;
   onOpenThread: (url: string) => void;
 }) {
-  const meta = [
-    article.pubDate ? relTime(article.pubDate) : '',
-    readTimeLabel(article.readTime),
-    article.dismissed ? 'dismissed' : '',
-  ].filter(Boolean);
+  const showImage = !!entry.imageUrl && variant !== 'text';
+  const cls = [
+    styles.card,
+    entry.unread ? styles.cardUnread : '',
+    variant === 'feature' ? styles.cardFeature : '',
+    variant === 'text' ? styles.cardText : '',
+  ].filter(Boolean).join(' ');
 
   return (
-    <div className={`${styles.row} ${article.read ? '' : styles.rowUnread}`}>
-      <a className={styles.rowTitle} href={article.link} target="_blank" rel="noopener noreferrer">
-        {article.title}
-      </a>
-      {article.snippet && <p className={styles.rowSnippet}>{article.snippet}</p>}
-      <div className={styles.rowMeta}>
-        {meta.map((m, i) => (
-          <span key={m}>{i > 0 && <span className={styles.dot}>·</span>}{m}</span>
-        ))}
+    <div className={cls}>
+      {showImage && (
+        /* Out of the tab order on purpose: it leads exactly where the title two
+           lines below does, and a second link with no text of its own is noise
+           to anyone not using a mouse. */
         <a
-          className={styles.rowRead}
-          href={threadPathFor(article.link)}
-          onClick={e => { e.preventDefault(); onOpenThread(article.link); }}
+          className={styles.cardHero}
+          href={entry.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          tabIndex={-1}
+          aria-hidden="true"
         >
-          Read here
+          <img
+            src={entry.imageUrl!}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={e => { const img = e.currentTarget; (img.parentElement ?? img).style.display = 'none'; }}
+          />
         </a>
+      )}
+      <div className={styles.cardBody}>
+        <a className={styles.cardTitle} href={entry.href} target="_blank" rel="noopener noreferrer">
+          {entry.title}
+        </a>
+        {entry.snippet && <p className={styles.cardSnippet}>{entry.snippet}</p>}
+        <EntryMeta entry={entry} onOpenThread={onOpenThread} />
       </div>
     </div>
   );
 }
 
-// A saved article. Same row, plus where it currently lives - a reading-list item
-// and one filed on a Library shelf are different states and the page would be
-// confusing if it flattened them.
-function SavedRow({ item, onOpenThread }: {
-  item: ReadingListItem;
-  onOpenThread: (url: string) => void;
-}) {
-  const meta = [
-    relTime(item.savedAt),
-    item.readTime,
-    item.inLibrary ? 'in your saved articles' : 'on your reading list',
-  ].filter(Boolean);
-
+// Shared by all three layouts so the dates, the read time and the way into the
+// reader can't drift apart between them.
+function EntryMeta({ entry, onOpenThread }: { entry: Entry; onOpenThread: (url: string) => void }) {
   return (
-    <div className={styles.row}>
-      <a className={styles.rowTitle} href={item.url} target="_blank" rel="noopener noreferrer">
-        {item.title || hostOf(item.url)}
+    <div className={styles.rowMeta}>
+      {entry.meta.map((m, i) => (
+        <span key={m}>{i > 0 && <span className={styles.dot}>·</span>}{m}</span>
+      ))}
+      <a
+        className={styles.rowRead}
+        href={entry.threadHref}
+        onClick={e => { e.preventDefault(); onOpenThread(entry.href); }}
+      >
+        Read here
       </a>
-      <div className={styles.rowMeta}>
-        {meta.map((m, i) => (
-          <span key={m}>{i > 0 && <span className={styles.dot}>·</span>}{m}</span>
-        ))}
-        <a
-          className={styles.rowRead}
-          href={threadPathFor(item.url)}
-          onClick={e => { e.preventDefault(); onOpenThread(item.url); }}
-        >
-          Read here
-        </a>
-      </div>
     </div>
   );
 }

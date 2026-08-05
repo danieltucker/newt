@@ -167,6 +167,16 @@
   gap: 10px;
 }
 
+/* The heading and the layout switch share a line. Wraps rather than squeezes,
+   the same bargain the feed's header makes above a much narrower column. */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
 .sectionTitle {
   margin: 0;
   font-size: 12px;
@@ -243,6 +253,145 @@
   white-space: nowrap;
 }
 .rowRead:hover { color: var(--accent); }
+
+/* ── Cards and magazine ──
+   The other two shapes the same entries can take. A row is the default because
+   one publisher's output is a list of headlines; these are for when you want to
+   browse the back catalogue rather than scan it, and for a site whose articles
+   all carry art - where a column of bare titles throws that away. */
+.gridCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+/* Dense so a text card can fill the hole a feature leaves beside it rather than
+   the grid carrying a gap down the page. */
+.gridMagazine {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-auto-flow: dense;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s, border-color 0.15s;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px var(--shadow);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card:hover { transform: none; }
+}
+
+/* The same rule down the leading edge the rows use, so unread means one thing
+   on this page however it is drawn. */
+.cardUnread {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.cardUnread:hover {
+  box-shadow: inset 2px 0 0 var(--accent), 0 12px 28px var(--shadow);
+}
+
+.cardHero {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: var(--surface2);
+  overflow: hidden;
+}
+
+.cardHero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.card:hover .cardHero img { transform: scale(1.03); }
+
+@media (prefers-reduced-motion: reduce) {
+  .card:hover .cardHero img { transform: none; }
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  padding: 13px 15px;
+}
+
+.cardTitle {
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text);
+  text-decoration: none;
+}
+.cardTitle:hover { color: var(--accent); }
+
+.cardSnippet {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The meta row is pinned to the bottom so cards of different heights still line
+   their dates up against each other. */
+.card .rowMeta { margin-top: auto; padding-top: 2px; }
+
+/* ── Magazine variants ──
+   The lead piece takes two columns and headline-sized type; art-less articles
+   become text cards, which is what keeps a grid of them from reading as a page
+   of empty picture frames. */
+.cardFeature {
+  grid-column: span 2;
+}
+
+.cardFeature .cardHero { aspect-ratio: 21 / 9; }
+
+.cardFeature .cardTitle {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  line-height: 1.22;
+}
+
+.cardFeature .cardSnippet {
+  font-size: 13.5px;
+  -webkit-line-clamp: 4;
+}
+
+.cardText {
+  background: color-mix(in oklab, var(--surface2) 60%, var(--surface));
+}
+
+.cardText .cardTitle { font-size: 16px; }
+
+.cardText .cardSnippet { -webkit-line-clamp: 5; }
+
+/* One column below this, so a feature has no second column to span into. */
+@media (max-width: 560px) {
+  .gridCards,
+  .gridMagazine { grid-template-columns: 1fr; }
+  .cardFeature { grid-column: span 1; }
+  .cardFeature .cardTitle { font-size: 18px; }
+}
 
 .moreBtn {
   align-self: center;

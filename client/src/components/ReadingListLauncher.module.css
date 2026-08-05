@@ -1,0 +1,362 @@
+/* The reading list's front door. One wide button, four moving parts: a count
+   you can read at a glance with its unit under it, the reading time, the tier's
+   line, and a meter along the bottom edge.
+
+   Every tier sets one variable - --urg - and the whole control retunes off it:
+   the wash behind the badge, the badge fill, the ring, the button, the meter.
+   Doing it any other way would have meant five copies of these rules.
+
+   The ramp itself lives in styles/tokens.css as --pile-1..4, because it needs a
+   light-theme set the way --fav and --draft do. */
+
+.launcher {
+  --urg: var(--accent);
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  padding: 18px 20px 20px;
+  overflow: hidden;
+  text-align: left;
+  font-family: 'Hanken Grotesk', sans-serif;
+  /* Three layers, back to front: a glow anchored on the badge so the colour
+     looks like it is coming off the count rather than being painted on the
+     panel; a long diagonal fade that keeps the right-hand end from going flat;
+     the surface. Two washes rather than one is most of what separates this from
+     a tinted box. */
+  background:
+    radial-gradient(120px 120px at 58px 50%,
+      color-mix(in oklab, var(--urg) 22%, transparent), transparent 70%),
+    linear-gradient(105deg,
+      color-mix(in oklab, var(--urg) 9%, transparent) 0%,
+      color-mix(in oklab, var(--urg) 3%, transparent) 42%,
+      transparent 72%),
+    var(--surface);
+  border: 1px solid color-mix(in oklab, var(--urg) 22%, var(--border));
+  border-radius: 20px;
+  cursor: pointer;
+  /* The hairline of light along the top edge. It is the one detail that makes a
+     flat panel read as a raised surface, and it is why the border can stay as
+     quiet as it is. */
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--text) 8%, transparent),
+    0 1px 2px color-mix(in oklab, var(--shadow) 30%, transparent);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 0.22s, border-color 0.18s, background 0.3s;
+}
+
+.launcher:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--urg) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--text) 12%, transparent),
+    0 16px 38px color-mix(in oklab, var(--shadow) 85%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--urg) 12%, transparent);
+}
+
+.launcher:focus-visible {
+  outline: 2px solid var(--urg);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher, .launcher:hover { transition: none; transform: none; }
+}
+
+/* ── The count ──
+   Number over unit, both centred on the same axis. The unit used to be said out
+   here and again in the stats line to the right; this is the place for it,
+   because it is what the number is measuring. */
+.badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  flex-shrink: 0;
+  width: 78px;
+  height: 78px;
+  border-radius: 22px;
+  /* A fill with a direction to it, brighter at the top left where the panel's
+     own highlight is, so the tile sits in the same light as everything else. */
+  background:
+    linear-gradient(155deg,
+      color-mix(in oklab, var(--urg) 26%, transparent),
+      color-mix(in oklab, var(--urg) 9%, transparent));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--urg) 34%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--urg) 45%, transparent);
+  color: var(--urg);
+}
+
+.badgeNum {
+  font-family: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.badgeUnit {
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* ── The type ── */
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 7px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.statMuted,
+.statsEmpty {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.clock {
+  color: var(--urg);
+}
+
+.sep {
+  color: var(--muted);
+  opacity: 0.45;
+}
+
+.line {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ── The cover stack ──
+   The newest few articles, overlapping left-over-right so the one you saved
+   last is the one on top. Sits between the type and the button, which is the
+   space that was doing nothing.
+
+   Every tile carries the panel's own surface as its border rather than a
+   colour, so the overlap reads as depth instead of as a stroke around each
+   picture - the same trick a stack of photos plays. */
+.stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* Cancels the first tile's negative margin, so the stack starts where it
+     says it does. The right-hand margin is the fan's room to open into, and it
+     keeps the covers from reading as part of the button beside them. */
+  padding-left: 14px;
+  margin-right: 8px;
+}
+
+.stackItem {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin-left: -14px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: var(--surface2);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    inset 0 0 0 1px color-mix(in oklab, var(--urg) 26%, transparent);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.stackItem:first-child { margin-left: 0; }
+
+/* Fans out under the pointer, so the ones behind become legible without the
+   stack having to be spread out all the time. */
+.launcher:hover .stackItem { transform: translateX(5px); }
+.launcher:hover .stackItem:first-child { transform: translateX(0); }
+.launcher:hover .stackItem:nth-child(3) { transform: translateX(10px); }
+.launcher:hover .stackItem:nth-child(4) { transform: translateX(15px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stackItem,
+  .launcher:hover .stackItem { transition: none; transform: none; }
+}
+
+.stackCover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* An art-less article shows its publisher instead, centred and small - a
+   favicon stretched to 46px would be a smear. */
+.stackFavicon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  border-radius: 5px;
+}
+
+/* ── The way in ── */
+.go {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--urg) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--urg) 30%, transparent);
+  color: var(--urg);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  transition: background 0.18s, box-shadow 0.18s;
+}
+
+.launcher:hover .go {
+  background: color-mix(in oklab, var(--urg) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--urg) 55%, transparent);
+}
+
+.goArrow { transition: transform 0.18s; }
+.launcher:hover .goArrow { transform: translateX(3px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher:hover .goArrow { transform: none; }
+}
+
+/* ── The meter ──
+   Pinned to the bottom edge rather than floated inside, so it reads as the
+   control's own waterline. Scales from the left; a transform rather than a
+   width so the fill animates on the compositor. */
+.meter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in oklab, var(--border) 85%, transparent);
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  /* Fades in from nothing at the left rather than starting at full strength, so
+     a nearly-empty bar is a suggestion and a full one is a statement. */
+  background: linear-gradient(90deg,
+    color-mix(in oklab, var(--urg) 35%, transparent),
+    var(--urg));
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meterFill { transition: none; }
+}
+
+/* ── Tiers ──
+   Grey while there is nothing to do, then the brand gradient walked backwards:
+   teal, sky, violet, orchid. The pile gets louder and more saturated as it
+   grows without ever leaving the palette the logo is made of - see --pile-1..4
+   in styles/tokens.css.
+
+   The earlier ramp went accent, amber, red, which said "warning" about a stack
+   of things the reader had chosen to keep. */
+.empty { --urg: var(--muted); }
+.calm { --urg: var(--pile-1); }
+.building { --urg: var(--pile-2); }
+.full { --urg: var(--pile-3); }
+.urgent { --urg: var(--pile-4); }
+
+/* An empty list has nothing to sell, so it drops back to a plain surface - a
+   washed panel that says "nothing waiting" is a lot of furniture for no news. */
+.empty {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.empty .badge {
+  background: var(--surface2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+}
+
+/* ── Phones ──
+   The count and the label sit on one line, the button drops to its own
+   full-width row underneath. Squeezing all three across a 340px screen left the
+   stats line wrapping mid-number. */
+@media (max-width: 560px) {
+  .launcher {
+    flex-wrap: wrap;
+    gap: 12px 15px;
+    padding: 15px 16px 17px;
+    border-radius: 18px;
+  }
+
+  .badge {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+  }
+
+  .badgeNum { font-size: 27px; }
+  .badgeUnit { font-size: 9px; }
+
+  /* Zero basis, not auto: on `auto` the block is as wide as its longest line
+     wants to be, so a long tier line pushed the whole text column onto its own
+     row below the count while a short one sat beside it - the same control
+     laid out two different ways depending on how full the list was. */
+  .text { flex: 1 1 0; min-width: 0; }
+
+  .stats { font-size: 15px; }
+  .statMuted, .statsEmpty { font-size: 14px; }
+
+  /* No middle to fill at this width - the count, the type and the button take
+     all of it, and a row of thumbnails would push the button off a third row. */
+  .stack { display: none; }
+
+  .go {
+    flex: 1 0 100%;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 13.5px;
+  }
+}

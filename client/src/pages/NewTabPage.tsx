@@ -863,6 +863,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 navigate={navigate}
                 onOpenThread={openThread}
                 onFollowSite={handleFollowSite}
+                layout={settings.siteLayout ?? 'list'}
+                onLayoutChange={l => updateSetting({ siteLayout: l })}
               />
             )}
             {view.kind === 'myblog' && (
@@ -922,8 +924,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onOpenArticle={setArticleUrl}
                 layout={settings.readingListLayout ?? 'magazine'}
                 onLayoutChange={l => updateSetting({ readingListLayout: l })}
-                collapsed={settings.readingListCollapsed === true}
-                onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
                 commentPrefs={commentPrefs}
                 onViewProfile={onViewProfile}
                 onOpenSite={goSite}

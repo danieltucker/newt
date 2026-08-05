@@ -1,81 +1,219 @@
-.section {
-  margin-top: 28px;
-}
+/* ── The room ──
+   The reading list used to be a section on the new tab that unfolded behind a
+   chevron. It is a place you go into now: ReadingListLauncher is the door, and
+   everything below here is what is behind it - the pile, the shelves it gets
+   filed onto, and every card control that used to be scattered down the page.
 
-/* Wraps rather than overflows - same reasoning as FeedPanel's .headerRow, which
-   this sits directly above and has to behave like. */
-.headerRow {
+   Full-bleed on a phone (see the foot of this file) rather than a dialog with
+   margins: on a 360px screen a card grid inside a 24px-inset box inside a
+   backdrop is three nested scroll areas and about 300px of usable width. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-bottom: 12px;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade 0.18s ease;
 }
 
-.headerActions {
+.modal {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  height: min(92vh, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px var(--shadow);
+  animation: modalIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.sectionLabel {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-}
-
-/* The section heading doubles as the collapse control */
-.sectionToggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: none;
-  padding: 4px 0;
-  margin: 0;
-  cursor: pointer;
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  transition: color 0.12s;
-}
-
-.sectionToggle:hover,
-.sectionToggle:hover .sectionLabel {
-  color: var(--text);
-}
-
-/* Points right when the list is shut, down when it's open. The markup has
-   always asked for these two classes; they were never written, so the arrow sat
-   at rotate(0) in both states and said nothing. */
-.chevron {
-  flex-shrink: 0;
-  font-size: 9px;
-  line-height: 1;
-  transform: rotate(0deg);
-  transition: transform 0.18s ease;
-}
-
-.chevronOpen {
-  transform: rotate(90deg);
+@keyframes modalIn {
+  from { transform: translateY(14px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chevron { transition: none; }
+  .backdrop, .modal { animation: none; }
 }
 
-/* Standing in for the hidden cards, so a collapsed list still says how much is in it */
-.sectionCount {
-  font-size: 11px;
+.modalHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-shrink: 0;
+  padding: 18px 20px 12px;
+}
+
+.modalHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.modalTitle {
+  margin: 0;
+  font-family: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 1;
-  padding: 3px 7px;
+  line-height: 1.15;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* The daily nudge, promoted out of a banner over the grid and into the header.
+   It is the sentence that says how you're doing, so it belongs beside the name
+   of the thing rather than floating above the cards as a third strip of chrome. */
+.modalNudge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ── Shelf rail ──
+   The pile, then everything filed. Scrolls sideways rather than wrapping: a
+   rail that grows a second row pushes the cards down the screen every time a
+   folder is added, and on a phone it would take half the viewport. */
+.shelfRail {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 0 20px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.shelfRail::-webkit-scrollbar { display: none; }
+
+.railDivider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.shelfChip {
+  --shelf: var(--muted);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
-  color: var(--accent);
+  background: var(--surface2);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.shelfChip:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--shelf) 45%, transparent);
+}
+
+.shelfChipActive {
+  color: var(--text);
+  background: color-mix(in oklab, var(--shelf) 14%, var(--surface2));
+  border-color: color-mix(in oklab, var(--shelf) 55%, transparent);
+}
+
+.shelfDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.shelfDotHollow {
+  background: none;
+  border: 1.5px solid var(--muted);
+}
+
+.shelfName {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shelfCount {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--shelf) 18%, transparent);
+  color: var(--shelf);
+  font-variant-numeric: tabular-nums;
+}
+
+.shelfChipActive .shelfCount {
+  background: color-mix(in oklab, var(--shelf) 28%, transparent);
+}
+
+/* Sits at the tail of the rail because it is about the shelves, not one of
+   them. Making and renaming folders stays on the Library page. */
+.manageLink {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.manageLink:hover { color: var(--accent); }
+
+.modalToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 20px 12px;
+}
+
+/* Takes the slack so the layout switch and the add button stay pinned right
+   whether or not there are any filters to show. */
+.toolbarFilters {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The only thing in here that scrolls. Everything above it - the title, the
+   nudge, the rail, the layout switch - stays put, so changing shelf never means
+   scrolling back up to find the rail again. */
+.modalBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+  border-top: 1px solid var(--border);
 }
 
 .addBtn {
@@ -298,22 +436,10 @@
 
 .tagChipFav:hover { border-color: var(--fav); color: var(--fav); }
 
-/* ── "You have N minutes saved" nudge, sitting on top of the list ── */
-.timeBanner {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
-  padding: 9px 13px;
-  border: 1px solid var(--border);
-  border-left: 2px solid color-mix(in oklab, var(--accent) 55%, transparent);
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--accent) 5%, var(--surface));
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
+/* ── "You have N minutes saved" nudge ──
+   Lives in the modal header now (.modalNudge). It was a banner of its own above
+   the grid, which on a phone meant the first thing on screen was a sentence
+   about the list rather than the list. */
 .timeIcon {
   flex-shrink: 0;
   color: var(--accent);
@@ -325,55 +451,10 @@
   font-weight: 600;
 }
 
-/* ── Library doorway ──
-   Replaced the inline archive expander: the Library lives on the profile now,
-   so this is a link out rather than a section that unfolds in place. */
-.libraryLink {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 20px;
-  padding: 11px 14px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
-}
-
-.libraryLink:hover {
-  color: var(--text);
-  border-color: var(--muted);
-  background: var(--surface);
-}
-
-.libraryCount {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--border);
-  color: var(--text);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-/* Pushed to the far edge so the row reads as "go here", not a label */
-.libraryArrow {
-  margin-left: auto;
-  font-size: 13px;
-  transition: transform 0.12s;
-}
-
-.libraryLink:hover .libraryArrow {
-  transform: translateX(2px);
-}
-
+/* The Library doorway that used to sit under the grid is the shelf rail now -
+   the folders are in here, so a link out to them was a door to the room you
+   were already standing in. What remains on the Library page is making and
+   renaming them, which .manageLink still reaches. */
 .libraryCard {
   border-style: dashed;
 }
@@ -638,13 +719,28 @@
   overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Wraps rather than squeezes. A card in the narrow grid is ~250px, and the
+     icon, two pills and a dismiss leave the question about 50px - enough to
+     render "Done with this?" as "Don…", which asks nothing at all. On a wide
+     card it all still sits on one line. */
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 7px 8px 7px 12px;
-  background: color-mix(in oklab,
-    color-mix(in oklab, var(--accent) 14%, var(--surface)) 92%, transparent);
-  backdrop-filter: blur(6px);
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 40%, transparent);
   animation: postReadIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Carries the accent so the prompt is spotted without the whole bar having to
+   be tinted - the tint is what made this read as a notification bolted on from
+   somewhere else rather than as part of the card. */
+.postReadIcon {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--accent);
 }
 
 @keyframes postReadIn {
@@ -653,38 +749,36 @@
 }
 
 .postReadTitle {
-  flex: 1;
-  min-width: 0;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--muted);
   line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
+/* Pushed to the far end of whichever line it lands on - beside the question on
+   a wide card, under it on a narrow one. */
 .postReadBtns {
   display: flex;
   flex-shrink: 0;
+  margin-left: auto;
   gap: 6px;
 }
 
-/* Pills, like every other button that sits on a card here */
+/* The same two pills the shelf picker uses - one filled commit, one bordered
+   way out. They were a pair of coloured gradients, gold and red, which are
+   nowhere else in the app: the prompt looked like a cookie banner sitting on
+   the card rather than part of it. */
 .postReadBtns button {
   min-height: 26px;
-  padding: 4px 12px;
-  border: none;
+  padding: 4px 13px;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.12s;
-}
-
-.postReadBtns button:hover {
-  filter: saturate(1.15) brightness(1.06);
+  transition: background 0.12s, border-color 0.12s, color 0.12s, filter 0.12s;
 }
 
 /* Dismiss - the bar covers the card's own controls in this band, so it carries
@@ -730,14 +824,30 @@
   animation-play-state: paused;
 }
 
+/* Keeping it is the thing the prompt is for, so it's the filled one - same
+   accent fill as the picker's Save. */
 .postReadArchiveBtn {
-  background: linear-gradient(180deg, #e3bb59, #d09c36);
-  color: color-mix(in oklab, #d09c36 45%, black);
+  background: var(--accent);
+  color: #fff;
 }
 
+.postReadArchiveBtn:hover {
+  filter: saturate(1.15) brightness(1.06);
+}
+
+/* Bordered rather than filled: it is the destructive half, and a red button
+   sitting on every card you come back to is a lot of red. It goes red on
+   approach, which is the same bargain the card's own delete makes. */
 .postReadRemoveBtn {
-  background: linear-gradient(180deg, #e07a72, #cf5b52);
-  color: color-mix(in oklab, #cf5b52 48%, black);
+  background: var(--surface2);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.postReadRemoveBtn:hover {
+  background: color-mix(in oklab, #e5484d 12%, var(--surface2));
+  border-color: color-mix(in oklab, #e5484d 55%, transparent);
+  color: #e5484d;
 }
 
 .fetchingDot {
@@ -1073,11 +1183,64 @@
   .meta { font-size: 13px; }
   .sourceFavicon { width: 16px; height: 16px; }
 
-  .sectionLabel { font-size: 13px; }
-  .sectionCount { font-size: 12px; }
   .empty { font-size: 15px; }
 
   .commentRow { gap: 8px; }
+}
+
+/* ── The room, on a phone ──
+   Full bleed. A dialog inset inside a backdrop costs 48px of width and adds a
+   second rounded box around a grid that is already made of rounded boxes, and
+   at this size the list is the whole screen anyway - which is the right answer
+   for the one surface in the app you go to in order to read.
+   The rail and the toolbar share a line here: two full-width strips of chrome
+   above the cards is most of a phone screen before a single article shows. */
+@media (max-width: 640px) {
+  .backdrop {
+    padding: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .modal {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    /* Full bleed means the title would sit under the notch and the last row of
+       cards under the home indicator. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .modalHead { padding: 14px 16px 10px; }
+  .modalTitle { font-size: 20px; }
+  .modalNudge { font-size: 13.5px; }
+
+  .shelfRail {
+    padding: 0 16px 10px;
+    /* Room for a thumb to fling the rail without catching a chip's edge. */
+    scroll-padding-inline: 16px;
+  }
+
+  .shelfChip {
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+
+  /* On a rail that scrolls, an auto margin has nothing to push against - it
+     would sit immediately after the last folder rather than at the far end. */
+  .manageLink { margin-left: 0; }
+
+  .modalToolbar {
+    justify-content: space-between;
+    padding: 0 16px 10px;
+  }
+
+  .addBtn, .cancelBtn { font-size: 13px; }
+
+  .modalBody { padding: 14px 16px 24px; }
 }
 
 /* Below this even one column is tight, so the action pills stop sharing a row

@@ -22,7 +22,7 @@ export interface UserSettings {
   backgroundGradient?: 'none' | 'aurora' | 'dusk' | 'ocean' | 'midnight' | 'rose';
   rssLayout?: 'list' | 'cards' | 'magazine';
   readingListLayout?: 'list' | 'cards' | 'magazine';
-  readingListCollapsed?: boolean;
+  siteLayout?: 'list' | 'cards' | 'magazine';
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
@@ -58,7 +58,7 @@ const DEFAULTS: UserSettings = {
   backgroundGradient: 'none',
   rssLayout: 'magazine',
   readingListLayout: 'magazine',
-  readingListCollapsed: false,
+  siteLayout: 'list',
   rssEnabled: true,
   saveArticleMode: 'dialog',
   markReadOnScroll: true,
@@ -92,7 +92,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'readingListCollapsed', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys
