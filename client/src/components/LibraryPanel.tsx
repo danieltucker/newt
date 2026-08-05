@@ -91,6 +91,18 @@ export default function LibraryPanel({
 
   return (
     <div className={styles.panel}>
+      {/* The tab this sits under was called "Library", which read as the name of
+          a feature rather than as a place your own articles are. Saying what is
+          in here, and how much of it, is the part the tab label can't carry. */}
+      <div className={styles.intro}>
+        <h2 className={styles.introTitle}>Saved articles</h2>
+        <p className={styles.introText}>
+          {library.length === 0
+            ? 'Articles you keep from your reading list are filed here, in folders of your own. Only you can see them.'
+            : `${library.length} article${library.length === 1 ? '' : 's'} you’ve kept from your reading list, filed into folders of your own. Only you can see them.`}
+        </p>
+      </div>
+
       {/* ── Shelf rail ── */}
       <div className={styles.rail}>
         <button
@@ -210,7 +222,7 @@ export default function LibraryPanel({
         {shown.length === 0 ? (
           <div className={styles.empty}>
             {shelf === null
-              ? 'Nothing unsorted. Articles you add to the Library land here.'
+              ? 'Nothing unsorted. Articles you keep land here until you file them.'
               : 'This folder is empty. Move articles in from Unsorted.'}
           </div>
         ) : shown.map(item => (

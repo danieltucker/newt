@@ -66,16 +66,61 @@ html, body {
   height: 100%;
 }
 
+html {
+  /* iOS reflows narrow columns at a font size of its own choosing unless told
+     not to. The type scale here is deliberate - and rotating the phone would
+     otherwise resize the text and nothing else. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* ── The page must never be wider than the screen ──
+     A dropdown anchored `left: 0` near the right edge (the feed's Filters panel
+     was the worst offender) hangs past the viewport, and an absolutely
+     positioned box still counts towards the document's scrollable width. Mobile
+     Safari's answer to a document wider than the screen is to scale the whole
+     page down so it fits, and that one effect is most of what "mobile is
+     broken" looked like:
+       - everything renders a size too small, because the page is zoomed out;
+       - the sticky bar stops reaching the right edge, because a sticky box is
+         viewport-wide while the content beside it is wider;
+       - content sits too far right and runs off, for the same reason;
+       - width-based media queries stop matching what the phone actually is, so
+         the phone layouts (the 2-up card grid at 460px) never come on.
+     The panels are clamped at source too - see .panel in FeedFilterBar and
+     .filterPanel in FilterDropdown - but this is the backstop that keeps one
+     stray absolute box from rescaling the entire app.
+
+     `clip`, not `hidden`: `hidden` here would make the viewport a scroll
+     container and take the sticky shell bar with it. `clip` doesn't scroll, so
+     sticky keeps working. */
+  overflow-x: clip;
+}
+
 body {
   font-family: 'Hanken Grotesk', sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Long feed titles and pasted URLs shouldn't be the thing that widens the
+     page past the screen - see the overflow-x note on html above. The clip
+     itself stays on html alone: overflow on the root propagates to the
+     viewport, which is where we want it, and repeating it here would clip
+     against the body box instead. */
+  overflow-wrap: break-word;
 }
 
 #root {
   min-height: 100vh;
+}
+
+/* ── Touch behaviour ──
+   `manipulation` drops double-tap-to-zoom on controls, and with it the ~300ms
+   wait some mobile browsers still add before a tap on one becomes a click. It's
+   scoped to things you press: the document at large keeps pinch AND double-tap
+   zoom, so this costs no accessibility. */
+button, a, [role="button"], summary, label, input, select, textarea {
+  touch-action: manipulation;
 }
 
 /* ── iOS focus-zoom ──

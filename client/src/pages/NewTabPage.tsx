@@ -920,7 +920,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 return m === 'reader' ? 'iframe' : m;
               })()}
                 onOpenArticle={setArticleUrl}
-                layout={settings.readingListLayout ?? 'cards'}
+                layout={settings.readingListLayout ?? 'magazine'}
                 onLayoutChange={l => updateSetting({ readingListLayout: l })}
                 collapsed={settings.readingListCollapsed === true}
                 onCollapsedChange={c => updateSetting({ readingListCollapsed: c })}
@@ -977,7 +977,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onArticlesLoaded={handleFeedArticlesLoaded}
                 refreshKey={feedRefreshKey}
                 pageSize={settings.rssFeedPageSize ?? 10}
-                layout={settings.rssLayout ?? 'cards'}
+                layout={settings.rssLayout ?? 'magazine'}
                 onLayoutChange={l => updateSetting({ rssLayout: l })}
                 markReadOnScroll={settings.markReadOnScroll !== false}
                 onUnreadCountsChange={handleUnreadCountsChange}

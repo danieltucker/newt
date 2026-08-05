@@ -33,6 +33,29 @@ function getInitialSetting(): ThemeSetting {
   return (localStorage.getItem('theme') as ThemeSetting) || 'dark';
 }
 
+// --bg for each theme, duplicated here because a <meta> can't read a custom
+// property. Keep in step with styles/tokens.css (and with the pre-hydration
+// copies in index.html).
+const THEME_COLOR: Record<ResolvedTheme, string> = {
+  dark: '#08090F',
+  light: '#F2F3F9',
+};
+
+/**
+ * Paint the browser's own chrome - the iOS status bar strip, Android's toolbar -
+ * in the app's background colour. Without this it defaults to black, which is
+ * the black bar that sits above the app on a phone whatever theme you're in.
+ *
+ * index.html ships two of these tags, keyed to prefers-color-scheme, to cover
+ * the frame before React mounts. Both get overwritten rather than one: theme is
+ * a setting here, so the OS preference the media attributes test is often not
+ * the theme on screen, and whichever tag matches has to carry the right colour.
+ */
+function applyThemeColor(theme: ResolvedTheme) {
+  const tags = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  tags.forEach(tag => { tag.content = THEME_COLOR[theme]; });
+}
+
 export default function App() {
   const { accessToken, username, isAdmin, loading, login, register, logout, verifyTotp } = useAuth();
   const [themeSetting, setThemeSetting] = useState<ThemeSetting>(getInitialSetting);
@@ -66,13 +89,16 @@ export default function App() {
   useEffect(() => {
     const resolved = resolveTheme(themeSetting);
     document.documentElement.setAttribute('data-theme', resolved);
+    applyThemeColor(resolved);
     localStorage.setItem('theme', themeSetting);
 
     // When in auto mode, track OS preference changes live
     if (themeSetting !== 'auto') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => {
-      document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      const next: ResolvedTheme = e.matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      applyThemeColor(next);
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);

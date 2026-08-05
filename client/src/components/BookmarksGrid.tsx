@@ -1,9 +1,6 @@
 import {
   DndContext,
   closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
@@ -18,6 +15,7 @@ import styles from './BookmarksGrid.module.css';
 import SiteTile from './SiteTile';
 import AddLinkTile from './AddLinkTile';
 import { Folder, Bookmark } from '../types';
+import { useDragSensors } from '../hooks/useDragSensors';
 
 interface Props {
   folder: Folder | null;
@@ -38,9 +36,7 @@ export default function BookmarksGrid({
 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
-  );
+  const sensors = useDragSensors(6);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as string);

@@ -186,7 +186,7 @@ export default function SitePage({ domain, navigate, onOpenThread, onFollowSite 
         <span className={styles.stat}><b>{counts.articles}</b> article{counts.articles === 1 ? '' : 's'}</span>
         {counts.unread > 0 && <span className={styles.stat}><b>{counts.unread}</b> unread</span>}
         <span className={styles.stat}><b>{counts.saved}</b> on your reading list</span>
-        {counts.library > 0 && <span className={styles.stat}><b>{counts.library}</b> in your Library</span>}
+        {counts.library > 0 && <span className={styles.stat}><b>{counts.library}</b> saved</span>}
       </div>
 
       {nothingHere && (
@@ -278,7 +278,7 @@ function SavedRow({ item, onOpenThread }: {
   const meta = [
     relTime(item.savedAt),
     item.readTime,
-    item.inLibrary ? 'in your Library' : 'on your reading list',
+    item.inLibrary ? 'in your saved articles' : 'on your reading list',
   ].filter(Boolean);
 
   return (

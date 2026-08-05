@@ -10,7 +10,10 @@ import { excerptOf } from '../lib/blog';
 import { recordAdminAction, ADMIN_ACTIONS, actionLabel, isDestructive } from '../lib/adminAudit';
 import { categoryLabel, isResolution, MAX_REPORT_NOTE } from '../lib/reports';
 import { ERROR_LOG_RETENTION_DAYS } from '../lib/errorLog';
+import { FEED_LOG_RETENTION_DAYS } from '../lib/feedLog';
 import { FEED_FAILURE_ALERT_THRESHOLD } from '../lib/adminAlerts';
+import { canonicalFeedKey } from '../lib/feedUtils';
+import { DEMAND_WINDOW_MS } from '../lib/feedScheduler';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -41,6 +44,14 @@ const ERROR_PAGE = 50;
 // Failing feeds don't page: the list is standing state, not history, and if it
 // is longer than this the problem isn't a particular feed.
 const FAILING_FEED_LIMIT = 100;
+// The full feed list and the refresh log both page — every feed on the instance
+// is a long list, and the log is longer still.
+const FEED_PAGE = 50;
+const FEED_LOG_PAGE = 50;
+// How far back the log's outcome tallies look. A day covers roughly 48 checks
+// of a feed at the 30-minute stale window, which is enough to see a pattern
+// without the number being dominated by last week.
+const FEED_LOG_SUMMARY_MS = 24 * 60 * 60 * 1000;
 
 const VISIBILITIES = ['public', 'friends', 'private'] as const;
 type VisibilityCounts = Record<(typeof VISIBILITIES)[number], number>;
@@ -951,6 +962,187 @@ router.get('/feeds/health', async (_req: AuthRequest, res: Response): Promise<vo
     });
   } catch (err) {
     logger.error(err, 'Admin feed health error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// How many people subscribe to each feed, keyed the way Feed rows are.
+//
+// FeedSubscription stores the URL a user typed, while Feed dedupes on
+// canonicalFeedKey — so http://x.com/feed and https://www.x.com/feed/ are two
+// subscription rows pointing at one feed, and counting the rows per literal URL
+// would report both as separate feeds with one subscriber each. Canonicalising
+// has to happen here rather than in SQL, since that function is TypeScript.
+//
+// One grouped query for the whole instance: the distinct-URL count is on the
+// order of the feed count (hundreds), not the subscription count.
+async function subscribersByFeedKey(): Promise<Map<string, number>> {
+  const rows = await prisma.feedSubscription.groupBy({
+    by: ['url'],
+    _count: { _all: true },
+  });
+  const byKey = new Map<string, number>();
+  for (const row of rows) {
+    const key = canonicalFeedKey(row.url);
+    byKey.set(key, (byKey.get(key) ?? 0) + row._count._all);
+  }
+  return byKey;
+}
+
+// GET /api/v1/admin/feeds?q=&offset=&status=
+//
+// Every feed the instance polls, searchable. /feeds/health answers "what is
+// broken"; this answers the questions either side of it — is this URL even
+// subscribed to, when was it last looked at, is anyone actually reading it.
+//
+// Offset-paged rather than cursor-paged, unlike the logs: this is a search over
+// standing state where a total ("31 of 412 feeds") is worth having, and rows
+// don't stream in at the head the way log entries do.
+router.get('/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { q, offset, status } = req.query as Record<string, string | undefined>;
+  const skip = Math.max(0, Math.min(10_000, Number.parseInt(offset ?? '0', 10) || 0));
+  const term = (q ?? '').trim();
+  const dormantBefore = new Date(Date.now() - DEMAND_WINDOW_MS);
+
+  try {
+    // ANDed as a list rather than spread into one object: search and the dormant
+    // filter both want an OR, and spreading would leave only the last one.
+    const filters: Prisma.FeedWhereInput[] = [];
+    if (term) {
+      filters.push({
+        OR: [
+          { fetchUrl: { contains: term, mode: 'insensitive' } },
+          { title: { contains: term, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (status === 'failing') filters.push({ consecutiveFailures: { gt: 0 } });
+    if (status === 'dormant') {
+      filters.push({ OR: [{ lastRequestedAt: null }, { lastRequestedAt: { lt: dormantBefore } }] });
+    }
+    const where: Prisma.FeedWhereInput = filters.length > 0 ? { AND: filters } : {};
+
+    const [rows, total, subscribers] = await Promise.all([
+      prisma.feed.findMany({
+        where,
+        // Most recently checked first, so the top of the list is the refresher
+        // visibly working. Feeds never checked sort last — they're a different
+        // problem, and the dormant/failing filters are how you go looking.
+        orderBy: [{ lastCheckedAt: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }],
+        skip,
+        take: FEED_PAGE,
+        select: {
+          id: true, fetchUrl: true, canonicalKey: true, title: true,
+          lastCheckedAt: true, lastSuccessAt: true, lastRequestedAt: true,
+          consecutiveFailures: true, lastError: true, lastErrorAt: true,
+        },
+      }),
+      prisma.feed.count({ where }),
+      subscribersByFeedKey(),
+    ]);
+
+    // Stored articles per feed, one grouped query for the page
+    const itemCounts = await prisma.feedItem.groupBy({
+      by: ['feedId'],
+      where: { feedId: { in: rows.map(r => r.id) } },
+      _count: { _all: true },
+    });
+    const itemsByFeed = new Map(itemCounts.map(c => [c.feedId, c._count._all]));
+
+    res.json({
+      feeds: rows.map(f => ({
+        id: f.id,
+        url: f.fetchUrl,
+        title: f.title,
+        lastCheckedAt: f.lastCheckedAt,
+        lastSuccessAt: f.lastSuccessAt,
+        lastRequestedAt: f.lastRequestedAt,
+        consecutiveFailures: f.consecutiveFailures,
+        lastError: f.lastError,
+        lastErrorAt: f.lastErrorAt,
+        subscribers: subscribers.get(f.canonicalKey) ?? 0,
+        items: itemsByFeed.get(f.id) ?? 0,
+        // The scheduler has stopped polling this one until somebody opens it
+        // again — which is by design, and looks identical to neglect otherwise.
+        dormant: !f.lastRequestedAt || f.lastRequestedAt < dormantBefore,
+      })),
+      total,
+      offset: skip,
+      nextOffset: skip + rows.length < total ? skip + rows.length : null,
+      dormantAfterDays: Math.round(DEMAND_WINDOW_MS / 86_400_000),
+    });
+  } catch (err) {
+    logger.error(err, 'Admin feed list error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/admin/feeds/log?cursor=&outcome=&feedId=&q=
+//
+// Every refresh attempt, newest first — the successes and the 304s as well as
+// the failures. The error log can only say what broke; this says whether the
+// refresher ran at all, which is the first thing to establish when a feed looks
+// stuck. `summary` tallies the last 24 hours across the whole log (not the
+// filtered page), so the chips can be labelled with what they'd show.
+router.get('/feeds/log', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { cursor, outcome, feedId, q } = req.query as Record<string, string | undefined>;
+  const term = (q ?? '').trim();
+
+  try {
+    const where: Prisma.FeedFetchLogWhereInput = {
+      ...(outcome === 'success' || outcome === 'unchanged' || outcome === 'failed' ? { outcome } : {}),
+      ...(feedId ? { feedId } : {}),
+      ...(term
+        ? {
+            OR: [
+              { feedUrl: { contains: term, mode: 'insensitive' as const } },
+              { feedTitle: { contains: term, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, tallies] = await Promise.all([
+      prisma.feedFetchLog.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: FEED_LOG_PAGE + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      }),
+      prisma.feedFetchLog.groupBy({
+        by: ['outcome'],
+        where: { createdAt: { gte: new Date(Date.now() - FEED_LOG_SUMMARY_MS) } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const page = rows.slice(0, FEED_LOG_PAGE);
+    const tally = (name: string) => tallies.find(t => t.outcome === name)?._count._all ?? 0;
+
+    res.json({
+      entries: page.map(r => ({
+        id: r.id,
+        feedId: r.feedId,
+        feedUrl: r.feedUrl,
+        feedTitle: r.feedTitle,
+        outcome: r.outcome,
+        status: r.status,
+        durationMs: r.durationMs,
+        items: r.items,
+        newItems: r.newItems,
+        error: r.error,
+        createdAt: r.createdAt,
+      })),
+      summary: {
+        success: tally('success'),
+        unchanged: tally('unchanged'),
+        failed: tally('failed'),
+      },
+      retentionDays: FEED_LOG_RETENTION_DAYS,
+      nextCursor: rows.length > FEED_LOG_PAGE ? page[page.length - 1].id : null,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin feed log error');
     res.status(500).json({ error: 'Server error' });
   }
 });

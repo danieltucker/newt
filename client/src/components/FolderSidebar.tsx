@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  DndContext, closestCenter,
   DragEndEvent, DragOverlay, DragStartEvent,
 } from '@dnd-kit/core';
 import {
@@ -10,6 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import styles from './FolderSidebar.module.css';
 import { Folder, Bookmark } from '../types';
 import { bookmarkHref, faviconUrl } from '../utils/color';
+import { useDragSensors } from '../hooks/useDragSensors';
 
 type Layout = 'panel' | 'inline';
 
@@ -245,7 +246,7 @@ function InlineBookmarkList({ folderId, sites, openMode, onReorder, onOpen, onEd
   onPin: (id: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useDragSensors(8);
 
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
@@ -377,7 +378,7 @@ function PinGrid({ pinned, openMode, onOpen, onEdit, onDelete, onUnpin, onReorde
   onReorder: (reordered: Bookmark[]) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useDragSensors(6);
 
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
@@ -475,9 +476,7 @@ export default function FolderSidebar({
     });
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const sensors = useDragSensors(8);
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(e.active.id as string);

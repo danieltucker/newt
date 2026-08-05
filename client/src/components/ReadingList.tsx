@@ -228,11 +228,11 @@ function FolderFilledIcon({ size = 12 }: { size?: number }) {
 // drift apart about what "Save" defaults to.
 function shelvesFor(folderId: string | null, folders: ReadingFolder[]): SaveDestination[] {
   return [
-    { id: '', label: 'Unsorted', group: 'Library', hint: folderId ? undefined : 'Default' },
+    { id: '', label: 'Unsorted', group: 'Saved articles', hint: folderId ? undefined : 'Default' },
     ...folders.map(f => ({
       id: f.id,
       label: f.name,
-      group: 'Library',
+      group: 'Saved articles',
       hint: folderId === f.id ? 'Default' : undefined,
     })),
   ];
@@ -461,8 +461,10 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
         <div className={styles.postReadOverlay}>
           <span className={styles.postReadTitle}>Done with this?</span>
           <div className={styles.postReadBtns}>
+            {/* Was "Library", the name of where it goes; "Keep" is what you're
+                actually deciding, and it pairs with Remove beside it. */}
             <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('library')}>
-              Library
+              Keep
             </button>
             <button className={styles.postReadRemoveBtn} onClick={() => onPostReadAction?.('delete')}>
               Remove
@@ -488,7 +490,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'cards', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, collapsed = false, onCollapsedChange, commentPrefs, onViewProfile, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
   // Cards that have left the list but are still drawn where they were. Local
   // and deliberately not persisted: a reload is what clears them, which is also
   // the moment the list re-lays out. Keyed by the id the item had at the time.
@@ -953,7 +955,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
       {libraryCount > 0 && onOpenLibrary && (
         <button className={styles.libraryLink} onClick={onOpenLibrary}>
           <FolderIcon />
-          <span>Library</span>
+          <span>Saved articles</span>
           <span className={styles.libraryCount}>{libraryCount}</span>
           <span className={styles.libraryArrow} aria-hidden="true">→</span>
         </button>

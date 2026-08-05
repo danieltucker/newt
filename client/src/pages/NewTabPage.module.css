@@ -9,11 +9,13 @@
    breathing room to lift the body off the bar's lower edge. */
 /* No bottom padding: SiteFooter is the next sibling and brings its own top
    margin, so anything here would stack on top of it. */
+/* Side padding carries the landscape safe-area insets so the body clears the
+   notch when the phone is turned - see viewport-fit=cover in index.html. */
 .content {
   position: relative;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 4px 32px 0;
+  padding: 4px max(32px, env(safe-area-inset-right, 0px)) 0 max(32px, env(safe-area-inset-left, 0px));
 }
 
 .bodyGrid {
@@ -23,6 +25,22 @@
   gap: 26px;
   align-items: start;
   animation: rise 0.48s 0.12s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A grid item's automatic minimum size is its min-content width, not zero, so
+   one stubborn row inside a column can push the track wider than the track's
+   own `1fr` ever asked for. That is what it was doing on a phone: the body
+   column measured ~425px inside a 361px grid, and everything in it - the
+   bookmark tiles, the feed, the reading list - was laid out to that width and
+   ran off the right of the screen. (The document was then wider than the
+   viewport, which mobile Safari answers by zooming the page out; see the
+   overflow-x note on html in styles/tokens.css for the rest of that story.)
+
+   On the columns rather than in them, because both branches of the body need it
+   and one of them is a bare <div> in NewTabPage - the rule can't be missed off
+   whichever branch renders next. */
+.bodyGrid > * {
+  min-width: 0;
 }
 
 /* An embedded profile / blog page - the right-hand column when the shell is
@@ -82,10 +100,12 @@
    Small off-white round button pinned to the bottom-right; opens the notes
    console (as does "/"). Sits below modal/console layers so it's covered when
    an overlay is up. */
+/* The offsets clear the home indicator: on a phone this button used to sit
+   under the browser's own bottom toolbar. */
 .notesLauncher {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  right: max(22px, env(safe-area-inset-right, 0px));
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
   z-index: var(--z-content-overlay);
   width: 46px;
   height: 46px;
@@ -216,7 +236,7 @@
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .content {
-    padding: 24px 16px 48px;
+    padding: 24px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
   }
 
   .topBar {
@@ -228,4 +248,15 @@
     grid-template-columns: 1fr;
     gap: 20px;
   }
+}
+
+/* Touch: the launcher is a thumb target, not a cursor one, and it never gets
+   the hover that would otherwise announce it. */
+@media (hover: none) {
+  .notesLauncher {
+    width: 52px;
+    height: 52px;
+  }
+
+  .notesLauncherLetter { font-size: 27px; }
 }

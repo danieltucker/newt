@@ -25,3 +25,18 @@
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 12px;
 }
+
+/* ── Phones ──
+   A wider track, which on a phone means one tile per row rather than two. At
+   150px the auto-fill put two tiles in a 361px column, and a 174px tile that
+   has to carry a 40px favicon and a ··· menu has about ten characters left for
+   the name - every bookmark ellipsised down to "Exampl…". One per row gives the
+   name the width it needs and the row a target worth the name. */
+@media (max-width: 620px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .folderTitle { font-size: 21px; }
+  .siteCount { font-size: 14px; }
+}

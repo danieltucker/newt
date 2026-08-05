@@ -247,7 +247,9 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
               // Self-only - see the Tab type
               ...(profile.isSelf ? [
                 { id: 'friends' as Tab, label: 'Friends' },
-                { id: 'library' as Tab, label: 'Library' },
+                // "Library" named a feature; this names what is in it. The
+                // ?tab=library URL keeps the old id so saved links still work.
+                { id: 'library' as Tab, label: 'Saved articles' },
               ] : []),
             ]}
             active={tab}

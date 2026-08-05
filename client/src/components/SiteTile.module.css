@@ -164,3 +164,36 @@
 .dropdownItemDanger:hover {
   background: color-mix(in oklab, #FF4500 8%, var(--surface2));
 }
+
+/* ── Touch ──
+   The ··· menu was hidden behind a hover that never fires on a phone - so it
+   was invisible, but still sitting in the tile's top-right corner taking taps
+   meant for the bookmark. Showing it is both halves of the fix: it becomes
+   reachable, and it stops being an unmarked hole in the tile.
+
+   The rest is size. A 62px row with a 14px label reads fine under a cursor and
+   small under a thumb, and the ··· at 24px was under any reasonable target. */
+@media (hover: none) {
+  .menuWrap { opacity: 1; }
+
+  .menuTrigger {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+
+  .tile {
+    min-height: 70px;
+    padding: 15px 14px;
+    /* Clear of the ··· in the corner. */
+    padding-right: 44px;
+  }
+
+  .faviconChip { width: 40px; height: 40px; }
+  .favicon { width: 24px; height: 24px; }
+  .monogram { font-size: 17px; }
+  .name { font-size: 15.5px; }
+
+  .dropdownItem { padding: 12px 16px; font-size: 15px; }
+}

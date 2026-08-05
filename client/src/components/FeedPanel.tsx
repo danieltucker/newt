@@ -31,12 +31,23 @@ const SEARCHABLE_AT = 8;
 // through a screenful costs one request instead of a dozen
 const READ_FLUSH_MS = 600;
 
+// How long the "Saved to …" receipt stays up before the card goes back to
+// being a card. Long enough to read the shelf name, short enough that it isn't
+// still sitting there when you reach for the comments.
+const SAVED_PILL_MS = 2400;
+
 // A card that's been dealt with - dismissed, or saved to the reading list - but
 // is still drawn in its slot, greyed out, until the feed reloads. Removing it
 // outright pulls every card below it up, and the next click lands on whatever
 // slid into place. Only a dismissal is undoable: undoing a save would have to
 // decide what to do with the reading-list copy, and "put the card back" isn't
 // obviously that. Both are already committed server-side.
+//
+// The two states differ in how final they are. A dismissal is a closed door:
+// the card is blocked, and the only thing left to do with it is take it back.
+// A save is not - the article is filed, but you may still want to read it,
+// comment on it, or file it somewhere else, so that card stays live and only
+// looks spent. See ArticleCard.
 type GhostKind = 'dismissed' | 'saved';
 
 interface Ghost {
@@ -44,6 +55,10 @@ interface Ghost {
   /** Where a save went - the placeholder names it, since the Save button can
       now put an article somewhere other than the reading list. */
   dest?: string;
+  /** When this ghost was (re)set. Only there to restart the "Saved to …"
+      receipt when the same card is saved twice - without it, filing an
+      article to the shelf it is already on would flash nothing. */
+  at: number;
 }
 
 interface Props {
@@ -114,8 +129,8 @@ const READING_LIST_DEST = 'reading-list';
 function destinationsFor(folders: ReadingFolder[]): SaveDestination[] {
   return [
     { id: READING_LIST_DEST, label: 'Reading list', hint: 'Default' },
-    { id: '', label: 'Unsorted', group: 'Library' },
-    ...folders.map(f => ({ id: f.id, label: f.name, group: 'Library' })),
+    { id: '', label: 'Unsorted', group: 'Saved articles' },
+    ...folders.map(f => ({ id: f.id, label: f.name, group: 'Saved articles' })),
   ];
 }
 
@@ -198,7 +213,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'cards', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const seeded = useRef(false);
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
@@ -554,7 +569,13 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   }
 
   function handleDismiss(articleId: string, kind: GhostKind = 'dismissed', dest?: string) {
-    setGhosts(prev => new Map(prev).set(articleId, { kind, dest }));
+    // A saved card stays live, so it can arrive here more than once - saved
+    // again to a different shelf, or dismissed afterwards. Only the first pass
+    // actually takes the article out of the feed; the rest just relabel the
+    // placeholder, and must not spend the unread count or the DELETE twice.
+    const alreadyGone = ghosts.has(articleId);
+    setGhosts(prev => new Map(prev).set(articleId, { kind, dest, at: Date.now() }));
+    if (alreadyGone) return;
     // Only an unread article was being counted, so only that one moves the chip.
     if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => Math.max(0, n - 1));
     apiFetch(`/api/v1/feeds/articles/${articleId}`, { method: 'DELETE' })
@@ -848,6 +869,18 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
 
   const destinations = destinationsFor(readingFolders);
 
+  // A saved card is spent, not gone: it greys out so you can see you've dealt
+  // with it, but everything on it keeps working. The receipt over the top is
+  // the only part that's temporary.
+  const saved = ghost?.kind === 'saved';
+  const [receipt, setReceipt] = useState(true);
+  useEffect(() => {
+    if (!saved) { setReceipt(true); return; }   // a dismissal keeps its pill and its Undo
+    setReceipt(true);
+    const t = setTimeout(() => setReceipt(false), SAVED_PILL_MS);
+    return () => clearTimeout(t);
+  }, [saved, ghost?.at]);
+
   const showImage = variant === 'feature' || variant === 'standard';
   // Magazine text variants always run their snippet; elsewhere keep the
   // original heuristic of only padding out short titles
@@ -857,7 +890,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   const hasHero = showImage && !!article.imageUrl;
   const wrapClass = [
     styles.cardWrap,
-    ghost ? styles.ghost : '',
+    ghost ? (saved ? styles.spent : styles.ghost) : '',
     isNew && !ghost ? styles.unread : '',
     variant === 'feature' ? styles.featureWrap : '',
     variant === 'brief' ? styles.briefWrap : '',
@@ -869,33 +902,54 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
 
   return (
     <div className={wrapClass} ref={cardRef ? el => cardRef(el, article.id) : undefined}>
-      {/* Covers the card so nothing under it is clickable, while leaving it
-          legible - you can still see what you just got rid of. */}
+      {/* Dismissed: covers the card so nothing under it is clickable, while
+          leaving it legible - you can still see what you just got rid of, and
+          the Undo needs somewhere to live.
+          Saved: the same pill, but it takes no clicks and it leaves after a
+          couple of seconds. It is a receipt for something that already
+          happened, and it was standing between people and the card. */}
       {ghost && (
-        <div className={styles.ghostOverlay}>
-          <div className={styles.ghostPill}>
+        <div className={`${styles.ghostOverlay} ${saved ? styles.receiptOverlay : ''}`}>
+          <div className={`${styles.ghostPill} ${saved && !receipt ? styles.pillOut : ''}`}>
             {/* Naming the destination is the confirmation - "Saved" on its own
                 leaves you wondering which of the places you just chose from it
                 actually went to. */}
             <span className={styles.ghostLabel}>
-              {ghost.kind === 'saved' ? `Saved to ${ghost.dest ?? 'reading list'}` : 'Dismissed'}
+              {saved ? `Saved to ${ghost.dest ?? 'reading list'}` : 'Dismissed'}
             </span>
-            {ghost.kind === 'dismissed' && (
+            {!saved && (
               <button className={styles.undoBtn} onClick={onUndoDismiss}>Undo</button>
             )}
           </div>
         </div>
       )}
       <div className={styles.card}>
+        {/* The art is the biggest target on a magazine card and it is the thing
+            people aim at, so it goes where the headline goes. Out of the tab
+            order and hidden from assistive tech on purpose: it leads to exactly
+            the same place as the title two lines below, and a second link with
+            no text of its own is noise to anyone not using a mouse.
+            A broken image hides the link, not just the <img> - hiding only the
+            picture would leave the link's negative margins pulling the card's
+            text up into its own padding. */}
         {showImage && article.imageUrl && (
-          <img
-            src={article.imageUrl}
-            alt=""
-            className={styles.hero}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
+          <a
+            href={article.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.heroLink}
+            tabIndex={-1}
+            aria-hidden="true"
+          >
+            <img
+              src={article.imageUrl}
+              alt=""
+              className={styles.hero}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={e => { const img = e.currentTarget; (img.parentElement ?? img).style.display = 'none'; }}
+            />
+          </a>
         )}
         {article.categories.length > 0 && (
           <div className={styles.cats}>
@@ -994,7 +1048,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             onSelect={id => onSave(
               id === READING_LIST_DEST
                 ? undefined
-                : { folderId: id || null, label: destinations.find(d => d.id === id)?.label ?? 'Library' }
+                : { folderId: id || null, label: destinations.find(d => d.id === id)?.label ?? 'Unsorted' }
             )}
             onCreateDestination={onCreateFolder && (async name => {
               const folderId = await onCreateFolder(name);
@@ -1004,11 +1058,13 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
         </div>
         {/* Floating window-style controls - top-right, over the cover art.
             Only Dismiss lives up here now; see the action strip above.
-            Dropped entirely on a ghost rather than hidden with an attribute:
+            Dropped on a dismissed card rather than hidden with an attribute:
             .cardActions sets `display: flex`, which would beat [hidden]'s UA
             `display: none` and leave them looking clickable. They're absolute,
-            so removing them costs the card no height. */}
-        {!ghost && <div className={styles.cardActions}>
+            so removing them costs the card no height. A saved card keeps them -
+            "I've filed that, now get it off my feed" is one of the more common
+            things to want next. */}
+        {(!ghost || saved) && <div className={styles.cardActions}>
           <button className={`${styles.actionBtn} ${styles.dismissBtn}`} onClick={onDismiss} aria-label="Dismiss" title="Dismiss">
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M1 1l10 10M11 1L1 11"/>

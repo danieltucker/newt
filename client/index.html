@@ -2,12 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the page paint into the notch/home-indicator
+         strips, which is what stops iOS from filling them with a black band of
+         its own. Everything pinned to an edge pays that back with
+         env(safe-area-inset-*) padding - see .bar in ShellBar.module.css and
+         the safe-area rules in styles/tokens.css. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Newt - a new tab worth opening</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/favicon/favicon-32.png" sizes="32x32">
     <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon-180.png">
     <link rel="manifest" href="/manifest.webmanifest">
+    <!-- The colour mobile browsers paint their own chrome with - the iOS status
+         bar strip, Android's toolbar. Left unset it comes out black, which is
+         the black bar above the app on a phone, and stays black even in light
+         theme. These two cover the frame before React mounts; App.tsx then
+         overwrites both with the theme the user actually chose, which the media
+         queries can't know about (theme is a setting, not just an OS
+         preference). Keep the values in step with --bg in styles/tokens.css. -->
+    <meta name="theme-color" content="#F2F3F9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#08090F" media="(prefers-color-scheme: dark)">
+    <!-- Installed to the home screen, the status bar follows theme-color above
+         rather than being a black slab. `default` (not black-translucent) so
+         iOS keeps reserving the strip and the safe-area insets stay honest. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <!-- Apply theme before first paint - prevents flash on both dark↔light toggle and page load -->
     <!--
       CSP-HASHED - do not edit without reading this.
@@ -24,10 +42,14 @@
         document.documentElement.setAttribute('data-theme', t);
       })();
     </script>
-    <!-- Instant background so the body isn't white before the CSS bundle loads -->
+    <!-- Instant background so the body isn't white before the CSS bundle loads.
+         These are --bg from styles/tokens.css: they used to be a near-miss
+         (#0e0e11 / #f5f5f7), which showed as a flicker to a slightly different
+         shade on load and, now that the page paints into the safe areas, would
+         also tint the notch strip a shade off from the app. -->
     <style>
-      html[data-theme="dark"]  { background: #0e0e11; }
-      html[data-theme="light"] { background: #f5f5f7; }
+      html[data-theme="dark"]  { background: #08090F; }
+      html[data-theme="light"] { background: #F2F3F9; }
       body { margin: 0; }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

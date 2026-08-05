@@ -6,6 +6,7 @@ import { canonicalArticleKey, articleHost } from './comments';
 import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
 import { recordError, errorMessage } from './errorLog';
+import { recordFeedFetch } from './feedLog';
 import { notifyAdminsOfFeedFailure, shouldAlertForFeed } from './adminAlerts';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number; size?: number };
@@ -27,6 +28,12 @@ const MAX_FEED_BYTES = 2_000_000;
 const UPSERT_CHUNK    = 10; // feed items upserted per DB batch
 const MAX_CONCURRENCY = 5;  // feeds fetched in parallel — keep outbound bursts small
 
+// How much of a failing response to keep. "HTTP 403" on its own rarely explains
+// anything; the body almost always does — a Cloudflare interstitial, a "feed
+// moved" note, a login page served with a 200. Enough to recognise which of
+// those it is, not enough to store somebody's error page in full.
+const MAX_RESPONSE_SNIPPET = 600;
+
 // The columns refreshOne needs. Any caller (route or scheduler) selecting these
 // can hand rows straight in.
 export interface RefreshableFeed {
@@ -45,11 +52,86 @@ export interface RefreshableFeed {
 // a pino line nobody was tailing.
 //
 // Every exit from doRefresh now ends in exactly one of noteSuccess or
-// noteFailure, which is the property to preserve when editing it.
+// noteFailure, which is the property to preserve when editing it. Both also
+// write the attempt to FeedFetchLog, so that invariant is what keeps the
+// refresh log complete — there is no path that fetches a feed silently.
 
-async function noteSuccess(feedId: string, now: Date, data: Prisma.FeedUpdateInput = {}): Promise<void> {
+/** What the attempt cost and what came back, for the log and the error detail. */
+interface AttemptContext {
+  startedAt: Date;
+  durationMs: number;
+  /** HTTP status where there was one. Absent for a transport failure. */
+  status?: number | null;
+  statusText?: string;
+  contentType?: string | null;
+  /** First MAX_RESPONSE_SNIPPET chars of the response, whitespace collapsed. */
+  body?: string;
+  /** Stack of the thrown error, for a failure with no response at all. */
+  stack?: string;
+  items?: number;
+  newItems?: number;
+}
+
+function elapsed(startedAt: Date): number {
+  return Date.now() - startedAt.getTime();
+}
+
+function formatMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+/** One line of readable text out of an arbitrary response body. */
+function collapse(text: string): string {
+  const s = text.replace(/\s+/g, ' ').trim();
+  return s.length > MAX_RESPONSE_SNIPPET ? `${s.slice(0, MAX_RESPONSE_SNIPPET)}…` : s;
+}
+
+// Reading the body of a response we've already decided is a failure is
+// best-effort by definition: it may be empty, it may abort, and node-fetch
+// throws here when the size ceiling is what went wrong in the first place. None
+// of that should turn a recorded failure into an unrecorded one.
+async function bodySnippet(resp: { text(): Promise<string> }): Promise<string> {
   try {
-    await prisma.feed.update({
+    return collapse(await resp.text());
+  } catch {
+    return '';
+  }
+}
+
+// The block an admin unrolls under a failed row. Built here rather than at the
+// call sites so every kind of failure — HTTP status, unreadable document,
+// timeout — is described in the same shape and in the same order.
+function failureDetail(
+  feed: RefreshableFeed,
+  ctx: AttemptContext,
+  consecutiveFailures: number,
+  lastSuccessAt: Date | null,
+): string {
+  const lines = [
+    `Attempted: ${ctx.startedAt.toISOString()}`,
+    `Took: ${formatMs(ctx.durationMs)}`,
+    `Feed URL: ${feed.fetchUrl}`,
+  ];
+  if (ctx.status != null) lines.push(`Response: HTTP ${ctx.status}${ctx.statusText ? ` ${ctx.statusText}` : ''}`);
+  if (ctx.contentType) lines.push(`Content-Type: ${ctx.contentType}`);
+  lines.push(`Consecutive failures: ${consecutiveFailures}`);
+  lines.push(`Last successful fetch: ${lastSuccessAt ? lastSuccessAt.toISOString() : 'never'}`);
+  // Last, and labelled, because it is the only part that isn't ours: everything
+  // above is a fact about the request, this is whatever the origin said.
+  if (ctx.body) lines.push('', `Response body (first ${MAX_RESPONSE_SNIPPET} chars):`, ctx.body);
+  if (ctx.stack) lines.push('', ctx.stack);
+  return lines.join('\n');
+}
+
+async function noteSuccess(
+  feed: RefreshableFeed,
+  now: Date,
+  ctx: AttemptContext & { unchanged?: boolean },
+  data: Prisma.FeedUpdateInput = {},
+): Promise<void> {
+  const feedId = feed.id;
+  try {
+    const updated = await prisma.feed.update({
       where: { id: feedId },
       data: {
         ...data,
@@ -62,13 +144,28 @@ async function noteSuccess(feedId: string, now: Date, data: Prisma.FeedUpdateInp
         lastErrorAt: null,
         failureAlertedAt: null,
       },
+      select: { title: true },
+    });
+    await recordFeedFetch({
+      feedId,
+      feedUrl: feed.fetchUrl,
+      feedTitle: updated.title,
+      // A 304 is a success for the feed's health but a different event in the
+      // log: "checked, nothing had changed" is most of what a healthy instance
+      // does, and folding it into 'success' would make the log unable to show
+      // when a feed last actually published.
+      outcome: ctx.unchanged ? 'unchanged' : 'success',
+      status: ctx.status ?? null,
+      durationMs: ctx.durationMs,
+      items: ctx.items ?? null,
+      newItems: ctx.newItems ?? null,
     });
   } catch (err) {
     logger.warn({ err, feedId }, 'Could not record feed success');
   }
 }
 
-async function noteFailure(feed: RefreshableFeed, reason: string): Promise<void> {
+async function noteFailure(feed: RefreshableFeed, reason: string, ctx: AttemptContext): Promise<void> {
   try {
     const updated = await prisma.feed.update({
       where: { id: feed.id },
@@ -77,14 +174,30 @@ async function noteFailure(feed: RefreshableFeed, reason: string): Promise<void>
         lastError: reason,
         lastErrorAt: new Date(),
       },
-      select: { consecutiveFailures: true, failureAlertedAt: true, title: true },
+      select: { consecutiveFailures: true, failureAlertedAt: true, title: true, lastSuccessAt: true },
     });
 
     await recordError({
       source: 'feed',
       message: reason,
-      detail: `${updated.consecutiveFailures} consecutive failure(s)`,
+      // Was the bare failure count, which said how often but never why. The
+      // response itself is the thing that identifies a feed behind a login wall
+      // or moved to a new address, and it is gone by the time anyone looks.
+      detail: failureDetail(feed, ctx, updated.consecutiveFailures, updated.lastSuccessAt),
+      // ErrorLog has always had this column; feed rows just never filled it, so
+      // a 404 and a timeout looked alike in the table.
+      status: ctx.status ?? null,
       feedUrl: feed.fetchUrl,
+    });
+
+    await recordFeedFetch({
+      feedId: feed.id,
+      feedUrl: feed.fetchUrl,
+      feedTitle: updated.title,
+      outcome: 'failed',
+      status: ctx.status ?? null,
+      durationMs: ctx.durationMs,
+      error: reason,
     });
 
     if (shouldAlertForFeed(updated.consecutiveFailures, updated.failureAlertedAt)) {
@@ -154,11 +267,17 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
   const blogTarget = parseBlogFeedUrl(feed.fetchUrl);
   if (blogTarget) {
     try {
-      await refreshBlogFeed(feed.id, blogTarget, now);
-      await noteSuccess(feed.id, now);
+      const posts = await refreshBlogFeed(feed.id, blogTarget, now);
+      // No status: this one never went over HTTP, and reporting a fabricated
+      // 200 would make the log lie about where the bytes came from.
+      await noteSuccess(feed, now, { startedAt: now, durationMs: elapsed(now), items: posts });
     } catch (err) {
       logger.warn({ err, feedUrl: feed.fetchUrl }, 'Blog feed refresh failed');
-      await noteFailure(feed, errorMessage(err));
+      await noteFailure(feed, errorMessage(err), {
+        startedAt: now,
+        durationMs: elapsed(now),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     }
     return;
   }
@@ -178,6 +297,8 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
       headers,
     } as FetchOptions);
 
+    const contentType = resp.headers.get('content-type');
+
     if (resp.status === 304) {
       // Unchanged. The items are still the live feed contents, so bump their
       // fetchedAt to keep the TTL sweep from eventually deleting a feed that
@@ -186,14 +307,24 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
       // A 304 is the origin working correctly, so it counts as a success. Not
       // counting it would let a healthy, rarely-updated feed drift into the
       // failing list purely for not having changed.
-      await noteSuccess(feed.id, now);
+      await noteSuccess(feed, now, {
+        startedAt: now, durationMs: elapsed(now), status: 304, unchanged: true,
+      });
       return;
     }
     if (!resp.ok) {
       // This was a bare `return`. A feed answering 404 or 403 forever therefore
       // looked exactly like a feed with nothing new — the single most likely way
       // for a subscription to be broken, and the one that reported nothing.
-      await noteFailure(feed, `HTTP ${resp.status} ${resp.statusText}`.trim());
+      const body = await bodySnippet(resp);
+      await noteFailure(feed, `HTTP ${resp.status} ${resp.statusText}`.trim(), {
+        startedAt: now,
+        durationMs: elapsed(now),
+        status: resp.status,
+        statusText: resp.statusText,
+        contentType,
+        body,
+      });
       return;
     }
 
@@ -207,9 +338,28 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
     // empty feed is legal, so this only judges a document that yielded no items
     // *and* no title - a real feed always has at least the latter.
     if (items.length === 0 && !parsedTitle) {
-      await noteFailure(feed, 'Response was not a readable feed');
+      // The document is the whole diagnosis here — 200 with no items says
+      // nothing, whereas the first line of what arrived says whether it was a
+      // login page, an HTML holding page, or XML we failed to parse.
+      await noteFailure(feed, 'Response was not a readable feed', {
+        startedAt: now,
+        durationMs: elapsed(now),
+        status: resp.status,
+        statusText: resp.statusText,
+        contentType,
+        body: collapse(xml),
+      });
       return;
     }
+
+    // Which of these we haven't seen before, for the "44 items, 3 new" line in
+    // the refresh log. Read before the upserts, since afterwards every link is
+    // stored and the answer is always zero.
+    const known = new Set(
+      (await prisma.feedItem.findMany({ where: { feedId: feed.id }, select: { link: true } }))
+        .map(r => r.link),
+    );
+    const newItems = items.reduce((n, item) => (known.has(item.link) ? n : n + 1), 0);
 
     // Process upserts in small chunks to avoid overwhelming the DB connection pool
     for (let i = 0; i < items.length; i += UPSERT_CHUNK) {
@@ -231,15 +381,33 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
     // Store fresh validators for next time (null them out if the origin stopped
     // sending them, so we don't send stale conditional headers). Folded into
     // noteSuccess so the health columns and the validators land in one write.
-    await noteSuccess(feed.id, now, {
-      title,
-      lastCheckedAt: now,
-      etag: resp.headers.get('etag'),
-      lastModified: resp.headers.get('last-modified'),
-    });
+    await noteSuccess(
+      feed,
+      now,
+      {
+        startedAt: now,
+        durationMs: elapsed(now),
+        status: resp.status,
+        items: items.length,
+        newItems,
+      },
+      {
+        title,
+        lastCheckedAt: now,
+        etag: resp.headers.get('etag'),
+        lastModified: resp.headers.get('last-modified'),
+      },
+    );
   } catch (err) {
     logger.warn({ err, feedUrl: feed.fetchUrl }, 'Feed refresh failed');
-    await noteFailure(feed, errorMessage(err));
+    // No response to describe — a timeout, a DNS failure or a body over the size
+    // ceiling all land here. The duration is the informative part: an 8s one is
+    // the fetch timeout, a 30ms one is a connection refused.
+    await noteFailure(feed, errorMessage(err), {
+      startedAt: now,
+      durationMs: elapsed(now),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
   }
 }
 

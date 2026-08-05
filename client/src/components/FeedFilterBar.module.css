@@ -1,4 +1,7 @@
+/* Positioned so the narrow-screen rule at the foot of this file can hang the
+   filter panel off the whole row rather than off one chip in it. */
 .bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -69,12 +72,19 @@
 
 .filterWrap { position: relative; }
 
+/* The chip this hangs off is the last thing in a wrapping row, so on a phone it
+   is usually sitting near the right edge - and a 250px panel anchored to its
+   left ran clean off the screen. That widened the document, which mobile Safari
+   answers by scaling the whole page down to fit: the "opening Filters zooms
+   everything out" bug. The clamp keeps the panel inside the viewport at any
+   width; the narrow-screen rule below flips it to anchor from the right, which
+   is the only side there's guaranteed room on. */
 .panel {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   z-index: var(--z-content-overlay);
-  width: 250px;
+  width: min(250px, calc(100vw - 24px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -311,4 +321,59 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Phones ─────────────────────────────────────────────────────────────
+   The panel stops being a popover hung off the Filters chip and becomes a sheet
+   spanning the row. Anchoring it to the chip is what put it off the right edge:
+   the chip is the last thing in a wrapping row of chips, so on a phone it sits
+   two thirds of the way across and a 250px panel had nowhere to go. Widening
+   the document is not a harmless overflow either - mobile Safari scales the
+   whole page down to fit it, which is why opening Filters appeared to zoom the
+   app out. (styles/tokens.css clips the document as a backstop; this is the
+   part that keeps the panel usable rather than merely contained.)
+
+   Making .filterWrap static is what moves the anchor: .bar above is then the
+   nearest positioned ancestor, so left/right resolve against the full row. */
+@media (max-width: 620px) {
+  .filterWrap { position: static; }
+
+  .panel {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  /* A sheet this wide has room to breathe, and every row in it is a tap
+     target. */
+  .groupRow, .option, .optionPick { padding-top: 11px; padding-bottom: 11px; }
+  .groupRow, .option { font-size: 14px; }
+  .groupValue { font-size: 13px; max-width: 55%; }
+  .clearAll { padding: 12px 9px; font-size: 13.5px; }
+  .optionList { max-height: 50vh; }
+}
+
+/* ── Touch ──
+   Hover never fires, so nothing here can rely on it, and every chip is a thumb
+   target rather than a cursor one. Kept at the end of the file so it outranks
+   the base sizes above. */
+@media (hover: none) {
+  .chip {
+    font-size: 13px;
+    padding: 7px 13px;
+  }
+
+  .chipCount { font-size: 11.5px; }
+
+  .activePill {
+    font-size: 13px;
+    padding: 7px 10px 7px 13px;
+  }
+
+  .starBtn {
+    width: 34px;
+    height: 34px;
+    padding: 0 0 0 8px;
+    opacity: 1;
+  }
 }

@@ -16,7 +16,7 @@ const MODELS = [
   'user', 'friendship', 'notification', 'block', 'report', 'bookmark', 'folder',
   'readingListItem', 'readingFolder', 'comment', 'blogPost', 'image', 'feed',
   'feedItem', 'feedSubscription', 'feedFolder', 'readFeedItem', 'dismissedFeedItem', 'refreshToken',
-  'adminAction', 'commentRevision',
+  'adminAction', 'commentRevision', 'errorLog', 'feedFetchLog',
 ] as const;
 
 const METHODS = [

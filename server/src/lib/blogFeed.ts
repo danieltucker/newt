@@ -213,7 +213,8 @@ export async function renderBlogFeed(target: BlogFeedTarget): Promise<string> {
 // back through its own proxy (which the SSRF guard would refuse for a private
 // address anyway) and keeps the post HTML byte-identical, since nothing has to
 // survive a round trip through XML.
-export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, now: Date): Promise<void> {
+/** Returns how many posts the feed resolved to, for the refresh log. */
+export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, now: Date): Promise<number> {
   const resolved = await resolveBlogFeed(target);
   const items = resolved?.items ?? [];
 
@@ -255,6 +256,8 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
       lastModified: null,
     },
   });
+
+  return items.length;
 }
 
 // Nudge every feed that should reflect a change to `userId`'s posts: their own

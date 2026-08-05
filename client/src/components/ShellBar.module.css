@@ -3,10 +3,17 @@
    toolbar - a frosted layer the page scrolls beneath, so it reads as one
    surface across the app rather than three different bars. */
 
+/* The page paints into the notch strip now (viewport-fit=cover in index.html),
+   so the bar reaches up behind the status bar and pads its contents clear of
+   it. That's what stops iOS filling the strip with a black slab of its own: it
+   is the app's glass up there, tinted by theme-color, rather than nothing.
+   Zero on every device without a notch, and the bar's measured height
+   (--shellbar-h, published by ShellBar.tsx) already accounts for it. */
 .bar {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  padding-top: env(safe-area-inset-top, 0px);
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--surface) 78%, transparent),
@@ -17,10 +24,12 @@
   border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
 }
 
+/* The side padding carries the landscape safe-area insets too, so the brand and
+   the action row clear the notch when the phone is turned. */
 .inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 8px 32px;
+  padding: 8px max(32px, env(safe-area-inset-right, 0px)) 8px max(32px, env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   gap: 20px;
@@ -328,7 +337,10 @@
    whatever is left. That handover is the min-width's job, not a breakpoint's -
    these only trim the chrome to buy search more of the leftover. */
 @media (max-width: 1000px) {
-  .inner { padding: 8px 20px; gap: 14px; }
+  .inner {
+    padding: 8px max(20px, env(safe-area-inset-right, 0px)) 8px max(20px, env(safe-area-inset-left, 0px));
+    gap: 14px;
+  }
 }
 
 @media (max-width: 820px) {
@@ -360,7 +372,10 @@
 }
 
 @media (max-width: 560px) {
-  .inner { padding: 8px 12px; gap: 8px; }
+  .inner {
+    padding: 8px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+    gap: 8px;
+  }
   .right { gap: 2px; }
   /* The wordmark is the first thing to go - the mark alone still says whose
      app this is, and search needs every pixel it can get down here. */
@@ -370,4 +385,44 @@
      hamburger. That row is gone, so the button stays at every width - by this
      point it's already icon-only (see 820px above) and costs ~33px. */
   .createBtn { padding: 0 8px; }
+}
+
+/* ── Touch ──
+   Every control in this bar was sized for a cursor: 32px squares with 26px
+   avatars in them, which is comfortably under the ~44px a thumb wants and is
+   most of why the bar felt fiddly on a phone. Growing the controls grows the
+   bar, and the rail beneath it follows automatically - --shellbar-h is
+   measured, not hard-coded (see ShellBar.tsx).
+
+   Last in the file so it outranks the width breakpoints above, which set
+   padding on the same elements. */
+@media (hover: none) {
+  .iconBtn {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+  }
+
+  .brand, .createBtn, .avatarBtn { height: 40px; }
+
+  .brandMark { width: 27px; height: 27px; }
+  .brandText { font-size: 17px; }
+
+  .createBtn { font-size: 13.5px; }
+
+  .avatarImg, .avatarFallback { width: 30px; height: 30px; }
+  .avatarFallback { font-size: 13px; }
+
+  .searchCancel {
+    height: 40px;
+    padding: 0 6px 0 12px;
+    font-size: 15px;
+    color: var(--accent);
+  }
+
+  /* A menu row you tap rather than click - and the rail's own rows inside
+     .menuRail are governed by FolderSidebar's touch block. */
+  .menuItem { padding: 12px 12px; font-size: 15px; }
+  .menuHandle { font-size: 13px; }
+  .menuRailLabel { font-size: 11.5px; }
 }

@@ -322,6 +322,46 @@ model Feed {
   @@index([consecutiveFailures])
 }
 
+// Every attempt to refresh a feed, whatever came of it. ErrorLog only holds the
+// failures, which answers "what is broken" but not the question an admin
+// actually asks first: "is the refresher running at all, and when did this feed
+// last get looked at?" A feed with no errors and no successes for six hours is a
+// scheduler problem, and in a log of failures alone it is invisible.
+//
+// Rows are written by doRefresh — one per attempt, so a healthy instance writes
+// steadily. They expire after FEED_LOG_RETENTION_DAYS, pruned on write the way
+// ErrorLog is; this is operational telemetry, not a record to keep.
+model FeedFetchLog {
+  id         String   @id @default(cuid())
+
+  // Plain columns, not a relation, for the same reason ErrorLog.feedUrl is one:
+  // a Feed row can be deleted and that must not take the history of it away.
+  feedId     String
+  feedUrl    String
+  feedTitle  String   @default("")
+
+  // 'success'   — fetched and parsed, items upserted
+  // 'unchanged' — origin answered 304, nothing to do (the common case)
+  // 'failed'    — see `error`; the matching ErrorLog row has the full detail
+  outcome    String
+  // HTTP status where there was one. Null for a transport failure (timeout, DNS,
+  // connection refused) and for our own blog feeds, which never leave the process.
+  status     Int?
+  // Wall-clock duration of the whole attempt, fetch and parse and upserts.
+  durationMs Int      @default(0)
+  // Items the document held, and how many of those were not already stored —
+  // "44 items, 3 new" is the line that says a feed is actually publishing.
+  items      Int?
+  newItems   Int?
+  error      String?
+
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([feedId, createdAt])
+  @@index([outcome, createdAt])
+}
+
 // Errors worth showing an admin, kept because pino alone couldn't answer the
 // question that matters: "is anything broken for my users right now?" Log lines
 // scroll away, live in a container, and say nothing about *whose* request failed.

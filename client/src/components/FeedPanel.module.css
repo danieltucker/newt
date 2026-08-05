@@ -2,10 +2,17 @@
   margin-top: 26px;
 }
 
+/* Wraps rather than overflows. Nothing in the action row shrinks - the buttons
+   have nowrap labels and the layout switch is a fixed 86px - so on a phone the
+   row measured ~425px against a 361px column and simply ran off the side of the
+   screen, taking the whole page's width with it (see the overflow-x note on
+   html in styles/tokens.css). A second line is the only thing that fits. */
 .headerRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   margin-bottom: 12px;
 }
 
@@ -16,6 +23,7 @@
 .headerActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -327,14 +335,34 @@
   .featureWrap { grid-column: auto; }
 }
 
-/* Cover image - bleeds to the card edges above the text */
-.hero {
+/* Cover image - bleeds to the card edges above the text. The bleed lives on the
+   link rather than the picture so the artwork and its hit area are the same
+   shape; the image just fills it. */
+.heroLink {
+  display: block;
   width: calc(100% + 36px);
   margin: -16px -18px 2px;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+.hero {
+  display: block;
+  width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  border-radius: 16px 16px 0 0;
-  background: var(--surface2);
+  transition: transform 0.4s ease;
+}
+
+/* The whole card already lifts on hover; the art leaning in with it is what
+   makes it read as the link it now is. */
+.cardWrap:hover .heroLink .hero {
+  transform: scale(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardWrap:hover .heroLink .hero { transform: none; }
 }
 
 /* ── Card wrap - lifts on hover ── */
@@ -447,6 +475,26 @@
   border-color: var(--border);
 }
 
+/* ── Spent ──
+   Saved, rather than dismissed. Greyed like a ghost so the slot reads as
+   handled, but every control on it still works: the article is in your reading
+   list now, which is a reason to want to read it, comment on it or file it
+   somewhere else - not a reason to be locked out of it. Lighter than a ghost
+   because it is not a stand-in for something gone, and it lifts back towards
+   full strength under the pointer, which is what says "still live". */
+.spent .card {
+  opacity: 0.5;
+  filter: grayscale(0.9);
+  transition: opacity 0.25s ease, filter 0.25s ease,
+              box-shadow 0.35s ease, border-color 0.35s ease, background 0.35s ease;
+}
+
+.spent:hover .card,
+.spent:focus-within .card {
+  opacity: 0.9;
+  filter: grayscale(0.25);
+}
+
 /* Blocks the card underneath while staying invisible itself - only the pill is
    opaque, and only the pill takes clicks. */
 .ghostOverlay {
@@ -457,6 +505,21 @@
   align-items: center;
   justify-content: center;
   padding: 8px;
+}
+
+/* The saved receipt blocks nothing, even while it's up: the save button that
+   raised it is directly underneath, and pressing it twice in a row (to correct
+   the shelf) has to be possible. */
+.receiptOverlay {
+  pointer-events: none;
+}
+
+/* Fades in place rather than unmounting, so it goes as softly as it came.
+   Only ever applied to the receipt, which takes no clicks anyway. */
+.pillOut {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
 }
 
 .ghostPill {
@@ -516,8 +579,8 @@
 /* ── Matches a favorite tag ──
    The unread treatment above, in gold. Nothing about the card's geometry
    changes - which is the point: a leading-edge bar had to be either a real
-   border (narrowing the content box, so .hero's deliberate bleed past it hung
-   out the side) or an overlay (a 14px radius on a 3px-wide box, which browsers
+   border (narrowing the content box, so .heroLink's deliberate bleed past it
+   hung out the side) or an overlay (a 14px radius on a 3px-wide box, which browsers
    collapse into a point that juts past the corner). An outline has neither
    problem, and it's already the vocabulary this feed uses for "look here".
 
@@ -790,12 +853,68 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-@media (max-width: 460px) {
-  .grid { columns: 2; column-width: auto; }
+/* ── Phones ──
+   One card to a row, not two. The masonry columns are the reason the feed came
+   out unreadable on a phone: two 190px columns of 15px headline with a 12px
+   snippet under it is a broadsheet's worth of furniture in a paperback's width,
+   and everything in the card had to shrink to fit it. A single column gives the
+   headline the whole screen, which is what makes the type below usable. */
+@media (max-width: 620px) {
+  .grid { columns: 1; column-width: auto; }
 
-  /* Two cards to a row leaves no width for two pills side by side. They stack
-     instead and each takes the full card, which on a phone is the biggest
-     target either of them will ever get. */
+  .gridMagazine {
+    grid-template-columns: 1fr;
+  }
+
+  .card { padding: 16px 18px; }
+
+  /* Each layout sets its own headline size with a two-class selector, so
+     bumping .title alone would leave list and magazine cards behind. */
+  .title,
+  .gridList .title,
+  .gridMagazine .title,
+  .featureWrap .title { font-size: 18px; line-height: 1.3; }
+
+  .snippet,
+  .gridMagazine .snippet { font-size: 14.5px; opacity: 0.85; -webkit-line-clamp: 3; }
+
+  /* A "row" with no width to spare is just a card - let it stack. */
+  .gridList .card { flex-direction: column; align-items: stretch; gap: 10px; }
+  .gridList .cardBottom { margin-top: 2px; }
+  .gridList .domain { max-width: none; }
+  .domain, .handle, .date, .readTime { font-size: 13px; }
+  .domain { opacity: 0.7; }
+  .favicon { width: 16px; height: 16px; }
+
+  .sectionLabel { font-size: 13px; }
+  .count { font-size: 11.5px; padding: 2px 8px; }
+  .markAllBtn, .manageBtn { font-size: 13px; padding: 8px 12px; }
+
+  .status, .statusError { font-size: 14.5px; }
+  .moreBtn { font-size: 15px; padding: 14px 16px; }
+  .emptyTitle { font-size: 18px; }
+  .emptyText { font-size: 15px; }
+  .emptyBtn { font-size: 15px; padding: 11px 18px; }
+
+  /* The card is the full width now, so the two pills sit side by side again and
+     each is wide enough to hit. The list layout's row is stacking here (above),
+     so its action strip goes back to being a strip - hairline and all. */
+  .commentRow,
+  .gridList .commentRow {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .ghostLabel { font-size: 13px; }
+  .undoBtn { font-size: 13px; padding: 7px 14px; }
+}
+
+/* Below this even one column is tight, so the action pills stop sharing a row
+   and each takes the full card. */
+@media (max-width: 380px) {
   .commentRow > * {
     flex: 1 1 100%;
   }

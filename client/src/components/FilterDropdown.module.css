@@ -39,7 +39,10 @@
   top: calc(100% + 6px);
   left: 0;
   z-index: var(--z-content-overlay);
-  width: 230px;
+  /* Clamped so a panel opened near the right edge can't widen the document -
+     mobile Safari answers that by scaling the whole page down. See the
+     overflow-x note on html in styles/tokens.css. */
+  width: min(230px, calc(100vw - 24px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;

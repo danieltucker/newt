@@ -2,16 +2,21 @@
   margin-top: 28px;
 }
 
+/* Wraps rather than overflows - same reasoning as FeedPanel's .headerRow, which
+   this sits directly above and has to behave like. */
 .headerRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   margin-bottom: 12px;
 }
 
 .headerActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1049,12 +1054,35 @@
   padding: 16px 0;
 }
 
-@media (max-width: 460px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
+/* ── Phones ──
+   One card to a row. Two 190px columns is what forced every size in the card
+   down to something you had to squint at; giving the headline the full screen
+   is what lets the type below it be readable. Matches FeedPanel, which the
+   cards sit directly under. */
+@media (max-width: 620px) {
+  .grid,
+  .gridMagazine { grid-template-columns: 1fr; }
 
-  /* Two cards to a row leaves no width for two pills side by side. They stack
-     instead and each takes the full card, which on a phone is the biggest
-     target either of them will ever get. */
+  /* Each layout sets its headline with a two-class selector, so bumping .title
+     alone would leave list and magazine cards behind. */
+  .title,
+  .gridList .title,
+  .gridMagazine .title { font-size: 18px; }
+
+  .notes { font-size: 14.5px; }
+  .meta { font-size: 13px; }
+  .sourceFavicon { width: 16px; height: 16px; }
+
+  .sectionLabel { font-size: 13px; }
+  .sectionCount { font-size: 12px; }
+  .empty { font-size: 15px; }
+
+  .commentRow { gap: 8px; }
+}
+
+/* Below this even one column is tight, so the action pills stop sharing a row
+   and each takes the full card. */
+@media (max-width: 380px) {
   .commentRow > * {
     flex: 1 1 100%;
   }

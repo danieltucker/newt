@@ -15,6 +15,32 @@
   }
 }
 
+/* ── Intro ──
+   Spans both columns: it names the whole panel, not the rail or the articles. */
+.intro {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.introTitle {
+  margin: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.introText {
+  margin: 0;
+  max-width: 62ch;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* ── Shelf rail ── */
 .rail {
   display: flex;

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors,
+  DndContext, DragOverlay, closestCorners,
   DragStartEvent, DragMoveEvent, DragOverEvent, DragEndEvent,
 } from '@dnd-kit/core';
 import {
@@ -17,6 +17,7 @@ import { uploadImage } from '../utils/imageUpload';
 import { fetchPageMeta } from '../utils/pageMeta';
 import { EmbedData, embeddedUrls } from '../utils/noteEmbed';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { useDragSensors } from '../hooks/useDragSensors';
 import { modLabel } from '../utils/platform';
 import {
   INDENT, isFolderId, folderIdOf, sameOrder, buildRows, getProjection, computeDrop, reconcileFlat,
@@ -496,9 +497,7 @@ export default function NotesConsole({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const sensors = useDragSensors(8);
 
   const flush = useCallback(() => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }

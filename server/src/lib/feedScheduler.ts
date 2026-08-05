@@ -8,7 +8,10 @@ import logger from './logger';
 // nobody has opened within DEMAND_WINDOW_MS go dormant and cost nothing until
 // someone requests them again (which bumps lastRequestedAt in ensureFeeds).
 const TICK_INTERVAL_MS = 5 * 60 * 1000;             // walk the table every 5 min
-const DEMAND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;  // ignore feeds unopened for 14 days
+// Exported so the admin feed list can mark the feeds this window has dropped:
+// "not checked for 3 weeks" is alarming until you know it means dormant, and
+// the panel should say which it is rather than leave an admin to infer it.
+export const DEMAND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;  // ignore feeds unopened for 14 days
 const BATCH            = 50;                          // feeds refreshed per tick
 
 let timer: ReturnType<typeof setInterval> | null = null;

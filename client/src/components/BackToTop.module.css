@@ -5,8 +5,8 @@
    column of controls rather than two things that nearly collided. */
 .btn {
   position: fixed;
-  right: 24px;
-  bottom: 78px;
+  right: max(24px, env(safe-area-inset-right, 0px));
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
   z-index: 40;
   width: 42px;
   height: 42px;
@@ -53,11 +53,14 @@
   .shown { transform: none; }
 }
 
+/* Sized up rather than down on a phone: it used to shrink to 38px here, which
+   is the one place a thumb - not a cursor - is doing the pressing. It still has
+   to clear the notes launcher below it, which grows to 52px on touch. */
 @media (max-width: 640px) {
   .btn {
-    right: 26px;
-    bottom: 74px;
-    width: 38px;
-    height: 38px;
+    right: max(26px, env(safe-area-inset-right, 0px));
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    width: 44px;
+    height: 44px;
   }
 }

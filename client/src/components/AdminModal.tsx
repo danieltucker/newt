@@ -92,7 +92,7 @@ interface AdminBlogPost {
 import { summarizeMetadata } from '../utils/auditMetadata';
 import { ModerationReport, ReportStatus, AdminThread, AdminThreadComment } from '../types';
 
-type Tab = 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'errors' | 'audit';
+type Tab = 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'feeds' | 'errors' | 'audit';
 
 // Sits beside the audit log in the nav but is its opposite: the audit trail is
 // what admins did and is kept forever, this is what broke and ages out.
@@ -126,6 +126,42 @@ interface FeedHealth {
   alerting: boolean;
 }
 
+// A feed as the Feeds tab lists it - every feed the instance polls, not only the
+// broken ones. `subscribers` counts people, not subscription rows: two spellings
+// of one URL are one feed here, the same way the refresher treats them.
+interface AdminFeed {
+  id: string;
+  url: string;
+  title: string;
+  lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  lastRequestedAt: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  subscribers: number;
+  items: number;
+  /** Nobody has opened it inside the demand window, so the scheduler skips it. */
+  dormant: boolean;
+}
+
+// One refresh attempt. 'unchanged' is a 304 - the origin was reached and had
+// nothing new, which is most of what a healthy instance does and is why the log
+// is worth having: a feed with no entries at all is not being polled.
+interface FeedLogEntry {
+  id: string;
+  feedId: string;
+  feedUrl: string;
+  feedTitle: string;
+  outcome: 'success' | 'unchanged' | 'failed';
+  status: number | null;
+  durationMs: number;
+  items: number | null;
+  newItems: number | null;
+  error: string | null;
+  createdAt: string;
+}
+
 // One entry in the moderation record. `metadata` is whatever the server thought
 // worth preserving for that action - shape varies by action, so it's rendered
 // generically rather than typed per-verb.
@@ -149,6 +185,7 @@ const TAB_TITLES: Record<Tab, string> = {
   reports: 'Reports',
   comments: 'Comments',
   blog: 'Posts',
+  feeds: 'Feeds',
   errors: 'Errors',
   audit: 'Audit log',
 };
@@ -180,6 +217,26 @@ function relativeDate(s: string | null): string {
   if (days === 1) return 'yesterday';
   if (days < 30) return `${days}d ago`;
   return formatDate(s);
+}
+
+// Minutes matter in the refresh log the way days do in the other tables: entries
+// land every few minutes, and stamping the whole page "today" would say nothing
+// about the thing being asked - when this feed was last actually fetched.
+function relativeTime(s: string | null): string {
+  if (!s) return 'never';
+  const mins = Math.floor((Date.now() - new Date(s).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return relativeDate(s);
+}
+
+// How long a fetch took. Sub-second in milliseconds because that's the range
+// most fetches sit in; above that, seconds - an 8.0s row is the fetch timeout
+// and reads as one at a glance.
+function formatDuration(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
 // A person's handle, anywhere it appears in the panel. Routes to their public
@@ -750,6 +807,27 @@ export default function AdminModal({
   const [retentionDays, setRetentionDays] = useState(30);
   const [feedHealth, setFeedHealth] = useState<FeedHealth[]>([]);
   const [feedTotals, setFeedTotals] = useState({ total: 0, healthy: 0 });
+  // The Feeds tab: the searchable list of everything being polled, and the log
+  // of refresh attempts underneath it.
+  const [feedList, setFeedList] = useState<AdminFeed[]>([]);
+  const [feedListTotal, setFeedListTotal] = useState(0);
+  const [feedListNext, setFeedListNext] = useState<number | null>(null);
+  const [feedListLoadingMore, setFeedListLoadingMore] = useState(false);
+  const [feedFilter, setFeedFilter] = useState<'all' | 'failing' | 'dormant'>('all');
+  // Searched on the server, so it can reach past the loaded page - the list is
+  // every feed on the instance, and filtering only what's rendered would answer
+  // "not found" for feeds that are plainly there.
+  const [feedSearch, setFeedSearch] = useState('');
+  const [dormantAfterDays, setDormantAfterDays] = useState(14);
+  const [feedLog, setFeedLog] = useState<FeedLogEntry[]>([]);
+  const [feedLogCursor, setFeedLogCursor] = useState<string | null>(null);
+  const [feedLogLoadingMore, setFeedLogLoadingMore] = useState(false);
+  const [feedLogOutcome, setFeedLogOutcome] = useState<'all' | 'success' | 'unchanged' | 'failed'>('all');
+  // Set by "History" on a feed row: the same log, narrowed to one feed. Kept as
+  // the whole feed rather than an id so the heading can name it without a lookup.
+  const [feedLogFor, setFeedLogFor] = useState<AdminFeed | null>(null);
+  const [feedLogSummary, setFeedLogSummary] = useState({ success: 0, unchanged: 0, failed: 0 });
+  const [feedLogRetentionDays, setFeedLogRetentionDays] = useState(7);
   // Which stack trace is unrolled. One at a time - a trace is tall enough that
   // two open at once turns the table into scrolling.
   const [openTrace, setOpenTrace] = useState<string | null>(null);
@@ -942,6 +1020,99 @@ export default function AdminModal({
       .catch(() => { if (!cancelled) setError('Could not load feed health'); });
     return () => { cancelled = true; };
   }, []);
+
+  // The feed list searches and filters on the server, so every change refetches
+  // rather than narrowing what's already loaded - a search that only looked at
+  // the first page would report "no match" for feeds that are plainly there.
+  // Debounced so holding a key down is one request, not twelve.
+  useEffect(() => {
+    if (tab !== 'feeds') return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (feedSearch.trim()) params.set('q', feedSearch.trim());
+      if (feedFilter !== 'all') params.set('status', feedFilter);
+      const qs = params.toString();
+      apiGet<{
+        feeds: AdminFeed[];
+        total: number;
+        nextOffset: number | null;
+        dormantAfterDays: number;
+      }>(`/api/v1/admin/feeds${qs ? `?${qs}` : ''}`)
+        .then(d => {
+          if (cancelled) return;
+          setFeedList(d.feeds);
+          setFeedListTotal(d.total);
+          setFeedListNext(d.nextOffset);
+          setDormantAfterDays(d.dormantAfterDays);
+        })
+        .catch(() => { if (!cancelled) setError('Could not load feeds'); });
+    }, feedSearch ? 300 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [tab, feedSearch, feedFilter]);
+
+  // The refresh log. Same shape as the error log: the outcome filter goes to the
+  // server because the tallies have to describe the whole log rather than the
+  // page, and narrowing to one feed is another server-side filter for the same
+  // reason - its last check may be a hundred rows down.
+  useEffect(() => {
+    if (tab !== 'feeds') return;
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (feedLogOutcome !== 'all') params.set('outcome', feedLogOutcome);
+    if (feedLogFor) params.set('feedId', feedLogFor.id);
+    const qs = params.toString();
+    apiGet<{
+      entries: FeedLogEntry[];
+      summary: { success: number; unchanged: number; failed: number };
+      retentionDays: number;
+      nextCursor: string | null;
+    }>(`/api/v1/admin/feeds/log${qs ? `?${qs}` : ''}`)
+      .then(d => {
+        if (cancelled) return;
+        setFeedLog(d.entries);
+        setFeedLogSummary(d.summary);
+        setFeedLogRetentionDays(d.retentionDays);
+        setFeedLogCursor(d.nextCursor);
+      })
+      .catch(() => { if (!cancelled) setError('Could not load the feed log'); });
+    return () => { cancelled = true; };
+  }, [tab, feedLogOutcome, feedLogFor]);
+
+  async function loadMoreFeeds() {
+    if (feedListNext === null) return;
+    setFeedListLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ offset: String(feedListNext) });
+      if (feedSearch.trim()) params.set('q', feedSearch.trim());
+      if (feedFilter !== 'all') params.set('status', feedFilter);
+      const d = await apiGet<{ feeds: AdminFeed[]; total: number; nextOffset: number | null }>(
+        `/api/v1/admin/feeds?${params.toString()}`);
+      setFeedList(prev => [...prev, ...d.feeds]);
+      setFeedListTotal(d.total);
+      setFeedListNext(d.nextOffset);
+    } catch {
+      setError('Could not load more feeds');
+    }
+    setFeedListLoadingMore(false);
+  }
+
+  async function loadMoreFeedLog() {
+    if (!feedLogCursor) return;
+    setFeedLogLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ cursor: feedLogCursor });
+      if (feedLogOutcome !== 'all') params.set('outcome', feedLogOutcome);
+      if (feedLogFor) params.set('feedId', feedLogFor.id);
+      const d = await apiGet<{ entries: FeedLogEntry[]; nextCursor: string | null }>(
+        `/api/v1/admin/feeds/log?${params.toString()}`);
+      setFeedLog(prev => [...prev, ...d.entries]);
+      setFeedLogCursor(d.nextCursor);
+    } catch {
+      setError('Could not load more of the feed log');
+    }
+    setFeedLogLoadingMore(false);
+  }
 
   async function loadMoreErrors() {
     if (!errorCursor) return;
@@ -1144,6 +1315,9 @@ export default function AdminModal({
     // An expanded thread belongs to the row that opened it; leaving it open
     // would reopen under whatever row happens to share that id on the next tab.
     setThreadFor(null);
+    // Same for the log narrowed to one feed - it belongs to the row that opened
+    // it, and coming back to the tab should show the whole timeline again.
+    if (next !== 'feeds') setFeedLogFor(null);
     // Leaving the Reports tab abandons the single-report view the bell opened.
     if (next !== 'reports') onClearFocusReport?.();
   }
@@ -1174,12 +1348,15 @@ export default function AdminModal({
             Posts
           </button>
           {/* Badged like Reports, and for the same reason: a failing feed is
-              work waiting, and the count is why you'd open the tab. Only feeds
-              are counted - a server error is already in the past by the time
-              it's recorded, whereas a failing feed is still failing. */}
+              work waiting, and the count is why you'd open the tab. The badge
+              sits here rather than on Errors because a failing feed is still
+              failing, whereas a recorded server error is already in the past. */}
+          <button className={`${styles.navItem} ${tab === 'feeds' ? styles.navActive : ''}`} onClick={() => switchTab('feeds')}>
+            Feeds
+            {feedHealth.length > 0 && <span className={styles.navBadge}>{feedHealth.length}</span>}
+          </button>
           <button className={`${styles.navItem} ${tab === 'errors' ? styles.navActive : ''}`} onClick={() => switchTab('errors')}>
             Errors
-            {feedHealth.length > 0 && <span className={styles.navBadge}>{feedHealth.length}</span>}
           </button>
           <button className={`${styles.navItem} ${tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
             Audit log
@@ -1246,7 +1423,7 @@ export default function AdminModal({
                 {/* Same idea as Open reports above - a number that is only
                     interesting when it isn't zero, wired to the tab that
                     explains it. */}
-                <button className={styles.statCard} onClick={() => switchTab('errors')}>
+                <button className={styles.statCard} onClick={() => switchTab('feeds')}>
                   <span className={styles.statValue}>{feedHealth.length}</span>
                   <span className={styles.statLabel}>Failing feeds</span>
                 </button>
@@ -1719,11 +1896,12 @@ export default function AdminModal({
             </div>
           )}
 
-          {tab === 'errors' && (
+          {tab === 'feeds' && (
             <div className={styles.body}>
-              {/* Health first, log second. "Which of my feeds are broken right
-                  now" is the standing question; the log below is what you read
-                  once you want to know why. */}
+              {/* Three sections, narrowing as you go: what is broken, what
+                  exists, and what actually happened. The last is the one the
+                  other two can't answer - a feed with no errors and no recent
+                  check isn't healthy, it isn't being polled. */}
               <div className={styles.sectionTitle}>
                 Feed health
                 <span className={styles.sectionNote}>
@@ -1762,7 +1940,7 @@ export default function AdminModal({
                           <span className={styles.mutedText}>{f.lastError || '-'}</span>
                           {f.lastErrorAt && (
                             <div className={styles.mutedText} title={new Date(f.lastErrorAt).toLocaleString()}>
-                              {relativeDate(f.lastErrorAt)}
+                              {relativeTime(f.lastErrorAt)}
                             </div>
                           )}
                         </td>
@@ -1771,7 +1949,7 @@ export default function AdminModal({
                               from one that stopped working - most likely a URL
                               that was never a feed. */}
                           {f.lastSuccessAt
-                            ? relativeDate(f.lastSuccessAt)
+                            ? relativeTime(f.lastSuccessAt)
                             : <span className={styles.mutedText}>never</span>}
                         </td>
                       </tr>
@@ -1780,6 +1958,204 @@ export default function AdminModal({
                 </table>
               )}
 
+              {/* ── Every feed, searchable ─────────────────────────────────
+                  The health table above only lists what is currently broken,
+                  which leaves the more common question unanswered: is this URL
+                  even here, who subscribes to it, and when was it last read. */}
+              <div className={styles.sectionTitle}>
+                All feeds
+                <span className={styles.sectionNote}>
+                  {feedListTotal} {feedListTotal === 1 ? 'feed' : 'feeds'}
+                  {feedSearch.trim() || feedFilter !== 'all' ? ' matching' : ' polled by this instance'}
+                </span>
+              </div>
+              <input
+                className={styles.searchInput}
+                type="text"
+                placeholder="Search every feed by address or title…"
+                value={feedSearch}
+                onChange={e => setFeedSearch(e.target.value)}
+              />
+              <div className={styles.filterRow}>
+                {(['all', 'failing', 'dormant'] as const).map(f => (
+                  <button
+                    key={f}
+                    className={`${styles.filterChip} ${feedFilter === f ? styles.filterChipActive : ''}`}
+                    onClick={() => setFeedFilter(f)}
+                  >
+                    {f === 'all' ? 'All' : f === 'failing' ? 'Failing' : 'Dormant'}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.tableNote}>
+                Feeds are shared: one fetch serves every subscriber, and two spellings
+                of the same address are one feed here. A dormant feed is one nobody has
+                opened in {dormantAfterDays} days - the scheduler stops polling it until
+                someone does, so a stale "last checked" on those is by design, not a fault.
+              </div>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Feed</th>
+                    <th>Subscribers</th>
+                    <th>Articles</th>
+                    <th>Last checked</th>
+                    <th>Last success</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feedList.map(f => (
+                    <tr key={f.id}>
+                      <td className={styles.emailCell}>
+                        <a className={styles.errorLink} href={f.url} target="_blank" rel="noopener noreferrer">
+                          {f.title || f.url}
+                        </a>
+                        {f.title && <div className={styles.mutedText}>{f.url}</div>}
+                        {f.consecutiveFailures > 0 && (
+                          <div className={styles.mutedText}>
+                            failing - {f.lastError || 'reason not recorded'}
+                          </div>
+                        )}
+                      </td>
+                      <td>{f.subscribers}</td>
+                      <td>{f.items}</td>
+                      <td title={f.lastCheckedAt ? new Date(f.lastCheckedAt).toLocaleString() : undefined}>
+                        {relativeTime(f.lastCheckedAt)}
+                        {f.dormant && <div className={styles.mutedText}>dormant</div>}
+                      </td>
+                      <td title={f.lastSuccessAt ? new Date(f.lastSuccessAt).toLocaleString() : undefined}>
+                        {f.lastSuccessAt
+                          ? relativeTime(f.lastSuccessAt)
+                          : <span className={styles.mutedText}>never</span>}
+                      </td>
+                      <td>
+                        {/* Narrows the log below to this feed - the fastest way
+                            to tell a feed that is quiet from one that is stuck. */}
+                        <button className={styles.traceToggle} onClick={() => setFeedLogFor(f)}>
+                          History
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {feedList.length === 0 && (
+                <div className={styles.emptyResult}>
+                  {feedSearch.trim()
+                    ? `No feeds match "${feedSearch.trim()}"`
+                    : feedFilter === 'failing'
+                      ? 'No feed is currently failing'
+                      : feedFilter === 'dormant'
+                        ? 'Every feed has been opened recently'
+                        : 'No feeds yet'}
+                </div>
+              )}
+              {feedListNext !== null && (
+                <button className={styles.moreBtn} disabled={feedListLoadingMore} onClick={loadMoreFeeds}>
+                  {feedListLoadingMore ? 'Loading…' : `Load more feeds (${feedListTotal - feedList.length} left)`}
+                </button>
+              )}
+
+              {/* ── The refresh log ────────────────────────────────────────
+                  Successes and 304s included, deliberately. A log of failures
+                  can only say what broke; this one also says the refresher ran,
+                  which is what you need when a feed looks frozen. */}
+              <div className={styles.sectionTitle}>
+                {feedLogFor ? 'Refresh log for this feed' : 'Refresh log'}
+                <span className={styles.sectionNote}>
+                  {feedLogFor
+                    ? (feedLogFor.title || feedLogFor.url)
+                    : `${feedLogSummary.success + feedLogSummary.unchanged + feedLogSummary.failed} checks in the last 24 hours`}
+                </span>
+              </div>
+              <div className={styles.filterRow}>
+                {(['all', 'success', 'unchanged', 'failed'] as const).map(o => (
+                  <button
+                    key={o}
+                    className={`${styles.filterChip} ${feedLogOutcome === o ? styles.filterChipActive : ''}`}
+                    onClick={() => setFeedLogOutcome(o)}
+                  >
+                    {o === 'all' ? 'All' : o === 'success' ? 'Updated' : o === 'unchanged' ? 'No change' : 'Failed'}
+                    {/* Tallies are the last 24 hours across every feed, so they
+                        stay the same when the log is narrowed to one - they
+                        describe the instance, not the rows below. */}
+                    <span className={styles.errorCount}>
+                      {o === 'all'
+                        ? feedLogSummary.success + feedLogSummary.unchanged + feedLogSummary.failed
+                        : feedLogSummary[o]}
+                    </span>
+                  </button>
+                ))}
+                {feedLogFor && (
+                  <button className={styles.filterChip} onClick={() => setFeedLogFor(null)}>
+                    ✕ Show every feed
+                  </button>
+                )}
+              </div>
+              <div className={styles.tableNote}>
+                One line per attempt, newest first. "No change" is a 304 - the feed was
+                reached and had nothing new, which is most of a healthy day's work.
+                Entries older than {feedLogRetentionDays} days are removed automatically.
+              </div>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Feed</th>
+                    <th>Result</th>
+                    <th>Took</th>
+                    <th>Articles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feedLog.map(e => (
+                    <tr key={e.id}>
+                      <td title={new Date(e.createdAt).toLocaleString()}>{relativeTime(e.createdAt)}</td>
+                      <td className={styles.emailCell}>
+                        <a className={styles.errorLink} href={e.feedUrl} target="_blank" rel="noopener noreferrer">
+                          {e.feedTitle || e.feedUrl}
+                        </a>
+                      </td>
+                      <td>
+                        <span className={e.outcome === 'failed' ? styles.auditDestructive : styles.auditAction}>
+                          {e.outcome === 'success' ? 'Updated' : e.outcome === 'unchanged' ? 'No change' : 'Failed'}
+                          {/* Blank for our own blog feeds, which never go over
+                              HTTP - so there is no status to report. */}
+                          {e.status !== null && ` ${e.status}`}
+                        </span>
+                      </td>
+                      <td>{formatDuration(e.durationMs)}</td>
+                      <td className={styles.emailCell}>
+                        {e.outcome === 'failed'
+                          ? <span className={styles.mutedText}>{e.error || 'reason not recorded'}</span>
+                          : e.items !== null
+                            ? <>{e.items} items{e.newItems ? `, ${e.newItems} new` : ''}</>
+                            : <span className={styles.mutedText}>-</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {feedLog.length === 0 && (
+                <div className={styles.emptyResult}>
+                  {feedLogFor
+                    ? 'This feed has not been checked within the retention window'
+                    : feedLogOutcome === 'all'
+                      ? 'No refreshes recorded yet - the scheduler checks stale feeds every few minutes'
+                      : 'No attempts with that result'}
+                </div>
+              )}
+              {feedLogCursor && (
+                <button className={styles.moreBtn} disabled={feedLogLoadingMore} onClick={loadMoreFeedLog}>
+                  {feedLogLoadingMore ? 'Loading…' : 'Load older entries'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {tab === 'errors' && (
+            <div className={styles.body}>
               <div className={styles.sectionTitle}>Recent errors</div>
               <div className={styles.filterRow}>
                 {(['all', 'server', 'feed'] as const).map(s => (
@@ -1800,7 +2176,12 @@ export default function AdminModal({
                 Entries older than {retentionDays} days are removed automatically -
                 this is a diagnostic log, not a record like the audit trail.
                 Requests that failed because someone asked for something invalid
-                (a 4xx) aren't errors and aren't listed.
+                (a 4xx) aren't errors and aren't listed. "Show detail" on a feed
+                error carries the timing and whatever the origin actually sent back;
+                which feeds are broken right now is in{' '}
+                <button className={styles.traceToggle} onClick={() => switchTab('feeds')}>
+                  Feeds
+                </button>.
               </div>
               <table className={styles.table}>
                 <thead>
@@ -1818,8 +2199,11 @@ export default function AdminModal({
                       <tr>
                         <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
                         <td>
+                          {/* Feed rows carry a status now too, when the failure
+                              had one: a 404 and a timeout are different problems
+                              and used to read identically here. */}
                           <span className={e.source === 'server' ? styles.auditDestructive : styles.auditAction}>
-                            {e.source === 'server' ? `Server${e.status ? ` ${e.status}` : ''}` : 'Feed'}
+                            {e.source === 'server' ? 'Server' : 'Feed'}{e.status ? ` ${e.status}` : ''}
                           </span>
                         </td>
                         <td className={styles.emailCell}>

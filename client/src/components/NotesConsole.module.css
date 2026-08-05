@@ -401,7 +401,10 @@
   padding: 7px 8px;
   border-radius: 7px;
   cursor: pointer;
-  touch-action: none;   /* pointer sensor owns the drag gesture on the header */
+  /* No `touch-action: none`. It was PointerSensor's tax - see the same note on
+     .folderItem in FolderSidebar.module.css. TouchSensor arms on a press-and-
+     hold and prevents touchmove itself, so a swipe starting on a folder header
+     scrolls the column instead of being swallowed. */
   transition: background 0.1s, box-shadow 0.1s;
 }
 
