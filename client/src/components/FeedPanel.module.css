@@ -11,21 +11,42 @@
 
 /* The card's action strip: read/comment on the left, save on the right,
    separated from the card meta by a hairline. Wraps rather than squeezes - on a
-   narrow card the two pills stack and each takes the full width. */
+   narrow card the two pills stack and each takes the full width (see the
+   container query below).
+
+   The save pill is put at the far end by the row's own justification, not by an
+   auto margin on the pill. That margin was the bug: an auto margin survives the
+   wrap, so a save pill that dropped to a second line stayed pinned to the right
+   edge, one line below a left-aligned comment pill. A staircase - which is what
+   a wrapped row looks like when only one of the two items knows it wrapped.
+   Identical to the strip on a reading list card, which had the same fault. */
 .commentRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 
-/* Pushed to the far end, opposite the comment pill. SaveButton owns its own
-   look - it is shaped to match CommentBar so the two read as a pair. */
-.rowSave {
-  margin-left: auto;
+/* ── When the two pills don't fit on one line ──
+   Each takes the line. Asked of the card rather than the window: a card in the
+   grid is between 200px and 400px wide whatever the window is doing, so a
+   viewport media query - which is what this was, at 380px - never saw the case
+   that actually breaks, a narrow card on a wide screen.
+
+   The widths are the pills' own: about 211px of pill and gap inside 32px of card
+   padding with a mouse, about 237 with a thumb, since both grow on touch. */
+@container (max-width: 250px) {
+  .commentRow > * { flex: 1 1 100%; }
+}
+
+@media (hover: none) {
+  @container (max-width: 275px) {
+    .commentRow > * { flex: 1 1 100%; }
+  }
 }
 
 /* Shares the header row with Manage feeds and the layout switch, so it takes
@@ -356,8 +377,12 @@
   .cardWrap:hover .heroLink .hero { transform: none; }
 }
 
-/* ── Card wrap - lifts on hover ── */
+/* ── Card wrap - lifts on hover ──
+   Also what the card's own layout questions are asked of: how wide a card is has
+   almost nothing to do with how wide the window is, since the grid packs as many
+   200px columns into it as will go. See the action strip's container query. */
 .cardWrap {
+  container-type: inline-size;
   position: relative;
   break-inside: avoid;
   margin-bottom: 12px;
@@ -966,17 +991,10 @@
   .undoBtn { font-size: 13px; padding: 7px 14px; }
 }
 
-/* Below this even one column is tight, so the action pills stop sharing a row
-   and each takes the full card. */
-@media (max-width: 380px) {
-  .commentRow > * {
-    flex: 1 1 100%;
-  }
-
-  .rowSave {
-    margin-left: 0;
-  }
-}
+/* The `@media (max-width: 380px)` block that used to sit here - action pills
+   stacking on a narrow phone - is the container query up beside .commentRow now.
+   Same intent, asked of the card instead of the viewport, which covers the
+   narrow-card-on-a-wide-window case the viewport version could never see. */
 
 /* Touch devices: hover never fires - keep actions fully visible, and size every
    control for a thumb rather than a cursor.

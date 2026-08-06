@@ -2,6 +2,33 @@
 
 Notable changes to Newt, newest first.
 
+## v1.13.1 - The foot of a card
+
+**2026-08-06**
+
+### The staircase at the foot of a card
+
+Comment and Save sit at the foot of every feed and reading list card, one at
+each end of a row. When the card was too narrow to hold both, Save dropped to a
+second line - and stayed pinned to the right edge, because the thing putting it
+there was a margin that survives the wrap. So you got a step: Comment at the
+left of one line, Save at the right of the next, with the hairline above them
+and nothing else on either.
+
+The row does the aligning now, which means both ends know when they've wrapped.
+And below the width where the two genuinely don't fit, each pill takes the whole
+line, which is a better target anyway.
+
+That rule used to be a `max-width: 380px` media query, and that was the actual
+bug: a card is between 200px and 400px wide no matter how wide the window is,
+because the grid packs in as many columns as will go. The one case that breaks -
+a narrow card on a big screen - is the one a viewport query can never see. It
+asks the card now.
+
+The read time went the same way while it was in view: "· 3 min" was breaking
+across two lines on a tight card. It stays whole, and the publisher's name gives
+up the width instead, which it was already set up to do.
+
 ## v1.13.0 - Finding things in Settings
 
 **2026-08-06**

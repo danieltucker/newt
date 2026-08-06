@@ -426,7 +426,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
               {item.source}
             </a>
           ) : <span>{item.source}</span>}
-          {item.readTime ? <span>· {item.readTime}</span> : null}
+          {item.readTime ? <span className={styles.readTime}>· {item.readTime}</span> : null}
           {/* Last in the line, so it reads as a note about the article rather
               than part of its byline. The card is dimmed too (see .visitedCard);
               this is the part that survives being colour-blind or looking at one
@@ -1191,7 +1191,7 @@ function ShelfRail({ shelves, active, onSelect, onManage }: {
   // a chip that has been folded into the menu is no longer in the DOM to be
   // measured, so measuring what's on screen would mean each pass depending on
   // the last one's answer, which is how these things end up oscillating.
-  const sig = shelves.map(s => `${s.key} ${s.label} ${s.count}`).join('');
+  const sig = JSON.stringify(shelves.map(s => [s.key, s.label, s.count]));
 
   const measure = useCallback(() => {
     const rail = railRef.current;
