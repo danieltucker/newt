@@ -2,30 +2,12 @@
   margin-top: 26px;
 }
 
-/* Wraps rather than overflows. Nothing in the action row shrinks - the buttons
-   have nowrap labels and the layout switch is a fixed 86px - so on a phone the
-   row measured ~425px against a 361px column and simply ran off the side of the
-   screen, taking the whole page's width with it (see the overflow-x note on
-   html in styles/tokens.css). A second line is the only thing that fits. */
-.headerRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-bottom: 12px;
-}
-
-.headerRow .sectionLabel {
-  margin-bottom: 0;
-}
-
-.headerActions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+/* The feed's actions used to be a right-aligned row of their own, sitting above
+   the filter chips. Nothing was ever on its left - the "FEED" label had gone -
+   so it floated over a page-wide gap and shared no edge with the chips below it.
+   They're all feed-level controls at the same altitude, so they're one row now:
+   FeedFilterBar's `actions` slot, which was built for exactly this and had
+   never been used. See the controlBar note in FeedPanel.tsx. */
 
 /* The card's action strip: read/comment on the left, save on the right,
    separated from the card meta by a hairline. Wraps rather than squeezes - on a
@@ -46,17 +28,27 @@
   margin-left: auto;
 }
 
+/* Shares the header row with Manage feeds and the layout switch, so it takes
+   the same height token they do rather than measuring whatever 11px type plus
+   10px of padding came to.
+
+   A pill, because the filter chips sit directly under this row and were - so
+   the panel had a strip of rounded rectangles resting on a strip of pills. The
+   layout switch at the end of the row stays a rectangle: it is icon-only, and
+   round icon buttons read as a different control. See the shape rule in
+   tokens.css. */
 .markAllBtn {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 10px;
-  border-radius: 8px;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
@@ -81,13 +73,14 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 10px;
-  border-radius: 8px;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
@@ -99,28 +92,23 @@
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
-.sectionLabel {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Here the filter bar is a row of its own, so it owns the gap down to the
+   article grid. The bar itself carries no margin - see the note on .bar in
+   FeedFilterBar for why that has to be the consumer's call. */
+.filterBar {
+  margin-bottom: 14px;
 }
 
-.count {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 7px;
-  color: var(--muted);
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
+/* The glyph inside the two action buttons. 12px was an accent sitting next to a
+   label; the moment the label goes (see the narrow-screen block at the foot of
+   this file) it is the entire button, and a 12px mark in a 32px box reads as a
+   speck rather than an icon. Sized here rather than on the <svg> so the
+   icon-only case can ask for more. */
+.markAllBtn svg,
+.manageBtn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 /* ── Category filter chips ── */
@@ -132,12 +120,15 @@
 }
 
 .chip {
-  padding: 3px 11px;
-  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface2);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -396,14 +387,15 @@
   opacity: 1;
 }
 
-/* Square, and big enough to hit: the old 30x26 was under the 32px a cursor
-   wants and nowhere near what a thumb needs. The radius is the card's own 14px
-   stepped down for a control this size, so the corners read as the same family
-   rather than as a stray rounded rectangle. */
+/* Square, and big enough to hit: the old 30x26 was under what a cursor wants
+   and nowhere near what a thumb needs. Sized off --ctl-h in both directions so
+   it matches the save and comment pills at the foot of the same card, and grows
+   with them on touch. An icon square, so --ctl-r rather than a pill - the same
+   corner the shell bar's buttons and every close button carry. */
 .actionBtn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--ctl-r);
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(6px);
@@ -568,9 +560,14 @@
   text-overflow: ellipsis;
 }
 
+/* Nested inside .ghostPill, so it takes the small tier - at the standalone
+   height the pill around it would grow by 8px top and bottom. */
 .undoBtn {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  padding: 4px 12px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 13px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -908,9 +905,44 @@
   .domain { opacity: 0.7; }
   .favicon { width: 16px; height: 16px; }
 
-  .sectionLabel { font-size: 13px; }
-  .count { font-size: 11.5px; padding: 2px 8px; }
-  .markAllBtn, .manageBtn { font-size: 13px; padding: 8px 12px; }
+  /* ── The two feed actions go icon-only ──
+     The control bar holds six things at this width and can't fit them on one
+     line however they're dressed, so the labels buy back the room that keeps
+     the wrap to two tidy rows instead of three. The words stay in the
+     accessibility tree - see the title and aria-label in FeedPanel.tsx.
+
+     This lives here, in the narrow block that was already styling these two
+     buttons, rather than in one of its own further up the file: two blocks at
+     the same width and specificity meant the later one silently won, and the
+     later one was this. */
+  .actionLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Square once the label goes, so they read as icon buttons rather than as
+     pills that lost their text. */
+  .markAllBtn,
+  .manageBtn {
+    width: var(--ctl-h);
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--ctl-r);
+  }
+
+  /* Now that the glyph is the whole button it gets a glyph's size - a little
+     over half the button, which is what every other icon button here does. */
+  .markAllBtn svg,
+  .manageBtn svg {
+    width: 18px;
+    height: 18px;
+  }
 
   .status, .statusError { font-size: 14.5px; }
   .moreBtn { font-size: 15px; padding: 14px 16px; }
@@ -952,12 +984,9 @@
 @media (hover: none) {
   .cardActions { opacity: 1; }
 
-  .actionBtn {
-    width: 38px;
-    height: 38px;
-  }
-
-  /* Keeps the taller button off the title on an art-less card */
+  /* Keeps the taller button off the title on an art-less card. The button's own
+     size is not restated - it is --ctl-h wide and tall, which has already
+     grown. */
   .grid .cardWrap.noHero .card,
   .gridMagazine .cardWrap.noHero .card {
     padding-top: 52px;
@@ -970,14 +999,7 @@
     padding: 5px 10px;
   }
 
-  .chip {
-    font-size: 13px;
-    padding: 7px 13px;
-  }
-
-  .undoBtn {
-    min-height: 34px;
-  }
+  .chip { font-size: 13.5px; padding: 0 14px; }
 }
 
 /* Filter dropdowns themselves live in FilterDropdown.module.css */

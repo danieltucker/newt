@@ -8,6 +8,10 @@
   justify-content: center;
   z-index: var(--z-modal);
   animation: fadeIn 0.15s ease;
+  /* Nothing here scrolls, and a wheel over the dimmed area must not reach the
+     feed behind it. The panel's own scroller repeats this so a flick past the
+     end of a section stops at the end of the section. */
+  overscroll-behavior: contain;
 }
 
 @keyframes fadeIn {
@@ -32,15 +36,28 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Left nav ── */
+/* ── The section list ──
+   A rail down the left while both columns fit; the whole panel below that, as
+   a list you drill into (see .compact at the foot of this file). */
 .nav {
-  width: 200px;
+  width: 232px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
-  padding: 24px 12px;
+  padding: 18px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* So .navScroll, not the rail, is what overflows on a short window */
+  min-height: 0;
+}
+
+.navTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  margin-bottom: 12px;
 }
 
 .navHeader {
@@ -49,8 +66,72 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 0 10px;
-  margin-bottom: 10px;
+}
+
+/* ── Search ── */
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 2px 10px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 8px 28px 8px 30px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  color: var(--text);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.searchInput:focus { border-color: var(--accent); }
+.searchInput::placeholder { color: var(--muted); }
+/* The browser's own clear affordance would sit on top of ours */
+.searchInput::-webkit-search-cancel-button { display: none; }
+
+.searchClear {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.searchClear:hover { background: var(--border); color: var(--text); }
+
+/* The list itself scrolls, so the search field above it stays put */
+.navScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .navItem {
@@ -75,6 +156,8 @@
   color: var(--text);
 }
 
+.navLabel { flex: 1; min-width: 0; }
+
 .navActive {
   background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
   color: var(--accent);
@@ -95,6 +178,124 @@
   justify-content: center;
 }
 
+.navChevron {
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.navEmpty {
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── Search results ──
+   Each one names the section it lives in, because "New tab" alone doesn't say
+   whether it's about search results or bookmarks. */
+.resultItem {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.resultItem:hover { background: var(--surface2); }
+
+.resultLabel {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.resultSection {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Compact: one column, list then panel ── */
+.compact .nav {
+  width: 100%;
+  border-right: none;
+  padding: 14px 10px 10px;
+}
+
+.compact .navItem {
+  padding: 12px 12px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+.compact .resultItem { padding: 11px 12px; }
+
+.compact .content { width: 100%; }
+
+/* A round ✕ for the list view, where there's no header bar to hang the wide
+   Close button off. */
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.iconBtn:hover { background: var(--border); color: var(--text); }
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 6px 12px 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.backBtn span { font-size: 17px; line-height: 1; }
+.backBtn:hover { background: var(--border); color: var(--text); }
+
+/* Where a search result lands: a ring that fades, so you can see which of a
+   dozen near-identical rows you were sent to. An outline rather than a border
+   or a background - it follows whatever corner radius the target already has
+   and takes no space, so nothing under it moves. */
+.flash {
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+  animation: settingFlash 1.5s ease-out;
+}
+
+@keyframes settingFlash {
+  0%, 45% { outline-color: var(--accent); }
+  100%    { outline-color: transparent; }
+}
+
 /* ── Right content ── */
 .content {
   flex: 1;
@@ -105,16 +306,21 @@
 
 .contentHeader {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 24px 28px 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 28px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .contentTitle {
+  flex: 1;
+  min-width: 0;
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .closeBtn {
@@ -140,11 +346,18 @@
 
 .contentBody {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  /* Reaching the end of a section is the end of the scroll - without this the
+     remaining wheel or flick is handed to the feed behind the panel, which is
+     the one place the page underneath must not move. */
+  overscroll-behavior: contain;
   padding: 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  /* Room for the ring a search result lands under */
+  scroll-padding: 12px;
 }
 
 /* ── Shared section blocks ── */
@@ -170,6 +383,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+}
+
+/* A block can stack several controls - Comments has four - and without this
+   they run into each other, which also leaves a search result's ring sitting
+   on top of the row above the one it means. */
+.row + .row,
+.row + .openModeList,
+.openModeList + .row,
+.openModeList + .openModeList {
+  margin-top: 16px;
 }
 
 .rowLabel {
@@ -702,53 +925,57 @@
   margin-bottom: 2px;
 }
 
-/* ── Responsive ── */
-@media (max-width: 640px) {
+/* ── Responsive ──
+   The 720px break matches the one SettingsModal watches in JS: below it the
+   panel is a single column and the rail becomes the drill-down list.
+
+   That is also where the panel stops being a card and becomes the screen. A
+   dialog inset inside a backdrop spends its two scarcest resources - width and
+   height - on a margin, a border and a shadow whose only job is to say "there
+   is a page behind this", which the Back and ✕ buttons already say. The safe
+   area insets come back as padding so the header clears the notch and the last
+   row clears the home indicator. */
+@media (max-width: 720px) {
+  .backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   .panel {
-    flex-direction: column;
-    width: min(860px, 96vw);
-    height: 88vh;
-    border-radius: 14px;
-  }
-
-  .nav {
     width: 100%;
-    flex-direction: row;
-    align-items: stretch;
-    padding: 8px 8px 0;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    gap: 2px;
-    flex-shrink: 0;
-  }
-
-  .navHeader { display: none; }
-
-  .navItem {
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    padding: 6px 4px 8px;
-    border-radius: 8px 8px 0 0;
-    font-size: 10px;
-    white-space: nowrap;
-    background: transparent;
-  }
-
-  .navActive {
-    border-bottom: 2px solid var(--accent);
-  }
-
-  .navIcon {
-    font-size: 15px;
-    width: auto;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .contentHeader {
-    padding: 14px 16px 12px;
+    padding: 12px 14px;
+    gap: 8px;
   }
+
+  .contentTitle { font-size: 17px; }
+
+  /* The back button already says where you are; ✕ alone is enough on the right */
+  .closeLabel { display: none; }
+
+  /* Both exits are thumb targets here, not pointer targets */
+  .closeBtn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  .iconBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .backBtn { padding: 8px 14px 8px 10px; }
 
   .contentBody {
     padding: 16px;

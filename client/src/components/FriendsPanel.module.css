@@ -146,18 +146,28 @@
   margin-top: 8px;
 }
 
-/* ── Buttons ── */
-.primaryBtn {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+/* ── Buttons ──
+   The accept/decline pair on a request row, which were 31 and 28 tall with a
+   9px and an 8px corner. */
+.primaryBtn,
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  padding: 0 14px;
+  border-radius: 999px;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 650;
-  padding: 7px 14px;
-  border-radius: 9px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.primaryBtn {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
 }
 .primaryBtn:hover { filter: brightness(1.08); }
 
@@ -165,12 +175,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
   font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 

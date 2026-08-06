@@ -10,13 +10,14 @@
 /* The min-height belongs here, on the bordered box, not on .main inside it.
    With border-box sizing a 30px .main plus this element's 1px border came out
    at 32px, against CommentBar's 30px - the two pills sat side by side 2px
-   apart. Both are now bordered boxes carrying the same min-height, so they
-   measure the same whatever the padding inside does. */
+   apart. Both are now bordered boxes carrying the same --ctl-h, so they measure
+   the same whatever the padding inside does, and neither can drift when the
+   scale changes. */
 .group {
   display: flex;
   flex: 1 1 auto;
   align-items: stretch;
-  min-height: 30px;
+  min-height: var(--ctl-h);
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in oklab, var(--surface2) 70%, transparent);
@@ -117,10 +118,10 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: var(--ctl-h-lg);
+  padding: 6px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ctl-r);
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -190,10 +191,10 @@
 .newInput {
   flex: 1;
   min-width: 0;
-  min-height: 34px;
+  min-height: var(--ctl-h-lg);
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--ctl-r);
   background: var(--surface2);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -211,10 +212,10 @@
 
 .newGo {
   flex-shrink: 0;
-  min-height: 34px;
+  min-height: var(--ctl-h-lg);
   padding: 0 12px;
-  border: none;
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   background: var(--accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
@@ -249,13 +250,10 @@
   .group, .main, .caret, .item { transition: none; }
 }
 
-/* Touch: no hover to reveal anything, and a thumb is not a cursor. Both halves
-   grow to a real target and the seam gets wider so they can't be mis-hit. */
+/* Touch: no hover to reveal anything, and a thumb is not a cursor. The pill's
+   own height comes from --ctl-h and has already grown; what's left is the seam,
+   which gets wider so the two halves can't be mis-hit, and the type. */
 @media (hover: none) {
-  .group {
-    min-height: 38px;
-  }
-
   .main {
     padding: 0 14px;
     font-size: 12.5px;
@@ -266,7 +264,6 @@
   }
 
   .item {
-    min-height: 42px;
     font-size: 14px;
   }
 }

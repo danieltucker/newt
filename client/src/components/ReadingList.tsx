@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import styles from './ReadingList.module.css';
 import { ReadingListItem, ReadingFolder, CommentPrefs } from '../types';
 import { parseDomain } from '../utils/color';
@@ -19,6 +19,7 @@ import SaveButton, { SaveDestination } from './SaveButton';
 import CloseButton from './CloseButton';
 import ReadingListLauncher from './ReadingListLauncher';
 import { totalMinutes, formatDuration } from '../utils/readingTime';
+import { loadVisited, markVisited } from '../utils/visitedArticles';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
@@ -114,14 +115,21 @@ function nudgeForToday(duration: React.ReactNode, count: number): React.ReactNod
   return NUDGES[day % NUDGES.length](duration, count);
 }
 
-// Marks the post-read prompt. The one spot of accent in a bar that is otherwise
-// the card's own surface - enough to catch the eye coming back from an article
-// without tinting the whole strip.
-function CheckCircleIcon() {
+// Sits in the meta line of a card you've opened. A tick rather than an eye or a
+// dot: the question a reading list answers is "have I got to this one", and a
+// tick is the one glyph that says yes without also implying it's finished with.
+function VisitedIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="7" cy="7" r="5.5" />
-      <path d="M4.6 7.1l1.7 1.7 3.1-3.4" />
+    <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2.5 7.4l3 3 6-6.8" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <path d="M6 1.5v9M1.5 6h9" />
     </svg>
   );
 }
@@ -267,9 +275,8 @@ interface CardProps {
   filing?: boolean;
   onCancelFiling: () => void;
   onConfirmFiling: (id: string, folderId: string | null) => void;
-  isPostRead?: boolean;
-  onPostReadAction?: (action: 'library' | 'delete') => void;
-  onPostReadDismiss?: () => void;
+  /** You've opened this one. Dims the card and prints a tick in its meta line. */
+  visited?: boolean;
   onOpened?: (id: string) => void;
   onDelete: (id: string) => void;
   onUndo: (id: string) => void;
@@ -285,7 +292,7 @@ interface CardProps {
   onOpenSite?: (domain: string) => void;
 }
 
-function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, isPostRead, onPostReadAction, onPostReadDismiss, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
 
@@ -306,7 +313,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
     variant === 'brief' ? styles.briefWrap : '',
     item.inLibrary ? styles.libraryCard : '',
     isGhost ? styles.ghost : '',
-    isPostRead && !isGhost ? styles.postReadCard : '',
+    visited && !isGhost ? styles.visitedCard : '',
     // No cover art → reserve top space so the floating controls push text down
     // instead of overlapping it
     !showImage ? styles.noHero : '',
@@ -420,6 +427,16 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             </a>
           ) : <span>{item.source}</span>}
           {item.readTime ? <span>· {item.readTime}</span> : null}
+          {/* Last in the line, so it reads as a note about the article rather
+              than part of its byline. The card is dimmed too (see .visitedCard);
+              this is the part that survives being colour-blind or looking at one
+              card on its own with nothing to compare it against. */}
+          {visited && !isGhost && (
+            <span className={styles.visitedTag} title="You've opened this one">
+              <VisitedIcon />
+              Visited
+            </span>
+          )}
         </div>
       </div>
 
@@ -472,41 +489,6 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
         </div>
       )}
 
-      {/* A strip across the head of the card, not a cover over it. It used to
-          fill the card, which meant returning from an article blocked the very
-          things you'd want next - commenting, the title link, the tags. The
-          prompt drops the article's own title for the same reason: the card
-          right below it is already showing that. */}
-      {isPostRead && !isGhost && (
-        <div className={styles.postReadOverlay}>
-          <span className={styles.postReadIcon} aria-hidden><CheckCircleIcon /></span>
-          <span className={styles.postReadTitle}>Done with this?</span>
-          <div className={styles.postReadBtns}>
-            {/* Was "Library", the name of where it goes; "Keep" is what you're
-                actually deciding, and it pairs with Remove beside it. */}
-            <button className={styles.postReadArchiveBtn} onClick={() => onPostReadAction?.('library')}>
-              Keep
-            </button>
-            <button className={styles.postReadRemoveBtn} onClick={() => onPostReadAction?.('delete')}>
-              Remove
-            </button>
-          </div>
-          <button
-            className={styles.postReadCloseBtn}
-            aria-label="Dismiss"
-            title="Dismiss"
-            onClick={onPostReadDismiss}
-          >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M1 1l10 10M11 1L1 11"/>
-            </svg>
-          </button>
-          {/* Drains left-to-right; hovering the overlay pauses it (see CSS), and
-              the animation ending - not a JS timer - is what dismisses it, so the
-              bar can never disagree with the countdown it's drawing. */}
-          <div className={styles.postReadCountdown} onAnimationEnd={onPostReadDismiss} />
-        </div>
-      )}
     </div>
   );
 }
@@ -588,83 +570,24 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     onRestore(ghost.item).then(() => dropGhost(id), () => {});
   }
 
-  // ── Post-read overlay: when you come back from an article you opened,
-  // that card offers big Library/Remove actions, then drains away ──
-  const [postRead, setPostRead] = useState<string | null>(null);
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
+  // ── Visited ──
+  // Which of these you've actually opened. This replaced a prompt that appeared
+  // over the card when you came back from an article, asking whether you were
+  // done with it: it arrived at the worst moment, covered the head of the card
+  // with two buttons and a countdown, and to deliver it the list had to force
+  // itself open on your return. What it was reaching for - "you've been to this
+  // one" - is better said quietly and permanently, which is what a browser has
+  // always done with a followed link.
+  //
+  // Read once on mount rather than on every render: the store is synchronous
+  // localStorage, and the set only changes when this component is the thing
+  // that changed it. See utils/visitedArticles.
+  const [visited, setVisited] = useState<Set<string>>(loadVisited);
 
   function markOpened(id: string) {
-    try { sessionStorage.setItem('rl-post-read', JSON.stringify({ id, ts: Date.now() })); } catch {}
-  }
-
-  const forget = useCallback(() => {
-    try { sessionStorage.removeItem('rl-post-read'); } catch {}
-  }, []);
-
-  const checkPostRead = useCallback(() => {
-    if (document.visibilityState === 'hidden') return;
-    let raw: string | null = null;
-    try { raw = sessionStorage.getItem('rl-post-read'); } catch {}
-    if (!raw) return;
-
-    let id: string, ts: number;
-    try { ({ id, ts } = JSON.parse(raw) as { id: string; ts: number }); }
-    catch { forget(); return; }
-
-    // Too long ago to be "you just got back from this".
-    if (Date.now() - ts >= 60 * 60 * 1000) { forget(); return; }
-
-    // The note is deliberately left in place when the article isn't in the list
-    // yet. On a same-tab return this runs before the first fetch lands, and
-    // consuming it here is what used to swallow the prompt on exactly the
-    // journey it was written for; the effect below re-checks when the items
-    // arrive. An article that never turns up (deleted elsewhere) ages out on
-    // the hour above.
-    if (!itemsRef.current.some(i => i.id === id && !i.inLibrary)) return;
-
-    forget();
-    setPostRead(id);
-    // The prompt lives on the card, and the cards live in the list now, so a
-    // shut list would swallow it. Opening to the pile is also the right answer
-    // to what just happened: you finished something, and the next question is
-    // what to do with it.
-    setOpen(true);
-    setShelfKey(PILE);
-  }, [forget]);
-
-  useEffect(() => {
-    checkPostRead(); // same-tab navigation returns to a fresh mount
-    document.addEventListener('visibilitychange', checkPostRead);
-    window.addEventListener('focus', checkPostRead);
-    window.addEventListener('pageshow', checkPostRead);
-    window.addEventListener('article-reader-closed', checkPostRead);
-    return () => {
-      document.removeEventListener('visibilitychange', checkPostRead);
-      window.removeEventListener('focus', checkPostRead);
-      window.removeEventListener('pageshow', checkPostRead);
-      window.removeEventListener('article-reader-closed', checkPostRead);
-    };
-  }, [checkPostRead]);
-
-  // See the note above: the reading list is fetched, so the mount-time check
-  // almost always runs against an empty list.
-  useEffect(() => { checkPostRead(); }, [items, checkPostRead]);
-
-  // Dismissal is driven by the countdown bar in the overlay itself - it runs
-  // down while the overlay is ignored and pauses under the pointer, so leaving
-  // the cursor on the prompt keeps it around for as long as you're reading it.
-  // It goes the moment it's dismissed; no exit animation to sit through.
-  const dismissPostRead = useCallback(() => setPostRead(null), []);
-
-  function postReadAction(action: 'library' | 'delete') {
-    const id = postRead;
-    if (!id) return;
-    setPostRead(null);
-    // Opens the shelf picker rather than filing outright, so this route to the
-    // Library confirms itself the same way the card's own button does.
-    if (action === 'library') setFilingId(id);
-    else requestDelete(id);
+    const next = markVisited(id);
+    // Null means it was already in the set, so there is nothing to redraw.
+    if (next) setVisited(next);
   }
 
   const [expanded, setExpanded] = useState(false);
@@ -697,6 +620,35 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     }
     return m;
   }, [items]);
+
+  // The rail, as one flat list: the pile, then the Library's shelves. Flat
+  // because the rail has to decide how many of these fit on a line, and that is
+  // a question about a sequence rather than about two nested groups.
+  const railShelves = useMemo<Shelf[]>(() => {
+    const list: Shelf[] = [{
+      key: PILE,
+      label: 'Reading list',
+      count: shelfCounts.get(PILE) ?? 0,
+      color: 'var(--accent)',
+    }];
+    if (filedCount === 0 && readingFolders.length === 0) return list;
+    list.push({
+      key: libKey(null),
+      label: 'Unsorted',
+      count: shelfCounts.get(libKey(null)) ?? 0,
+      color: 'var(--muted)',
+      hollow: true,
+    });
+    for (const f of readingFolders) {
+      list.push({
+        key: libKey(f.id),
+        label: f.name,
+        count: shelfCounts.get(libKey(f.id)) ?? 0,
+        color: f.color,
+      });
+    }
+    return list;
+  }, [shelfCounts, filedCount, readingFolders]);
 
   // A folder can be deleted from the Library page while its shelf is the one on
   // screen, which would leave the rail with nothing selected and the grid empty
@@ -938,49 +890,15 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
       {/* ── The shelves ──
           The pile first, then everything filed. This is the half of the ask a
           collapsible section could never carry: what you kept and where you put
-          it, in one place, rather than a list here and folders on the profile. */}
-      <div className={styles.shelfRail} role="tablist" aria-label="Shelves">
-        <ShelfChip
-          label="Reading list"
-          count={shelfCounts.get(PILE) ?? 0}
-          color="var(--accent)"
-          active={shelfKey === PILE}
-          onClick={() => setShelfKey(PILE)}
-        />
-        {(filedCount > 0 || readingFolders.length > 0) && (
-          <>
-            <span className={styles.railDivider} aria-hidden />
-            <ShelfChip
-              label="Unsorted"
-              count={shelfCounts.get(libKey(null)) ?? 0}
-              color="var(--muted)"
-              hollow
-              active={shelfKey === libKey(null)}
-              onClick={() => setShelfKey(libKey(null))}
-            />
-            {readingFolders.map(f => (
-              <ShelfChip
-                key={f.id}
-                label={f.name}
-                count={shelfCounts.get(libKey(f.id)) ?? 0}
-                color={f.color}
-                active={shelfKey === libKey(f.id)}
-                onClick={() => setShelfKey(libKey(f.id))}
-              />
-            ))}
-          </>
-        )}
-        {/* Browsing shelves happens here; making, renaming and colouring them
-            stays on the Library page, which is already built for it. */}
-        {onOpenLibrary && (
-          <button
-            className={styles.manageLink}
-            onClick={() => { close(); onOpenLibrary(); }}
-          >
-            Manage folders <span aria-hidden>→</span>
-          </button>
-        )}
-      </div>
+          it, in one place, rather than a list here and folders on the profile.
+          Browsing them happens here; making, renaming and colouring them stays
+          on the Library page, which is already built for it. */}
+      <ShelfRail
+        shelves={railShelves}
+        active={shelfKey}
+        onSelect={setShelfKey}
+        onManage={onOpenLibrary && (() => { close(); onOpenLibrary(); })}
+      />
 
       {/* One control strip: what you're narrowing to on the left, how it's drawn
           and how to add to it on the right. The filters used to sit inside the
@@ -995,6 +913,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         <div className={styles.toolbarFilters}>
           {(allTags.length > 0 || allSources.length > 1) && (
             <FeedFilterBar
+          className={styles.toolbarFilterBar}
           groups={[
             {
               id: 'topic',
@@ -1047,8 +966,16 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         {onLayoutChange && (
           <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
         )}
+        {/* "Add", not "+ Save article": every other Save in here files an
+            article you already have onto a shelf, and this one is the only
+            control on the surface that brings a new article in. Shaped like the
+            chips and the layout switch it shares the row with, because it is
+            another control in that row and was reading as a stray link. */}
         {!expanded ? (
-          <button className={styles.addBtn} onClick={() => setExpanded(true)}>+ Save article</button>
+          <button className={styles.addBtn} onClick={() => setExpanded(true)} title="Add an article by URL">
+            <PlusIcon />
+            Add
+          </button>
         ) : (
           <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
         )}
@@ -1084,8 +1011,11 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             inputValue={tagInput}
             onInputChange={setTagInput}
           />
+          {/* The button that opens this form says Add, so the one that commits
+              it does too - and a Save down here would be the third meaning the
+              word carries on this screen. */}
           <button className={styles.saveBtn} onClick={handleSave} disabled={!url.trim() || saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Adding…' : 'Add'}
           </button>
         </div>
       )}
@@ -1108,9 +1038,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             filing={filingId === item.id}
             onCancelFiling={() => setFilingId(null)}
             onConfirmFiling={confirmFiling}
-            isPostRead={postRead === item.id}
-            onPostReadAction={postReadAction}
-            onPostReadDismiss={dismissPostRead}
+            visited={visited.has(item.id)}
             onOpened={markOpened}
             onDelete={requestDelete}
             onUndo={undoGhost}
@@ -1177,34 +1105,248 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   );
 }
 
-// One shelf in the rail. A dot in the folder's own colour, its name, and how
-// much is on it - the same three things the Library page's rail shows, because
-// they are the same shelves and recognising them by colour only works if the
-// colour follows them here.
-function ShelfChip({ label, count, color, hollow, active, onClick }: {
+// A dot in the folder's own colour, its name, and how much is on it - the same
+// three things the Library page's rail shows, because they are the same shelves
+// and recognising them by colour only works if the colour follows them here.
+interface Shelf {
+  key: ShelfKey;
   label: string;
   count: number;
   color: string;
   /** Unsorted has no colour of its own - an outline says "no folder". */
   hollow?: boolean;
+}
+
+const ShelfChevron = () => (
+  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M2.5 4.5L6 8l3.5-3.5" />
+  </svg>
+);
+
+// Shared by the chips, the overflow trigger and the hidden copy the rail
+// measures itself against - three things that have to come out exactly the same
+// width for the measuring to mean anything.
+function ShelfBody({ shelf }: { shelf: Shelf }) {
+  return (
+    <>
+      <span
+        className={`${styles.shelfDot} ${shelf.hollow ? styles.shelfDotHollow : ''}`}
+        style={shelf.hollow ? undefined : { background: shelf.color }}
+      />
+      <span className={styles.shelfName}>{shelf.label}</span>
+      <span className={styles.shelfCount}>{shelf.count}</span>
+    </>
+  );
+}
+
+// One shelf in the rail.
+function ShelfChip({ shelf, active, onClick }: {
+  shelf: Shelf;
   active: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
       className={`${styles.shelfChip} ${active ? styles.shelfChipActive : ''}`}
-      style={{ '--shelf': color } as React.CSSProperties}
+      style={{ '--shelf': shelf.color } as React.CSSProperties}
+      aria-pressed={active}
       onClick={onClick}
     >
-      <span
-        className={`${styles.shelfDot} ${hollow ? styles.shelfDotHollow : ''}`}
-        style={hollow ? undefined : { background: color }}
-      />
-      <span className={styles.shelfName}>{label}</span>
-      <span className={styles.shelfCount}>{count}</span>
+      <ShelfBody shelf={shelf} />
     </button>
+  );
+}
+
+/**
+ * The row of shelves, and what to do when there are more of them than there is
+ * room for.
+ *
+ * It used to scroll sideways. That is fine under a thumb and close to invisible
+ * under a mouse: no scrollbar, no arrows, no shadow at the edge - nothing at all
+ * saying the row carried on past the last chip you could see, so a folder off
+ * the end of it was a folder you didn't have. Nothing in here scrolls now. The
+ * rail measures what it can show and folds the rest into a "N more" menu at the
+ * end, which is the shelf you're on when the shelf you're on is one of them.
+ */
+function ShelfRail({ shelves, active, onSelect, onManage }: {
+  shelves: Shelf[];
+  active: ShelfKey;
+  onSelect: (key: ShelfKey) => void;
+  /** Absent leaves the Library link off the rail entirely. */
+  onManage?: () => void;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const manageRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // How many chips are on the rail. Everything past this is in the menu.
+  const [fit, setFit] = useState(shelves.length);
+  const [open, setOpen] = useState(false);
+
+  const activeShelf = shelves.find(s => s.key === active) ?? shelves[0];
+
+  // Widths come off a hidden copy of the whole rail rather than the visible one:
+  // a chip that has been folded into the menu is no longer in the DOM to be
+  // measured, so measuring what's on screen would mean each pass depending on
+  // the last one's answer, which is how these things end up oscillating.
+  const sig = shelves.map(s => `${s.key} ${s.label} ${s.count}`).join('');
+
+  const measure = useCallback(() => {
+    const rail = railRef.current;
+    const mirror = mirrorRef.current;
+    if (!rail || !mirror) return;
+    const chips = Array.from(mirror.querySelectorAll<HTMLElement>('[data-chip]'));
+    if (chips.length === 0) return;
+
+    const cs = getComputedStyle(rail);
+    const gap = parseFloat(cs.columnGap) || 0;
+    let avail = rail.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    // The Library link is pinned to the far end, so it is width the chips never
+    // had in the first place.
+    if (manageRef.current) avail -= manageRef.current.offsetWidth + gap;
+
+    // Right edge of every chip in a rail that is showing all of them, dividers
+    // and gaps included - so "does this one fit" is one comparison per chip.
+    const edges = chips.map(c => c.offsetLeft + c.offsetWidth);
+    if (edges[edges.length - 1] <= avail) { setFit(chips.length); return; }
+
+    // Both labels the trigger can carry are in the mirror and the wider one is
+    // what gets reserved. Which one it actually shows depends on how many chips
+    // fit, and that must not depend back on how much room it was given.
+    const triggers = Array.from(mirror.querySelectorAll<HTMLElement>('[data-more]'));
+    const budget = avail - Math.max(0, ...triggers.map(t => t.offsetWidth)) - gap;
+
+    let n = 0;
+    while (n < edges.length && edges[n] <= budget) n++;
+    // The pile stays on the rail whatever happens: it is the shelf the list
+    // opens onto, and a rail with nothing on it but a menu says nothing at all.
+    setFit(Math.max(1, n));
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useLayoutEffect(() => {
+    measure();
+    const rail = railRef.current;
+    const mirror = mirrorRef.current;
+    if (typeof ResizeObserver === 'undefined' || !rail || !mirror) return;
+    // The rail for the room it has; the mirror for what wants to go in it - a
+    // renamed folder or a font arriving late changes the second, not the first.
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(rail);
+    ro.observe(mirror);
+    return () => ro.disconnect();
+  }, [measure]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    // Captured, and the event stops here: the reading list closes on Escape from
+    // a listener of its own, and dismissing a menu should not also shut the room
+    // it was opened in.
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  const shown = shelves.slice(0, fit);
+  const hidden = shelves.slice(fit);
+  // The menu is where the current shelf went, so the trigger wears its name and
+  // its colour rather than a count - the rail still has to say where you are.
+  const activeHidden = hidden.find(s => s.key === active) ?? null;
+
+  // The pile and the Library's shelves are different kinds of thing, so there is
+  // a hairline between them wherever the second one starts.
+  const divider = <span className={styles.railDivider} aria-hidden />;
+
+  return (
+    <div className={styles.shelfRail} ref={railRef} role="group" aria-label="Shelves">
+      {shown.map((s, i) => (
+        <Fragment key={s.key}>
+          {i === 1 && divider}
+          <ShelfChip shelf={s} active={s.key === active} onClick={() => onSelect(s.key)} />
+        </Fragment>
+      ))}
+
+      {hidden.length > 0 && (
+        <div className={styles.moreWrap} ref={menuRef}>
+          <button
+            type="button"
+            className={`${styles.shelfChip} ${styles.moreChip} ${activeHidden ? styles.shelfChipActive : ''}`}
+            style={{ '--shelf': activeHidden?.color ?? 'var(--muted)' } as React.CSSProperties}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title={`${hidden.length} more shelf${hidden.length === 1 ? '' : 'ves'}`}
+            onClick={() => setOpen(v => !v)}
+          >
+            {activeHidden
+              ? <ShelfBody shelf={activeHidden} />
+              : <span className={styles.shelfName}>{hidden.length} more</span>}
+            <ShelfChevron />
+          </button>
+
+          {open && (
+            <div className={styles.moreMenu} role="menu">
+              {hidden.map(s => (
+                <button
+                  key={s.key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={s.key === active}
+                  className={`${styles.moreRow} ${s.key === active ? styles.moreRowActive : ''}`}
+                  style={{ '--shelf': s.color } as React.CSSProperties}
+                  onClick={() => { onSelect(s.key); setOpen(false); }}
+                >
+                  <span
+                    className={`${styles.shelfDot} ${s.hollow ? styles.shelfDotHollow : ''}`}
+                    style={s.hollow ? undefined : { background: s.color }}
+                  />
+                  <span className={styles.moreName}>{s.label}</span>
+                  <span className={styles.shelfCount}>{s.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {onManage && (
+        <button ref={manageRef} className={styles.manageLink} onClick={onManage}>
+          Manage folders <span aria-hidden>→</span>
+        </button>
+      )}
+
+      {/* The measuring copy: every chip at its natural width, plus both labels
+          the trigger can carry. Out of the layout, out of the tab order and out
+          of the accessibility tree - it exists to be read with offsetWidth. */}
+      <div className={styles.railMirror} ref={mirrorRef} aria-hidden>
+        {shelves.map((s, i) => (
+          <Fragment key={s.key}>
+            {i === 1 && divider}
+            <span data-chip className={styles.shelfChip}><ShelfBody shelf={s} /></span>
+          </Fragment>
+        ))}
+        <span data-more className={`${styles.shelfChip} ${styles.moreChip}`}>
+          <span className={styles.shelfName}>{shelves.length} more</span>
+          <ShelfChevron />
+        </span>
+        {activeShelf && (
+          <span data-more className={`${styles.shelfChip} ${styles.moreChip}`}>
+            <ShelfBody shelf={activeShelf} />
+            <ShelfChevron />
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

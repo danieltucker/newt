@@ -667,6 +667,7 @@ export default function Console({ folders, theme, isAdmin, onSelectFolder, onCre
             <span className={styles.dot}>·</span>
             <kbd>↑↓</kbd>history
           </span>
+          <button className={styles.closeBtn} onClick={onClose} aria-label="Close console">✕</button>
         </div>
 
         <div className={styles.outputArea} ref={outputRef} onClick={() => inputRef.current?.focus()}>

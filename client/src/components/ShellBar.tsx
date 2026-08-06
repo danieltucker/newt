@@ -54,11 +54,12 @@ interface Props {
 // `role` is opt-out because only one of the two carries a list of menuitems -
 // the other holds the bookmarks rail, and calling that a menu would promise
 // arrow-key navigation between rows that aren't menuitems.
-function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
+function Menu({ open, onClose, align = 'left', role = 'menu', className = '', children }: {
   open: boolean;
   onClose: () => void;
   align?: 'left' | 'right';
   role?: string;
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -86,7 +87,7 @@ function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
   return (
     <div
       ref={ref}
-      className={`${styles.menu} ${align === 'right' ? styles.menuRight : ''}`}
+      className={`${styles.menu} ${align === 'right' ? styles.menuRight : ''} ${className}`}
       role={role}
     >
       {children}
@@ -220,14 +221,43 @@ export default function ShellBar({
               {/* Not a menu of menuitems - see Menu. The rail scrolls within
                   itself so a long folder list can't push it past the bottom of
                   the screen. */}
-              <Menu open={navOpen} onClose={() => setNavOpen(false)} role="group">
-                <div className={styles.menuRailLabel}>Bookmarks</div>
+              <Menu open={navOpen} onClose={() => setNavOpen(false)} role="group" className={styles.menuSheet}>
+                <div className={styles.menuRailHead}>
+                  <div className={styles.menuRailLabel}>Bookmarks</div>
+                  {/* Only drawn once this is a sheet - a dropdown closes by
+                      clicking off it, a sheet has no off. */}
+                  <button
+                    className={styles.sheetClose}
+                    onClick={() => setNavOpen(false)}
+                    aria-label="Close bookmarks"
+                  >
+                    ✕
+                  </button>
+                </div>
                 <div className={styles.menuRail}>
                   {bookmarksRail?.(() => setNavOpen(false))}
                 </div>
               </Menu>
             </div>
           )}
+
+          {/* Search's stand-in on a narrow bar. Sits on the left rather than in
+              the action row because that is the edge the expanded box grows
+              from: tapping a magnifier on the right and watching the row fill
+              leftward reads as the box coming from somewhere else. Hidden above
+              SEARCH_NARROW, where the permanent box is in the middle. */}
+          <button
+            className={`${styles.iconBtn} ${styles.searchBtn}`}
+            onClick={() => setSearchOpen(true)}
+            aria-expanded={searchExpanded}
+            title="Search"
+            aria-label="Search"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+          </button>
         </div>
 
         {/* ── Middle: search, the widest thing that will fit ──
@@ -250,21 +280,6 @@ export default function ShellBar({
 
         {/* ── Right: what you can do ── */}
         <div className={styles.right}>
-          {/* Search's stand-in on a narrow bar. Leads the action row because
-              that is where it came from - the box used to sit to its left. */}
-          <button
-            className={`${styles.iconBtn} ${styles.searchBtn}`}
-            onClick={() => setSearchOpen(true)}
-            aria-expanded={searchExpanded}
-            title="Search"
-            aria-label="Search"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-          </button>
-
           <button className={styles.createBtn} onClick={() => navigate('/blog/new')} title="Write a post">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" />

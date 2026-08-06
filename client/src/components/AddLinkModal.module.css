@@ -1,4 +1,4 @@
-.backdrop {
+﻿.backdrop {
   position: fixed;
   inset: 0;
   background: var(--overlay);
@@ -173,10 +173,10 @@
 
 .cancelBtn {
   padding: 0 18px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -194,10 +194,10 @@
 
 .addBtn {
   padding: 0 18px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
   border: none;
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;

@@ -1,34 +1,85 @@
+/* The segmented control sits in the same rows as the filter chips - the feed's
+   header, the reading list's toolbar, a site page's section head - so it takes
+   its height from the same token. It used to be a flat 28px everywhere, which
+   was a little short of the chips beside it with a cursor and a lot short of
+   them with a thumb, since it was the one control in those rows with no touch
+   size at all. */
 .switch {
+  position: relative;
   display: inline-flex;
+  align-items: stretch;
   gap: 2px;
+  min-height: var(--ctl-h);
   padding: 2px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
 }
 
+/* ── The selection ──
+   It used to be a background on whichever segment was active, so picking a
+   layout put the highlight out at one end and took it off the other in the same
+   frame - two events to watch, and nothing joining them. It is one box now, and
+   it travels. Where it goes is measured in JS (see useSlidingThumb); everything
+   about how it looks and how it moves is here.
+
+   Inset by the track's own 2px padding, so it lands exactly on the segment it
+   is standing behind. */
+.thumb {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  border-radius: calc(var(--ctl-r) - 3px);
+  background: var(--surface);
+  box-shadow: 0 1px 3px var(--shadow);
+  transition:
+    transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb { transition: none; }
+}
+
+/* Width is set; height comes from stretching to the track, so the segments
+   grow with the control instead of leaving a dead strip above and below. */
 .btn {
+  /* Above the thumb, which is drawn behind all three segments. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 22px;
+  width: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(var(--ctl-r) - 3px);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: color 0.12s;
+}
+
+/* These buttons are nothing but their glyph - there is no label to carry the
+   meaning - so the icon is sized to the control rather than tucked inside it at
+   13px, which is an accent's size and left the segments looking mostly empty. */
+.btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: none) {
+  .btn { width: 38px; }
 }
 
 .btn:hover {
   color: var(--text);
 }
 
+/* The surface and the shadow moved to .thumb - what's left of being the active
+   segment is the ink, which crossfades while the box slides underneath it. */
 .active {
-  background: var(--surface);
   color: var(--text);
-  box-shadow: 0 1px 3px var(--shadow);
 }
 
 .active:hover {

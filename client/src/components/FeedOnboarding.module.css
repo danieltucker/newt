@@ -183,11 +183,16 @@
   border-top: 1px solid var(--border);
 }
 
+/* The footer's pair: skip at one end, the commit at the other. */
 .skipBtn {
+  display: inline-flex;
+  align-items: center;
   margin-right: auto;
+  min-height: var(--ctl-h-lg);
   background: none;
   border: none;
-  padding: 9px 4px;
+  padding: 0 10px;
+  border-radius: var(--ctl-r);
   font: inherit;
   font-size: 13.5px;
   color: var(--muted);
@@ -199,9 +204,13 @@
 .skipBtn:disabled { opacity: 0.5; cursor: default; }
 
 .followBtn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   background: var(--accent);
   color: #fff;
   font: inherit;
@@ -218,4 +227,23 @@
   .card { padding: 24px 20px 18px; border-radius: 18px; }
   .title { font-size: 21px; }
   .grid { grid-template-columns: 1fr; }
+}
+
+/* ── Narrow: the card is the screen ──
+   This is the first thing a new account sees, and on a phone it was a tall
+   rounded card with 24px of backdrop around it and 32px of padding inside.
+   Skip stays where it is - it's the way out, and it's meant to be easy. */
+@media (max-width: 640px) {
+  .backdrop { padding: 0; }
+
+  .card {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: calc(22px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));
+  }
 }

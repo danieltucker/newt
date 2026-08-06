@@ -212,3 +212,55 @@
 .textInput:disabled {
   opacity: 0.5;
 }
+
+/* Only ever shown below the width in the next rule, where the console has no
+   outside left to click and, on a phone, no keyboard to press Escape on. */
+.closeBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #8b949e;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.closeBtn:hover { background: #21262d; color: #e6edf3; }
+
+/* ── Narrow: the console is the screen ──
+   Same reasoning as the notes console. A 15px inset and a rounded border round
+   a panel with nothing beside it cost width the command line needs and draw a
+   frame that says only "there is a page behind this". The keyboard hints go
+   with them - ` to close is no help without a keyboard, and it was wrapping the
+   title onto two lines to say it - leaving the ✕ as the exit.
+
+   This block has to stay at the foot of the file: .headerHints and .closeBtn
+   set their own `display` at the same specificity further up, and the later
+   rule is the one that wins. */
+@media (max-width: 720px) {
+  .overlay { padding: 0; }
+
+  .shell {
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .console {
+    border: none;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .headerHints { display: none; }
+  .closeBtn { display: flex; }
+}

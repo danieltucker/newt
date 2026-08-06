@@ -83,20 +83,43 @@
 }
 
 /* ── Shelf rail ──
-   The pile, then everything filed. Scrolls sideways rather than wrapping: a
-   rail that grows a second row pushes the cards down the screen every time a
-   folder is added, and on a phone it would take half the viewport. */
+   The pile, then everything filed. One line, always: a rail that grows a second
+   row pushes the cards down the screen every time a folder is added, and on a
+   phone it would take half the viewport.
+
+   It used to hold that line by scrolling sideways, which is workable under a
+   thumb and invisible under a mouse - no scrollbar, no arrows, nothing to say
+   the row continued past the edge. It measures itself now and folds the
+   overflow into a menu (see .moreWrap and ShelfRail), so nothing here scrolls
+   and nothing here is out of reach. --rail-gap is read back in JS to work out
+   what fits, and the hidden measuring copy lays itself out with the same
+   number. */
 .shelfRail {
+  --rail-gap: 7px;
+
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--rail-gap);
   flex-shrink: 0;
   padding: 0 20px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.shelfRail::-webkit-scrollbar { display: none; }
+/* Out of the layout entirely, and sized to its contents rather than to the rail
+   - the whole point is to hold every chip at the width it would have if there
+   were room for it. max-content, or an absolutely positioned box would be
+   clamped to the rail it is measuring against. */
+.railMirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: var(--rail-gap);
+  visibility: hidden;
+  pointer-events: none;
+}
 
 .railDivider {
   flex-shrink: 0;
@@ -113,7 +136,8 @@
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
-  padding: 6px 11px;
+  min-height: var(--ctl-h);
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface2);
@@ -170,16 +194,102 @@
   background: color-mix(in oklab, var(--shelf) 28%, transparent);
 }
 
-/* Sits at the tail of the rail because it is about the shelves, not one of
-   them. Making and renaming folders stays on the Library page. */
-.manageLink {
+/* ── The overflow menu ──
+   Whatever didn't fit on the rail. The trigger is a chip like the ones beside
+   it - it is one more way to pick a shelf, not a piece of chrome about the rail
+   - and it wears the current shelf's name and colour when that shelf is one of
+   the ones inside it. */
+.moreWrap {
+  position: relative;
+  display: inline-flex;
   flex-shrink: 0;
-  margin-left: auto;
-  padding: 6px 10px;
+}
+
+.moreChip {
+  gap: 6px;
+}
+
+/* Never squeezed: the chip is measured with the chevron on it, and a chevron
+   that can shrink makes that measurement a lie. */
+.moreChip svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+/* Left-anchored: the trigger sits at the end of the chips, so opening leftward
+   from its right edge would run the panel off the front of a narrow rail, where
+   there may be nothing to its left but the pile. */
+.moreMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  max-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px var(--shadow);
+}
+
+.moreRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 0 10px;
   border: none;
+  border-radius: 8px;
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.moreRow:hover {
+  background: var(--surface2);
+}
+
+.moreRowActive {
+  font-weight: 600;
+  background: color-mix(in oklab, var(--shelf) 14%, transparent);
+}
+
+.moreName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sits at the tail of the rail because it is about the shelves, not one of
+   them. Making and renaming folders stays on the Library page. Borderless, but
+   the same height as the chips it shares the rail with - a text button that is
+   shorter than its neighbours is still a control you have to aim at. */
+.manageLink {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  min-height: var(--ctl-h);
+  padding: 0 11px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
@@ -205,6 +315,15 @@
   min-width: 0;
 }
 
+/* The filter bar sits *in* this row rather than above it, so it drops the gap
+   it would otherwise leave beneath itself. See the note on .bar in
+   FeedFilterBar: a bottom margin on a centred flex item lifts its contents by
+   half the margin, which is what put the favorites and Filters chips above the
+   layout switch instead of level with it. */
+.toolbarFilterBar {
+  margin-bottom: 0;
+}
+
 /* The only thing in here that scrolls. Everything above it - the title, the
    nudge, the rail, the layout switch - stays put, so changing shelf never means
    scrolling back up to find the rail again. */
@@ -216,35 +335,56 @@
   border-top: 1px solid var(--border);
 }
 
+/* Both of these share the toolbar with the layout switch and the filter chips,
+   so they are built like them: the same height token, the same pill, the same
+   border and surface. This one was borderless accent text reading "+ Save
+   article", which made the one control in the row that adds something look like
+   a link that had wandered in - and put a third meaning on "Save", a word the
+   cards and the reader already use for filing onto a shelf. */
 .addBtn {
-  background: none;
-  border: none;
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
 .addBtn:hover {
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
+/* Takes the Add button's place while the form is open, so it has to be the same
+   box - a row that changes height or shifts sideways when you open a form is
+   the form arguing with the toolbar. */
 .cancelBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: none;
-  border: none;
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 4px 8px;
+  transition: border-color 0.12s, color 0.12s;
 }
 
 .cancelBtn:hover {
   color: var(--text);
+  border-color: var(--muted);
 }
 
 .addForm {
@@ -260,10 +400,11 @@
 
 .formInput {
   width: 100%;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: var(--ctl-r);
+  padding: 8px 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -282,10 +423,10 @@
 .saveBtn {
   align-self: flex-end;
   padding: 0 16px;
-  min-height: 38px;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
-  border: none;
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -314,21 +455,26 @@
   padding-right: 36px;
 }
 
-/* ── Tag filter chips ── */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
+/* ── Favorites ──
+   The one chip this file still dresses. The row of per-tag filter chips that
+   used to sit beside it - and the .tagChip rules that gave each one a star and
+   a label in a single pill - went when the filters folded into FeedFilterBar;
+   the dropdown's starrable rows do that job now.
 
+   The box comes from --ctl-h so it matches the Filters chip and the layout
+   switch it shares the toolbar with, and it wears the favorite colour so the
+   two chips don't read as the same kind of control. */
 .chip {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--surface2);
   color: var(--muted);
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
@@ -339,18 +485,7 @@
   color: var(--accent);
 }
 
-.chipActive {
-  background: color-mix(in oklab, var(--accent) 12%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* ── Favorites ──
-   The filter chip. A different axis from the tag chips beside it - it wears the
-   favorite colour so the two don't read as the same kind of control. */
 .favChip {
-  display: inline-flex;
-  align-items: center;
   gap: 5px;
   color: var(--fav);
   border-color: color-mix(in oklab, var(--fav) 30%, transparent);
@@ -366,75 +501,6 @@
   border-color: var(--fav);
   font-weight: 600;
 }
-
-/* A tag chip carries two actions in one pill: the star favorites the tag, the
-   label filters by it. The pill keeps .chip's look; these strip the buttons back
-   to text so it still reads as a single control. */
-.tagChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;   /* the inner buttons carry the padding, so both are full-height */
-}
-
-.tagChipStar,
-.tagChipLabel {
-  border: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  padding: 3px 0;
-}
-
-/* Same behaviour as the tags on a feed card: an unstarred chip is only as wide
-   as its label, and the star grows in when you point at it.
-   These widths are border-box (see tokens.css), so they have to cover the
-   padding as well as the 10px star - at width:10px the padding ate the content
-   box and all that appeared on hover was a 2px sliver of the star's left edge. */
-.tagChipStar {
-  display: inline-flex;
-  align-items: center;
-  width: 0;
-  padding-left: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: width 0.13s ease, padding-left 0.13s ease, opacity 0.13s ease;
-}
-
-.tagChip:hover .tagChipStar,
-.tagChip:focus-within .tagChipStar {
-  width: 18px;  /* 8px padding + 10px star */
-  padding-left: 8px;
-  opacity: 0.7;
-}
-
-.tagChipStar[aria-pressed='true'],
-.tagChip:hover .tagChipStar[aria-pressed='true'] {
-  width: 18px;
-  padding-left: 8px;
-  opacity: 1;
-  color: var(--fav);
-}
-
-.tagChipLabel { padding-right: 10px; padding-left: 10px; }
-
-/* The label carries the pill's left padding until the star claims that space. */
-.tagChip:hover .tagChipLabel,
-.tagChip:focus-within .tagChipLabel,
-.tagChipFav .tagChipLabel { padding-left: 4px; }
-
-@media (prefers-reduced-motion: reduce) {
-  .tagChipStar { transition: none; }
-}
-
-/* Favorited tags keep their colour whether or not the filter is on them. */
-.tagChipFav {
-  border-color: color-mix(in oklab, var(--fav) 40%, transparent);
-  color: var(--fav);
-}
-
-.tagChipFav:hover { border-color: var(--fav); color: var(--fav); }
 
 /* ── "You have N minutes saved" nudge ──
    Lives in the modal header now (.modalNudge). It was a banner of its own above
@@ -562,9 +628,14 @@
   background: var(--surface2);
 }
 
+/* Nested inside .ghostPill, so both of these take the small tier - at the
+   standalone height the pill around them would grow by 8px top and bottom. */
 .undoBtn {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  padding: 4px 12px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 13px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -585,8 +656,11 @@
 /* The commit in the shelf picker - filled, because up to this point nothing has
    been saved and the button is the whole difference. */
 .confirmBtn {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  padding: 4px 14px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 15px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--accent);
@@ -602,10 +676,6 @@
   filter: saturate(1.15) brightness(1.06);
 }
 
-@keyframes countdownShrink {
-  from { transform: scaleX(1); }
-  to   { transform: scaleX(0); }
-}
 
 /* ── Card footer - source meta anchored at the bottom ── */
 .cardFooter {
@@ -655,14 +725,15 @@
   opacity: 1;
 }
 
-/* Square, and big enough to hit: the old 30x26 was under the 32px a cursor
-   wants and nowhere near what a thumb needs. The radius is the card's own 14px
-   stepped down for a control this size, so the corners read as the same family
-   rather than as a stray rounded rectangle. */
+/* Square, and big enough to hit: the old 30x26 was under what a cursor wants
+   and nowhere near what a thumb needs. Sized off --ctl-h in both directions so
+   it matches the save and comment pills at the foot of the same card. An icon
+   square, so --ctl-r rather than a pill - the same corner the shell bar's
+   buttons and every close button carry. */
 .actionBtn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--ctl-r);
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(6px);
@@ -696,158 +767,27 @@
   padding-top: 46px;
 }
 
-/* ── Post-read overlay - offered when you return from an article ── */
-.postReadCard {
-  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
-  box-shadow:
-    0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent),
-    0 12px 32px var(--shadow);
-  z-index: 1;
-}
-
-/* A bar across the top of the card rather than a cover over all of it. Anything
-   the overlay sits on top of is unreachable while it's up, so it takes the one
-   band the card can spare - the head of the cover art, or the padding .noHero
-   already reserves - and leaves the title, tags and comment bar live. */
-.postReadOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 3;
-  border-radius: 13px 13px 0 0;
-  overflow: hidden;
-  display: flex;
+/* The literal label, at the end of the meta line. The fade alone is a
+   comparison - it only says "visited" if there's an unvisited card next to it -
+   and it's invisible to anyone who can't pick up a 40% opacity shift. This says
+   it outright, on every card, on its own. */
+/* Trails the meta line inline rather than being pushed to the far end: .meta
+   sizes to its content, so an auto margin here would have had nothing to push
+   against, and reading "Ars Technica · 6 min · Visited" as one line is the
+   better result anyway. */
+.visitedTag {
+  display: inline-flex;
   align-items: center;
-  /* Wraps rather than squeezes. A card in the narrow grid is ~250px, and the
-     icon, two pills and a dismiss leave the question about 50px - enough to
-     render "Done with this?" as "Don…", which asks nothing at all. On a wide
-     card it all still sits on one line. */
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  padding: 7px 8px 7px 12px;
-  background: color-mix(in oklab, var(--surface) 92%, transparent);
-  border-bottom: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 40%, transparent);
-  animation: postReadIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-/* Carries the accent so the prompt is spotted without the whole bar having to
-   be tinted - the tint is what made this read as a notification bolted on from
-   somewhere else rather than as part of the card. */
-.postReadIcon {
+  gap: 3px;
   flex-shrink: 0;
-  display: flex;
-  color: var(--accent);
-}
-
-@keyframes postReadIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.postReadTitle {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-/* Pushed to the far end of whichever line it lands on - beside the question on
-   a wide card, under it on a narrow one. */
-.postReadBtns {
-  display: flex;
-  flex-shrink: 0;
-  margin-left: auto;
-  gap: 6px;
-}
-
-/* The same two pills the shelf picker uses - one filled commit, one bordered
-   way out. They were a pair of coloured gradients, gold and red, which are
-   nowhere else in the app: the prompt looked like a cookie banner sitting on
-   the card rather than part of it. */
-.postReadBtns button {
-  min-height: 26px;
-  padding: 4px 13px;
-  border: 1px solid transparent;
+  padding: 2px 7px 2px 6px;
   border-radius: 999px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 11.5px;
+  background: color-mix(in oklab, var(--muted) 14%, transparent);
+  font-size: 11px;
   font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, filter 0.12s;
-}
-
-/* Dismiss - the bar covers the card's own controls in this band, so it carries
-   its own way out */
-.postReadCloseBtn {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: none;
+  line-height: 1.4;
   color: var(--muted);
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
-}
-
-.postReadCloseBtn:hover {
-  opacity: 1;
-  background: color-mix(in oklab, var(--text) 10%, transparent);
-  color: var(--text);
-}
-
-/* Reverse loading bar - empties over the life of the prompt and dismisses it.
-   Pausing on hover is what makes "if you don't interact with it" literal. */
-.postReadCountdown {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  width: 100%;
-  background: color-mix(in oklab, var(--accent) 65%, transparent);
-  transform-origin: left center;
-  animation: countdownShrink 12s linear forwards;
-}
-
-.postReadOverlay:hover .postReadCountdown,
-.postReadOverlay:focus-within .postReadCountdown {
-  animation-play-state: paused;
-}
-
-/* Keeping it is the thing the prompt is for, so it's the filled one - same
-   accent fill as the picker's Save. */
-.postReadArchiveBtn {
-  background: var(--accent);
-  color: #fff;
-}
-
-.postReadArchiveBtn:hover {
-  filter: saturate(1.15) brightness(1.06);
-}
-
-/* Bordered rather than filled: it is the destructive half, and a red button
-   sitting on every card you come back to is a lot of red. It goes red on
-   approach, which is the same bargain the card's own delete makes. */
-.postReadRemoveBtn {
-  background: var(--surface2);
-  border-color: var(--border);
-  color: var(--muted);
-}
-
-.postReadRemoveBtn:hover {
-  background: color-mix(in oklab, #e5484d 12%, var(--surface2));
-  border-color: color-mix(in oklab, #e5484d 55%, transparent);
-  color: #e5484d;
+  white-space: nowrap;
 }
 
 .fetchingDot {
@@ -995,23 +935,6 @@
   opacity: 1;
 }
 
-/* A row has no band to spare above the title, so the post-read prompt joins the
-   flow at the right end instead of overlaying anything. `relative` keeps the
-   countdown bar - which is what actually dismisses the prompt - inside it. */
-.gridList .postReadOverlay {
-  position: relative;
-  flex-shrink: 0;
-  align-self: stretch;
-  margin-right: 12px;
-  border-radius: 10px;
-  padding: 5px 5px 5px 10px;
-  box-shadow: none;
-}
-
-.gridList .postReadTitle {
-  flex: none;
-}
-
 /* The wrap is the card surface - content link on top, footer row below,
    so actions get real layout space instead of overlaying content */
 .cardWrap {
@@ -1109,6 +1032,73 @@
     inset 0 0 0 1px color-mix(in oklab, var(--fav) 22%, transparent),
     0 12px 28px var(--shadow);
 }
+
+/* ── Visited ──
+   Must stay after .cardWrap and .favCard above: it restyles the same background
+   and border at the same specificity, so sitting before them meant losing every
+   tie and the fade never appearing at all.
+
+   An article you've opened. This is what replaced the "Done with this?" prompt
+   that used to slide over the head of the card when you came back from reading
+   something: a question you had to answer, on the card you were least able to
+   read at the time, over the controls you'd most likely want next.
+
+   What's left is the oldest convention on the web - a followed link goes quiet.
+   The card stays completely usable; it just stops competing with the ones you
+   haven't got to. That is the whole job, because the only thing a reading list
+   has to tell you at a glance is where you got up to.
+
+   Deliberately not a strikethrough, a grey-out or a collapse: the article is
+   still saved, still yours, and quite possibly still worth re-reading. Faded is
+   a hint. Anything stronger is a claim about being finished that opening a link
+   doesn't actually support. */
+.visitedCard {
+  border-color: color-mix(in oklab, var(--border) 70%, transparent);
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+}
+
+/* The headline is what you scan by, so it carries most of the difference. The
+   meta line is already muted and the notes are already dim - taking those down
+   any further just makes them unreadable rather than quiet. */
+.visitedCard .title {
+  color: var(--muted);
+  font-weight: 450;
+}
+
+/* Cover art is the loudest thing on a card by some distance; a visited card
+   whose photo is still at full strength doesn't read as visited at all. */
+.visitedCard .hero {
+  opacity: 0.55;
+  filter: saturate(0.75);
+  transition: opacity 0.18s, filter 0.18s;
+}
+
+/* Pointing at it brings it all the way back. Visited is a resting state, not a
+   permanent dimming - the moment you're actually considering the card again,
+   it should look like every other card. */
+.visitedCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  background: var(--surface);
+}
+
+.visitedCard:hover .title { color: var(--text); }
+
+.visitedCard:hover .hero {
+  opacity: 1;
+  filter: none;
+}
+
+/* A favorite that's been read keeps its gold - the fade must not eat a state
+   that means something else. It is still dimmer than an unread favorite,
+   because .visitedCard's own background sits under this one. */
+.visitedCard.favCard {
+  border-color: color-mix(in oklab, var(--fav) 38%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visitedCard .hero { transition: none; }
+}
+
 
 .notes {
   font-size: 12px;
@@ -1220,8 +1210,6 @@
 
   .shelfRail {
     padding: 0 16px 10px;
-    /* Room for a thumb to fling the rail without catching a chip's edge. */
-    scroll-padding-inline: 16px;
   }
 
   .shelfChip {
@@ -1229,9 +1217,12 @@
     font-size: 13px;
   }
 
-  /* On a rail that scrolls, an auto margin has nothing to push against - it
-     would sit immediately after the last folder rather than at the far end. */
-  .manageLink { margin-left: 0; }
+  /* There is rarely room for more than the pile down here, so the menu holds
+     most of the shelves and wants the width to say their names. */
+  .moreMenu {
+    min-width: 220px;
+    max-width: calc(100vw - 48px);
+  }
 
   .modalToolbar {
     justify-content: space-between;
@@ -1264,61 +1255,19 @@
     gap: 6px;
   }
 
-  .actionBtn {
-    width: 38px;
-    height: 38px;
-  }
-
-  /* Keeps the taller buttons off the title on an art-less card */
+  /* Keeps the taller buttons off the title on an art-less card. Their own size
+     isn't restated here - they measure --ctl-h, which has already grown. */
   .grid .cardWrap.noHero .card,
   .gridMagazine .cardWrap.noHero .card {
     padding-top: 52px;
   }
 
-  /* The star can't wait for a hover that never comes, so the chip carries it
-     openly - and both halves get real padding, since a 10px star between two
-     3px gaps is not something you can hit on purpose. */
-  .chip {
-    font-size: 12px;
-    padding: 6px 12px;
-  }
-
-  .tagChip {
-    padding: 0;
-  }
-
-  .tagChipStar,
-  .tagChip:hover .tagChipStar {
-    width: 22px;  /* 10px + 2px padding + 10px star */
-    padding: 8px 2px 8px 10px;
-    opacity: 0.5;
-  }
-
-  .tagChipStar[aria-pressed='true'],
-  .tagChip:hover .tagChipStar[aria-pressed='true'] {
-    width: 22px;
-    padding: 8px 2px 8px 10px;
-    opacity: 1;
-  }
-
-  .tagChipLabel,
-  .tagChip:hover .tagChipLabel,
-  .tagChipFav .tagChipLabel {
-    padding: 8px 12px 8px 6px;
-  }
-
-  .undoBtn,
-  .confirmBtn {
-    min-height: 34px;
-  }
-
-  .postReadBtns button {
-    min-height: 34px;
-    padding: 4px 14px;
-  }
-
-  .postReadCloseBtn {
-    width: 32px;
-    height: 32px;
+  /* Only the type, to match FeedFilterBar's chips - the height came from
+     --ctl-h and has already grown. */
+  .chip,
+  .addBtn,
+  .cancelBtn {
+    font-size: 13.5px;
+    padding: 0 14px;
   }
 }

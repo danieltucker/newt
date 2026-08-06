@@ -45,6 +45,13 @@ interface Props {
   favorites?: React.ReactNode;
   /** Layout switch and any other right-aligned chrome. */
   actions?: React.ReactNode;
+  /**
+   * Spacing, and nothing else. The bar carries no margin of its own because it
+   * is sometimes a row (the feed, where it needs a gap to the grid below) and
+   * sometimes one item inside a row (the reading list's toolbar, where a margin
+   * would knock it off the shared centre line).
+   */
+  className?: string;
 }
 
 const ChevronIcon = () => (
@@ -78,7 +85,7 @@ const XIcon = () => (
  * Unread keeps its own chip because it carries a count and is the one filter
  * people reach for without thinking.
  */
-export default function FeedFilterBar({ groups, unread, favorites, actions }: Props) {
+export default function FeedFilterBar({ groups, unread, favorites, actions, className = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -120,7 +127,7 @@ export default function FeedFilterBar({ groups, unread, favorites, actions }: Pr
     : current?.options ?? [];
 
   return (
-    <div className={styles.bar}>
+    <div className={`${styles.bar} ${className}`}>
       <div className={styles.left}>
         {unread && (
           <button

@@ -18,16 +18,29 @@
   margin-bottom: 20px;
 }
 
+/* Everything in the top bar: back on the left, Follow and Report on the right.
+   One box from the tokens, so the row shares a height whatever mix of them is
+   showing - and pills, matching FollowBlogButton, which sits between them. */
+.backBtn,
+.ghostBtn,
+.reportBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .backBtn {
   border: none;
   background: transparent;
   color: var(--muted);
-  font: inherit;
   font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 0 12px;
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
@@ -35,13 +48,8 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font: inherit;
   font-size: 12.5px;
-  font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 9px;
-  cursor: pointer;
-  white-space: nowrap;
+  padding: 0 16px;
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
@@ -51,13 +59,8 @@
   border: none;
   background: transparent;
   color: var(--muted);
-  font: inherit;
   font-size: 12.5px;
-  font-weight: 600;
-  padding: 7px 10px;
-  border-radius: 9px;
-  cursor: pointer;
-  white-space: nowrap;
+  padding: 0 12px;
   opacity: 0.7;
 }
 .reportBtn:hover { opacity: 1; color: var(--text); background: var(--surface2); }

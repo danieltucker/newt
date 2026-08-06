@@ -11,6 +11,7 @@ import { takeSeed, clearSeed } from '../utils/composerSeed';
 import { relTime } from '../utils/notifications';
 import { useReadingList } from '../hooks/useReadingList';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import useSlidingThumb from '../hooks/useSlidingThumb';
 import styles from './BlogEditorPage.module.css';
 
 // The composer for a blog post. `postId` is null for a new post.
@@ -228,6 +229,13 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   const bodyRef = useRef(seed?.body ?? '');
   const [bodyEmpty, setBodyEmpty] = useState(() => htmlIsBlank(bodyRef.current));
   const [textLen, setTextLen] = useState(() => textLength(bodyRef.current));
+
+  // The sliding highlight on the visibility switch. Up here with the rest of
+  // the hooks rather than beside the switch it belongs to: the render below it
+  // returns early while the post is loading.
+  const {
+    trackRef: visTrackRef, setItem: setVisOption, thumbProps: visThumbProps,
+  } = useSlidingThumb(visibility);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -481,10 +489,16 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
             <span>Allow comments</span>
           </label>
 
-          <div className={styles.visSwitch} role="radiogroup" aria-label="Who can see this post">
+          <div className={styles.visSwitch} role="radiogroup" aria-label="Who can see this post" ref={visTrackRef}>
+            {/* Who can see the post is the most consequential thing on this bar,
+                and it used to change by repainting two segments at once. One box
+                that slides from Public to Friends to Draft is the same fact with
+                the movement left in - see useSlidingThumb. */}
+            <span className={styles.visThumb} {...visThumbProps} />
             {VIS_ORDER.map(v => (
               <button
                 key={v}
+                ref={setVisOption(v)}
                 type="button"
                 role="radio"
                 aria-checked={visibility === v}

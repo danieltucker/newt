@@ -30,6 +30,9 @@
 }
 
 .backBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
   border: none;
   background: transparent;
   color: var(--muted);
@@ -37,8 +40,8 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
@@ -59,10 +62,14 @@
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
+/* A label wrapping a checkbox is still something you click, so it measures the
+   row's height - otherwise it's a short item being centred against tall ones
+   and the tick sits off the line the rest of the bar shares. */
 .toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  min-height: var(--ctl-h);
+  gap: 7px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
@@ -72,17 +79,54 @@
 .toggle input { accent-color: var(--accent); cursor: pointer; }
 .toggle:hover { color: var(--text); }
 
-/* Segmented visibility control - same shape as the comment composer's */
+/* Segmented visibility control - same shape as the comment composer's, and the
+   same geometry as LayoutSwitch, which is the other segmented control in the
+   app. It came out 29px against the Save button's 32 beside it, with a 10px
+   corner against Save's 9. Both now come from the tokens. */
 .visSwitch {
+  position: relative;
   display: inline-flex;
+  align-items: stretch;
+  min-height: var(--ctl-h);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--ctl-r);
   padding: 2px;
   gap: 2px;
 }
 
+/* ── The selection ──
+   Who can see the post is the heaviest thing on this bar, and it used to change
+   by lighting up one segment and dimming another in the same frame. It is one
+   box now and it travels between them, so publishing a draft looks like the
+   move it is. The segments are three words of different lengths and lose their
+   labels on a narrow window, so the box is measured rather than stepped - see
+   useSlidingThumb; the width is part of what animates.
+
+   Inset by the track's own 2px padding so it lands on the segment exactly. */
+.visThumb {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  border-radius: calc(var(--ctl-r) - 3px);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  transition:
+    transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visThumb { transition: none; }
+}
+
+/* Stretches to the track rather than setting its own height, so the segments
+   fill the control instead of leaving a dead strip above and below. Above the
+   thumb, which is drawn behind all three. */
 .visOption {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -92,29 +136,39 @@
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  padding: 5px 10px;
-  border-radius: 8px;
+  padding: 0 11px;
+  border-radius: calc(var(--ctl-r) - 3px);
   cursor: pointer;
+  transition: color 0.12s;
 }
 .visOption:hover { color: var(--text); }
+
+/* The surface and the shadow moved to .visThumb - being the active segment is
+   the ink now, which crossfades while the box slides underneath it. */
 .visOptionActive {
-  background: var(--surface);
   color: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
 .visOptionLabel { white-space: nowrap; }
 
-.saveBtn {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+.saveBtn,
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  padding: 0 16px;
+  border-radius: 999px;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 650;
-  padding: 8px 18px;
-  border-radius: 9px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.saveBtn {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
 }
 .saveBtn:hover { filter: brightness(1.08); }
 .saveBtn:disabled { opacity: 0.5; cursor: default; filter: none; }
@@ -123,12 +177,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
   font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 9px;
-  cursor: pointer;
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 

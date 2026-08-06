@@ -64,7 +64,8 @@
   gap: 9px;
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: var(--ctl-h);
+  padding: 6px 10px;
   background: none;
   border: none;
   border-radius: 7px;
@@ -148,12 +149,15 @@
   color: var(--danger, #E5484D);
 }
 
+/* The row that makes a new shelf, directly under the shelves themselves - so it
+   measures the same as one. */
 .addShelf {
   display: flex;
   align-items: center;
   gap: 7px;
   margin-top: 6px;
-  padding: 8px 10px;
+  min-height: var(--ctl-h);
+  padding: 6px 10px;
   background: none;
   border: 1px dashed var(--border);
   border-radius: 7px;
@@ -196,10 +200,11 @@
   flex: 1;
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  min-height: var(--ctl-h-lg);
+  padding: 0 9px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ctl-r);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -258,8 +263,12 @@
 .primaryBtn,
 .ghostBtn,
 .smallBtn {
-  padding: 5px 10px;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
+  border-radius: 999px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
   cursor: pointer;
@@ -368,11 +377,15 @@
   flex-shrink: 0;
 }
 
+/* Sits in .cardActions beside the small buttons, so it matches them - shape as
+   well as height. It carries a label rather than being a field you type into,
+   which is what puts it on the pill side of the rule. */
 .moveSelect {
-  padding: 5px 8px;
+  min-height: var(--ctl-h);
+  padding: 0 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;

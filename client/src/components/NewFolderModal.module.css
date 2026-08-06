@@ -1,4 +1,4 @@
-.backdrop {
+﻿.backdrop {
   position: fixed;
   inset: 0;
   background: var(--overlay);
@@ -38,13 +38,15 @@
   margin-bottom: 8px;
 }
 
+/* The field and the two buttons under it were 46 and 44 - the same height to
+   anyone reading the CSS, two different ones on screen. */
 .input {
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 11px;
-  padding: 12px 14px;
-  min-height: 46px;
+  padding: 0 14px;
+  min-height: var(--ctl-h-lg);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 15px;
   color: var(--text);
@@ -83,10 +85,10 @@
 
 .cancelBtn {
   padding: 0 18px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -98,10 +100,10 @@
 
 .createBtn {
   padding: 0 18px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
   border: none;
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;

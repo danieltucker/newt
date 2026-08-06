@@ -2,13 +2,18 @@
   position: relative;
 }
 
+/* Same box as FeedFilterBar's chip - they are the same control in two places,
+   and both take their height from --ctl-h so neither can drift. */
 .chip {
-  padding: 3px 11px;
-  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface2);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -58,13 +63,14 @@
 
 .filterSearch {
   width: calc(100% - 16px);
+  min-height: var(--ctl-h-lg);
   margin: 8px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: var(--ctl-r);
+  padding: 0 10px;
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text);
   outline: none;
 }
@@ -80,12 +86,14 @@
 }
 
 .filterItem {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: var(--ctl-h);
   text-align: left;
-  padding: 7px 10px;
+  padding: 0 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;

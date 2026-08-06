@@ -6,14 +6,17 @@
 }
 
 .signInBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
   border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
   background: color-mix(in oklab, var(--accent) 10%, transparent);
   color: var(--accent);
   font: inherit;
   font-size: 12px;
   font-weight: 650;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
   cursor: pointer;
 }
 .signInBtn:hover {

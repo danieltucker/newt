@@ -73,15 +73,23 @@
   .headerActions { width: 100%; }
 }
 
+/* The header's pair of actions. Both take --ctl-h so they match each other and
+   the layout switch further down the page, and so they grow for a thumb, which
+   neither did. Labelled, so pills - the badges and stats they sit above are
+   pills too, and this header was the one row on the page that wasn't. */
 .primaryBtn {
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  border: 1px solid transparent;
   background: var(--accent);
   color: #fff;
   font: inherit;
   font-size: 12.5px;
   font-weight: 650;
-  padding: 7px 14px;
-  border-radius: 9px;
+  padding: 0 16px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
   text-decoration: none;
@@ -89,14 +97,18 @@
 .primaryBtn:hover { filter: brightness(1.08); }
 
 .ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 12.5px;
   font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 9px;
+  padding: 0 16px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -395,14 +407,18 @@
 
 .moreBtn {
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 18px;
-  border-radius: 10px;
+  padding: 0 18px;
+  border-radius: var(--ctl-r);
   cursor: pointer;
 }
 .moreBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }

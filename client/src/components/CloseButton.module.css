@@ -6,10 +6,10 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
@@ -28,7 +28,5 @@
 }
 
 /* Dismissing is the action a thumb aims at most, and it lives in a corner where
-   there is nothing forgiving beside it to hit instead. */
-@media (hover: none) {
-  .close { width: 34px; height: 34px; }
-}
+   there is nothing forgiving beside it to hit instead - which --ctl-h already
+   handles, so there is no touch rule left to write here. */

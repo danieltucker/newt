@@ -5,15 +5,15 @@
 
 /* Geometry here is load-bearing: this pill sits beside SaveButton at the foot of
    every card, and the two have to be the same height or the row reads as a
-   mistake. Keep this in step with SaveButton's .group - the bordered box in
-   both cases, so border-box min-heights measure like for like - here and in the
-   touch block below. */
+   mistake. Both take --ctl-h on their bordered box - border-box, so the two
+   min-heights measure like for like - which is what keeps them in step now
+   instead of a comment asking whoever edits one to remember the other. */
 .bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: var(--ctl-h);
   padding: 0 11px;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -40,10 +40,10 @@
   display: none;
 }
 
-/* Touch: a thumb, not a cursor. Matches SaveButton's .main exactly. */
+/* Touch: a thumb, not a cursor. Matches SaveButton's .main exactly - the height
+   comes from the shared token, so only the padding and type are said twice. */
 @media (hover: none) {
   .bar {
-    min-height: 38px;
     padding: 0 14px;
     font-size: 12.5px;
   }

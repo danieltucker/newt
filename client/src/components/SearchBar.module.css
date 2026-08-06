@@ -9,10 +9,15 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Sized from the token rather than from padding, so it matches the buttons it
+     shares the bar with. It was 6px of padding around 14px type, which lands at
+     33px next to their 32 - and on a phone, where the iOS focus-zoom rule
+     forces the input to 16px, at 36 next to their 40. */
+  min-height: var(--ctl-h);
   background: color-mix(in oklab, var(--surface2) 85%, transparent);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 6px 14px;
+  padding: 0 14px;
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 

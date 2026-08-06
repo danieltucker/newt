@@ -41,18 +41,22 @@
   background: var(--surface);
 }
 
+/* The two ends of the reader's chrome bar - back on the left, out to the site
+   on the right. Both take --ctl-h, so the bar has one height whichever is
+   showing, and pills, matching the reader toolbar's own Open original. */
 .backBtn {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-height: var(--ctl-h);
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 0 12px;
+  border-radius: 999px;
   transition: background 0.12s;
   white-space: nowrap;
   flex-shrink: 0;
@@ -76,13 +80,14 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: var(--ctl-h);
   background: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
-  padding: 4px 9px;
+  padding: 0 13px;
   text-decoration: none;
   transition: color 0.12s, border-color 0.12s;
   white-space: nowrap;
@@ -176,4 +181,22 @@
 
 .blockedBtn:hover {
   opacity: 0.85;
+}
+
+/* ── Narrow: the reader is the screen ──
+   94vw x 92vh leaves a sliver of backdrop on every side and takes a whole
+   phone-width of margin off a page that is already being squeezed into an
+   iframe. The toolbar's Back button is the way out; the sliver was never the
+   way out on a touch screen anyway. */
+@media (max-width: 640px) {
+  .modal {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .toolbar { padding: 8px 10px; }
 }

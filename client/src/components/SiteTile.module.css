@@ -103,13 +103,15 @@
   opacity: 1;
 }
 
+/* The tile's ··· overlay, matching FolderSidebar's - the same control in the
+   other place bookmarks are drawn. */
 .menuTrigger {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  border-radius: 7px;
   border: none;
   background: var(--surface2);
   color: var(--muted);
@@ -140,9 +142,11 @@
 }
 
 .dropdownItem {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 9px 14px;
+  min-height: var(--ctl-h);
+  padding: 6px 14px;
   text-align: left;
   background: none;
   border: none;

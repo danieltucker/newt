@@ -218,10 +218,11 @@
 
 .folderSelect {
   flex: 1;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 8px 12px;
+  border-radius: var(--ctl-r);
+  padding: 0 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -277,10 +278,14 @@
 }
 
 .cancelBtn {
-  padding: 9px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 16px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -294,10 +299,14 @@
 }
 
 .importBtn {
-  padding: 9px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 18px;
   background: var(--accent);
-  border: none;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;

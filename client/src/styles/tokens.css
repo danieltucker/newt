@@ -141,6 +141,75 @@
   --z-top: 300;             /* fullscreen overlays: console, reader, import */
 }
 
+/* ── Control sizes ──
+   Two heights, and every pressable thing picks one. This exists because they
+   used to be picked per component: the reading list's toolbar had a 24px
+   favorites chip, a 33px Filters chip and a 28px layout switch sitting in one
+   row, so the row had three baselines and the smallest control was the one you
+   had to aim hardest at. Which of the three was "right" is not a question any
+   single component can answer - hence a scale.
+
+   Use them as `min-height` on the *bordered box*, never as a fixed `height` on
+   something inside it. Border-box sizing means a 30px inner element inside a
+   1px border measures 32, which is how two controls meant to match end up 2px
+   apart. Padding then only ever decides width; height comes from the token.
+
+   --ctl-h-sm controls nested inside another control: the Undo in a ghost card's
+              pill, the two answers in the post-read bar. These can't take the
+              standalone height without the thing containing them growing by the
+              difference twice over.
+   --ctl-h    every standalone inline control: filter chips, active-filter
+              pills, segmented switches, card action pills and squares, icon
+              buttons, close buttons.
+   --ctl-h-lg text inputs and the buttons that commit them. Taller because you
+              type into these and because they are the end of a task, not
+              chrome you skim past.
+   --ctl-r    the radius for rectangular controls - see the shape rule below.
+
+   ── Shape ──
+   Height alone doesn't make a row look deliberate; the corners have to agree
+   too. The feed had a strip of 9px buttons sitting directly on top of a strip
+   of pills, which read as two toolbars from two different apps. Three cases,
+   and every control is one of them:
+
+     1. Icon-only squares  -> --ctl-r. The shell bar's buttons, the layout
+        switch, close buttons, a card's action squares. A pill here is just a
+        circle, which reads as a different control entirely.
+     2. Labelled controls in the --ctl-h tier -> 999px. Filter chips, the
+        favorites pill, Mark all read, Save, Dismiss, Repost, Open original.
+        This is the app's house shape; the exceptions were the accident.
+     3. The --ctl-h-lg tier -> --ctl-r. A text input can't be a pill without
+        looking like a search box, so the field is a rect and the button that
+        commits it matches the field it belongs to.
+
+   Rows of list items - menu rows, folder rows, dropdown options - are not
+   controls in this sense and keep their own radius.
+
+   ── Where the numbers came from ──
+   The numbers are the shell bar's, which was already the one surface where
+   every control agreed - 32 with a cursor, 40 with a thumb, 9px corners. Taking
+   the scale from there rather than inventing one means the bar you look at on
+   every screen didn't have to move for the rest of the app to line up with it.
+
+   The touch block is not decoration: 32px is a comfortable cursor target and a
+   poor thumb one, and `hover: none` is how the rest of this codebase asks "is
+   there a pointer". Everything scales together so a row that lines up with a
+   mouse still lines up with a thumb. */
+:root {
+  --ctl-h-sm: 26px;
+  --ctl-h: 32px;
+  --ctl-h-lg: 40px;
+  --ctl-r: 9px;
+}
+
+@media (hover: none) {
+  :root {
+    --ctl-h-sm: 34px;
+    --ctl-h: 40px;
+    --ctl-h-lg: 48px;
+  }
+}
+
 /* Base */
 *, *::before, *::after {
   box-sizing: border-box;

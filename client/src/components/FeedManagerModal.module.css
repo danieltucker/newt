@@ -43,10 +43,10 @@
 .closeBtn {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -63,14 +63,17 @@
   align-items: stretch;
 }
 
+/* This row is an input, a folder picker and a button, side by side and stretched
+   to match. They used to come out at 42, 41 and 39 - close enough to look like
+   an accident rather than a choice. All three carry --ctl-h-lg now. */
 .urlInput {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 11px;
-  padding: 10px 13px;
-  min-height: 42px;
+  border-radius: var(--ctl-r);
+  padding: 0 13px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -83,10 +86,11 @@
 
 .folderSelect,
 .select {
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 11px;
-  padding: 10px 12px;
+  border-radius: var(--ctl-r);
+  padding: 0 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -105,11 +109,15 @@
 }
 
 .primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
   color: #fff;
-  border: none;
-  border-radius: 11px;
-  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
+  padding: 0 18px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   font-weight: 600;
@@ -122,11 +130,15 @@
 .primaryBtn:disabled { opacity: 0.45; cursor: default; }
 
 .ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 11px;
-  padding: 9px 16px;
+  border-radius: var(--ctl-r);
+  padding: 0 16px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -368,10 +380,11 @@
 
 .input {
   width: 100%;
+  min-height: var(--ctl-h-lg);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 12px;
+  border-radius: var(--ctl-r);
+  padding: 0 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -519,4 +532,25 @@
   .feedLabel { max-width: 60%; }
   .feedHost { display: none; }
   .pickSite { display: none; }
+}
+
+/* ── Narrow: the card is the screen ──
+   A feed list is a long scroll of rows, and at this width the 24px backdrop
+   inset plus the card's own 26px padding were spending a third of the screen
+   on margin. The head keeps its ✕, which is the way out. */
+@media (max-width: 640px) {
+  .backdrop { padding: 0; }
+
+  .card {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .head { margin-bottom: 14px; }
 }

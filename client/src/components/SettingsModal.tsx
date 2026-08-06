@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import styles from './SettingsModal.module.css';
 import { UserSettings } from '../hooks/useSettings';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { tagKey, hasFavorite } from '../utils/favoriteTags';
 import { apiFetch, apiGet, apiPatch, apiPost } from '../services/api';
 import { COVER_AUTO, COVER_THEMES, coverStyle } from '../utils/coverGradient';
@@ -83,6 +84,41 @@ const NAV: { id: Section; label: string; icon: ReactNode }[] = [
   { id: 'integrations', label: 'Integrations', icon: '⇌' },
 ];
 
+const sectionLabel = (id: Section) => NAV.find(n => n.id === id)?.label ?? '';
+
+// What the search field can find. Every entry names a `data-setting` anchor on
+// a real control below, so a hit lands on the switch itself rather than the
+// section that happens to contain it - which for Reading is a long scroll.
+// `terms` carries the words people actually type that the label doesn't say:
+// "2fa" for the authenticator, "dark" for the theme, "opml" for the feeds.
+const SEARCH_INDEX: { anchor: string; section: Section; label: string; terms: string }[] = [
+  { anchor: 'profile',        section: 'account',      label: 'Profile',                      terms: 'name first last email avatar photo picture display' },
+  { anchor: 'cover',          section: 'account',      label: 'Profile cover',                terms: 'banner header gradient image background' },
+  { anchor: 'links',          section: 'account',      label: 'Profile links',                terms: 'social website mastodon github bluesky url' },
+  { anchor: 'password',       section: 'account',      label: 'Change password',              terms: 'security credentials sign in login' },
+  { anchor: 'totp',           section: 'account',      label: 'Two-factor authentication',    terms: '2fa totp authenticator security code mfa' },
+  { anchor: 'search-engine',  section: 'search',       label: 'Search engine',                terms: 'google duckduckgo bing brave default query' },
+  { anchor: 'search-new-tab', section: 'search',       label: 'Open results in new tab',      terms: 'window target blank' },
+  { anchor: 'theme',          section: 'appearance',   label: 'Theme',                        terms: 'dark light auto system colour color mode' },
+  { anchor: 'bookmark-layout',section: 'appearance',   label: 'Bookmark layout',              terms: 'panel inline sidebar folders arc grid' },
+  { anchor: 'background',     section: 'appearance',   label: 'Background',                   terms: 'gradient wallpaper page colour color' },
+  { anchor: 'favorite-tags',  section: 'reading',      label: 'Favorite tags',                terms: 'favourite star topics keywords highlight' },
+  { anchor: 'rss',            section: 'reading',      label: 'RSS feeds',                    terms: 'feed subscriptions articles atom syndication' },
+  { anchor: 'mark-read',      section: 'reading',      label: 'Mark articles read as you scroll', terms: 'unread badge seen scrolling' },
+  { anchor: 'comments-public',section: 'reading',      label: 'Show public comments',         terms: 'comments threads others replies' },
+  { anchor: 'comments-visibility', section: 'reading', label: 'Default visibility for new comments', terms: 'comments public friends private personal note' },
+  { anchor: 'comments-expand',section: 'reading',      label: 'Open comment threads automatically', terms: 'comments expand collapse' },
+  { anchor: 'comments-sort',  section: 'reading',      label: 'Comment order',                terms: 'comments sort newest oldest first' },
+  { anchor: 'save-article',   section: 'reading',      label: 'Saving articles',              terms: 'reading list save dialog instant review tags' },
+  { anchor: 'reading-list-open', section: 'reading',   label: 'How the reading list opens articles', terms: 'reader overlay new tab same window' },
+  { anchor: 'bookmark-open',  section: 'reading',      label: 'How bookmarks open',           terms: 'new tab same window links' },
+  { anchor: 'page-size',      section: 'reading',      label: 'Articles per page',            terms: 'feed page size load more count' },
+  { anchor: 'console',        section: 'advanced',     label: 'Console',                      terms: 'backtick commands power user notes' },
+  { anchor: 'import',         section: 'advanced',     label: 'Import bookmarks',             terms: 'html json browser export migrate' },
+  { anchor: 'personal-feed',  section: 'integrations', label: 'Your friends’ post feed',      terms: 'rss private token blog url rotate' },
+  { anchor: 'bookmarklets',   section: 'integrations', label: 'Browser bookmarklets',         terms: 'save article add bookmark drag toolbar' },
+];
+
 function BookmarkletRow({ label, href }: { label: string; href: string }) {
   const [copied, setCopied] = useState(false);
   async function handleCopy() {
@@ -139,7 +175,7 @@ function PersonalFeedPanel() {
   if (!url) return null;
 
   return (
-    <div className={styles.sectionBlock}>
+    <div className={styles.sectionBlock} data-setting="personal-feed">
       <div className={styles.blockTitle}>Your friends’ post feed</div>
       <div className={styles.rowHint} style={{ marginBottom: 12 }}>
         A private RSS feed of posts from you and your friends, including
@@ -190,7 +226,7 @@ function FavoriteTagsBlock({ favorites, onChange }: {
   }
 
   return (
-    <div className={styles.sectionBlock}>
+    <div className={styles.sectionBlock} data-setting="favorite-tags">
       <div className={styles.rowLabel}>Favorite tags</div>
       <div className={styles.rowHint}>
         Articles tagged with one of these get a marker so they stand out. Matching is
@@ -261,7 +297,90 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function SettingsModal({ settings, onUpdate, onClose, onImport, initialSection, onProfileChange }: Props) {
-  const [section, setSection] = useState<Section>(initialSection ?? 'search');
+  // Below this width the two columns don't fit side by side, so the panel
+  // becomes a drill-down: the section list, then one section at a time with a
+  // back button. Driven from JS rather than CSS alone because the two modes are
+  // different trees - the list and the panel are never on screen together.
+  const compact = useMediaQuery('(max-width: 720px)');
+
+  // First tab by default. A caller that names a section (the profile's "Edit
+  // profile") means it, so that one opens straight into the panel even when
+  // compact, where the list would otherwise come first.
+  const [section, setSection] = useState<Section>(initialSection ?? NAV[0].id);
+  const [showList, setShowList] = useState(!initialSection);
+  const [query, setQuery] = useState('');
+  const panelVisible = !compact || !showList;
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const words = q.split(/\s+/);
+    return SEARCH_INDEX.filter(e => {
+      const hay = `${e.label} ${e.terms} ${sectionLabel(e.section)}`.toLowerCase();
+      return words.every(w => hay.includes(w));
+    });
+  }, [query]);
+
+  // Picking a search result has to survive the section swap: the anchor only
+  // exists once the new section has rendered, so the scroll waits for the
+  // effect below. The counter makes a second click on the same result a new
+  // value, which is what re-runs it.
+  const targetSeq = useRef(0);
+  const [target, setTarget] = useState<{ anchor: string; n: number } | null>(null);
+
+  const goTo = useCallback((next: Section, anchor?: string) => {
+    setSection(next);
+    setShowList(false);
+    if (anchor) setTarget({ anchor, n: ++targetSeq.current });
+  }, []);
+
+  useEffect(() => {
+    if (!target) return;
+    let cancelled = false;
+    let found: HTMLElement | null = null;
+    let clear: ReturnType<typeof setTimeout> | undefined;
+
+    // A couple of sections fill themselves in from a fetch - the friends' feed
+    // panel renders nothing at all until its URL arrives - so the anchor gets a
+    // moment to turn up rather than the jump quietly doing nothing.
+    function land(attempt: number) {
+      if (cancelled) return;
+      found = bodyRef.current?.querySelector<HTMLElement>(`[data-setting="${target!.anchor}"]`) ?? null;
+      if (!found) {
+        if (attempt < 6) setTimeout(() => land(attempt + 1), 120);
+        return;
+      }
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      found.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+      found.classList.add(styles.flash);
+      clear = setTimeout(() => found?.classList.remove(styles.flash), 1500);
+    }
+    land(0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(clear);
+      found?.classList.remove(styles.flash);
+    };
+  }, [target]);
+
+  // Escape closes, and the page behind must not scroll while the panel is up -
+  // otherwise the wheel over the modal, or a flick past the end of a section,
+  // moves the feed underneath instead. Same contract as the article reader.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onCloseRef.current(); }
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   // ── Profile state ─────────────────────────────────────────────────────────────
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -274,14 +393,14 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (section !== 'account' || profile) return;
+    if (!panelVisible || section !== 'account' || profile) return;
     apiGet<UserProfile>('/api/v1/account').then(p => {
       setProfile(p);
       setFirstName(p.firstName ?? '');
       setLastName(p.lastName ?? '');
       setEmail(p.email ?? '');
     }).catch(() => setProfileError('Could not load profile'));
-  }, [section, profile]);
+  }, [panelVisible, section, profile]);
 
   // Every successful save lands here. Besides the local state and the shell's
   // top-bar avatar, it announces on the window - the profile page renders
@@ -321,11 +440,11 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
   const [claimBusy, setClaimBusy] = useState(false);
 
   useEffect(() => {
-    if (section !== 'account') return;
+    if (!panelVisible || section !== 'account') return;
     apiGet<{ claimable: boolean }>('/api/v1/account/admin-claim')
       .then(d => setAdminClaimable(d.claimable))
       .catch(() => {});
-  }, [section]);
+  }, [panelVisible, section]);
 
   async function claimAdmin() {
     setClaimBusy(true); setClaimError('');
@@ -482,9 +601,9 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
   const [totpLoading, setTotpLoading] = useState(false);
 
   useEffect(() => {
-    if (section !== 'account') return;
+    if (!panelVisible || section !== 'account') return;
     apiFetch('/api/v1/totp/status').then(r => r.json()).then(d => setTotpEnabled(d.enabled));
-  }, [section]);
+  }, [panelVisible, section]);
 
   async function handleEnroll() {
     setTotpLoading(true); setTotpError('');
@@ -535,39 +654,93 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
   return (
     <div className={styles.backdrop} onClick={handleBackdrop}>
-      <div className={styles.panel} onClick={e => e.stopPropagation()}>
+      <div
+        className={`${styles.panel} ${compact ? styles.compact : ''}`}
+        onClick={e => e.stopPropagation()}
+      >
 
-        {/* Left nav */}
-        <nav className={styles.nav}>
-          <div className={styles.navHeader}>Settings</div>
-          {NAV.map(n => (
-            <button
-              key={n.id}
-              className={`${styles.navItem} ${section === n.id ? styles.navActive : ''}`}
-              onClick={() => setSection(n.id)}
-            >
-              <span className={styles.navIcon}>{n.icon}</span>
-              {n.label}
-            </button>
-          ))}
-        </nav>
+        {/* The section list: a rail on the left when there's room, the whole
+            panel when there isn't. */}
+        {(!compact || showList) && (
+          <nav className={styles.nav}>
+            <div className={styles.navTop}>
+              <div className={styles.navHeader}>Settings</div>
+              {compact && (
+                <button className={styles.iconBtn} onClick={onClose} aria-label="Close settings">✕</button>
+              )}
+            </div>
 
-        {/* Right content */}
+            <div className={styles.searchWrap}>
+              <svg className={styles.searchIcon} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="M10.5 10.5L14 14" />
+              </svg>
+              <input
+                className={styles.searchInput}
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search settings…"
+                aria-label="Search settings"
+                spellCheck={false}
+                autoFocus={!compact}
+              />
+              {query && (
+                <button className={styles.searchClear} onClick={() => setQuery('')} aria-label="Clear search">✕</button>
+              )}
+            </div>
+
+            <div className={styles.navScroll}>
+              {query
+                ? (results.length === 0
+                    ? <div className={styles.navEmpty}>Nothing here matches “{query.trim()}”.</div>
+                    : results.map(r => (
+                        <button
+                          key={r.anchor}
+                          className={styles.resultItem}
+                          onClick={() => goTo(r.section, r.anchor)}
+                        >
+                          <span className={styles.resultLabel}>{r.label}</span>
+                          <span className={styles.resultSection}>{sectionLabel(r.section)}</span>
+                        </button>
+                      )))
+                : NAV.map(n => (
+                    <button
+                      key={n.id}
+                      className={`${styles.navItem} ${!compact && section === n.id ? styles.navActive : ''}`}
+                      onClick={() => goTo(n.id)}
+                    >
+                      <span className={styles.navIcon}>{n.icon}</span>
+                      <span className={styles.navLabel}>{n.label}</span>
+                      {compact && <span className={styles.navChevron} aria-hidden>›</span>}
+                    </button>
+                  ))}
+            </div>
+          </nav>
+        )}
+
+        {/* The chosen section */}
+        {panelVisible && (
         <div className={styles.content}>
           <div className={styles.contentHeader}>
-            <div>
-              <div className={styles.contentTitle}>
-                {NAV.find(n => n.id === section)?.label}
-              </div>
+            {compact && (
+              <button className={styles.backBtn} onClick={() => setShowList(true)}>
+                <span aria-hidden>‹</span> Back
+              </button>
+            )}
+            <div className={styles.contentTitle}>
+              {sectionLabel(section)}
             </div>
-            <button className={styles.closeBtn} onClick={onClose}>✕ Close</button>
+            <button className={styles.closeBtn} onClick={onClose}>
+              ✕<span className={styles.closeLabel}>&nbsp;Close</span>
+            </button>
           </div>
 
-          <div className={styles.contentBody}>
+          <div className={styles.contentBody} ref={bodyRef}>
 
             {section === 'search' && (
               <>
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="search-engine">
                   <div className={styles.blockTitle}>Search engine</div>
                   <div className={styles.engineGrid}>
                     {ENGINES.map(e => (
@@ -590,7 +763,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="search-new-tab">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>Open results in new tab</div>
@@ -607,7 +780,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
             {section === 'appearance' && (
               <>
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="theme">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>Theme</div>
@@ -627,7 +800,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="bookmark-layout">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>Bookmark layout</div>
@@ -647,7 +820,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="background">
                   <div className={styles.blockTitle}>Background</div>
                   <div className={styles.gradientGrid}>
                     {([
@@ -682,7 +855,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   onChange={favoriteTags => onUpdate({ favoriteTags })}
                 />
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="rss">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>RSS feeds</div>
@@ -698,13 +871,14 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="mark-read">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>Mark articles read as you scroll</div>
                       <div className={styles.rowHint}>
                         Unread articles carry a highlighted outline. Scrolling one past the top of
-                        the screen marks it read and takes it off its site’s unread badge.
+                        the screen marks it read and takes it off its site’s unread badge. Opening
+                        an article always marks it read, whether this is on or not.
                       </div>
                     </div>
                     <Toggle
@@ -716,7 +890,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
                 <div className={styles.sectionBlock}>
                   <div className={styles.blockTitle}>Comments</div>
-                  <div className={styles.row}>
+                  <div className={styles.row} data-setting="comments-public">
                     <div>
                       <div className={styles.rowLabel}>Show public comments</div>
                       <div className={styles.rowHint}>
@@ -729,7 +903,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                       onChange={v => onUpdate({ commentsShowPublic: v })}
                     />
                   </div>
-                  <div className={styles.row}>
+                  <div className={styles.row} data-setting="comments-visibility">
                     <div>
                       <div className={styles.rowLabel}>Default visibility for new comments</div>
                       <div className={styles.rowHint}>
@@ -764,7 +938,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                       );
                     })}
                   </div>
-                  <div className={styles.row}>
+                  <div className={styles.row} data-setting="comments-expand">
                     <div>
                       <div className={styles.rowLabel}>Open threads automatically</div>
                       <div className={styles.rowHint}>
@@ -776,7 +950,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                       onChange={v => onUpdate({ commentsAutoExpand: v })}
                     />
                   </div>
-                  <div className={styles.openModeList}>
+                  <div className={styles.openModeList} data-setting="comments-sort">
                     {([
                       { value: 'newest', label: 'Newest first', hint: 'Most recent conversations lead the thread' },
                       { value: 'oldest', label: 'Oldest first',  hint: 'Reads in the order the conversation happened' },
@@ -801,7 +975,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="save-article">
                   <div className={styles.blockTitle}>Saving articles</div>
                   <div className={styles.openModeList}>
                     {([
@@ -828,7 +1002,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="reading-list-open">
                   <div className={styles.blockTitle}>Reading list</div>
                   <div className={styles.openModeList}>
                     {([
@@ -857,7 +1031,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="bookmark-open">
                   <div className={styles.blockTitle}>Bookmarks</div>
                   <div className={styles.openModeList}>
                     {([
@@ -884,7 +1058,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="page-size">
                   <div className={styles.blockTitle}>Articles per page</div>
                   <div className={styles.pageSizeRow}>
                     {([5, 10, 20, 50] as const).map(n => (
@@ -906,7 +1080,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
             {section === 'account' && (
               <>
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="profile">
                   <div className={styles.blockTitle}>Profile</div>
 
                   <div className={styles.avatarRow}>
@@ -956,7 +1130,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   {profileError && <div className={styles.totpError}>{profileError}</div>}
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="cover">
                   <div className={styles.blockTitle}>Profile cover</div>
                   <div className={styles.rowHint} style={{ marginBottom: 12 }}>
                     The banner behind your photo on your profile page. Pick a gradient, or
@@ -1044,7 +1218,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="links">
                   <div className={styles.blockTitle}>Links</div>
                   <div className={styles.rowHint} style={{ marginBottom: 12 }}>
                     Where else to find you. These show under your name on your profile,
@@ -1118,7 +1292,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   {linkError && <div className={styles.totpError}>{linkError}</div>}
                 </div>
 
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="password">
                   <div className={styles.blockTitle}>Change password</div>
                   <div className={styles.pwForm}>
                     <input className={styles.textInput} type="password" autoComplete="current-password"
@@ -1165,7 +1339,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 )}
 
-              <div className={styles.sectionBlock}>
+              <div className={styles.sectionBlock} data-setting="totp">
                 <div className={styles.blockTitle}>Two-factor authentication</div>
 
                 {totpStep === 'idle' && (
@@ -1241,7 +1415,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
             {section === 'advanced' && (
               <>
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="console">
                   <div className={styles.row}>
                     <div>
                       <div className={styles.rowLabel}>Console</div>
@@ -1254,7 +1428,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                   </div>
                 </div>
                 {onImport && (
-                  <div className={styles.sectionBlock}>
+                  <div className={styles.sectionBlock} data-setting="import">
                     <div className={styles.row}>
                       <div>
                         <div className={styles.rowLabel}>Import bookmarks</div>
@@ -1276,7 +1450,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
               const saveHref = `javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);window.open('${origin}/?intent=save-article&url='+u+'&title='+t,'_blank','width=500,height=480,popup=1');})();`;
               const bmHref = `javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);window.open('${origin}/?intent=add-bookmark&url='+u+'&title='+t,'_blank','width=500,height=500,popup=1');})();`;
               return (
-                <div className={styles.sectionBlock}>
+                <div className={styles.sectionBlock} data-setting="bookmarklets">
                   <div className={styles.blockTitle}>Browser bookmarklets</div>
                   <div className={styles.rowHint} style={{ marginBottom: 18 }}>
                     Drag these links to your bookmarks bar for one-click saving from any page.
@@ -1290,6 +1464,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
           </div>
         </div>
+        )}
       </div>
     </div>
   );

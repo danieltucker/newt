@@ -83,8 +83,11 @@
   right: 20px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  /* Circular rather than --ctl-r: it floats over the photo rather than sitting
+     in chrome, and a rounded square there reads as part of the image. The size
+     still comes from the scale, so it grows for a thumb like everything else. */
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   border: 1px solid rgb(255 255 255 / 0.2);
   border-radius: 50%;
   background: rgb(0 0 0 / 0.4);

@@ -1157,11 +1157,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       {articleUrl && (
         <ArticleModal
           url={articleUrl}
-          onClose={() => {
-            setArticleUrl(null);
-            // Lets the reading list offer post-read actions on the card just read
-            window.dispatchEvent(new Event('article-reader-closed'));
-          }}
+          onClose={() => setArticleUrl(null)}
         />
       )}
 

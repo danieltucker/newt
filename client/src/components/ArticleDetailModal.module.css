@@ -86,12 +86,16 @@
 
 /* The toolbar is down to two things now - go to the source, or leave. Everything
    that acts on the article moved to .actionBar at the foot. */
+/* Sits beside CloseButton in the reader's toolbar, so it measures the same -
+   it was 29px against the close button's 32, and 8px of corner against its 9.
+   Labelled, so it's a pill; the close button is an icon square, so it isn't. */
 .openBtn {
+  min-height: var(--ctl-h);
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 11px;
-  border-radius: 8px;
+  padding: 0 13px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
@@ -378,8 +382,8 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: var(--ctl-h);
+  padding: 0 13px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -398,10 +402,12 @@
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
-/* Matches the card pills, which grow for a thumb at the same breakpoint */
+/* Matches the card pills, which grow for a thumb from the same token - so only
+   the padding and type are said twice. Restating the height here is what left
+   Dismiss and Repost 2px under the Save pill beside them. */
 @media (hover: none) {
   .actionBar > :global(button),
-  .repostBtn { min-height: 38px; padding: 0 15px; font-size: 12.5px; }
+  .repostBtn { padding: 0 15px; font-size: 12.5px; }
 }
 
 /* ── Comments ─────────────────────────────────────────────────────────── */

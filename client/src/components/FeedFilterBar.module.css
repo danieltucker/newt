@@ -1,12 +1,18 @@
 /* Positioned so the narrow-screen rule at the foot of this file can hang the
-   filter panel off the whole row rather than off one chip in it. */
+   filter panel off the whole row rather than off one chip in it.
+
+   No margin of its own. It used to carry `margin-bottom: 14px` for the gap to
+   the article grid below it, which is fine when the bar is a row of its own but
+   wrong when it is one item in a flex row: the reading list's toolbar centres
+   its children, and a centred margin box sits 7px higher than its neighbours.
+   That is what made the favorites and Filters chips ride above the layout
+   switch. Spacing is the consumer's call now - see the `className` prop. */
 .bar {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
 }
 
 .left {
@@ -18,25 +24,34 @@
   min-width: 0;
 }
 
+/* No `margin-left: auto`. On one line it isn't needed - .left grows and pushes
+   this to the end on its own - and on a narrow screen, where the row genuinely
+   cannot hold six controls however they're dressed, the auto margin shoved this
+   group to the far right of a line of its own. That is the same floating,
+   unanchored strip the feed header used to be, reappearing one breakpoint down.
+   Without it a wrapped row starts under the chips, and reads as the rest of the
+   same bar rather than as something left over. */
 .right {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
-  margin-left: auto;
 }
 
-/* Matches the chips it replaced, so the row still reads as the same furniture. */
+/* Matches the chips it replaced, so the row still reads as the same furniture.
+   Height comes from --ctl-h rather than from padding, so it agrees with the
+   layout switch and the favorites pill beside it at every screen size. */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 11px;
-  border-radius: 20px;
+  min-height: var(--ctl-h);
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface2);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -95,14 +110,17 @@
 
 .groupList { padding: 5px; }
 
+/* Every row in the panel is a target, so they all measure --ctl-h rather than
+   whatever their padding happened to add up to. */
 .groupRow {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 9px;
+  min-height: var(--ctl-h);
+  padding: 6px 9px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -135,9 +153,12 @@
 }
 
 .clearAll {
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: var(--ctl-h);
   margin-top: 4px;
-  padding: 8px 9px;
+  padding: 6px 9px;
   border: none;
   border-top: 1px solid var(--border);
   background: none;
@@ -156,7 +177,8 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 9px 12px;
+  min-height: var(--ctl-h);
+  padding: 6px 12px;
   border: none;
   border-bottom: 1px solid var(--border);
   background: none;
@@ -180,11 +202,12 @@
 
 .search {
   width: calc(100% - 16px);
+  min-height: var(--ctl-h-lg);
   margin: 8px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 9px;
+  border-radius: var(--ctl-r);
+  padding: 0 10px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12.5px;
   color: var(--text);
@@ -204,9 +227,10 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 9px;
+  min-height: var(--ctl-h);
+  padding: 6px 9px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   background: none;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
@@ -237,7 +261,8 @@
   gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 7px 5px 7px 0;
+  align-self: stretch;
+  padding: 6px 5px 6px 0;
   border: none;
   background: none;
   font: inherit;
@@ -249,8 +274,8 @@
 .starBtn {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 26px;
+  width: 26px;
+  align-self: stretch;
   flex: none;
   padding: 0 0 0 7px;
   border: none;
@@ -297,16 +322,19 @@
 
 /* ── Active filter pills ────────────────────────────────── */
 
+/* Same box as .chip - it sits in the same row and is the same kind of thing,
+   already-chosen rather than still-offered. */
 .activePill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 9px 3px 11px;
-  border-radius: 20px;
+  min-height: var(--ctl-h);
+  padding: 0 10px 0 12px;
+  border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
   background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--accent);
   cursor: pointer;
@@ -344,35 +372,38 @@
     width: auto;
   }
 
-  /* A sheet this wide has room to breathe, and every row in it is a tap
-     target. */
-  .groupRow, .option, .optionPick { padding-top: 11px; padding-bottom: 11px; }
+  /* A sheet this wide has room to breathe. The rows' heights aren't restated -
+     --ctl-h has already grown them on anything you tap with a thumb, and a
+     narrow desktop window doesn't need finger-sized rows just because it's
+     narrow. What's left is type, which is about reading at arm's length. */
   .groupRow, .option { font-size: 14px; }
   .groupValue { font-size: 13px; max-width: 55%; }
-  .clearAll { padding: 12px 9px; font-size: 13.5px; }
+  .clearAll { font-size: 13.5px; }
   .optionList { max-height: 50vh; }
 }
 
 /* ── Touch ──
-   Hover never fires, so nothing here can rely on it, and every chip is a thumb
-   target rather than a cursor one. Kept at the end of the file so it outranks
-   the base sizes above. */
+   Hover never fires, so nothing here can rely on it. The chip and pill heights
+   are not restated: --ctl-h has already grown them, which is the whole point of
+   the token - they can't drift apart here the way they did when each one
+   carried its own touch padding. What's left is type and the star, which are
+   about legibility and about a control that had no hover to appear on. */
 @media (hover: none) {
-  .chip {
-    font-size: 13px;
-    padding: 7px 13px;
+  .chip,
+  .activePill {
+    font-size: 13.5px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
+
+  .activePill { padding-right: 11px; }
 
   .chipCount { font-size: 11.5px; }
 
-  .activePill {
-    font-size: 13px;
-    padding: 7px 10px 7px 13px;
-  }
-
+  /* Height comes from stretching to the row, so only the width and the resting
+     opacity need saying - there is no pointer here to reveal it. */
   .starBtn {
     width: 34px;
-    height: 34px;
     padding: 0 0 0 8px;
     opacity: 1;
   }

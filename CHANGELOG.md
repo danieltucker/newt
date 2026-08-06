@@ -2,6 +2,259 @@
 
 Notable changes to Newt, newest first.
 
+## v1.13.0 - Finding things in Settings
+
+**2026-08-06**
+
+### The sections are a list, not a row of tabs
+
+Settings has grown six sections and thirty-odd controls, and on a narrow window
+they were a row of tabs across the top: six shrunken labels sharing the width of
+a phone, each one a small target next to five others. Wide windows already had a
+rail down the left, which is the shape that works - so now that shape is the
+rule, and the narrow case is a drill-down rather than a squeeze. You get the
+list of sections, you pick one, and the panel takes over the window with a Back
+button to return. The section list and a section are never on screen together
+down there, because there isn't room for both to be legible.
+
+The breakpoint is 720px, and it's watched in JavaScript rather than done in CSS
+alone: the two layouts are different trees, not the same tree restyled.
+
+### Search
+
+A field above the section list, and it looks for the individual setting rather
+than the section holding it. Searching "2fa" finds the authenticator, "dark"
+finds the theme, "new tab" finds both the one about search results and the one
+about bookmarks - each result says which section it lives in, since those two
+otherwise read identically.
+
+Picking one goes to the section, scrolls the control into the middle of the
+panel and rings it for a moment. Reading is a long page; being dropped at the
+top of it and told the setting is *somewhere below* is not an answer.
+
+### It opens where you'd expect
+
+Opening Settings landed on Search - the second section - because that was the
+default when Search was the first thing in the list. It opens on Account now,
+which is where the list starts. Opening it from "Edit profile" still goes
+straight to Account, including on a phone, where it skips the list entirely:
+the caller named a section, so it means it.
+
+### The scroll stays in the panel
+
+Scrolling inside Settings moved the feed behind it instead - past the end of a
+section the leftover scroll was handed to the page underneath, and a wheel over
+the dimmed area went there directly. The page behind is now held still while the
+panel is up, and the panel's own scroller keeps what it's given.
+
+### On a phone, a big panel is the screen
+
+A dialog is a card floating on a dimmed page, and the dim is how it says there
+is something behind it. On a phone there is no room to say that: the margin, the
+border and the shadow are drawn out of the same 390 points the content is
+fighting for, and the notes console was spending a rounded frame's worth of
+clutter on every edge to hold a window that had nothing beside it anyway.
+
+So the large panels take the whole screen below their narrow breakpoint -
+Settings, the admin panel, the notes console, the backtick console, the article
+overlay, Manage feeds, Notifications and the first-run feed picker. The reading
+list and the article reader already did; this is the rest of them following.
+Each keeps a visible way out, which is the thing the backdrop was doing before:
+a ✕, or Back where a panel is one level down. The backtick console had neither
+a ✕ nor an outside to click once it filled the screen, so it has one now, in
+place of the keyboard hints that a phone can't use.
+
+The small form dialogs - add a link, new folder, edit a bookmark, save an
+article, report something - stay as dialogs. Three fields blown up to fill a
+screen reads as heavier than the job is, and they already fit.
+
+### Bookmarks on a narrow window
+
+Below 900px the bookmarks rail moves into the hamburger, where it was a 272px
+dropdown capped at 72% of the screen height. The rail carries a pin grid, so
+width is what it can least afford to give away, and a folder list is exactly
+the thing that wants height. On a phone it's a sheet now: full width, filling
+everything under the bar, with a ✕ of its own. The bar stays put above it, so
+the button that opened it is still where you left it.
+
+### The admin panel on a narrow window
+
+Eight tabs in a 180px rail beside a table of users wants about 900px before
+either half is readable, and there was nothing telling it what to do below that.
+It gets the same treatment Settings did: the rail becomes a list you drill into,
+one tab at a time, with Back and ✕.
+
+### The feed stops introducing itself
+
+The "FEED" heading named the only feed-shaped thing on the page, and the number
+beside it counted every article ever fetched - a figure that only goes up and
+that answers a question about the database rather than about your reading. Both
+are gone. What's left to read is the unread chip's job, and it sits directly
+below where they were.
+
+### Opening an article marks it read
+
+Read state only ever came from scrolling: an article counted once it passed the
+top of the screen. So opening the last card on screen, reading the whole thing
+and coming back left it unread, because nothing had scrolled anywhere. Viewing
+an article is the stronger signal of the two and it simply wasn't wired up.
+
+Now it is - opening the reader, or following the title or the cover image out to
+the site, marks that article read. Middle-clicking into a background tab counts
+too. This happens whether or not "Mark articles read as you scroll" is on: that
+setting is about what scrolling past does, not about whether reading counts.
+
+### Saved articles show which ones you've opened
+
+Coming back from an article used to put a prompt across the head of its card -
+"Done with this?", a Keep, a Remove and a countdown bar draining away. It asked
+a question at the worst possible moment, it covered the controls you were most
+likely to want next, and to deliver it at all the reading list had to force
+itself open on your return.
+
+It's gone. In its place the card does what a followed link has always done: it
+goes quiet. A saved article you've opened fades back - dimmer surface, a muted
+headline, cover art at about half strength - and carries a small "Visited" tag
+at the end of its meta line. Pointing at the card brings it all the way back,
+because visited is a resting state, not a verdict. Favorites keep their gold.
+
+The tag is there as well as the fade, not instead of it: a fade only says
+"visited" when there's an unvisited card next to it to compare against, and it
+says nothing at all if you can't pick up a small shift in opacity.
+
+Nothing is filed or deleted for you, and nothing asks. The mark is kept in this
+browser rather than on your account - the same bargain every browser makes with
+visited links - so it shows up the instant you click rather than after a round
+trip, and it doesn't follow you to a different machine.
+
+### The shelves stop running off the edge
+
+The row of shelves at the top of the reading list held its one line by scrolling
+sideways. That works under a thumb and is close to invisible under a mouse:
+there was no scrollbar, no arrows and nothing at the edge to say the row carried
+on past the last chip you could see. A folder off the end of it was a folder you
+didn't have.
+
+Nothing in that row scrolls now. It measures what it can actually show and folds
+the rest into a menu at the end - "3 more", and everything inside it with its
+colour and its count, the same as on the rail. If the shelf you're looking at is
+one of the folded ones, the menu button wears its name instead of the count, so
+the row still says where you are. Narrow the window and shelves move into the
+menu one at a time; widen it and they come back out. The reading list itself
+never leaves the rail.
+
+### "Save article" is "Add"
+
+The button that adds an article by URL said "+ Save article", which was the
+third thing on that screen called Save: every card has one, so does the reader,
+and both of those file an article you already have onto a shelf. This is the
+only control in the room that brings a new one in, so it says Add, and so does
+the button that commits the form it opens.
+
+It also looks like a button now. It was borderless accent text sitting between
+the Filters chip and the layout switch - the one control in that row shaped like
+a link that had wandered in. Same pill, same height, same border as its
+neighbours, and Cancel takes exactly its place while the form is open rather
+than shifting the row.
+
+### The switches slide
+
+The layout switch - on the feed, in the reading list and on a site page - and
+the visibility switch in the post composer both said which option was on by
+painting one segment and unpainting another in the same frame. The selection
+teleported: two things to notice, and nothing joining them, so a three-way
+switch never quite told you it was you who moved it.
+
+They have a highlight that travels now. It slides from segment to segment, and
+on the visibility switch it grows and shrinks on the way, because Public,
+Friends and Draft are three words of different lengths - the box is measured
+rather than stepped, so it also holds together when that switch drops to bare
+icons on a narrow window.
+
+Nothing animates on arrival. A control that opens on its third segment starts
+there rather than sliding across to it, which would be claiming something had
+just changed. And "Reduce motion" turns the travel off entirely: the highlight
+still moves, it just stops taking time about it.
+
+### The feed's controls are one row
+
+"Mark all read" and "Manage feeds" sat in a right-aligned strip of their own,
+with the filter chips starting at the left margin underneath. Nothing was ever
+on the left of that top row, so the two rows shared no edge and the buttons
+floated above a page-wide gap.
+
+They're all feed-level controls doing the same job, so they're one row now:
+what narrows the feed on the left, what acts on the whole feed on the right,
+with the layout switch at the end. That fixes the alignment and gives the
+articles back a whole strip of vertical space.
+
+On a phone there are six controls and no arrangement of them fits on one line,
+so the row wraps - but it wraps to the left, under the chips, instead of being
+shoved to the far right of a line of its own. Right-aligning it was how the
+original gap got in, and an auto margin was quietly recreating it one breakpoint
+down. The two buttons also drop their labels there and keep their icons, with
+the words still on them for a screen reader.
+
+Those icons were 12px, which is fine as an accent beside a label and far too
+small once the icon *is* the button - they were specks in a 40px square. They
+are sized to the control now, here and in the layout switch, whose three
+segments were mostly empty space around a 13px glyph.
+
+### Everything you press is the same size
+
+The reading list's toolbar was the clearest case: the favorites chip, the
+Filters chip and the layout switch sat in one row at three different heights,
+and the two chips rode above the switch rather than level with it. On a phone
+the gap widened, because two of the three grew for a thumb and the other two
+didn't - the layout switch had no touch size at all, and the favorites pill came
+out 8px shorter than the chip beside it.
+
+That happened because every component picked its own numbers, so the answer is
+not to re-pick them here. There are three heights now, in `tokens.css`, and each
+control names the one it wants: nested controls like the Undo inside a dismissed
+card's pill, standalone ones like chips and switches and icon buttons, and
+fields with the buttons that commit them. Each grows on touch, all at once, so a
+row that lines up with a mouse lines up with a thumb.
+
+The numbers come from the shell bar, which was already the one place where every
+control agreed - so the bar you look at on every screen didn't have to move for
+the rest of the app to line up with it. What did move: the filter chips and
+active-filter pills on the feed and in the reading list, both layout switches,
+the favorites control and its manager, the filter dropdowns and every row inside
+them, the shelf rail, the save and comment pills at the foot of a card, the card
+action buttons, close buttons, the ··· menus on bookmarks and folders, the
+buttons on site and profile pages, and the footers of the feed manager, add
+link, new folder, report and save dialogs. The search box now matches the
+buttons on either side of it, which it never quite did.
+
+Corners had the same problem, and it was most obvious in the feed: a strip of
+rounded-rectangle buttons sitting directly on top of a strip of pills, which
+read as two toolbars from two different apps. The rule was already there in the
+shell bar - labelled controls are pills, icon-only squares are rounded - it just
+wasn't written down anywhere, so half the app followed it by accident. Now it's
+stated, and it holds: Mark all read, Manage feeds, Open original, Follow and the
+buttons on site and profile pages are pills like the chips they sit beside, the
+layout switch and the card action squares stay rounded like every other icon
+button, and dialog buttons stay rounded to match the fields they submit.
+
+The post editor's action bar had all of this at once: the visibility switch came
+out 29px with a 10px corner, the Save button beside it 32px with a 9px one, and
+"Allow comments" was a short label being centred against tall neighbours. The
+same went for the rest of the writing side - My posts, the post page's top bar,
+sign in, the friends and notifications rows, the import dialog, and the edit
+bookmark and edit folder footers, where the delete button was 44px and the two
+buttons that replace it when you arm it were 36, so the row changed height the
+moment you pressed Delete.
+
+Two things also came out of this. The favorites manager's remove button was
+16px, which is a glyph rather than a target, and it is the only way to take a
+favorite off the list - it's 22px now, 30 on touch; the × on a tag chip got the
+same treatment. And the reading list still carried the styles for its old
+per-tag filter chips, replaced when the filters folded into the dropdown; those
+are gone.
+
+The editor's own toolbars and Settings are not in this pass.
+
 ## v1.12.2 - The editor, in the dark and in markdown
 
 **2026-08-05**

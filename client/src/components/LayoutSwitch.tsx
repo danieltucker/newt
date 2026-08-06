@@ -1,3 +1,4 @@
+import useSlidingThumb from '../hooks/useSlidingThumb';
 import styles from './LayoutSwitch.module.css';
 
 export type LayoutOption<T extends string> = {
@@ -43,11 +44,17 @@ interface Props<T extends string> {
 }
 
 export default function LayoutSwitch<T extends string>({ value, options, onChange, label = 'Layout' }: Props<T>) {
+  const { trackRef, setItem, thumbProps } = useSlidingThumb(value);
+
   return (
-    <div className={styles.switch} role="group" aria-label={label}>
+    <div className={styles.switch} role="group" aria-label={label} ref={trackRef}>
+      {/* The selection itself, as one box that moves between the segments
+          rather than a fill that jumps from one to the next. */}
+      <span className={styles.thumb} {...thumbProps} />
       {options.map(o => (
         <button
           key={o.value}
+          ref={setItem(o.value)}
           type="button"
           title={o.title}
           aria-pressed={value === o.value}

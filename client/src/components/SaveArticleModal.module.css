@@ -71,10 +71,11 @@
 
 .input {
   width: 100%;
-  padding: 8px 12px;
+  min-height: var(--ctl-h-lg);
+  padding: 0 12px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -94,10 +95,14 @@
 }
 
 .cancelBtn {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 16px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   color: var(--muted);
@@ -107,10 +112,14 @@
 .cancelBtn:hover { background: var(--surface2); color: var(--text); }
 
 .saveBtn {
-  padding: 8px 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 20px;
   background: var(--accent);
-  border: none;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;

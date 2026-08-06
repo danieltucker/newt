@@ -100,13 +100,16 @@
   text-align: center;
 }
 
+/* The ··· that overlays a pin tile's corner. --ctl-h-sm, the same tier as the
+   folder rows' trigger below - the two are the same control in two places and
+   were 20px and 24px, then 28 and 32 on touch. */
 .pinMenuTrigger {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  border-radius: 7px;
   border: none;
   background: color-mix(in oklab, var(--surface) 78%, transparent);
   color: var(--text);
@@ -180,8 +183,9 @@
   gap: 9px;
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  border-radius: 9px;
+  min-height: var(--ctl-h);
+  padding: 4px 8px;
+  border-radius: var(--ctl-r);
   text-decoration: none;
   transition: background 0.12s;
 }
@@ -391,9 +395,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  border-radius: 7px;
   border: none;
   background: transparent;
   color: var(--muted);
@@ -423,9 +427,11 @@
 }
 
 .dropdownItem {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 9px 14px;
+  min-height: var(--ctl-h);
+  padding: 6px 14px;
   text-align: left;
   background: none;
   border: none;
@@ -514,19 +520,17 @@
   .pinMonogram { font-size: 16px; }
   .pinName { font-size: 12.5px; }
 
-  .pinMenuTrigger {
-    width: 28px;
-    height: 28px;
-  }
+  /* Both ··· triggers measure --ctl-h-sm and have already grown; only the glyph
+     inside needs scaling with them. */
+  .pinMenuTrigger,
+  .menuTrigger { font-size: 16px; }
 
-  .inlineLink { padding: 10px 8px; }
   .inlineFaviconWrap { width: 24px; height: 24px; }
   .inlineMonogram { font-size: 12px; }
   .inlineName { font-size: 15px; }
   .inlineEmpty { font-size: 13.5px; }
 
   .folderName { font-size: 15.5px; }
-  .menuTrigger { width: 32px; height: 32px; font-size: 16px; }
-  .dropdownItem { padding: 12px 16px; font-size: 15px; }
+  .dropdownItem { padding: 8px 16px; font-size: 15px; }
   .newFolder { font-size: 14px; }
 }

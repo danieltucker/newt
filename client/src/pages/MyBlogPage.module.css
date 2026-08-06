@@ -13,6 +13,9 @@
 .topbar { margin-bottom: 16px; }
 
 .backBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
   border: none;
   background: transparent;
   color: var(--muted);
@@ -20,8 +23,8 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
@@ -177,18 +180,29 @@
   flex-shrink: 0;
 }
 
-/* ── Buttons ── */
-.primaryBtn {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+/* ── Buttons ──
+   The three of these share a post's row, and they were 34, 26 and 26 tall with
+   9px and 8px corners between them. One box, from the tokens. */
+.primaryBtn,
+.ghostBtn,
+.dangerBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  padding: 0 15px;
+  border-radius: 999px;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 650;
-  padding: 8px 18px;
-  border-radius: 9px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.primaryBtn {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
 }
 .primaryBtn:hover { filter: brightness(1.08); }
 
@@ -196,13 +210,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font: inherit;
-  font-size: 12px;
   font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
@@ -210,13 +218,7 @@
   border: 1px solid color-mix(in oklab, #e5484d 45%, transparent);
   background: color-mix(in oklab, #e5484d 12%, transparent);
   color: #e5484d;
-  font: inherit;
-  font-size: 12px;
   font-weight: 650;
-  padding: 5px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .dangerBtn:disabled { opacity: 0.6; cursor: default; }
 

@@ -88,20 +88,26 @@
   margin-bottom: 28px;
 }
 
+/* Sign in / Sign up. A segmented control, so the same geometry as LayoutSwitch
+   and the editor's visibility switch - but sized to the form it heads rather
+   than to inline chrome, which is why it takes the tall tier like the fields
+   and the submit button below it. */
 .tabs {
   display: flex;
+  align-items: stretch;
   gap: 4px;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
-  border-radius: 10px;
+  border-radius: var(--ctl-r);
   padding: 4px;
   margin-bottom: 24px;
 }
 
 .tab {
   flex: 1;
-  padding: 8px;
+  padding: 0 8px;
   border: none;
-  border-radius: 7px;
+  border-radius: calc(var(--ctl-r) - 3px);
   background: transparent;
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
@@ -135,9 +141,9 @@
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 11px;
-  padding: 12px 14px;
-  min-height: 46px;
+  border-radius: var(--ctl-r);
+  padding: 0 14px;
+  min-height: var(--ctl-h-lg);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 15px;
   color: var(--text);
@@ -164,11 +170,11 @@
 
 .submit {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
   color: #fff;
-  border: none;
-  border-radius: 11px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 15px;
   font-weight: 600;

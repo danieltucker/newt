@@ -29,12 +29,18 @@
   flex-shrink: 0;
 }
 
+/* This row is the dialog's footer, so it's the --ctl-h-lg tier throughout - the
+   delete and the two buttons that replace it when it's armed. They were 44 and
+   36, which meant the row changed height the moment you pressed Delete. */
 .deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 14px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: transparent;
   border: 1px solid color-mix(in oklab, #FF4500 40%, transparent);
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: #FF4500;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -62,32 +68,33 @@
   min-width: 120px;
 }
 
-.confirmYes {
-  padding: 0 12px;
-  min-height: 36px;
-  background: #FF4500;
-  border: none;
-  border-radius: 8px;
-  color: #fff;
+.confirmYes,
+.confirmNo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  min-height: var(--ctl-h-lg);
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.confirmYes {
+  background: #FF4500;
+  border: 1px solid transparent;
+  color: #fff;
+  font-weight: 600;
 }
 
 .confirmYes:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .confirmNo {
-  padding: 0 12px;
-  min-height: 36px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
   color: var(--text);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 /* ── Feed list ────────────────────────── */
@@ -176,10 +183,11 @@
 .feedFieldLabel:first-child { margin-top: 0; }
 
 .feedSelect {
+  min-height: var(--ctl-h-lg);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: var(--ctl-r);
+  padding: 0 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -204,13 +212,17 @@
 }
 
 .feedCancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--ctl-r);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  padding: 8px 14px;
+  padding: 0 14px;
   cursor: pointer;
 }
 
@@ -285,10 +297,11 @@
 
 .feedInput {
   flex: 1;
+  min-height: var(--ctl-h-lg);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: var(--ctl-r);
+  padding: 0 12px;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -301,9 +314,13 @@
 .feedInput::placeholder { color: var(--muted); opacity: 0.45; }
 
 .feedAdd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   background: var(--accent);
-  border: none;
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-r);
   color: #fff;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;

@@ -8,14 +8,23 @@
 
    Two-class selector on purpose: the surface's own chip class lives in another
    CSS module and sets padding too, so at equal specificity the winner would be
-   decided by bundle order. `.wrap .chip` outranks it either way. */
+   decided by bundle order. `.wrap .chip` outranks it either way.
+
+   It zeroes the padding so the two buttons inside can carry it and both be
+   full-height - which is also why the height has to be restated here. Taking
+   the surface's padding away took its height with it, and this pill came out
+   8px shorter than the Filters chip beside it on a phone. --ctl-h is the same
+   token the surface's own chip uses, so the two agree by construction. */
 .wrap .chip {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
+  min-height: var(--ctl-h);
   padding: 0;
 }
 
+/* Stretch, not centre: each half is a tap target the full height of the pill,
+   so there is no dead band along the top and bottom edges. */
 .filterBtn,
 .caretBtn {
   display: inline-flex;
@@ -29,7 +38,7 @@
 
 .filterBtn {
   gap: 5px;
-  padding: 3px 7px 3px 10px;
+  padding: 0 6px 0 12px;
 }
 
 .filterBtn:disabled {
@@ -40,18 +49,24 @@
 .star { color: var(--fav); flex-shrink: 0; }
 
 .count {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   opacity: 0.75;
 }
 
 .caretBtn {
-  padding: 3px 9px 3px 5px;
+  padding: 0 10px 0 4px;
   opacity: 0.7;
   transition: opacity 0.12s;
 }
 
 .caretBtn:hover { opacity: 1; }
+
+@media (hover: none) {
+  .filterBtn { padding: 0 6px 0 14px; }
+  .caretBtn { padding: 0 12px 0 4px; }
+  .count { font-size: 11.5px; }
+}
 
 /* ── The manager ── */
 .menu {
@@ -119,8 +134,8 @@
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  padding: 3px 4px 3px 8px;
-  border-radius: 20px;
+  padding: 2px 3px 2px 9px;
+  border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--fav) 40%, transparent);
   background: color-mix(in oklab, var(--fav) 12%, transparent);
   color: var(--fav);
@@ -137,13 +152,16 @@
   white-space: nowrap;
 }
 
+/* 16px was the glyph's size, not a target's. It is the only way to take a
+   favorite off the list, so it gets a real one - 22px with a cursor, 30 with a
+   thumb, sitting inside a pill that grew to match. */
 .remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -165,12 +183,16 @@
   margin-top: 11px;
 }
 
+/* A field and the button that commits it: one height, --ctl-h-lg, so the pair
+   reads as a single unit rather than a box with a slightly shorter button
+   glued to it. */
 .input {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  min-height: var(--ctl-h-lg);
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   background: var(--surface2);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;
@@ -181,9 +203,11 @@
 .input:focus { border-color: var(--accent); }
 
 .addBtn {
-  padding: 6px 12px;
+  flex-shrink: 0;
+  min-height: var(--ctl-h-lg);
+  padding: 0 13px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--ctl-r);
   background: var(--surface2);
   color: var(--text);
   font-family: 'Hanken Grotesk', sans-serif;

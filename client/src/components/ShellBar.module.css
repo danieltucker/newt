@@ -78,7 +78,7 @@
 .searchCancel {
   display: none;
   flex-shrink: 0;
-  height: 32px;
+  height: var(--ctl-h);
   padding: 0 4px 0 10px;
   border: none;
   background: none;
@@ -93,12 +93,17 @@
 
 /* ── Brand ──
    Mark plus wordmark, leading the bar and doubling as the way home. Reads as
-   identity rather than a control, so it carries no chrome until hovered. */
+   identity rather than a control, so it carries no chrome until hovered.
+
+   This bar was already the one place where every control agreed on a height, so
+   it is where --ctl-h's numbers came from (see tokens.css). Naming the token
+   here rather than repeating 32 five times is what stops the next control added
+   to the bar from picking its own. */
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
+  height: var(--ctl-h);
   padding: 0 8px 0 5px;
   margin-right: 2px;
   border: 1px solid transparent;
@@ -133,10 +138,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   background: none;
   color: var(--muted);
   cursor: pointer;
@@ -153,7 +158,11 @@
    starts hidden and the 620px query below turns it on. This has to sit *after*
    .iconBtn's `display: inline-flex` above — same specificity, later wins — which
    is why it isn't up with the rest of .searchBtn's siblings. Moving it back
-   there puts a magnifier in the desktop bar next to a search box. */
+   there puts a magnifier in the desktop bar next to a search box.
+
+   It lives in the bar's left cluster (see ShellBar.tsx), so on a wide bar it
+   would sit between the brand and a centred search box - hence hidden, not
+   merely redundant. */
 .searchBtn { display: none; }
 
 .notifBadge {
@@ -176,7 +185,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 32px;
+  height: var(--ctl-h);
   padding: 0 13px 0 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -199,7 +208,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
+  height: var(--ctl-h);
   padding: 0 6px 0 3px;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -311,6 +320,13 @@
    but its label: the bar and the label together cost about 90px, so 72vh
    leaves clearance at every viewport height worth supporting and gives a long
    folder list a good deal more room than it had under the old destinations. */
+.menuRailHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .menuRailLabel {
   padding: 5px 10px 6px;
   font-size: 10.5px;
@@ -319,6 +335,24 @@
   text-transform: uppercase;
   color: var(--muted);
 }
+
+.sheetClose {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sheetClose:hover { background: var(--border); color: var(--text); }
 
 .menuRail {
   width: min(272px, calc(100vw - 44px));
@@ -351,11 +385,13 @@
 }
 
 /* ── Search on a narrow bar (SEARCH_NARROW in ShellBar.tsx) ──
-   Collapsed, search is a magnifier in the action row and the box isn't
-   rendered at all. Expanded (.innerSearching), it is the row: brand, hamburger
-   and every action step aside so the box gets the full width less the Cancel
-   that puts them back. Sharing the row three ways is what left search too
-   narrow to use in the first place, so the expanded state doesn't try to. */
+   Collapsed, search is a magnifier at the left end of the bar, beside the brand
+   and the hamburger, and the box isn't rendered at all. Expanded
+   (.innerSearching), it is the row: brand, hamburger and every action step
+   aside so the box gets the full width less the Cancel that puts them back -
+   growing rightward from the magnifier's own edge, with Cancel where the
+   actions were. Sharing the row three ways is what left search too narrow to
+   use in the first place, so the expanded state doesn't try to. */
 @media (max-width: 620px) {
   .center { display: none; }
   .searchBtn { display: inline-flex; }
@@ -397,13 +433,10 @@
    Last in the file so it outranks the width breakpoints above, which set
    padding on the same elements. */
 @media (hover: none) {
-  .iconBtn {
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
-  }
-
-  .brand, .createBtn, .avatarBtn { height: 40px; }
+  /* The heights aren't restated - every control here measures --ctl-h, which
+     has already grown to 40. What's left is what the token can't know: the
+     corner radius at the larger size, and the type and artwork inside. */
+  .iconBtn { border-radius: 11px; }
 
   .brandMark { width: 27px; height: 27px; }
   .brandText { font-size: 17px; }
@@ -414,7 +447,6 @@
   .avatarFallback { font-size: 13px; }
 
   .searchCancel {
-    height: 40px;
     padding: 0 6px 0 12px;
     font-size: 15px;
     color: var(--accent);
@@ -425,4 +457,57 @@
   .menuItem { padding: 12px 12px; font-size: 15px; }
   .menuHandle { font-size: 13px; }
   .menuRailLabel { font-size: 11.5px; }
+}
+
+/* ── Narrow: bookmarks are a sheet, not a dropdown ──
+   A 272px card hanging off the hamburger, capped at 72vh, is a keyhole view of
+   a folder list on a phone - and the rail carries a pin grid, so the width is
+   what it can least afford to give away. Below this it takes the whole screen
+   under the bar.
+
+   Fixed, but measured from the bar rather than the viewport: .bar carries a
+   backdrop-filter, and that makes it the containing block for anything fixed
+   inside it. `top: 100%` is therefore the bar's own bottom edge, and the height
+   is the rest of the viewport below it - --shellbar-h is the height ShellBar
+   measures and publishes for exactly this kind of sum. Leaving the bar showing
+   is deliberate: the hamburger stays where you left it, so the gesture that
+   opened this closes it, and the ✕ says the same thing for anyone who doesn't
+   make that connection. */
+@media (max-width: 640px) {
+  .menuSheet {
+    position: fixed;
+    top: 100%;
+    left: 0;
+    width: 100vw;
+    min-width: 0;
+    height: calc(100dvh - var(--shellbar-h, 56px));
+    display: flex;
+    flex-direction: column;
+    padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    border: none;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--surface);
+    animation: sheetIn 0.16s ease;
+  }
+
+  .menuSheet .menuRail {
+    flex: 1;
+    width: 100%;
+    max-height: none;
+  }
+
+  .menuRailHead { padding-bottom: 2px; }
+  .sheetClose { display: flex; }
+}
+
+@keyframes sheetIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menuSheet { animation: none; }
 }

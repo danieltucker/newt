@@ -51,12 +51,18 @@
   gap: 10px;
 }
 
+/* This row is the dialog's footer, so it's the --ctl-h-lg tier throughout - the
+   delete and the two buttons that replace it when it's armed. They were 44 and
+   36, which meant the row changed height the moment you pressed Delete. */
 .deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 14px;
-  min-height: 44px;
+  min-height: var(--ctl-h-lg);
   background: transparent;
   border: 1px solid color-mix(in oklab, #FF4500 40%, transparent);
-  border-radius: 11px;
+  border-radius: var(--ctl-r);
   color: #FF4500;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
@@ -82,29 +88,30 @@
   white-space: nowrap;
 }
 
-.confirmYes {
-  padding: 0 12px;
-  min-height: 36px;
-  background: #FF4500;
-  border: none;
-  border-radius: 8px;
-  color: #fff;
+.confirmYes,
+.confirmNo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  min-height: var(--ctl-h-lg);
+  border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
+}
+
+.confirmYes {
+  background: #FF4500;
+  border: 1px solid transparent;
+  color: #fff;
+  font-weight: 600;
 }
 
 .confirmYes:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .confirmNo {
-  padding: 0 12px;
-  min-height: 36px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
   color: var(--text);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
 }

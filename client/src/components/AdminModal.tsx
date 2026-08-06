@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { apiGet, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import styles from './AdminModal.module.css';
 
 interface HistoryPoint { date: string; total: number }
@@ -792,6 +793,13 @@ export default function AdminModal({
 }: Props) {
   // Arriving from a report alert lands on the queue, not the overview.
   const [tab, setTab] = useState<Tab>(focusReportId ? 'reports' : 'overview');
+
+  // Below this the 180px rail and a table of users can't share the width, so
+  // the panel becomes a drill-down: the tab list, then one tab at a time with a
+  // back button. Same shape and same breakpoint as Settings. A report alert
+  // named its tab, so that one skips the list.
+  const compact = useMediaQuery('(max-width: 720px)');
+  const [showList, setShowList] = useState(!focusReportId);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [comments, setComments] = useState<AdminComment[]>([]);
@@ -1214,10 +1222,18 @@ export default function AdminModal({
     }
   }
 
+  // Escape closes, and the page behind holds still while the panel is up -
+  // it covers the whole screen at narrow widths, and scrolling a table to its
+  // end should not then start scrolling the feed underneath.
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [onClose]);
 
   async function toggleBan(u: AdminUser) {
@@ -1310,6 +1326,7 @@ export default function AdminModal({
 
   function switchTab(next: Tab) {
     setTab(next);
+    setShowList(false);
     setQuery('');
     setConfirmDeleteId(null);
     // An expanded thread belongs to the row that opened it; leaving it open
@@ -1326,47 +1343,62 @@ export default function AdminModal({
 
   return (
     <div className={styles.backdrop} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={styles.panel}>
+      <div className={`${styles.panel} ${compact ? styles.compact : ''}`}>
+        {(!compact || showList) && (
         <div className={styles.nav}>
-          <div className={styles.navHeader}>Admin</div>
-          <button className={`${styles.navItem} ${tab === 'overview' ? styles.navActive : ''}`} onClick={() => switchTab('overview')}>
+          <div className={styles.navTop}>
+            <div className={styles.navHeader}>Admin</div>
+            {compact && (
+              <button className={styles.iconBtn} onClick={onClose} aria-label="Close admin">✕</button>
+            )}
+          </div>
+          <button className={`${styles.navItem} ${!compact && tab === 'overview' ? styles.navActive : ''}`} onClick={() => switchTab('overview')}>
             Overview
           </button>
-          <button className={`${styles.navItem} ${tab === 'users' ? styles.navActive : ''}`} onClick={() => switchTab('users')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'users' ? styles.navActive : ''}`} onClick={() => switchTab('users')}>
             Users
           </button>
           {/* Badged with the queue depth: the one tab where the number is the
               reason to open it, not a detail found once inside. */}
-          <button className={`${styles.navItem} ${tab === 'reports' ? styles.navActive : ''}`} onClick={() => switchTab('reports')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'reports' ? styles.navActive : ''}`} onClick={() => switchTab('reports')}>
             Reports
             {openReports > 0 && <span className={styles.navBadge}>{openReports}</span>}
           </button>
-          <button className={`${styles.navItem} ${tab === 'comments' ? styles.navActive : ''}`} onClick={() => switchTab('comments')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'comments' ? styles.navActive : ''}`} onClick={() => switchTab('comments')}>
             Comments
           </button>
-          <button className={`${styles.navItem} ${tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
             Posts
           </button>
           {/* Badged like Reports, and for the same reason: a failing feed is
               work waiting, and the count is why you'd open the tab. The badge
               sits here rather than on Errors because a failing feed is still
               failing, whereas a recorded server error is already in the past. */}
-          <button className={`${styles.navItem} ${tab === 'feeds' ? styles.navActive : ''}`} onClick={() => switchTab('feeds')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'feeds' ? styles.navActive : ''}`} onClick={() => switchTab('feeds')}>
             Feeds
             {feedHealth.length > 0 && <span className={styles.navBadge}>{feedHealth.length}</span>}
           </button>
-          <button className={`${styles.navItem} ${tab === 'errors' ? styles.navActive : ''}`} onClick={() => switchTab('errors')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'errors' ? styles.navActive : ''}`} onClick={() => switchTab('errors')}>
             Errors
           </button>
-          <button className={`${styles.navItem} ${tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
+          <button className={`${styles.navItem} ${!compact && tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
             Audit log
           </button>
         </div>
+        )}
 
+        {(!compact || !showList) && (
         <div className={styles.content}>
           <div className={styles.contentHeader}>
+            {compact && (
+              <button className={styles.backBtn} onClick={() => setShowList(true)}>
+                <span aria-hidden>‹</span> Back
+              </button>
+            )}
             <span className={styles.title}>{TAB_TITLES[tab]}</span>
-            <button className={styles.closeBtn} onClick={onClose}>✕ Close</button>
+            <button className={styles.closeBtn} onClick={onClose}>
+              ✕<span className={styles.closeLabel}>&nbsp;Close</span>
+            </button>
           </div>
 
           {error && <div className={styles.error}>{error}</div>}
@@ -2318,6 +2350,7 @@ export default function AdminModal({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

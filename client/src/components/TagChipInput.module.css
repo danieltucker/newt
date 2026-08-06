@@ -26,11 +26,13 @@
   color: var(--accent);
   background: color-mix(in oklab, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
-  border-radius: 6px;
-  padding: 2px 6px 2px 8px;
+  border-radius: 999px;
+  padding: 2px 4px 2px 9px;
   white-space: nowrap;
 }
 
+/* A real target rather than the glyph's own size - it is the only way to take a
+   tag back off, the same reason FavoritesControl's remove was widened. */
 .remove {
   background: none;
   border: none;
@@ -38,11 +40,15 @@
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+  width: 18px;
+  height: 18px;
   padding: 0;
+  border-radius: 50%;
   opacity: 0.6;
   transition: opacity 0.1s;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .remove:hover {

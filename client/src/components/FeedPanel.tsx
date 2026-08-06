@@ -396,6 +396,32 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   const flushRef = useRef(flushRead);
   useEffect(() => { flushRef.current = flushRead; }, [flushRead]);
 
+  /**
+   * The one place an article becomes read, whatever decided it: scrolled past,
+   * opened in the reader, or clicked through to the site.
+   *
+   * Scrolling used to be the only route, which is why articles you had plainly
+   * looked at stayed unread - open the last card on screen, read the whole
+   * thing, come back, and nothing had scrolled past the top so nothing counted.
+   * Viewing is the stronger signal of the two; it just wasn't wired up.
+   *
+   * The outline clears immediately and the server hears about it on the next
+   * flush. Dismissed cards are skipped: the dismissal has already spent their
+   * place in the unread total, and "read" means nothing for something you threw
+   * away.
+   */
+  const markRead = useCallback((ids: string[]) => {
+    const fresh = ids.filter(id => !readIdsRef.current.has(id) && !ghostsRef.current.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) {
+      readIdsRef.current.add(id);
+      pendingRef.current.add(id);
+    }
+    setReadIds(new Set(readIdsRef.current));
+    if (flushTimer.current) clearTimeout(flushTimer.current);
+    flushTimer.current = setTimeout(() => { flushRef.current(); }, READ_FLUSH_MS);
+  }, []);
+
   // One pass over where the cards actually are. A card counts as read once it
   // sits entirely above the top of the viewport, having previously been at or
   // below it - the "previously" is what stops a folder switch or a Load more
@@ -409,10 +435,9 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   const sweepRead = useCallback(() => {
     const justRead: string[] = [];
     for (const [id, el] of cardEls.current) {
-      // A dismissed card is still mounted as a placeholder. Marking it read as
-      // it scrolls by would count it twice against the unread total, which the
-      // dismissal has already drawn down - and "read" is meaningless for
-      // something you threw away.
+      // A dismissed card is still mounted as a placeholder; it isn't something
+      // you're scrolling past, so it doesn't get "seen" either (markRead drops
+      // it in any case).
       if (ghostsRef.current.has(id)) continue;
       const rect = el.getBoundingClientRect();
       // A detached or display:none card measures 0x0 at the origin; treat it as
@@ -421,16 +446,8 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       if (rect.bottom > 0) { seenRef.current.add(id); continue; }
       if (seenRef.current.has(id) && !readIdsRef.current.has(id)) justRead.push(id);
     }
-    if (justRead.length === 0) return;
-    // Outline clears immediately; the server hears about it on the next flush
-    for (const id of justRead) {
-      readIdsRef.current.add(id);
-      pendingRef.current.add(id);
-    }
-    setReadIds(new Set(readIdsRef.current));
-    if (flushTimer.current) clearTimeout(flushTimer.current);
-    flushTimer.current = setTimeout(() => { flushRef.current(); }, READ_FLUSH_MS);
-  }, []);
+    markRead(justRead);
+  }, [markRead]);
 
   useEffect(() => {
     if (!markReadOnScroll) return;
@@ -611,97 +628,13 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     setUnreadOnly(true);
   }
 
-  // The header is the same in every state, including the ones that render
-  // nothing else: "Manage feeds" has to be reachable precisely when the feed is
-  // empty, which is when the old per-folder UI was hardest to find.
-  const header = (
-    <div className={styles.headerRow}>
-      <div className={styles.sectionLabel}>
-        Feed
-        {/* `total` still counts the placeholders, because it's also what
-            paging measures against - articles.length includes them too, so
-            decrementing it here would strand the last page. Only the label
-            nets them out. */}
-        {articles.length > 0 && <span className={styles.count}>{Math.max(0, total - ghosts.size)}</span>}
-      </div>
-      <div className={styles.headerActions}>
-        {markReadOnScroll && articles.length > 0 && (
-          <button
-            className={styles.markAllBtn}
-            onClick={handleMarkAllRead}
-            disabled={markingAll || !unreadShowing}
-            title={activeFeedFolder
-              ? 'Mark every article in this category as read'
-              : 'Mark every article in your feed as read'}
-          >
-            <CheckAllIcon />
-            {markingAll ? 'Marking…' : 'Mark all read'}
-          </button>
-        )}
-        <button className={styles.manageBtn} onClick={onManageFeeds} title="Add, rename or remove feeds">
-          <SlidersIcon />
-          Manage feeds
-        </button>
-        {onLayoutChange && articles.length > 0 && (
-          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
-        )}
-      </div>
-    </div>
-  );
-
-  if (loading) return (
-    <div className={styles.wrap}>
-      {header}
-      <div className={styles.status}><span className={styles.spinner} /> Fetching feeds…</div>
-    </div>
-  );
-
-  if (error) return (
-    <div className={styles.wrap}>
-      {header}
-      <div className={styles.statusError}>{error}</div>
-    </div>
-  );
-
-  // Following nothing and following feeds that haven't published are different
-  // problems: only the first one has an answer the user can act on.
-  if (subscriptionCount === 0) return (
-    <div className={styles.wrap}>
-      {header}
-      <div className={styles.emptyPitch}>
-        <div className={styles.emptyTitle}>Your feed is empty</div>
-        <div className={styles.emptyText}>
-          Follow a few sites and their new articles land here — no need to go
-          looking for them.
-        </div>
-        <button className={styles.emptyBtn} onClick={onManageFeeds}>Add feeds</button>
-      </div>
-    </div>
-  );
-
-  if (articles.length === 0) return (
-    <div className={styles.wrap}>
-      {header}
-      {activeFeedFolder ? (
-        <div className={styles.status} style={{ opacity: 0.45 }}>
-          Nothing in this category yet.{' '}
-          <button className={styles.inlineBtn} onClick={() => setActiveFeedFolder(null)}>Show all feeds</button>
-        </div>
-      ) : (
-        <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
-      )}
-    </div>
-  );
-
-  const gridClass = layout === 'list' ? styles.gridList
-    : layout === 'magazine' ? styles.gridMagazine
-    : styles.grid;
-
-  const variants = layout === 'magazine' ? magazineVariants(displayed) : null;
-
-  // Category, site and topic are one control now. They used to be two chips
-  // sitting beside a row of every topic in the feed, which made the tags the
-  // loudest thing on the page and left the controls scattered across it.
+  // Category, site and topic are one control. They used to be two chips sitting
+  // beside a row of every topic in the feed, which made the tags the loudest
+  // thing on the page and left the controls scattered across it.
+  //
+  // Built here, above the early returns, because the control bar below is drawn
+  // in every state - including the ones with no articles, where these groups
+  // come out empty and FeedFilterBar folds them away on its own.
   const filterGroups: FilterGroup[] = [
     {
       id: 'category',
@@ -732,33 +665,134 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     },
   ];
 
+  // ── One control bar ──
+  // What narrows the feed on the left, what acts on the whole feed on the right.
+  //
+  // These were two rows: a right-aligned strip of buttons, and the filter chips
+  // underneath starting at the left margin. Nothing sat on the left of the top
+  // row, so the two rows shared no edge and the buttons floated above a gap the
+  // width of the page. They are all feed-level controls doing the same job at
+  // the same altitude, and putting them on one line both fixes the alignment and
+  // gives the articles back a whole strip of vertical space.
+  //
+  // Drawn in every state, including the ones that render nothing else: "Manage
+  // feeds" has to be reachable precisely when the feed is empty, which is when
+  // it is hardest to find.
+  const controlBar = (
+    <FeedFilterBar
+      className={styles.filterBar}
+      groups={filterGroups}
+      // Read state is only tracked when read-on-scroll is on, so without it
+      // there is no such thing as unread here to filter to.
+      unread={markReadOnScroll
+        ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
+        : undefined}
+      // Shown whenever there's a list to manage, not only when something
+      // matches - otherwise a favorite that has stopped matching becomes
+      // unreachable from the page it's affecting. The control disables its
+      // own filter at zero.
+      favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
+        <FavoritesControl
+          favorites={favoriteTags}
+          onChange={onSetFavoriteTags ?? (() => {})}
+          count={favHits.size}
+          filterOn={favoritesOnly}
+          onToggleFilter={() => setFavoritesOnly(v => !v)}
+          chipClassName={`${styles.chip} ${styles.favChip}`}
+          chipActiveClassName={styles.favChipActive}
+        />
+      ) : undefined}
+      actions={
+        <>
+          {markReadOnScroll && articles.length > 0 && (
+            <button
+              className={styles.markAllBtn}
+              onClick={handleMarkAllRead}
+              disabled={markingAll || !unreadShowing}
+              title={activeFeedFolder
+                ? 'Mark every article in this category as read'
+                : 'Mark every article in your feed as read'}
+            >
+              <CheckAllIcon />
+              <span className={styles.actionLabel}>
+                {markingAll ? 'Marking…' : 'Mark all read'}
+              </span>
+            </button>
+          )}
+          {/* The label goes on a narrow screen and the icon carries it - see
+              .actionLabel. This is the rarest of the three (you set your feeds
+              up once), so it is the one that can afford to be a glyph when the
+              row is short of room. */}
+          <button
+            className={styles.manageBtn}
+            onClick={onManageFeeds}
+            title="Add, rename or remove feeds"
+            aria-label="Manage feeds"
+          >
+            <SlidersIcon />
+            <span className={styles.actionLabel}>Manage feeds</span>
+          </button>
+          {onLayoutChange && articles.length > 0 && (
+            <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
+          )}
+        </>
+      }
+    />
+  );
+
+  if (loading) return (
+    <div className={styles.wrap}>
+      {controlBar}
+      <div className={styles.status}><span className={styles.spinner} /> Fetching feeds…</div>
+    </div>
+  );
+
+  if (error) return (
+    <div className={styles.wrap}>
+      {controlBar}
+      <div className={styles.statusError}>{error}</div>
+    </div>
+  );
+
+  // Following nothing and following feeds that haven't published are different
+  // problems: only the first one has an answer the user can act on.
+  if (subscriptionCount === 0) return (
+    <div className={styles.wrap}>
+      {controlBar}
+      <div className={styles.emptyPitch}>
+        <div className={styles.emptyTitle}>Your feed is empty</div>
+        <div className={styles.emptyText}>
+          Follow a few sites and their new articles land here — no need to go
+          looking for them.
+        </div>
+        <button className={styles.emptyBtn} onClick={onManageFeeds}>Add feeds</button>
+      </div>
+    </div>
+  );
+
+  if (articles.length === 0) return (
+    <div className={styles.wrap}>
+      {controlBar}
+      {activeFeedFolder ? (
+        <div className={styles.status} style={{ opacity: 0.45 }}>
+          Nothing in this category yet.{' '}
+          <button className={styles.inlineBtn} onClick={() => setActiveFeedFolder(null)}>Show all feeds</button>
+        </div>
+      ) : (
+        <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
+      )}
+    </div>
+  );
+
+  const gridClass = layout === 'list' ? styles.gridList
+    : layout === 'magazine' ? styles.gridMagazine
+    : styles.grid;
+
+  const variants = layout === 'magazine' ? magazineVariants(displayed) : null;
+
   return (
     <div className={styles.wrap}>
-      {header}
-
-      <FeedFilterBar
-        groups={filterGroups}
-        // Read state is only tracked when read-on-scroll is on, so without it
-        // there is no such thing as unread here to filter to.
-        unread={markReadOnScroll
-          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
-          : undefined}
-        // Shown whenever there's a list to manage, not only when something
-        // matches - otherwise a favorite that has stopped matching becomes
-        // unreachable from the page it's affecting. The control disables its
-        // own filter at zero.
-        favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
-          <FavoritesControl
-            favorites={favoriteTags}
-            onChange={onSetFavoriteTags ?? (() => {})}
-            count={favHits.size}
-            filterOn={favoritesOnly}
-            onToggleFilter={() => setFavoritesOnly(v => !v)}
-            chipClassName={`${styles.chip} ${styles.favChip}`}
-            chipActiveClassName={styles.favChipActive}
-          />
-        ) : undefined}
-      />
+      {controlBar}
 
       <div className={gridClass}>
         {displayed.length === 0 ? (
@@ -780,7 +814,8 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
             readingFolders={readingFolders}
             onCreateFolder={onCreateFolder}
             commentCount={commentCounts[a.link] ?? 0}
-            onOpenReader={() => setReading(a)}
+            onOpenReader={() => { markRead([a.id]); setReading(a); }}
+            onOpenLink={() => markRead([a.id])}
             onViewProfile={onViewProfile}
             onOpenSite={onOpenSite}
             favHits={favHits.get(a.id)}
@@ -849,7 +884,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   );
 }
 
-function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onViewProfile, onOpenSite, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   /** Set when this card is a placeholder for something already dealt with. */
   ghost?: Ghost;
@@ -860,6 +895,8 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   onCreateFolder?: (name: string) => Promise<string>;
   commentCount: number;
   onOpenReader: () => void;
+  /** Followed the article out to its own site - counts as having viewed it. */
+  onOpenLink?: () => void;
   onViewProfile?: (username: string) => void;
   onOpenSite?: (domain: string) => void;
   /** Favorites this article matched, if any - the parent did the matching. */
@@ -890,6 +927,16 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
     const t = setTimeout(() => setReceipt(false), SAVED_PILL_MS);
     return () => clearTimeout(t);
   }, [saved, ghost?.at]);
+
+  // Following the article out is a view, so the card reports it. Middle click
+  // opens a background tab without firing onClick, which is exactly the habit a
+  // feed encourages - onAuxClick catches that half.
+  const openLink = onOpenLink
+    ? {
+      onClick: () => onOpenLink(),
+      onAuxClick: (e: React.MouseEvent) => { if (e.button === 1) onOpenLink(); },
+    }
+    : {};
 
   const showImage = variant === 'feature' || variant === 'standard';
   // Magazine text variants always run their snippet; elsewhere keep the
@@ -950,6 +997,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             className={styles.heroLink}
             tabIndex={-1}
             aria-hidden="true"
+            {...openLink}
           >
             <img
               src={article.imageUrl}
@@ -980,7 +1028,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             })}
           </div>
         )}
-        <a href={article.link} target="_blank" rel="noopener noreferrer" className={styles.title}>
+        <a href={article.link} target="_blank" rel="noopener noreferrer" className={styles.title} {...openLink}>
           {article.title}
         </a>
         {showSnippet && (

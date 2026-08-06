@@ -15,6 +15,9 @@
 }
 
 .backBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
   border: none;
   background: transparent;
   color: var(--muted);
@@ -22,8 +25,8 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
@@ -282,10 +285,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--ctl-r);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -382,7 +385,8 @@
   font: inherit;
   font-size: 13.5px;
   font-weight: 650;
-  padding: 10px 12px;
+  min-height: var(--ctl-h-lg);
+  padding: 0 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -608,6 +612,10 @@
 /* ── Buttons & shared ── */
 .moreBtn {
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
   margin-top: 4px;
   border: 1px solid var(--border);
   background: transparent;
@@ -615,24 +623,36 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 18px;
-  border-radius: 10px;
+  padding: 0 18px;
+  border-radius: var(--ctl-r);
   cursor: pointer;
 }
 .moreBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 .moreBtn:disabled { opacity: 0.6; cursor: default; }
 
-.primaryBtn {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+/* The three action buttons on this page - follow, the ghost beside it, and the
+   block confirmation's danger button. Same box, from --ctl-h, so a row that
+   mixes them can't come out ragged, and pills because they're labelled. */
+.primaryBtn,
+.ghostBtn,
+.dangerBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h);
+  padding: 0 16px;
+  border-radius: 999px;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 650;
-  padding: 7px 14px;
-  border-radius: 9px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.primaryBtn {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
 }
 .primaryBtn:hover { filter: brightness(1.08); }
 .primaryBtn:disabled { opacity: 0.6; cursor: default; }
@@ -641,13 +661,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
   font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 9px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
@@ -677,16 +691,10 @@
 }
 
 .dangerBtn {
-  border: none;
+  border: 1px solid transparent;
   background: #e5484d;
   color: #fff;
-  font: inherit;
-  font-size: 12.5px;
   font-weight: 650;
-  padding: 7px 14px;
-  border-radius: 9px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .dangerBtn:hover:not(:disabled) { filter: brightness(1.08); }
 .dangerBtn:disabled { opacity: 0.55; cursor: default; }
