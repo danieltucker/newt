@@ -2,12 +2,45 @@
   margin-top: 26px;
 }
 
-/* The feed's actions used to be a right-aligned row of their own, sitting above
-   the filter chips. Nothing was ever on its left - the "FEED" label had gone -
-   so it floated over a page-wide gap and shared no edge with the chips below it.
-   They're all feed-level controls at the same altitude, so they're one row now:
-   FeedFilterBar's `actions` slot, which was built for exactly this and had
-   never been used. See the controlBar note in FeedPanel.tsx. */
+/* ── The control bands ──
+   Two rows with two different jobs: what acts on the feed, then what narrows it.
+   They were briefly one row, which dressed "Mark all read" as a filter chip and
+   sat it next to actual filter chips - see the controlBar note in FeedPanel.tsx
+   for why that had to come apart again. */
+.controls {
+  margin-bottom: 14px;
+}
+
+/* Right-aligned, because the band underneath is a full-width box: the two share
+   the right edge, which is what stops this reading as a strip floating over a
+   page-wide gap (the fault the single row was introduced to fix). Wraps rather
+   than shrinking - these buttons keep their words. */
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* The filter band. A box, so four controls read as one set of controls for one
+   purpose rather than as four buttons that happen to be adjacent - which is the
+   whole ask. Padding rather than a background alone: the outline is what draws
+   the boundary, and it needs room inside it to be a boundary of anything.
+
+   No `overflow` of any kind. The Filters dropdown is absolutely positioned
+   against this box on a narrow screen (see .panel in FeedFilterBar), and any
+   overflow value but `visible` would clip it into a sliver. */
+.filterBox {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface2) 45%, transparent);
+}
+
+/* No rule is needed for the nothing-to-filter case: FeedFilterBar returns null
+   when it has no chips and no groups, so the box is never drawn empty. */
 
 /* The card's action strip: read/comment on the left, save on the right,
    separated from the card meta by a hairline. Wraps rather than squeezes - on a
@@ -58,10 +91,14 @@
    layout switch at the end of the row stays a rectangle: it is icon-only, and
    round icon buttons read as a different control. See the shape rule in
    tokens.css. */
-.markAllBtn {
+/* Mark all read. Slightly larger type than the chips below it and an opaque
+   surface against the filter box's translucent one: it is the control in this
+   band that *does* something, and it can't be undone, so it should not be
+   mistakable for the view controls underneath. */
+.actionBtnMain {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-height: var(--ctl-h);
   padding: 0 13px;
   border-radius: 999px;
@@ -69,22 +106,154 @@
   background: var(--surface2);
   color: var(--muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 
-.markAllBtn:hover:not(:disabled) {
+.actionBtnMain:hover:not(:disabled) {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
-/* Stays in place when there is nothing unread, so the header doesn't reflow */
-.markAllBtn:disabled {
+/* Stays in place when there is nothing unread, so the row doesn't reflow */
+.actionBtnMain:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Wrapped round the glyph rather than put on the button, so the label doesn't
+   revolve with it. */
+.spinning {
+  display: inline-flex;
+  animation: feedSpin 0.9s linear infinite;
+}
+
+@keyframes feedSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning { animation: none; }
+}
+
+/* ── "6 new articles" ──
+   The only thing that puts newly-arrived articles on screen.
+
+   Fixed, not in the flow, and that is the whole point rather than a styling
+   preference. A banner in the flow would appear at the top of the feed and push
+   every card below it down the page - a smaller version of exactly the problem
+   this mechanism exists to avoid, and it would land while you were reading,
+   which is the one moment it must not. Costing zero layout is what lets it
+   appear whenever it likes.
+
+   It rides under the shell bar, whose height ShellBar measures and publishes as
+   --shellbar-h; the fallback only covers the frame before that lands. z-index
+   matches BackToTop - above the page, below every modal, because a reader open
+   over the top of this has nothing to do with it. */
+.newBanner {
+  position: fixed;
+  top: calc(var(--shellbar-h, 56px) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100vw - 32px);
+  min-height: var(--ctl-h);
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 88%, var(--surface));
+  box-shadow: 0 8px 26px color-mix(in oklab, var(--shadow) 60%, transparent);
+  color: #fff;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+  animation: newBannerIn 0.2s ease;
+}
+
+.newBanner:hover { filter: brightness(1.1); }
+
+.newBanner:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@keyframes newBannerIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .newBanner { animation: none; }
+}
+
+/* ── The refresh that turns up after a quarter of an hour ──
+   Bottom centre, floating, and absent until the page has been up long enough
+   for refetching to mean anything - see PAGE_STALE_MS in FeedPanel.tsx for why
+   this is not a toolbar button.
+
+   Bottom *centre* specifically: the right-hand column of that edge is spoken
+   for by the back-to-top button and the notes launcher, which stack there (see
+   BackToTop.module.css). Same glass and the same z-index as those - above the
+   page, below every modal, since a reader open over the top of this has nothing
+   to do with it. */
+.floatingRefresh {
+  position: fixed;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100vw - 32px);
+  min-height: var(--ctl-h);
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 8px 26px color-mix(in oklab, var(--shadow) 55%, transparent);
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  animation: floatingIn 0.2s ease;
+}
+
+.floatingRefresh:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.floatingRefresh:disabled { cursor: default; }
+
+.floatingRefresh:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.floatingRefresh svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+@keyframes floatingIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floatingRefresh { animation: none; }
 }
 
 /* Same shape as Mark all read - it belongs to the same strip of feed-level
@@ -113,19 +282,12 @@
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
-/* Here the filter bar is a row of its own, so it owns the gap down to the
-   article grid. The bar itself carries no margin - see the note on .bar in
-   FeedFilterBar for why that has to be the consumer's call. */
-.filterBar {
-  margin-bottom: 14px;
-}
-
-/* The glyph inside the two action buttons. 12px was an accent sitting next to a
+/* The glyph inside the action buttons. 12px was an accent sitting next to a
    label; the moment the label goes (see the narrow-screen block at the foot of
-   this file) it is the entire button, and a 12px mark in a 32px box reads as a
-   speck rather than an icon. Sized here rather than on the <svg> so the
-   icon-only case can ask for more. */
-.markAllBtn svg,
+   this file, which now only does that to Manage feeds) it is the entire button,
+   and a 12px mark in a 32px box reads as a speck rather than an icon. Sized here
+   rather than on the <svg> so the icon-only case can ask for more. */
+.actionBtnMain svg,
 .manageBtn svg {
   width: 15px;
   height: 15px;
@@ -922,21 +1084,61 @@
   .snippet,
   .gridMagazine .snippet { font-size: 14.5px; opacity: 0.85; -webkit-line-clamp: 3; }
 
-  /* A "row" with no width to spare is just a card - let it stack. */
-  .gridList .card { flex-direction: column; align-items: stretch; gap: 10px; }
-  .gridList .cardBottom { margin-top: 2px; }
+  /* ── The list stays a list ──
+     This used to read "a row with no width to spare is just a card - let it
+     stack", and stack it did: full-size headline, meta on its own line, and the
+     action strip back with its hairline. The result was a card, so List and
+     Cards were the same view on a phone - and a phone is where a dense list is
+     worth the most, since it is where the least fits on screen.
+
+     It stays a row that wraps: the headline takes the full width and everything
+     else shares the line under it. Two lines per article instead of one, which
+     is the honest cost of a 390px screen, against the eight or so a card takes.
+
+     `flex-wrap` on the row is what does it - the title is given `flex-basis:
+     100%` so it always claims its own line, and the meta, the actions and the
+     dismiss button fall in beside each other underneath. */
+  .gridList .card {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 10px;
+    padding: 10px 12px;
+  }
+
+  .gridList .cardBottom { flex: 1 1 auto; margin-top: 0; gap: 8px; }
   .gridList .domain { max-width: none; }
+
+  /* Claims the whole first line, and stays a headline rather than becoming the
+     18px display type the grouped rule above gives every other layout - at that
+     size two lines of title is most of a screenful. Two lines, because one
+     truncates most real headlines to uselessness at this width. */
+  .gridList .title {
+    flex: 1 1 100%;
+    font-size: 14.5px;
+    line-height: 1.32;
+    -webkit-line-clamp: 2;
+  }
+
+  /* The pills shrink instead of the row growing. They keep their words - these
+     are the two things you do to an article, and an unlabelled bookmark glyph
+     is exactly the sort of guess the feed's toolbar was just rid of. */
+  .gridList .commentRow { flex: 0 0 auto; gap: 5px; }
+  .gridList .commentRow button { font-size: 12px; }
+  .gridList .cardActions { flex: 0 0 auto; }
   .domain, .handle, .date, .readTime { font-size: 13px; }
   .domain { opacity: 0.7; }
   .favicon { width: 16px; height: 16px; }
 
-  /* ── The two feed actions go icon-only ──
-     The control bar holds six things at this width and can't fit them on one
-     line however they're dressed, so the labels buy back the room that keeps
-     the wrap to two tidy rows instead of three. The words stay in the
-     accessibility tree - see the title and aria-label in FeedPanel.tsx.
+  /* ── Manage feeds goes icon-only, and only it ──
+     Something has to give at this width, and this is the control that can
+     afford to: you set your feeds up once. Mark all read keeps its words at
+     every size - it acts on something, irreversibly, and an unlabelled
+     double-tick that clears every article you have is precisely the control
+     nobody could identify. The words here stay in the accessibility tree; see
+     the title and aria-label in FeedPanel.tsx.
 
-     This lives here, in the narrow block that was already styling these two
+     This lives here, in the narrow block that was already styling these
      buttons, rather than in one of its own further up the file: two blocks at
      the same width and specificity meant the later one silently won, and the
      later one was this. */
@@ -951,9 +1153,8 @@
     white-space: nowrap;
   }
 
-  /* Square once the label goes, so they read as icon buttons rather than as
-     pills that lost their text. */
-  .markAllBtn,
+  /* Square once the label goes, so it reads as an icon button rather than as a
+     pill that lost its text. */
   .manageBtn {
     width: var(--ctl-h);
     padding: 0;
@@ -963,11 +1164,17 @@
 
   /* Now that the glyph is the whole button it gets a glyph's size - a little
      over half the button, which is what every other icon button here does. */
-  .markAllBtn svg,
   .manageBtn svg {
     width: 18px;
     height: 18px;
   }
+
+  /* Stays labelled, so it only needs the type bump everything else at this
+     width gets. */
+  .actionBtnMain { font-size: 13px; }
+
+  .newBanner,
+  .floatingRefresh { font-size: 14px; }
 
   .status, .statusError { font-size: 14.5px; }
   .moreBtn { font-size: 15px; padding: 14px 16px; }
@@ -976,10 +1183,14 @@
   .emptyBtn { font-size: 15px; padding: 11px 18px; }
 
   /* The card is the full width now, so the two pills sit side by side again and
-     each is wide enough to hit. The list layout's row is stacking here (above),
-     so its action strip goes back to being a strip - hairline and all. */
-  .commentRow,
-  .gridList .commentRow {
+     each is wide enough to hit.
+
+     Cards only. The list layout used to be included here, back when it stacked
+     into a card at this width; now that it stays a row (see .gridList .card
+     above) it keeps the tight, hairline-less strip from its own base rules, and
+     adding a top border and 10px of padding to every row is precisely the
+     height that made the two views indistinguishable. */
+  .commentRow {
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 10px;

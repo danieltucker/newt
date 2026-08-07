@@ -43,8 +43,6 @@ interface Props {
   unread?: { count: number; active: boolean; onToggle: () => void };
   /** The favourites toggle keeps its own control (it manages a list too). */
   favorites?: React.ReactNode;
-  /** Layout switch and any other right-aligned chrome. */
-  actions?: React.ReactNode;
   /**
    * Spacing, and nothing else. The bar carries no margin of its own because it
    * is sometimes a row (the feed, where it needs a gap to the grid below) and
@@ -84,8 +82,14 @@ const XIcon = () => (
  * chosen shows as removable pills, and everything you haven't stays folded away.
  * Unread keeps its own chip because it carries a count and is the one filter
  * people reach for without thinking.
+ *
+ * Everything in here changes what you are looking at and nothing in here writes
+ * anything. It used to carry an `actions` slot for the feed's buttons too, which
+ * put "Mark all read" in the same row, in the same dress, as a filter chip - one
+ * of those is undoable and the other is not. The feed lays its actions out
+ * itself now, above this bar; see the controlBar note in FeedPanel.
  */
-export default function FeedFilterBar({ groups, unread, favorites, actions, className = '' }: Props) {
+export default function FeedFilterBar({ groups, unread, favorites, className = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -119,7 +123,7 @@ export default function FeedFilterBar({ groups, unread, favorites, actions, clas
     return group.options.find(o => o.value === group.value)?.label ?? group.value ?? '';
   }
 
-  if (usable.length === 0 && !unread && !favorites && !actions) return null;
+  if (usable.length === 0 && !unread && !favorites) return null;
 
   const current = usable.find(g => g.id === activeGroup) ?? null;
   const filtered = current && q.trim()
@@ -273,8 +277,6 @@ export default function FeedFilterBar({ groups, unread, favorites, actions, clas
           </button>
         ))}
       </div>
-
-      {actions && <div className={styles.right}>{actions}</div>}
     </div>
   );
 }

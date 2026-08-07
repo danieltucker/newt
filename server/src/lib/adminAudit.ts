@@ -13,11 +13,16 @@ export const ADMIN_ACTIONS = {
   userDelete: 'user.delete',
   reportResolve: 'report.resolve',
   reportDismiss: 'report.dismiss',
+  feedDisable: 'feed.disable',
+  feedEnable: 'feed.enable',
+  feedDelete: 'feed.delete',
+  domainBlock: 'domain.block',
+  domainUnblock: 'domain.unblock',
 } as const;
 
 export type AdminActionName = (typeof ADMIN_ACTIONS)[keyof typeof ADMIN_ACTIONS];
 
-export type AdminTargetType = 'comment' | 'blogPost' | 'user' | 'report';
+export type AdminTargetType = 'comment' | 'blogPost' | 'user' | 'report' | 'feed' | 'domain';
 
 export interface AdminActionInput {
   actorId: string;
@@ -63,6 +68,11 @@ const ACTION_LABELS: Record<string, string> = {
   'user.delete': 'Deleted account',
   'report.resolve': 'Upheld report',
   'report.dismiss': 'Dismissed report',
+  'feed.disable': 'Switched off feed',
+  'feed.enable': 'Switched feed back on',
+  'feed.delete': 'Deleted feed',
+  'domain.block': 'Blocked domain',
+  'domain.unblock': 'Unblocked domain',
 };
 
 export function actionLabel(action: string): string {
@@ -72,6 +82,11 @@ export function actionLabel(action: string): string {
 }
 
 // Whether an action destroyed something irreversibly, which the UI flags.
+// Disabling a feed is not here on purpose: it is the reversible half of the
+// pair, and flagging it the same as a delete would make the safe action look as
+// alarming as the unsafe one.
 export function isDestructive(action: string): boolean {
-  return action === ADMIN_ACTIONS.commentDelete || action === ADMIN_ACTIONS.userDelete;
+  return action === ADMIN_ACTIONS.commentDelete
+    || action === ADMIN_ACTIONS.userDelete
+    || action === ADMIN_ACTIONS.feedDelete;
 }

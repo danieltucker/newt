@@ -2,6 +2,7 @@ import nodeFetch from 'node-fetch';
 import type { Readable } from 'stream';
 import { isSafeUrl } from './isSafeUrl';
 import { parseFeed, parseFeedTitle } from './feedUtils';
+import { platformFeed } from './feedSources';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
 
@@ -100,6 +101,11 @@ export type ResolvedFeed =
  *
  * Bare hostnames ("npr.org") are allowed and assumed https — a scheme is not
  * something a reader should have to remember.
+ *
+ * A handful of sites are asked about by name first (see feedSources): YouTube,
+ * Bluesky, Reddit and GitHub all publish perfectly good feeds that this general
+ * method cannot find, because the address of the feed isn't derivable from the
+ * page and isn't advertised where the page can be read cheaply.
  */
 export async function resolveFeedUrl(raw: string): Promise<ResolvedFeed> {
   const trimmed = raw.trim();
@@ -120,9 +126,27 @@ export async function resolveFeedUrl(raw: string): Promise<ResolvedFeed> {
     return { ok: false, error: "That address can't be reached" };
   }
 
+  // Known platforms first. This is a shortcut, never a gate: anything it can't
+  // place — including a youtube.com URL that isn't a channel — falls through to
+  // the general method below rather than being rejected.
+  const platform = await platformFeed(target, fetchXml);
+  if (platform) {
+    for (const candidate of platform.candidates) {
+      if (!(await isSafeUrl(candidate))) continue;
+      const xml = await fetchXml(candidate, 500_000);
+      if (!xml || !isFeedXml(xml)) continue;
+      const described = describeFeed(xml);
+      // An empty candidate is not an answer — a repo with no releases yet should
+      // fall through to its commits, not resolve to a feed that never delivers.
+      if (described.itemCount > 0) return { ok: true, url: candidate, ...described };
+    }
+  }
+
   const body = await fetchXml(target.toString(), 500_000);
   if (body === null) {
-    return { ok: false, error: "Couldn't load that address — is it up?" };
+    return { ok: false, error: platform
+      ? `Couldn't find anything to follow on that ${platform.source} address`
+      : "Couldn't load that address — is it up?" };
   }
 
   // Already a feed: take it as given.
@@ -149,7 +173,9 @@ export async function resolveFeedUrl(raw: string): Promise<ResolvedFeed> {
     }
   }
 
-  return { ok: false, error: `No feed found at ${target.hostname}` };
+  return { ok: false, error: platform
+    ? `Couldn't find anything to follow on that ${platform.source} address`
+    : `No feed found at ${target.hostname}` };
 }
 
 function describeFeed(xml: string): { title: string; itemCount: number } {

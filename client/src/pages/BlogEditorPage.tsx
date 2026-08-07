@@ -58,14 +58,41 @@ function textLength(html: string): number {
   return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().length;
 }
 
-// Everything a save sends, as one comparable string. Taken again after each
-// load and each save, so Save can be greyed out while the editor still matches
-// what the server holds.
+// How long typing has to pause before htmlIsBlank/textLength are run over the
+// post again. Short enough that the counter feels live, long enough that a
+// burst of typing costs one pass rather than one per character.
+const MEASURE_IDLE_MS = 250;
+
+// Everything a save sends. Taken again after each load and each save, so Save
+// can be greyed out while the editor still matches what the server holds.
+//
+// Compared field by field rather than serialized to one string. It used to be a
+// JSON.stringify of the whole payload, rebuilt on every keystroke - which meant
+// escaping and copying the entire post per character typed, on top of the full
+// string comparison that followed. The body check here is usually a pointer
+// comparison (a save stores the very string the ref is holding) and otherwise
+// fails on the length, so the common cases cost nothing.
+interface Snapshot {
+  title: string;
+  body: string;
+  visibility: CommentVisibility;
+  commentsEnabled: boolean;
+  heroImage: string;
+}
+
 function snapshotOf(
   title: string, body: string,
   visibility: CommentVisibility, commentsEnabled: boolean, heroImage: string,
-): string {
-  return JSON.stringify([title.trim(), body, visibility, commentsEnabled, heroImage]);
+): Snapshot {
+  return { title: title.trim(), body, visibility, commentsEnabled, heroImage };
+}
+
+function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
+  return a.title === b.title
+    && a.visibility === b.visibility
+    && a.commentsEnabled === b.commentsEnabled
+    && a.heroImage === b.heroImage
+    && a.body === b.body;
 }
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
@@ -245,8 +272,9 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   const [createdId, setCreatedId] = useState<string | null>(null);
   // Snapshot of what the server holds, so Save knows whether there is anything
   // to send. Null while a new post has never been saved.
-  const savedRef = useRef<string | null>(null);
+  const savedRef = useRef<Snapshot | null>(null);
   const [bodyRev, setBodyRev] = useState(0);
+  const measureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // /reference offers the same saved articles a note does - one reading list,
   // cited from wherever you happen to be writing.
@@ -285,15 +313,33 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
     return () => { document.title = 'Newt'; };
   }, [isNew, seed]);
 
+  // Recompute what has to be read out of the body itself. Both helpers run a
+  // string replace across the whole post, so this is the expensive part of an
+  // edit and it is kept off the keystroke path - see handleBody.
+  const measureBody = useCallback(() => {
+    if (measureTimer.current) { clearTimeout(measureTimer.current); measureTimer.current = null; }
+    const html = bodyRef.current;
+    const blank = htmlIsBlank(html);
+    const len = textLength(html);
+    setBodyEmpty(prev => (prev === blank ? prev : blank));
+    setTextLen(prev => (prev === len ? prev : len));
+  }, []);
+
   const handleBody = useCallback((html: string) => {
     bodyRef.current = html;
-    const blank = htmlIsBlank(html);
-    setBodyEmpty(prev => (prev === blank ? prev : blank));
-    setTextLen(textLength(html));
     // The body lives in a ref, so editing it alone would not re-render this
     // component - and `dirty` below, which Save reads, would go stale.
     setBodyRev(r => r + 1);
-  }, []);
+    // The character count and the blank check are display and validation, and
+    // neither has to be right *this* character. Running them per keystroke put
+    // five full passes over the post between the key going down and the letter
+    // appearing, which on a phone with a long draft is a visible stall. They
+    // settle when typing pauses; save() measures for itself before it commits.
+    if (measureTimer.current) clearTimeout(measureTimer.current);
+    measureTimer.current = setTimeout(measureBody, MEASURE_IDLE_MS);
+  }, [measureBody]);
+
+  useEffect(() => () => { if (measureTimer.current) clearTimeout(measureTimer.current); }, []);
 
   const tooLong = textLen > MAX_BLOG_TEXT;
   const effectiveId = post?.id ?? createdId;
@@ -312,16 +358,13 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
     return true;
   }
 
-  // Everything the save payload carries, as one comparable string. Compared
-  // against the snapshot taken at load/save time so Save can be greyed out when
-  // there is nothing new to send.
-  const current = useMemo(
-    () => snapshotOf(title, bodyRef.current, visibility, commentsEnabled, heroImage),
-    // bodyRev stands in for bodyRef.current, which a dependency array can't watch
-    [title, visibility, commentsEnabled, heroImage, bodyRev],
-  );
+  // Everything the save payload carries. Compared against the snapshot taken at
+  // load/save time so Save can be greyed out when there is nothing new to send.
+  // `bodyRev` is not read here - it is what causes the render that recomputes
+  // it, since a dependency array can't watch a ref.
+  const current = snapshotOf(title, bodyRef.current, visibility, commentsEnabled, heroImage);
   // A brand-new post has no server copy yet, so anything in it counts as unsaved.
-  const dirty = savedRef.current === null || current !== savedRef.current;
+  const dirty = savedRef.current === null || !sameSnapshot(current, savedRef.current);
 
   const valid = title.trim().length > 0 && !bodyEmpty && !tooLong && !busy;
   const canSave = valid && dirty;
@@ -330,9 +373,18 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   const hasContent = title.trim().length > 0 || !bodyEmpty;
 
   async function save(nextVisibility?: CommentVisibility) {
+    // Measure the body for real before deciding. `bodyEmpty` and `tooLong` are
+    // settled a moment after typing stops, so a save fired inside that moment -
+    // the first character of a new post, then straight to Save - would be
+    // judged against the state before it was typed.
+    const html = bodyRef.current;
+    const blank = htmlIsBlank(html);
+    const over = textLength(html) > MAX_BLOG_TEXT;
+    measureBody();
+    const canSaveNow = title.trim().length > 0 && !blank && !over && !busy;
     // Publishing always changes the visibility, so it stays available on a post
     // with no other edits pending.
-    if (!valid || (!dirty && !nextVisibility)) return;
+    if (!canSaveNow || (!dirty && !nextVisibility)) return;
     if (!effectiveId && !claimCreate()) return;
     const vis = nextVisibility ?? visibility;
     setBusy(true);
@@ -398,8 +450,10 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
       saveRef.current();
     }, wait);
     return () => clearTimeout(timer);
-    // `current` is the whole payload as one string, so this restarts on any edit
-  }, [autosaves, canSave, current]);
+    // Restart on any edit. `current` is a fresh object every render and can't be
+    // a dependency; these are the things it is built from, with bodyRev
+    // standing in for the body itself.
+  }, [autosaves, canSave, bodyRev, title, visibility, commentsEnabled, heroImage]);
 
   // What the debounce still owes, sent on the way out. Rebuilt each render
   // because the cleanup that calls it runs once, long after this render's

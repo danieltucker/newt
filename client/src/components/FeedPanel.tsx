@@ -36,6 +36,19 @@ const READ_FLUSH_MS = 600;
 // still sitting there when you reach for the comments.
 const SAVED_PILL_MS = 2400;
 
+// How often an open feed asks whether anything has arrived. This only counts —
+// it never inserts — so it can afford to be quiet. Paused while the tab is
+// hidden, and run once immediately on coming back, which is the case that
+// actually matters: the feed you left open yesterday.
+const NEW_CHECK_MS = 3 * 60 * 1000;
+
+// How long a page has to have been sitting there before it offers to go and
+// refetch the feeds. A refresh control on a page drawn thirty seconds ago is
+// answering a question nobody has; on one left open over lunch it is the only
+// question there is. So it isn't in the toolbar at all - it arrives when it
+// starts being the thing you want.
+const PAGE_STALE_MS = 15 * 60 * 1000;
+
 // A card that's been dealt with - dismissed, or saved to the reading list - but
 // is still drawn in its slot, greyed out, until the feed reloads. Removing it
 // outright pulls every card below it up, and the next click lands on whatever
@@ -157,6 +170,22 @@ const CheckAllIcon = () => (
   </svg>
 );
 
+const RefreshIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+    <polyline points="21 3 21 9 15 9" />
+  </svg>
+);
+
+const ArrowUpIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 19V5" />
+    <polyline points="5 12 12 5 19 12" />
+  </svg>
+);
+
 const SlidersIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -238,6 +267,23 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // tiles in the rail rather than counting only what happens to be loaded.
   const [unreadTotal, setUnreadTotal] = useState(0);
 
+  // ── Arrivals ──
+  // The feed does not restock itself while you're reading it. Anything that
+  // lands after the page was drawn would push whatever you were looking at down
+  // the screen and change where your next click goes, so new articles are
+  // counted and announced, and only inserted when you say so.
+  //
+  // `loadedAt` is the server's own clock, taken before it read the page, and is
+  // what the count is measured against - the client's clock is not the same
+  // clock and may be minutes out.
+  const [loadedAt, setLoadedAt] = useState<string | null>(null);
+  const [newCount, setNewCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  // Whether this page has been up long enough to be worth refetching. Measured
+  // from the last load rather than from mount, so refreshing genuinely resets
+  // it instead of leaving the button hanging around after it has been used.
+  const [stale, setStale] = useState(false);
+
   // ── What the unread filter shows ──
   // Not "everything currently unread": read-on-scroll would then delete each
   // card as you passed it and you'd never reach the bottom. Instead an article
@@ -300,11 +346,19 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       const scope = activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '';
       const r = await apiFetch(`/api/v1/feeds/articles?offset=${offset}&limit=${pageSize}${scope}`);
       if (!r.ok) { setError('Could not load feed'); return; }
-      const data: { articles: FeedArticle[]; total: number; unread?: number } = await r.json();
+      const data: { articles: FeedArticle[]; total: number; unread?: number; loadedAt?: string } = await r.json();
       const merged = offset === 0 ? data.articles : [...existing, ...data.articles];
       setArticles(merged);
       setTotal(data.total);
       if (typeof data.unread === 'number') setUnreadTotal(data.unread);
+      // Only a fresh first page is a new watermark. A "load more" is this same
+      // view reaching further down it, and taking its timestamp would forgive
+      // everything that had arrived in the meantime - the count would go back to
+      // zero for no reason the reader could see.
+      if (offset === 0 && data.loadedAt) {
+        setLoadedAt(data.loadedAt);
+        setNewCount(0);
+      }
       // Union rather than replace - ids marked read locally this session may not
       // have reached the server yet
       const serverRead = data.articles.filter(a => a.read).map(a => a.id);
@@ -334,8 +388,100 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     // Cleared here rather than in its own effect so it happens before the read
     // sweep seeds it - the other order wiped the seeding on every reload.
     seenRef.current = new Set();
+    setNewCount(0);
     load(0, []);
   }, [activeFeedFolder, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Arrivals: counted here, inserted only when asked for ────────────────
+
+  /**
+   * Redraws the feed from the top, keeping the filters you set.
+   *
+   * Deliberately not the reset effect above: that one also clears the site and
+   * topic filters, which is right when you switch category (a site in Tech
+   * usually isn't in Local) and wrong here. Asking for new articles is not
+   * asking to be put back at the start of your own view.
+   *
+   * The placeholders do go - a reload is exactly what they were waiting for -
+   * and the scroll goes to the top, because the whole point of the press was to
+   * see what has arrived above what you were reading.
+   */
+  const reloadFromTop = useCallback(() => {
+    setGhosts(new Map());
+    seenRef.current = new Set();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    load(0, []);
+  }, [load]);
+
+  // Counts what has landed since `loadedAt`. Never touches the list.
+  const checkForNew = useCallback(async () => {
+    if (!loadedAt) return;
+    const scope = activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '';
+    try {
+      const r = await apiFetch(`/api/v1/feeds/articles/new-count?since=${encodeURIComponent(loadedAt)}${scope}`);
+      if (!r.ok) return;
+      const data: { count: number } = await r.json();
+      setNewCount(data.count);
+    } catch {
+      // A count that failed to arrive is not worth telling anyone about; the
+      // next tick will have another go.
+    }
+  }, [loadedAt, activeFeedFolder]);
+
+  // The age of what's on screen. Re-armed by every load, which is what makes
+  // pressing the button put it away.
+  useEffect(() => {
+    if (!loadedAt) return;
+    setStale(false);
+    const timer = setTimeout(() => setStale(true), PAGE_STALE_MS);
+    return () => clearTimeout(timer);
+  }, [loadedAt]);
+
+  // Kept off the effect's dependencies so a changing callback identity can't
+  // restart the interval on every render.
+  const checkRef = useRef(checkForNew);
+  useEffect(() => { checkRef.current = checkForNew; }, [checkForNew]);
+
+  useEffect(() => {
+    if (!loadedAt) return;
+    const tick = () => { if (document.visibilityState === 'visible') checkRef.current(); };
+    const timer = setInterval(tick, NEW_CHECK_MS);
+    // Coming back to a tab that has been sitting open is the case this whole
+    // mechanism exists for - "I have to refresh to get updates when I've been
+    // gone for a bit" - so it asks straight away rather than waiting out the
+    // rest of an interval that was running while nobody was looking.
+    const onVisible = () => { if (document.visibilityState === 'visible') checkRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [loadedAt]);
+
+  /**
+   * Go and look now, then show what came back.
+   *
+   * The count above only reports what the background refresher has already
+   * collected, so on its own it can't answer "is there anything new right now" -
+   * it would report zero for a feed nobody had polled in twenty-nine minutes.
+   * This is the button that goes and asks the publishers, then redraws.
+   */
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await apiFetch('/api/v1/feeds/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ folder: activeFeedFolder ?? 'all' }),
+      });
+    } catch {
+      // Even a failed fetch is worth reloading after: the background refresher
+      // may well have collected something since this page was drawn.
+    } finally {
+      setRefreshing(false);
+      reloadFromTop();
+    }
+  }
 
   // ── Read-on-scroll ────────────────────────────────────────────────────
   // A card flips to read once it has been on screen and then leaves past the
@@ -665,80 +811,121 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     },
   ];
 
-  // ── One control bar ──
-  // What narrows the feed on the left, what acts on the whole feed on the right.
+  // ── Two bands, not one row ──
+  // Things that *do* something on top, right-aligned; things that change what
+  // you're looking at underneath, gathered into a box of their own.
   //
-  // These were two rows: a right-aligned strip of buttons, and the filter chips
-  // underneath starting at the left margin. Nothing sat on the left of the top
-  // row, so the two rows shared no edge and the buttons floated above a gap the
-  // width of the page. They are all feed-level controls doing the same job at
-  // the same altitude, and putting them on one line both fixes the alignment and
-  // gives the articles back a whole strip of vertical space.
+  // They were all one row, which put "Mark all read" - which writes to every
+  // article you have - immediately beside a filter chip that only changes the
+  // view, dressed identically and reading as another chip. That is the wrong
+  // pairing to make, and it is why the double-tick had to be guessed at: on a
+  // narrow screen its label dropped and an unlabelled glyph was all that was
+  // left of an irreversible action.
+  //
+  // So: two bands with different jobs and different looks, and the actions keep
+  // their words. The box is what makes the filters read as a set rather than as
+  // four unrelated buttons that happen to be adjacent.
   //
   // Drawn in every state, including the ones that render nothing else: "Manage
   // feeds" has to be reachable precisely when the feed is empty, which is when
   // it is hardest to find.
   const controlBar = (
-    <FeedFilterBar
-      className={styles.filterBar}
-      groups={filterGroups}
-      // Read state is only tracked when read-on-scroll is on, so without it
-      // there is no such thing as unread here to filter to.
-      unread={markReadOnScroll
-        ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
-        : undefined}
-      // Shown whenever there's a list to manage, not only when something
-      // matches - otherwise a favorite that has stopped matching becomes
-      // unreachable from the page it's affecting. The control disables its
-      // own filter at zero.
-      favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
-        <FavoritesControl
-          favorites={favoriteTags}
-          onChange={onSetFavoriteTags ?? (() => {})}
-          count={favHits.size}
-          filterOn={favoritesOnly}
-          onToggleFilter={() => setFavoritesOnly(v => !v)}
-          chipClassName={`${styles.chip} ${styles.favChip}`}
-          chipActiveClassName={styles.favChipActive}
-        />
-      ) : undefined}
-      actions={
-        <>
-          {markReadOnScroll && articles.length > 0 && (
-            <button
-              className={styles.markAllBtn}
-              onClick={handleMarkAllRead}
-              disabled={markingAll || !unreadShowing}
-              title={activeFeedFolder
-                ? 'Mark every article in this category as read'
-                : 'Mark every article in your feed as read'}
-            >
-              <CheckAllIcon />
-              <span className={styles.actionLabel}>
-                {markingAll ? 'Marking…' : 'Mark all read'}
-              </span>
-            </button>
-          )}
-          {/* The label goes on a narrow screen and the icon carries it - see
-              .actionLabel. This is the rarest of the three (you set your feeds
-              up once), so it is the one that can afford to be a glyph when the
-              row is short of room. */}
+    <div className={styles.controls}>
+      <div className={styles.actionRow}>
+        {markReadOnScroll && articles.length > 0 && (
           <button
-            className={styles.manageBtn}
-            onClick={onManageFeeds}
-            title="Add, rename or remove feeds"
-            aria-label="Manage feeds"
+            className={styles.actionBtnMain}
+            onClick={handleMarkAllRead}
+            disabled={markingAll || !unreadShowing}
+            title={activeFeedFolder
+              ? 'Mark every article in this category as read'
+              : 'Mark every article in your feed as read'}
           >
-            <SlidersIcon />
-            <span className={styles.actionLabel}>Manage feeds</span>
+            <CheckAllIcon />
+            {markingAll ? 'Marking…' : 'Mark all read'}
           </button>
-          {onLayoutChange && articles.length > 0 && (
-            <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
-          )}
-        </>
-      }
-    />
+        )}
+
+        {/* The label goes on a narrow screen and the icon carries it - see
+            .actionLabel. This is the rarest of the three (you set your feeds
+            up once), so it is the one that can afford to be a glyph when the
+            row is short of room. The other two keep their words whatever
+            happens: both of them act on things, and one of them cannot be
+            undone. */}
+        <button
+          className={styles.manageBtn}
+          onClick={onManageFeeds}
+          title="Add, rename or remove feeds"
+          aria-label="Manage feeds"
+        >
+          <SlidersIcon />
+          <span className={styles.actionLabel}>Manage feeds</span>
+        </button>
+
+        {onLayoutChange && articles.length > 0 && (
+          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
+        )}
+      </div>
+
+      <FeedFilterBar
+        className={styles.filterBox}
+        groups={filterGroups}
+        // Read state is only tracked when read-on-scroll is on, so without it
+        // there is no such thing as unread here to filter to.
+        unread={markReadOnScroll
+          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
+          : undefined}
+        // Shown whenever there's a list to manage, not only when something
+        // matches - otherwise a favorite that has stopped matching becomes
+        // unreachable from the page it's affecting. The control disables its
+        // own filter at zero.
+        favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
+          <FavoritesControl
+            favorites={favoriteTags}
+            onChange={onSetFavoriteTags ?? (() => {})}
+            count={favHits.size}
+            filterOn={favoritesOnly}
+            onToggleFilter={() => setFavoritesOnly(v => !v)}
+            chipClassName={`${styles.chip} ${styles.favChip}`}
+            chipActiveClassName={styles.favChipActive}
+          />
+        ) : undefined}
+      />
+    </div>
   );
+
+  // What has landed since this page was drawn, and the only thing that puts it
+  // on screen. Nothing arrives unasked - see the arrivals block above.
+  const newBanner = newCount > 0 ? (
+    <button className={styles.newBanner} onClick={reloadFromTop}>
+      <ArrowUpIcon />
+      {newCount === 1 ? '1 new article' : `${newCount} new articles`}
+    </button>
+  ) : null;
+
+  // ── The refresh that turns up when it's wanted ──
+  // Not a toolbar button. A page drawn a minute ago has nothing to refresh, and
+  // a permanent control implies otherwise - it invites pressing, and every press
+  // is a fan-out of outbound requests to answer a question with no answer in it.
+  // After a quarter of an hour the question is real, so the button appears.
+  //
+  // Held back while the pill is up, because at that point they are two buttons
+  // competing to be pressed and the pill is the better one: it already knows
+  // there is something to show, whereas this would go and look again first. The
+  // two are complementary rather than alternatives - the pill can only report
+  // what the background refresher has already collected, and this is what goes
+  // and asks the publishers when it has collected nothing.
+  const floatingRefresh = stale && newCount === 0 ? (
+    <button
+      className={styles.floatingRefresh}
+      onClick={handleRefresh}
+      disabled={refreshing}
+      title="Check your feeds for new articles now"
+    >
+      <span className={refreshing ? styles.spinning : undefined}><RefreshIcon /></span>
+      {refreshing ? 'Refreshing…' : 'Refresh feed'}
+    </button>
+  ) : null;
 
   if (loading) return (
     <div className={styles.wrap}>
@@ -773,6 +960,10 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   if (articles.length === 0) return (
     <div className={styles.wrap}>
       {controlBar}
+      {/* Worth showing here above all: "nothing yet" plus a count of what has
+          since arrived is the one empty state with an answer in it. */}
+      {newBanner}
+      {floatingRefresh}
       {activeFeedFolder ? (
         <div className={styles.status} style={{ opacity: 0.45 }}>
           Nothing in this category yet.{' '}
@@ -793,6 +984,8 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   return (
     <div className={styles.wrap}>
       {controlBar}
+      {newBanner}
+      {floatingRefresh}
 
       <div className={gridClass}>
         {displayed.length === 0 ? (

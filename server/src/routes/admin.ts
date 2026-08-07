@@ -14,6 +14,11 @@ import { FEED_LOG_RETENTION_DAYS } from '../lib/feedLog';
 import { FEED_FAILURE_ALERT_THRESHOLD } from '../lib/adminAlerts';
 import { canonicalFeedKey } from '../lib/feedUtils';
 import { DEMAND_WINDOW_MS } from '../lib/feedScheduler';
+import { FEED_FAILURE_DISABLE_THRESHOLD } from '../lib/feedRefresh';
+import {
+  normalizeBlockPattern, applyBlockRule, invalidateBlockCache, feedsBlockedByNoRule,
+  blockedRuleFor, ruleMatchesHost, hostOf, MAX_BLOCK_NOTE,
+} from '../lib/feedBlocklist';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -989,20 +994,51 @@ async function subscribersByFeedKey(): Promise<Map<string, number>> {
   return byKey;
 }
 
-// GET /api/v1/admin/feeds?q=&offset=&status=
+// The columns the feed list can be ordered by, split by where the sort can
+// actually happen.
 //
-// Every feed the instance polls, searchable. /feeds/health answers "what is
-// broken"; this answers the questions either side of it — is this URL even
-// subscribed to, when was it last looked at, is anyone actually reading it.
+// Most map onto a Feed column, so the database orders and pages them and the
+// request touches one page of rows. `subscribers` and `articles` do not: both
+// are counts aggregated across other tables (and `subscribers` is keyed by
+// canonicalFeedKey, which is a TypeScript function, not SQL). Ordering by those
+// means counting for every matching feed before the page can be cut — see the
+// note in the handler for why that is acceptable and where it stops being so.
+const FEED_SORT_COLUMNS = {
+  checked: 'lastCheckedAt',
+  success: 'lastSuccessAt',
+  requested: 'lastRequestedAt',
+  failures: 'consecutiveFailures',
+  title: 'title',
+  url: 'fetchUrl',
+} as const;
+const FEED_SORT_COMPUTED = ['subscribers', 'articles'] as const;
+
+type FeedSortKey = keyof typeof FEED_SORT_COLUMNS | (typeof FEED_SORT_COMPUTED)[number];
+
+function isFeedSort(v: string): v is FeedSortKey {
+  return v in FEED_SORT_COLUMNS || (FEED_SORT_COMPUTED as readonly string[]).includes(v);
+}
+
+// GET /api/v1/admin/feeds?q=&offset=&status=&sort=&dir=
+//
+// Every feed the instance polls, searchable, filterable and sortable.
+// /feeds/health answers "what is broken"; this answers the questions either side
+// of it — is this URL even subscribed to, when was it last looked at, is anyone
+// actually reading it, and is it still being polled at all.
 //
 // Offset-paged rather than cursor-paged, unlike the logs: this is a search over
 // standing state where a total ("31 of 412 feeds") is worth having, and rows
 // don't stream in at the head the way log entries do.
 router.get('/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { q, offset, status } = req.query as Record<string, string | undefined>;
+  const { q, offset, status, sort, dir } = req.query as Record<string, string | undefined>;
   const skip = Math.max(0, Math.min(10_000, Number.parseInt(offset ?? '0', 10) || 0));
   const term = (q ?? '').trim();
   const dormantBefore = new Date(Date.now() - DEMAND_WINDOW_MS);
+
+  // Unknown values fall back rather than 400: a sort key is a UI detail, and an
+  // older client asking for one this build dropped should still get its list.
+  const sortKey: FeedSortKey = sort && isFeedSort(sort) ? sort : 'checked';
+  const desc = dir !== 'asc';
 
   try {
     // ANDed as a list rather than spread into one object: search and the dormant
@@ -1016,38 +1052,87 @@ router.get('/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
         ],
       });
     }
-    if (status === 'failing') filters.push({ consecutiveFailures: { gt: 0 } });
+    // 'failing' is a live failure run on a feed still being polled; 'disabled'
+    // is one that has stopped. They were the same thing before disabling
+    // existed, and conflating them now would bury the feeds that need a decision
+    // among the ones that are merely having a bad hour.
+    if (status === 'failing') filters.push({ consecutiveFailures: { gt: 0 }, disabledAt: null });
+    if (status === 'healthy') filters.push({ consecutiveFailures: 0, disabledAt: null });
+    if (status === 'disabled') filters.push({ disabledAt: { not: null } });
+    if (status === 'blocked') filters.push({ disabledReason: 'blocked' });
     if (status === 'dormant') {
       filters.push({ OR: [{ lastRequestedAt: null }, { lastRequestedAt: { lt: dormantBefore } }] });
     }
     const where: Prisma.FeedWhereInput = filters.length > 0 ? { AND: filters } : {};
 
-    const [rows, total, subscribers] = await Promise.all([
-      prisma.feed.findMany({
-        where,
-        // Most recently checked first, so the top of the list is the refresher
-        // visibly working. Feeds never checked sort last — they're a different
-        // problem, and the dormant/failing filters are how you go looking.
-        orderBy: [{ lastCheckedAt: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }],
-        skip,
-        take: FEED_PAGE,
-        select: {
-          id: true, fetchUrl: true, canonicalKey: true, title: true,
-          lastCheckedAt: true, lastSuccessAt: true, lastRequestedAt: true,
-          consecutiveFailures: true, lastError: true, lastErrorAt: true,
-        },
-      }),
-      prisma.feed.count({ where }),
-      subscribersByFeedKey(),
-    ]);
+    const select = {
+      id: true, fetchUrl: true, canonicalKey: true, title: true,
+      lastCheckedAt: true, lastSuccessAt: true, lastRequestedAt: true,
+      consecutiveFailures: true, lastError: true, lastErrorAt: true,
+      disabledAt: true, disabledReason: true,
+    } as const;
 
-    // Stored articles per feed, one grouped query for the page
-    const itemCounts = await prisma.feedItem.groupBy({
-      by: ['feedId'],
-      where: { feedId: { in: rows.map(r => r.id) } },
-      _count: { _all: true },
-    });
-    const itemsByFeed = new Map(itemCounts.map(c => [c.feedId, c._count._all]));
+    const subscribers = await subscribersByFeedKey();
+
+    let rows: Prisma.FeedGetPayload<{ select: typeof select }>[];
+    let total: number;
+    let itemsByFeed: Map<string, number>;
+
+    if (sortKey === 'subscribers' || sortKey === 'articles') {
+      // The count-ordered path. Every matching feed has to be counted before the
+      // page can be cut, so this reads ids for the whole result set rather than
+      // one page — bounded by the feed count, which is the same order as the
+      // subscriber map already loaded above and is in the hundreds on a real
+      // instance. If a deployment ever outgrows that, this is the branch to
+      // replace with a materialised count column, not the whole handler.
+      const all = await prisma.feed.findMany({ where, select });
+      total = all.length;
+
+      const counts = await prisma.feedItem.groupBy({
+        by: ['feedId'],
+        where: { feedId: { in: all.map(f => f.id) } },
+        _count: { _all: true },
+      });
+      itemsByFeed = new Map(counts.map(c => [c.feedId, c._count._all]));
+
+      const valueOf = (f: (typeof all)[number]): number =>
+        sortKey === 'subscribers'
+          ? subscribers.get(f.canonicalKey) ?? 0
+          : itemsByFeed.get(f.id) ?? 0;
+
+      // id as the tiebreak so equal counts — which is most of them, since most
+      // feeds have one subscriber — page stably instead of reshuffling between
+      // requests and showing the same feed twice.
+      all.sort((a, b) => {
+        const diff = valueOf(a) - valueOf(b);
+        if (diff !== 0) return desc ? -diff : diff;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+      rows = all.slice(skip, skip + FEED_PAGE);
+    } else {
+      const column = FEED_SORT_COLUMNS[sortKey];
+      // Nulls last whichever direction, for both orderings of every column: a
+      // feed that has never succeeded has no date to compare, and floating those
+      // to the top of an ascending sort would bury the oldest real value, which
+      // is the thing being looked for.
+      const orderBy: Prisma.FeedOrderByWithRelationInput[] = [
+        { [column]: { sort: desc ? 'desc' : 'asc', nulls: 'last' } } as Prisma.FeedOrderByWithRelationInput,
+        { id: 'asc' },
+      ];
+
+      [rows, total] = await Promise.all([
+        prisma.feed.findMany({ where, orderBy, skip, take: FEED_PAGE, select }),
+        prisma.feed.count({ where }),
+      ]);
+
+      // Stored articles per feed, one grouped query for the page
+      const counts = await prisma.feedItem.groupBy({
+        by: ['feedId'],
+        where: { feedId: { in: rows.map(r => r.id) } },
+        _count: { _all: true },
+      });
+      itemsByFeed = new Map(counts.map(c => [c.feedId, c._count._all]));
+    }
 
     res.json({
       feeds: rows.map(f => ({
@@ -1060,22 +1145,108 @@ router.get('/feeds', async (req: AuthRequest, res: Response): Promise<void> => {
         consecutiveFailures: f.consecutiveFailures,
         lastError: f.lastError,
         lastErrorAt: f.lastErrorAt,
+        disabledAt: f.disabledAt,
+        disabledReason: f.disabledReason,
         subscribers: subscribers.get(f.canonicalKey) ?? 0,
         items: itemsByFeed.get(f.id) ?? 0,
         // The scheduler has stopped polling this one until somebody opens it
         // again — which is by design, and looks identical to neglect otherwise.
-        dormant: !f.lastRequestedAt || f.lastRequestedAt < dormantBefore,
+        // Meaningless once a feed is disabled, since nothing polls it either way.
+        dormant: !f.disabledAt && (!f.lastRequestedAt || f.lastRequestedAt < dormantBefore),
       })),
       total,
       offset: skip,
       nextOffset: skip + rows.length < total ? skip + rows.length : null,
+      sort: sortKey,
+      dir: desc ? 'desc' : 'asc',
       dormantAfterDays: Math.round(DEMAND_WINDOW_MS / 86_400_000),
+      // So the panel can explain the automatic behaviour in the same words the
+      // refresher implements it in, rather than hardcoding a number that drifts.
+      disableAfterFailures: FEED_FAILURE_DISABLE_THRESHOLD,
     });
   } catch (err) {
     logger.error(err, 'Admin feed list error');
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ── Feed actions ────────────────────────────────────────────────────────────
+// Disable is the reversible one and the one to reach for; delete is here because
+// a feed that was never a feed (a typo, a spam URL) has no reason to stay in the
+// table. Neither touches FeedSubscription: those belong to users, and removing
+// somebody's subscription without telling them is not an admin action this
+// offers. A disabled feed simply stops producing articles.
+
+/** Shared shape for the three actions below: fetch, act, audit, answer. */
+async function feedAction(
+  req: AuthRequest,
+  res: Response,
+  action: 'disable' | 'enable' | 'delete',
+): Promise<void> {
+  const { id } = req.params;
+  try {
+    const feed = await prisma.feed.findUnique({
+      where: { id },
+      select: { id: true, fetchUrl: true, title: true, disabledAt: true, disabledReason: true },
+    });
+    if (!feed) { res.status(404).json({ error: 'That feed no longer exists' }); return; }
+
+    // Re-enabling a feed whose host is still blocked would be undone by the next
+    // refresh, which reads as the button not working. Say so instead.
+    if (action === 'enable' && feed.disabledReason === 'blocked') {
+      const rule = await blockedRuleFor(feed.fetchUrl);
+      if (rule) {
+        res.status(409).json({
+          error: `That feed's address is covered by the block rule "${rule.pattern}". Remove the rule first.`,
+        });
+        return;
+      }
+    }
+
+    const actor = await actorName(req.userId!);
+    const label = feed.title || feed.fetchUrl;
+
+    await prisma.$transaction(async tx => {
+      if (action === 'delete') {
+        // FeedItem cascades. FeedFetchLog and ErrorLog do not — they hold plain
+        // columns rather than a relation precisely so the history of a deleted
+        // feed survives it.
+        await tx.feed.delete({ where: { id } });
+      } else {
+        await tx.feed.update({
+          where: { id },
+          data: action === 'disable'
+            ? { disabledAt: new Date(), disabledReason: 'manual' }
+            // Clearing the failure run as well: leaving it at 20 would put the
+            // feed one bad fetch away from switching itself straight back off,
+            // which makes the retry look like it never happened.
+            : { disabledAt: null, disabledReason: null, consecutiveFailures: 0, failureAlertedAt: null },
+        });
+      }
+
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername: actor,
+        action: action === 'disable' ? ADMIN_ACTIONS.feedDisable
+          : action === 'enable' ? ADMIN_ACTIONS.feedEnable
+          : ADMIN_ACTIONS.feedDelete,
+        targetType: 'feed',
+        targetId: feed.id,
+        targetLabel: label,
+        metadata: { url: feed.fetchUrl, previousReason: feed.disabledReason },
+      });
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, `Admin feed ${action} error`);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+router.post('/feeds/:id/disable', (req: AuthRequest, res) => feedAction(req, res, 'disable'));
+router.post('/feeds/:id/enable', (req: AuthRequest, res) => feedAction(req, res, 'enable'));
+router.delete('/feeds/:id', (req: AuthRequest, res) => feedAction(req, res, 'delete'));
 
 // GET /api/v1/admin/feeds/log?cursor=&outcome=&feedId=&q=
 //
@@ -1143,6 +1314,185 @@ router.get('/feeds/log', async (req: AuthRequest, res: Response): Promise<void> 
     });
   } catch (err) {
     logger.error(err, 'Admin feed log error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Blocked domains ─────────────────────────────────────────────────────────
+// Hosts this instance refuses to poll. See feedBlocklist for what the two rule
+// kinds mean and why matching is done on whole labels.
+
+// GET /api/v1/admin/blocked-domains
+//
+// Reports how many stored feeds each rule currently covers, because a rule with
+// no effect and a rule holding back forty feeds look identical otherwise — and
+// the count is the only way to tell a rule that worked from one whose pattern
+// was subtly wrong.
+router.get('/blocked-domains', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const [rules, feeds, strays] = await Promise.all([
+      prisma.blockedDomain.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.feed.findMany({ select: { id: true, fetchUrl: true, disabledAt: true } }),
+      feedsBlockedByNoRule(),
+    ]);
+
+    const counts = new Map<string, number>();
+    for (const rule of rules) {
+      const shape = { kind: rule.kind === 'suffix' ? 'suffix' as const : 'domain' as const, pattern: rule.pattern };
+      let n = 0;
+      for (const f of feeds) {
+        const host = hostOf(f.fetchUrl);
+        if (host && ruleMatchesHost(shape, host)) n++;
+      }
+      counts.set(rule.id, n);
+    }
+
+    res.json({
+      rules: rules.map(r => ({
+        id: r.id,
+        pattern: r.pattern,
+        kind: r.kind,
+        note: r.note,
+        createdByUsername: r.createdByUsername,
+        createdAt: r.createdAt,
+        feeds: counts.get(r.id) ?? 0,
+      })),
+      // Feeds switched off by a rule that has since been removed. They are not
+      // revived automatically — see feedsBlockedByNoRule — so the panel needs to
+      // be able to say they are sitting there waiting for a decision.
+      orphanedBlocks: strays.length,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin blocked domain list error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/v1/admin/blocked-domains { pattern, note }
+//
+// Adding a rule also switches off the feeds already stored that it covers —
+// otherwise blocking a domain would only gate new subscriptions while the server
+// carried on fetching the host it was just told to stop fetching.
+router.post('/blocked-domains', async (req: AuthRequest, res: Response): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const raw = typeof body.pattern === 'string' ? body.pattern : '';
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, MAX_BLOCK_NOTE) : '';
+
+  const parsed = normalizeBlockPattern(raw);
+  if (!parsed) {
+    res.status(400).json({
+      error: 'Enter a domain (example.com) or an extension (.xyz). Wildcards and IP addresses are not supported.',
+    });
+    return;
+  }
+
+  try {
+    const existing = await prisma.blockedDomain.findUnique({ where: { pattern: parsed.pattern } });
+    if (existing) {
+      // Normalisation means the stored rule may not look like what was typed —
+      // say which one it collided with rather than a bare "already exists".
+      res.status(409).json({ error: `"${parsed.pattern}" is already blocked` });
+      return;
+    }
+
+    const actor = await actorName(req.userId!);
+    const rule = await prisma.$transaction(async tx => {
+      const created = await tx.blockedDomain.create({
+        data: {
+          pattern: parsed.pattern,
+          kind: parsed.kind,
+          note,
+          createdById: req.userId!,
+          createdByUsername: actor,
+        },
+      });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername: actor,
+        action: ADMIN_ACTIONS.domainBlock,
+        targetType: 'domain',
+        targetId: created.id,
+        targetLabel: parsed.pattern,
+        metadata: { kind: parsed.kind, note },
+      });
+      return created;
+    });
+
+    // After the commit, and outside it: this can touch a lot of feed rows, and
+    // holding the transaction open across it would lock them for the duration.
+    // The rule existing is what matters — a sweep that failed here would be
+    // redone by the refresher, which checks every feed against the rules anyway.
+    invalidateBlockCache();
+    const disabled = await applyBlockRule(parsed);
+
+    res.status(201).json({
+      rule: {
+        id: rule.id,
+        pattern: rule.pattern,
+        kind: rule.kind,
+        note: rule.note,
+        createdByUsername: rule.createdByUsername,
+        createdAt: rule.createdAt,
+        feeds: disabled,
+      },
+      disabled,
+    });
+  } catch (err) {
+    logger.error(err, 'Admin block domain error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/v1/admin/blocked-domains/:id?restore=1
+//
+// Removing a rule does not revive the feeds it disabled unless `restore` is set.
+// The default is deliberate: a block is usually added for a reason that outlives
+// the rule, and silently restarting fetches to a host an admin objected to is
+// not a decision this should make on its own. `restore` is the panel offering
+// the choice explicitly.
+router.delete('/blocked-domains/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const restore = req.query.restore === '1' || req.query.restore === 'true';
+
+  try {
+    const rule = await prisma.blockedDomain.findUnique({ where: { id } });
+    if (!rule) { res.status(404).json({ error: 'That rule no longer exists' }); return; }
+
+    const actor = await actorName(req.userId!);
+    await prisma.$transaction(async tx => {
+      await tx.blockedDomain.delete({ where: { id } });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername: actor,
+        action: ADMIN_ACTIONS.domainUnblock,
+        targetType: 'domain',
+        targetId: rule.id,
+        targetLabel: rule.pattern,
+        metadata: { kind: rule.kind, restored: restore },
+      });
+    });
+    invalidateBlockCache();
+
+    let restored = 0;
+    if (restore) {
+      // Only the feeds no *remaining* rule covers — two overlapping rules
+      // (".xyz" and "spam.xyz") must not have one's removal undo the other.
+      const eligible = await feedsBlockedByNoRule();
+      if (eligible.length > 0) {
+        const result = await prisma.feed.updateMany({
+          where: { id: { in: eligible.map(f => f.id) }, disabledReason: 'blocked' },
+          // The failure run is cleared for the same reason the manual enable
+          // clears it: a feed coming back should get a clean slate rather than
+          // sitting one bad fetch from switching itself off.
+          data: { disabledAt: null, disabledReason: null, consecutiveFailures: 0, failureAlertedAt: null },
+        });
+        restored = result.count;
+      }
+    }
+
+    res.json({ ok: true, restored });
+  } catch (err) {
+    logger.error(err, 'Admin unblock domain error');
     res.status(500).json({ error: 'Server error' });
   }
 });

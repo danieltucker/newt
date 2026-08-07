@@ -1,14 +1,44 @@
 // Feeds offered to someone who hasn't got any yet — on the first-run screen and
-// from the feed manager's empty state.
+// from the feed manager's Discover tab.
 //
-// The bar for being on this list: a stable, well-formed, full-text-ish feed from
-// a publisher that has been around long enough to still be there next year. It
-// is deliberately short and deliberately broad — this is a way to make an empty
-// reader feel like a reader, not a directory. Nothing here is subscribed without
-// the user picking it.
+// The bar for being on this list: a stable, well-formed feed from a publisher
+// that has been around long enough to still be there next year. Nothing here is
+// subscribed without the user picking it.
 //
-// `category` is the FeedFolder these are filed into when chosen, created on
-// demand. `color` matches the palette the folder modals offer.
+// ── Paywalled publishers are included, and labelled ──
+// Excluding them would leave out a good deal of the best writing on the web,
+// and their feeds are genuinely useful even unpaid: the headline and summary
+// are real, and they are how you decide whether a piece is worth your one free
+// article. What is not acceptable is finding out at the wall. Anything behind
+// one carries `access` (see FeedAccess), which the picker prints on the card.
+//
+// **Every entry was fetched and confirmed to return items before being added**
+// (last swept 2026-08-07). Feeds that didn't survive that check and should not
+// be re-added without re-testing:
+//   - Nature — blocks our fetcher outright
+//   - AP News — /index.rss answers 401 "Invalid client credentials"; their
+//     public RSS is gone
+//   - New Scientist — 406 to a non-browser user agent
+//   - Sports Illustrated, NIH news releases — 404, feeds retired
+//   - Washington Post — resolves, but returns 4 items, too thin to be useful
+//
+// ── Two lists, one file ──
+// `starter` marks the subset the first-run picker shows. That screen is meant to
+// make an empty reader feel like a reader in one screenful, and it stops working
+// as forty-odd choices across eleven headings — at which point picking feeds is
+// itself the chore it was supposed to spare you. The manager's Discover tab
+// shows everything, because that is where you go when you *are* looking for
+// something. See starterFeeds() and the `starter` query param on /suggested.
+
+/**
+ * How much of a publisher's writing the feed actually gets you.
+ *
+ * A paywalled feed is still worth following - the headlines and summaries are
+ * real, and they are how you decide whether a piece is worth your one free
+ * article - but finding that out by clicking through to a wall is a poor way to
+ * learn it. Absent means everything in the feed is free to read.
+ */
+export type FeedAccess = 'metered' | 'subscriber';
 
 export interface SuggestedFeed {
   name: string;
@@ -16,6 +46,10 @@ export interface SuggestedFeed {
   site: string;
   blurb: string;
   category: string;
+  /** Offered on the first-run screen. See the note above. */
+  starter?: boolean;
+  /** Set when the articles are behind a paywall, whole or partial. */
+  access?: FeedAccess;
 }
 
 export interface SuggestedCategory {
@@ -24,10 +58,17 @@ export interface SuggestedCategory {
 }
 
 export const SUGGESTED_CATEGORIES: SuggestedCategory[] = [
-  { name: 'Tech',    color: '#5E6AD2' },
-  { name: 'News',    color: '#EA4C89' },
-  { name: 'Science', color: '#0FB57B' },
-  { name: 'Culture', color: '#F48024' },
+  { name: 'Tech',        color: '#5E6AD2' },
+  { name: 'News',        color: '#EA4C89' },
+  { name: 'Science',     color: '#0FB57B' },
+  { name: 'Culture',     color: '#F48024' },
+  { name: 'Programming', color: '#7C5CFC' },
+  { name: 'Design',      color: '#E0479E' },
+  { name: 'Business',    color: '#00A8E8' },
+  { name: 'Gaming',      color: '#A259FF' },
+  { name: 'Sport',       color: '#1DB954' },
+  { name: 'Health',      color: '#24A0ED' },
+  { name: 'Cars',        color: '#FF6600' },
 ];
 
 export const SUGGESTED_FEEDS: SuggestedFeed[] = [
@@ -38,6 +79,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theverge.com',
     blurb: 'Consumer tech, gadgets and the culture around them.',
     category: 'Tech',
+    starter: true,
   },
   {
     name: 'Ars Technica',
@@ -45,6 +87,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'arstechnica.com',
     blurb: 'Deep, technical reporting on computing and policy.',
     category: 'Tech',
+    starter: true,
   },
   {
     name: 'Hacker News',
@@ -52,6 +95,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'news.ycombinator.com',
     blurb: 'The front page — programming, startups, and arguments.',
     category: 'Tech',
+    starter: true,
   },
   {
     name: 'TechCrunch',
@@ -67,6 +111,51 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     blurb: 'Hardware reviews and consumer electronics news.',
     category: 'Tech',
   },
+  {
+    name: '404 Media',
+    url: 'https://www.404media.co/rss/',
+    site: '404media.co',
+    blurb: 'Journalist-owned reporting on the seedier corners of tech.',
+    category: 'Tech',
+  },
+  {
+    name: 'WIRED',
+    url: 'https://www.wired.com/feed/rss',
+    site: 'wired.com',
+    blurb: 'Technology, science and the culture they keep reshaping.',
+    category: 'Tech',
+    access: 'metered',
+  },
+  {
+    name: 'MIT Technology Review',
+    url: 'https://www.technologyreview.com/feed/',
+    site: 'technologyreview.com',
+    blurb: 'What the research actually says, minus the press release.',
+    category: 'Tech',
+    access: 'metered',
+  },
+  {
+    name: 'Stratechery',
+    url: 'https://stratechery.com/feed/',
+    site: 'stratechery.com',
+    blurb: 'Ben Thompson on the strategy behind the tech industry.',
+    category: 'Tech',
+    access: 'subscriber',
+  },
+  {
+    name: 'Rest of World',
+    url: 'https://restofworld.org/feed/latest',
+    site: 'restofworld.org',
+    blurb: 'Technology reporting from outside the Western bubble.',
+    category: 'Tech',
+  },
+  {
+    name: 'Daring Fireball',
+    url: 'https://daringfireball.net/feeds/main',
+    site: 'daringfireball.net',
+    blurb: 'John Gruber on Apple, and on writing about Apple.',
+    category: 'Tech',
+  },
 
   // ── News ──
   {
@@ -75,6 +164,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'npr.org',
     blurb: 'US and world headlines, updated through the day.',
     category: 'News',
+    starter: true,
   },
   {
     name: 'BBC News',
@@ -82,6 +172,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'bbc.co.uk',
     blurb: 'World news from the BBC.',
     category: 'News',
+    starter: true,
   },
   {
     name: 'The Guardian',
@@ -89,6 +180,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theguardian.com',
     blurb: 'World news and long-form reporting.',
     category: 'News',
+    starter: true,
   },
   {
     name: 'Al Jazeera',
@@ -96,6 +188,50 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'aljazeera.com',
     blurb: 'World news with a different centre of gravity.',
     category: 'News',
+  },
+  {
+    name: 'PBS NewsHour',
+    url: 'https://www.pbs.org/newshour/feeds/rss/headlines',
+    site: 'pbs.org',
+    blurb: 'US headlines at a slower, longer pace.',
+    category: 'News',
+  },
+  {
+    name: 'CBC News',
+    url: 'https://www.cbc.ca/webfeed/rss/rss-topstories',
+    site: 'cbc.ca',
+    blurb: "Canada's public broadcaster, top stories.",
+    category: 'News',
+  },
+  {
+    name: 'France 24',
+    url: 'https://www.france24.com/en/rss',
+    site: 'france24.com',
+    blurb: 'French public international news, in English.',
+    category: 'News',
+  },
+  {
+    name: 'Deutsche Welle',
+    url: 'https://rss.dw.com/rdf/rss-en-all',
+    site: 'dw.com',
+    blurb: 'German public international news, in English.',
+    category: 'News',
+  },
+  {
+    name: 'The Economist',
+    url: 'https://www.economist.com/latest/rss.xml',
+    site: 'economist.com',
+    blurb: 'World affairs and economics, weekly and opinionated.',
+    category: 'News',
+    access: 'subscriber',
+  },
+  {
+    name: 'The New York Times',
+    url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
+    site: 'nytimes.com',
+    blurb: 'The front page, refreshed through the day.',
+    category: 'News',
+    access: 'metered',
   },
 
   // ── Science ──
@@ -105,6 +241,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'quantamagazine.org',
     blurb: 'Mathematics and fundamental science, beautifully explained.',
     category: 'Science',
+    starter: true,
   },
   {
     name: 'NASA',
@@ -112,12 +249,48 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'nasa.gov',
     blurb: 'Missions, discoveries and the occasional stunning photo.',
     category: 'Science',
+    starter: true,
   },
   {
     name: 'Science Daily',
     url: 'https://www.sciencedaily.com/rss/all.xml',
     site: 'sciencedaily.com',
     blurb: 'Research findings across every field, as they are published.',
+    category: 'Science',
+  },
+  {
+    name: 'Phys.org',
+    url: 'https://phys.org/rss-feed/',
+    site: 'phys.org',
+    blurb: 'Physics, space and technology research, in volume.',
+    category: 'Science',
+  },
+  {
+    name: 'Scientific American',
+    url: 'https://www.scientificamerican.com/platform/syndication/rss/',
+    site: 'scientificamerican.com',
+    blurb: 'Science journalism with a very long memory.',
+    category: 'Science',
+  },
+  {
+    name: 'Space.com',
+    url: 'https://www.space.com/feeds/all',
+    site: 'space.com',
+    blurb: 'Launches, astronomy and the business of getting up there.',
+    category: 'Science',
+  },
+  {
+    name: 'ESA Top News',
+    url: 'https://www.esa.int/rssfeed/Our_Activities/Space_News',
+    site: 'esa.int',
+    blurb: 'The European Space Agency, in its own words.',
+    category: 'Science',
+  },
+  {
+    name: 'NASA Image of the Day',
+    url: 'https://www.nasa.gov/rss/dyn/lg_image_of_the_day.rss',
+    site: 'nasa.gov',
+    blurb: 'One photograph a day, and it earns the slot.',
     category: 'Science',
   },
 
@@ -128,6 +301,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'aeon.co',
     blurb: 'Essays on philosophy, science and being a person.',
     category: 'Culture',
+    starter: true,
   },
   {
     name: 'Kottke',
@@ -135,6 +309,7 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'kottke.org',
     blurb: 'A long-running blog of interesting things.',
     category: 'Culture',
+    starter: true,
   },
   {
     name: 'The Atlantic',
@@ -142,5 +317,294 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theatlantic.com',
     blurb: 'Politics, culture and ideas at length.',
     category: 'Culture',
+    access: 'metered',
+  },
+  {
+    name: 'The New Yorker',
+    url: 'https://www.newyorker.com/feed/everything',
+    site: 'newyorker.com',
+    blurb: 'Reporting, criticism and fiction. Everything they publish.',
+    category: 'Culture',
+    access: 'metered',
+  },
+  {
+    name: 'Longreads',
+    url: 'https://longreads.com/feed/',
+    site: 'longreads.com',
+    blurb: 'The best long-form writing on the web, gathered up.',
+    category: 'Culture',
+  },
+  {
+    name: 'The Marginalian',
+    url: 'https://www.themarginalian.org/feed/',
+    site: 'themarginalian.org',
+    blurb: 'Maria Popova on books, art and how to live.',
+    category: 'Culture',
+  },
+  {
+    name: 'The Public Domain Review',
+    url: 'https://publicdomainreview.org/rss.xml',
+    site: 'publicdomainreview.org',
+    blurb: 'Curiosities from the archives, out of copyright.',
+    category: 'Culture',
+  },
+
+  // ── Programming ──
+  {
+    name: 'Lobsters',
+    url: 'https://lobste.rs/rss',
+    site: 'lobste.rs',
+    blurb: 'Computing link aggregator. Quieter and more technical than HN.',
+    category: 'Programming',
+    starter: true,
+  },
+  {
+    name: 'Simon Willison',
+    url: 'https://simonwillison.net/atom/everything/',
+    site: 'simonwillison.net',
+    blurb: 'Working notes on LLMs, Python and building things.',
+    category: 'Programming',
+    starter: true,
+  },
+  {
+    name: 'Julia Evans',
+    url: 'https://jvns.ca/atom.xml',
+    site: 'jvns.ca',
+    blurb: 'Systems, debugging and networking, explained kindly.',
+    category: 'Programming',
+  },
+  {
+    name: 'The GitHub Blog',
+    url: 'https://github.blog/feed/',
+    site: 'github.blog',
+    blurb: 'Platform changes, engineering posts and security advisories.',
+    category: 'Programming',
+  },
+  {
+    name: 'CSS-Tricks',
+    url: 'https://css-tricks.com/feed/',
+    site: 'css-tricks.com',
+    blurb: 'Front-end techniques, with the code to go with them.',
+    category: 'Programming',
+  },
+
+  // ── Design ──
+  {
+    name: 'Smashing Magazine',
+    url: 'https://www.smashingmagazine.com/feed/',
+    site: 'smashingmagazine.com',
+    blurb: 'Long, practical articles on design and front-end craft.',
+    category: 'Design',
+    starter: true,
+  },
+  {
+    name: 'A List Apart',
+    url: 'https://alistapart.com/main/feed/',
+    site: 'alistapart.com',
+    blurb: 'Web standards and design thinking, since forever.',
+    category: 'Design',
+  },
+  {
+    name: 'Core77',
+    url: 'https://www.core77.com/blog/rss.xml',
+    site: 'core77.com',
+    blurb: 'Industrial design — objects, tools and how they got made.',
+    category: 'Design',
+  },
+  {
+    name: 'Colossal',
+    url: 'https://www.thisiscolossal.com/feed/',
+    site: 'thisiscolossal.com',
+    blurb: 'Art and visual culture. Worth it for the pictures alone.',
+    category: 'Design',
+  },
+
+  // ── Business ──
+  {
+    name: 'CNBC',
+    url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',
+    site: 'cnbc.com',
+    blurb: 'Markets and business news through the trading day.',
+    category: 'Business',
+    starter: true,
+  },
+  {
+    name: 'MarketWatch',
+    url: 'https://www.marketwatch.com/rss/topstories',
+    site: 'marketwatch.com',
+    blurb: 'Market moves and what is supposedly behind them.',
+    category: 'Business',
+  },
+  {
+    name: 'WSJ Markets',
+    url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain',
+    site: 'wsj.com',
+    blurb: 'Wall Street Journal markets coverage.',
+    category: 'Business',
+    access: 'subscriber',
+  },
+  {
+    name: 'Financial Times',
+    url: 'https://www.ft.com/rss/home',
+    site: 'ft.com',
+    blurb: 'Global business and markets from the FT.',
+    category: 'Business',
+    access: 'subscriber',
+  },
+  {
+    name: 'Bloomberg Markets',
+    url: 'https://feeds.bloomberg.com/markets/news.rss',
+    site: 'bloomberg.com',
+    blurb: 'Markets, deals and the economy.',
+    category: 'Business',
+    access: 'metered',
+  },
+  {
+    name: 'Fortune',
+    url: 'https://fortune.com/feed/',
+    site: 'fortune.com',
+    blurb: 'Companies, executives and the money around them.',
+    category: 'Business',
+  },
+
+  // ── Gaming ──
+  {
+    name: 'Rock Paper Shotgun',
+    url: 'https://www.rockpapershotgun.com/feed',
+    site: 'rockpapershotgun.com',
+    blurb: 'PC games, written by people who clearly enjoy writing.',
+    category: 'Gaming',
+    starter: true,
+  },
+  {
+    name: 'Eurogamer',
+    url: 'https://www.eurogamer.net/feed',
+    site: 'eurogamer.net',
+    blurb: 'Reviews, news and the occasional very good essay.',
+    category: 'Gaming',
+  },
+  {
+    name: 'Polygon',
+    url: 'https://www.polygon.com/rss/index.xml',
+    site: 'polygon.com',
+    blurb: 'Games and the wider entertainment they sit in.',
+    category: 'Gaming',
+  },
+  {
+    name: 'PC Gamer',
+    url: 'https://www.pcgamer.com/rss/',
+    site: 'pcgamer.com',
+    blurb: 'Hardware, patches and PC gaming news, in quantity.',
+    category: 'Gaming',
+  },
+
+  // ── Sport ──
+  {
+    name: 'BBC Sport',
+    url: 'https://feeds.bbci.co.uk/sport/rss.xml',
+    site: 'bbc.co.uk',
+    blurb: 'Everything the BBC covers, which is most of it.',
+    category: 'Sport',
+    starter: true,
+  },
+  {
+    name: 'ESPN',
+    url: 'https://www.espn.com/espn/rss/news',
+    site: 'espn.com',
+    blurb: 'US sport, top stories.',
+    category: 'Sport',
+  },
+  {
+    name: 'Guardian Sport',
+    url: 'https://www.theguardian.com/sport/rss',
+    site: 'theguardian.com',
+    blurb: 'Sport with a bit more writing in it.',
+    category: 'Sport',
+  },
+  {
+    name: 'Sky Sports',
+    url: 'https://www.skysports.com/rss/12040',
+    site: 'skysports.com',
+    blurb: 'Breaking sport news, heavy on football.',
+    category: 'Sport',
+  },
+  {
+    name: 'Defector',
+    url: 'https://defector.com/feed',
+    site: 'defector.com',
+    blurb: 'Worker-owned sport and culture writing, with a sense of humour.',
+    category: 'Sport',
+    access: 'metered',
+  },
+
+  // ── Health ──
+  {
+    name: 'STAT',
+    url: 'https://www.statnews.com/feed/',
+    site: 'statnews.com',
+    blurb: 'Health, medicine and the business of both. Properly reported.',
+    category: 'Health',
+    starter: true,
+  },
+  {
+    name: 'KFF Health News',
+    url: 'https://kffhealthnews.org/feed/',
+    site: 'kffhealthnews.org',
+    blurb: 'Non-profit newsroom on health policy and its costs.',
+    category: 'Health',
+  },
+  {
+    name: 'WHO News',
+    url: 'https://www.who.int/rss-feeds/news-english.xml',
+    site: 'who.int',
+    blurb: 'World Health Organization releases and outbreak news.',
+    category: 'Health',
+  },
+
+  // ── Cars ──
+  {
+    name: 'The Autopian',
+    url: 'https://www.theautopian.com/feed/',
+    site: 'theautopian.com',
+    blurb: 'Cars written about by people who repair them badly and often.',
+    category: 'Cars',
+    starter: true,
+  },
+  {
+    name: 'Car and Driver',
+    url: 'https://www.caranddriver.com/rss/all.xml/',
+    site: 'caranddriver.com',
+    blurb: 'Reviews, road tests and new model news.',
+    category: 'Cars',
+  },
+  {
+    name: 'Motor1',
+    url: 'https://www.motor1.com/rss/news/all/',
+    site: 'motor1.com',
+    blurb: 'Industry and new car news, updated constantly.',
+    category: 'Cars',
   },
 ];
+
+/**
+ * The subset the first-run picker offers — one or two per category, chosen to
+ * span the list rather than to be the "best" of it.
+ *
+ * A category with nothing marked would silently vanish from that screen, so the
+ * first feed in each stands in. That way adding a category to the list above is
+ * enough; forgetting the flag costs a default, not a hole.
+ */
+export function starterFeeds(): SuggestedFeed[] {
+  const seenCategory = new Set<string>();
+  const picked = SUGGESTED_FEEDS.filter(f => f.starter);
+  for (const f of picked) seenCategory.add(f.category);
+  const fallbacks = SUGGESTED_FEEDS.filter(f => {
+    if (seenCategory.has(f.category)) return false;
+    seenCategory.add(f.category);
+    return true;
+  });
+  // Back into list order, so the picker's categories appear in the order
+  // SUGGESTED_CATEGORIES declares them.
+  const chosen = new Set([...picked, ...fallbacks]);
+  return SUGGESTED_FEEDS.filter(f => chosen.has(f));
+}

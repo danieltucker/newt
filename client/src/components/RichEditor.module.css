@@ -229,23 +229,66 @@
    off at the shell's edge. */
 .tbAnchor { display: inline-flex; }
 
+/* The panel itself doesn't scroll - .emojiList inside it does, so the search
+   field stays put while the results move under it. */
 .emojiPanel {
   position: fixed;
   z-index: calc(var(--z-top) + 3);
+  display: flex;
+  flex-direction: column;
   width: 268px;
-  max-height: 236px;
-  overflow-y: auto;
-  padding: 4px 8px 8px;
+  max-height: 282px;
+  padding: 8px;
   background: var(--paper);
   border: 1px solid var(--paper-line);
   border-radius: 10px;
   box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 42%, transparent);
+}
+
+.emojiSearch {
+  flex-shrink: 0;
+  padding-bottom: 6px;
+}
+
+.emojiSearchInput {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--paper-line-2);
+  border-radius: 7px;
+  background: var(--paper-2);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  color: var(--paper-text-2);
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.emojiSearchInput::placeholder { color: var(--paper-faint); }
+
+.emojiSearchInput:focus {
+  border-color: var(--paper-accent-line);
+  box-shadow: 0 0 0 2px var(--paper-accent-wash);
+}
+
+.emojiList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--paper-line-2) transparent;
 }
 
-.emojiPanel::-webkit-scrollbar { width: 8px; }
-.emojiPanel::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }
+.emojiList::-webkit-scrollbar { width: 8px; }
+.emojiList::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }
+
+.emojiEmpty {
+  padding: 18px 4px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  text-align: center;
+  color: var(--paper-faint);
+}
 
 .emojiGroupLabel {
   padding: 7px 2px 3px;
@@ -281,6 +324,10 @@
 
 @media (hover: none) {
   .emojiBtn { height: 34px; }
+  /* Under 16px, iOS Safari zooms the page in when the field takes focus - and
+     the panel is fixed, so it does not come with it. A thumb-sized target
+     wants the extra height anyway. */
+  .emojiSearchInput { height: var(--ctl-h-sm); font-size: 16px; }
 }
 
 /* Renaming a link happens on the bar itself, so the field has to sit in a row

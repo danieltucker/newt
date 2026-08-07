@@ -224,7 +224,9 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
       create: {
         feedId, title: item.title, link: item.link,
         linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link),
-        pubDate: item.pubDate, fetchedAt: now,
+        // firstSeenAt on create only — see the note in schema.prisma. A post
+        // edited on this instance is not a new arrival in anyone's feed.
+        pubDate: item.pubDate, fetchedAt: now, firstSeenAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
         // Site-relative, and stays that way: subscribers render it from this
         // same origin, which is exactly where the bytes are served from.

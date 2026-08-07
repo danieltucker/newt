@@ -7,7 +7,8 @@ import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
 import { recordError, errorMessage } from './errorLog';
 import { recordFeedFetch } from './feedLog';
-import { notifyAdminsOfFeedFailure, shouldAlertForFeed } from './adminAlerts';
+import { notifyAdminsOfFeedFailure, notifyAdminsOfFeedDisabled, shouldAlertForFeed } from './adminAlerts';
+import { blockedRuleFor } from './feedBlocklist';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number; size?: number };
 
@@ -27,6 +28,17 @@ const MAX_FEED_BYTES = 2_000_000;
 
 const UPSERT_CHUNK    = 10; // feed items upserted per DB batch
 const MAX_CONCURRENCY = 5;  // feeds fetched in parallel — keep outbound bursts small
+
+// How many consecutive failures before a feed stops being polled altogether.
+//
+// Well above FEED_FAILURE_ALERT_THRESHOLD (3) on purpose: alerting is cheap and
+// wants to be early, switching a feed off is disruptive and wants to be sure. At
+// the 30-minute stale window this is roughly ten hours of a feed being
+// continuously broken — long enough to rule out an origin having a bad morning,
+// short enough that a dead URL isn't refetched for weeks.
+//
+// Nothing is deleted when this trips. See the disabledAt note in schema.prisma.
+export const FEED_FAILURE_DISABLE_THRESHOLD = 20;
 
 // How much of a failing response to keep. "HTTP 403" on its own rarely explains
 // anything; the body almost always does — a Cloudflare interstitial, a "feed
@@ -200,6 +212,30 @@ async function noteFailure(feed: RefreshableFeed, reason: string, ctx: AttemptCo
       error: reason,
     });
 
+    // Long enough broken that continuing to poll it is just wasted outbound
+    // requests. Switch it off — the row, its subscriptions and its history all
+    // stay, and an admin can retry or remove it deliberately.
+    //
+    // Checked with `===` rather than `>=` so this fires exactly once, on the
+    // attempt that crosses the line. A disabled feed can't be claimed, so in
+    // practice there is no later attempt — but that is an invariant of
+    // claimFeed, and this shouldn't depend on it to avoid re-alerting.
+    if (updated.consecutiveFailures === FEED_FAILURE_DISABLE_THRESHOLD) {
+      await prisma.feed.update({
+        where: { id: feed.id },
+        data: { disabledAt: new Date(), disabledReason: 'failing' },
+      });
+      // Unconditional, unlike the failure alert: being switched off is a state
+      // change an admin has to know about, and it happens once. Rate-limiting it
+      // behind failureAlertedAt would swallow the one message that matters.
+      await notifyAdminsOfFeedDisabled(feed.fetchUrl, updated.title, updated.consecutiveFailures);
+      logger.warn(
+        { feedUrl: feed.fetchUrl, failures: updated.consecutiveFailures },
+        'Feed disabled after repeated failures',
+      );
+      return;
+    }
+
     if (shouldAlertForFeed(updated.consecutiveFailures, updated.failureAlertedAt)) {
       await notifyAdminsOfFeedFailure(feed.fetchUrl, updated.title, updated.consecutiveFailures);
       // Stamped after the alert lands, so a failed send is retried next tick
@@ -233,9 +269,15 @@ async function mapPool<T>(items: T[], concurrency: number, fn: (item: T) => Prom
 // opening the same feed in the same window don't both fetch it. A claimed feed
 // whose fetch then fails simply waits out the next stale window before retrying,
 // which doubles as backoff for broken feeds.
+//
+// `disabledAt: null` in the where is the single enforcement point for disabling.
+// Every fetch in this file goes through here, so a disabled feed cannot be
+// fetched by any caller — including one holding a Feed row read before it was
+// switched off, which is exactly what happens when an admin blocks a domain
+// while a refresh sweep is already in flight.
 async function claimFeed(feed: RefreshableFeed, now: Date): Promise<boolean> {
   const res = await prisma.feed.updateMany({
-    where: { id: feed.id, lastCheckedAt: feed.lastCheckedAt },
+    where: { id: feed.id, lastCheckedAt: feed.lastCheckedAt, disabledAt: null },
     data: { lastCheckedAt: now },
   });
   return res.count === 1;
@@ -257,7 +299,21 @@ function refreshOne(feed: RefreshableFeed): Promise<void> {
 
 async function doRefresh(feed: RefreshableFeed): Promise<void> {
   const now = new Date();
-  if (!(await claimFeed(feed, now))) return; // another process is already on it
+  if (!(await claimFeed(feed, now))) return; // disabled, or another process has it
+
+  // A rule may have been added since this feed was subscribed to, and a feed
+  // that redirected onto a blocked host would never have been caught at add
+  // time. Checked before the request goes out, so a blocked domain gets no
+  // traffic from this server at all — which is the point of blocking it.
+  const rule = await blockedRuleFor(feed.fetchUrl);
+  if (rule) {
+    await prisma.feed.update({
+      where: { id: feed.id },
+      data: { disabledAt: now, disabledReason: 'blocked' },
+    });
+    logger.info({ feedUrl: feed.fetchUrl, pattern: rule.pattern }, 'Feed disabled by block rule');
+    return;
+  }
 
   // Our own blog feeds are resolved straight from the database. Fetching them
   // over HTTP would mean the server calling back through its own public origin —
@@ -367,7 +423,10 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
       await Promise.all(chunk.map(item =>
         prisma.feedItem.upsert({
           where: { feedId_link: { feedId: feed.id, link: item.link } },
-          create: { feedId: feed.id, title: item.title, link: item.link, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), pubDate: item.date, fetchedAt: now, readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
+          // firstSeenAt is set on create and never on update — that is the whole
+          // contract of the column, and what makes it usable as the watermark for
+          // "new since you loaded". See the note on it in schema.prisma.
+          create: { feedId: feed.id, title: item.title, link: item.link, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), pubDate: item.date, fetchedAt: now, firstSeenAt: now, readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
           // linkKey/linkHost/content are refreshed too, so rows stored before those
           // columns existed backfill on the next poll
           update: { fetchedAt: now, title: item.title, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },

@@ -24,20 +24,6 @@
   min-width: 0;
 }
 
-/* No `margin-left: auto`. On one line it isn't needed - .left grows and pushes
-   this to the end on its own - and on a narrow screen, where the row genuinely
-   cannot hold six controls however they're dressed, the auto margin shoved this
-   group to the far right of a line of its own. That is the same floating,
-   unanchored strip the feed header used to be, reappearing one breakpoint down.
-   Without it a wrapped row starts under the chips, and reads as the rest of the
-   same bar rather than as something left over. */
-.right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
 /* Matches the chips it replaced, so the row still reads as the same furniture.
    Height comes from --ctl-h rather than from padding, so it agrees with the
    layout switch and the favorites pill beside it at every screen size. */

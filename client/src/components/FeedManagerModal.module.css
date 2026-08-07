@@ -57,8 +57,12 @@
 
 /* ── Add a feed ─────────────────────────────────────────── */
 
+/* Wraps so the "new category" field can drop to a line of its own when the
+   category menu is swapped for it — see .categoryCreate. With three items that
+   fit, this changes nothing. */
 .addForm {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: stretch;
 }
@@ -422,15 +426,57 @@
 .colorSwatch:hover { transform: scale(1.12); }
 .colorSelected { border-color: var(--text); }
 
-.newCategoryRow {
+/* ── Naming a new category ──
+   Stands in for the category menu while it's being used, in both places that
+   menu appears: the add-feed row and a feed's own editor. See CategorySelect.
+
+   `flex-basis: 100%` is what makes it work in the add-feed row, which is a flex
+   line of [address] [category] [Add]: a name field, a button and a cancel would
+   never fit in the ~170px the menu occupies, so it takes a line of its own
+   underneath instead (.addForm wraps for this). In the feed editor the parent
+   is a block, where the same declaration is simply ignored and the row is full
+   width anyway. */
+.categoryCreate {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  align-items: flex-start;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  flex: 1 1 100%;
+  /* Last on the line, so taking a full-width row of its own pushes itself down
+     rather than pushing the form's Add button onto a third line. Without this
+     the button is orphaned below, since this box sits between it and the
+     address field in source order. Ignored in the feed editor, where the
+     parent is a block. */
+  order: 1;
+  margin-bottom: 12px;
 }
 
-.newCategoryRow .input { margin-bottom: 0; }
+/* Not `.categoryName` — that is the heading on a category group further down
+   this file, and reusing the name put an input's border and uppercase heading
+   type on both. */
+.categoryNameInput {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: var(--ctl-h-lg);
+  background: var(--surface2);
+  /* Accented, because it is the thing that just took focus and the thing the
+     next keystroke goes to. */
+  border: 1px solid var(--accent);
+  border-radius: var(--ctl-r);
+  padding: 0 13px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+}
+
+.categoryNameInput::placeholder { color: var(--muted); }
+
+.categoryCreateError {
+  flex: 1 1 100%;
+  font-size: 12.5px;
+  color: #e44;
+}
 
 /* ── Discover ───────────────────────────────────────────── */
 
@@ -449,6 +495,61 @@
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: 8px;
+}
+
+.discoverNote a {
+  color: var(--accent);
+}
+
+.discoverNote code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface2);
+}
+
+/* The one-line offer under the add box, shown only while a YouTube address is
+   in it. Sits where the add form's own hint and messages sit, because it is one
+   of them - an answer to what has just been typed. */
+.ytOffer {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ── The subscriptions file picker ── */
+.csvRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.csvSummary {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The native control is unstyleable across browsers and says "No file chosen"
+   in whatever language and width it likes, so the button beside it does the
+   asking. Hidden rather than removed - it is still the thing that opens the
+   dialog, and it has to stay focusable for anyone driving this by keyboard.
+   `display: none` would take it out of the tab order along with the picker. */
+.csvInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .pick {
@@ -495,9 +596,31 @@
 }
 
 .pickName {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+
+/* Says a publisher is paywalled *before* you follow it rather than after you
+   click through to a wall. Deliberately quiet - it is a caveat on an otherwise
+   recommended feed, not a warning, and these are still worth following for the
+   headlines. Sits beside the name because that is what it qualifies. */
+.accessBadge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  background: var(--surface2);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: help;
 }
 
 .pickBlurb {

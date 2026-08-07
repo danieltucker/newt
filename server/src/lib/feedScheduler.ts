@@ -23,6 +23,10 @@ async function tick(): Promise<void> {
   try {
     const feeds = await prisma.feed.findMany({
       where: {
+        // Disabled feeds are excluded here only to keep them out of the batch —
+        // claimFeed is what actually enforces it, so a feed switched off between
+        // this query and the fetch is still not fetched.
+        disabledAt: null,
         lastRequestedAt: { gte: demandAfter },
         OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: staleBefore } }],
       },

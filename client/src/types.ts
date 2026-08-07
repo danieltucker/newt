@@ -45,6 +45,12 @@ export interface SuggestedFeed {
   site: string;
   blurb: string;
   category: string;
+  /** Part of the short list the first-run picker offers. The Discover tab in
+   *  the feed manager shows everything, starter or not. */
+  starter?: boolean;
+  /** Set when the publisher paywalls what the feed links to: 'metered' for a
+   *  free allowance, 'subscriber' for all of it. Absent means free to read. */
+  access?: 'metered' | 'subscriber';
 }
 
 export interface Folder {
@@ -250,10 +256,12 @@ export type NotificationType =
   // Moderator-only: a user filed a report. Carries no actor - see
   // notifyAdminsOfReport in server/src/routes/reports.ts.
   | 'report_new'
-  // Admin-only, both from server/src/lib/adminAlerts.ts. 'user_new' carries the
-  // new account as its actor, so the bell links to their profile; 'feed_failing'
-  // is actorless (a feed is not a person) and puts the feed URL in articleUrl.
-  | 'user_new' | 'feed_failing';
+  // Admin-only, all from server/src/lib/adminAlerts.ts. 'user_new' carries the
+  // new account as its actor, so the bell links to their profile; the two feed
+  // types are actorless (a feed is not a person) and put the feed URL in
+  // articleUrl. 'feed_failing' repeats while a feed stays broken; 'feed_disabled'
+  // fires once, when the refresher gives up and stops polling it.
+  | 'user_new' | 'feed_failing' | 'feed_disabled';
 
 export interface AppNotification {
   id: string;

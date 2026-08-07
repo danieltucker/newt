@@ -1,6 +1,8 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { FeedSubscription, FeedFolder, ImportableFeed, SuggestedFeed } from '../types';
 import { feedLabel, feedHost } from '../utils/feedLabel';
+import { parseYouTubeSubscriptions, isYouTubeAddress, YouTubeChannel } from '../utils/youtubeSubscriptions';
+import { accessBadge } from '../utils/feedAccess';
 import { apiErrorText } from '../services/api';
 import styles from './FeedManagerModal.module.css';
 
@@ -12,6 +14,20 @@ const PALETTE = [
 // Null is Uncategorised, which is a real place - so it needs a stable key that
 // can't collide with a category id.
 const UNCATEGORIZED = '__none__';
+
+// Not a destination but a verb, parked in the same list. See CategorySelect.
+const NEW_CATEGORY = '__new__';
+
+// Imported YouTube channels are filed here by name; the server creates the
+// category on demand (see the `category` handling in POST /feeds/batch). A
+// hundred channels landing in Uncategorised would bury whatever was already
+// there, and "everything I watch" is a category by any reading.
+const YOUTUBE_CATEGORY = 'YouTube';
+
+// A subscription export is a few hundred rows of two short columns. Anything
+// this size that claims to be one isn't, and there is no reason to read it
+// into memory to find that out.
+const MAX_CSV_BYTES = 2_000_000;
 
 interface Props {
   subscriptions: FeedSubscription[];
@@ -48,12 +64,120 @@ const CheckIcon = () => (
   </svg>
 );
 
+/**
+ * Picks a category, and makes one when the right category doesn't exist yet.
+ *
+ * Creating a category used to be a field pinned to the bottom of the Following
+ * tab, below every subscription you had - so filing a feed somewhere new meant
+ * scrolling past the whole list, naming the category, scrolling back up, and
+ * picking it from a menu you had just been standing next to. The moment you want
+ * a new category is the moment you are looking at this list and not finding it,
+ * so that is where making one belongs.
+ *
+ * It cannot be an ordinary menu item: a native <select> holds strings, not text
+ * fields. So the option is a verb that swaps the menu for a name field, and the
+ * category it creates is selected on the way back - the choice you were making
+ * when you went looking for it.
+ */
+function CategorySelect({ value, onChange, folders, onCreateFolder, className, ariaLabel }: {
+  value: string;
+  onChange: (value: string) => void;
+  folders: FeedFolder[];
+  onCreateFolder: Props['onCreateFolder'];
+  className: string;
+  ariaLabel: string;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (naming) nameRef.current?.focus(); }, [naming]);
+
+  async function create() {
+    const trimmed = name.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const folder = await onCreateFolder(trimmed);
+      // The whole point: what you just made is what you were choosing.
+      onChange(folder.id);
+      setNaming(false);
+      setName('');
+    } catch (e) {
+      setError(apiErrorText(e, "Couldn't create that category"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancel() {
+    setNaming(false);
+    setName('');
+    setError('');
+  }
+
+  if (naming) {
+    return (
+      <div className={styles.categoryCreate}>
+        <input
+          ref={nameRef}
+          className={styles.categoryNameInput}
+          value={name}
+          placeholder="Category name — Tech, Local news, Auto…"
+          aria-label="New category name"
+          onChange={e => { setName(e.target.value); setError(''); }}
+          onKeyDown={e => {
+            // This sits inside the add-feed <form>; without preventDefault,
+            // Enter submits it and adds the feed instead of the category.
+            if (e.key === 'Enter') { e.preventDefault(); create(); }
+            // Escape backs out of naming, not out of the whole modal - the
+            // modal's own handler is on `document`, so this has to stop the
+            // event reaching it.
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+          }}
+        />
+        {/* type="button" on both: inside a form, a bare <button> submits. */}
+        <button type="button" className={styles.ghostBtn} onClick={create} disabled={busy || !name.trim()}>
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+        <button type="button" className={styles.linkBtn} onClick={cancel} disabled={busy}>
+          Cancel
+        </button>
+        {error && <div className={styles.categoryCreateError}>{error}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <select
+      className={className}
+      value={value}
+      aria-label={ariaLabel}
+      onChange={e => {
+        if (e.target.value === NEW_CATEGORY) { setNaming(true); return; }
+        onChange(e.target.value);
+      }}
+    >
+      <option value={UNCATEGORIZED}>Uncategorised</option>
+      {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+      {/* Last, and after the real destinations, because it is the odd one out:
+          everything above is a place to put this feed, and this is a thing to
+          do first. */}
+      <option value={NEW_CATEGORY}>+ New category…</option>
+    </select>
+  );
+}
+
 /** One subscription: a summary row that opens into its own editor. */
-function FeedRow({ feed, folders, onUpdate, onRemove }: {
+function FeedRow({ feed, folders, onUpdate, onRemove, onCreateFolder }: {
   feed: FeedSubscription;
   folders: FeedFolder[];
   onUpdate: Props['onUpdateFeed'];
   onRemove: Props['onRemoveFeed'];
+  onCreateFolder: Props['onCreateFolder'];
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(feed.name);
@@ -136,10 +260,14 @@ function FeedRow({ feed, folders, onUpdate, onRemove }: {
       />
 
       <label className={styles.fieldLabel}>Category</label>
-      <select className={styles.select} value={folderId} onChange={e => setFolderId(e.target.value)}>
-        <option value={UNCATEGORIZED}>Uncategorised</option>
-        {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-      </select>
+      <CategorySelect
+        className={styles.select}
+        value={folderId}
+        onChange={setFolderId}
+        folders={folders}
+        onCreateFolder={onCreateFolder}
+        ariaLabel="Category for this feed"
+      />
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -242,10 +370,69 @@ export default function FeedManagerModal({
   const [checking, setChecking] = useState(false);
   const [addError, setAddError] = useState('');
   const [addOk, setAddOk] = useState('');
-  const [newCategory, setNewCategory] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
+
+  // Channels read out of a Takeout CSV. They live in component state rather than
+  // going straight to the server: the file is a list of everything you have ever
+  // subscribed to, which is not the same as a list of what you want in your
+  // feed, so it lands as a pickable list like every other source in here.
+  const [ytChannels, setYtChannels] = useState<YouTubeChannel[]>([]);
+  const [ytError, setYtError] = useState('');
+  const csvRef = useRef<HTMLInputElement>(null);
+
+  // Whether to explain the Takeout import at all.
+  //
+  // It used to sit open in Discover for everyone, which is a paragraph about
+  // Google Takeout in front of people who have never thought about YouTube here
+  // and a permanent claim on the top of that tab. It is a specific answer to a
+  // specific question, so it waits to be asked: typing a YouTube address into
+  // the box above is the question.
+  const [ytRevealed, setYtRevealed] = useState(false);
+  const ytOffered = isYouTubeAddress(urlInput);
+  const ytOpen = ytRevealed || ytChannels.length > 0;
+
+  const subscribedYt = useMemo(
+    () => new Set(subscriptions.map(s => s.url)),
+    [subscriptions],
+  );
+  const ytNew = useMemo(
+    () => ytChannels.filter(c => !subscribedYt.has(c.feedUrl)),
+    [ytChannels, subscribedYt],
+  );
+
+  async function handleCsv(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Cleared straight away so picking the same file twice in a row still fires
+    // a change event.
+    e.target.value = '';
+    if (!file) return;
+    setYtError('');
+    if (file.size > MAX_CSV_BYTES) {
+      setYtError("That file is far too big to be a subscriptions export.");
+      return;
+    }
+    try {
+      const channels = parseYouTubeSubscriptions(await file.text());
+      if (channels.length === 0) {
+        setYtError("No channels in that file — it should be subscriptions.csv from your Takeout export.");
+        setYtChannels([]);
+        return;
+      }
+      setYtChannels(channels);
+      // Pre-selected: someone who has just gone and exported their subscriptions
+      // has already said what they want. Unpicking a few is less work than
+      // picking ninety.
+      setPicked(prev => {
+        const next = new Set(prev);
+        for (const c of channels) if (!subscribedYt.has(c.feedUrl)) next.add(c.feedUrl);
+        return next;
+      });
+    } catch {
+      setYtError("Couldn't read that file.");
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
@@ -292,14 +479,6 @@ export default function FeedManagerModal({
     }
   }
 
-  async function handleCreateCategory() {
-    const name = newCategory.trim();
-    if (!name) return;
-    const folder = await onCreateFolder(name);
-    setNewCategory('');
-    setTargetFolder(folder.id);
-  }
-
   function togglePick(url: string) {
     setPicked(prev => {
       const next = new Set(prev);
@@ -323,9 +502,20 @@ export default function FeedManagerModal({
           url: b.feedUrl, name: b.name,
           feedFolderId: targetFolder === UNCATEGORIZED ? null : targetFolder,
         })),
+        // Filed under YouTube by name, the same way a suggested feed carries its
+        // own category - not into whatever the box at the top happens to say.
+        ...ytNew.filter(c => picked.has(c.feedUrl)).map(c => ({
+          url: c.feedUrl, name: c.title, category: YOUTUBE_CATEGORY,
+        })),
       ];
       const { added, skipped } = await onAddFeeds(chosen);
       setPicked(new Set());
+      // Folded away again once it has been used, rather than left open for the
+      // rest of the session: it is a panel you summon, and leaving it standing
+      // there afterwards is the thing that was wrong with it being permanent.
+      setYtChannels([]);
+      setYtRevealed(false);
+      setYtError('');
       onRefreshImportable();
       setAddOk(
         skipped.length > 0
@@ -367,15 +557,14 @@ export default function FeedManagerModal({
             placeholder="Paste a site or feed address — npr.org, example.com/feed"
             aria-label="Site or feed address"
           />
-          <select
+          <CategorySelect
             className={styles.folderSelect}
             value={targetFolder}
-            onChange={e => setTargetFolder(e.target.value)}
-            aria-label="Category for the new feed"
-          >
-            <option value={UNCATEGORIZED}>Uncategorised</option>
-            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select>
+            onChange={setTargetFolder}
+            folders={folders}
+            onCreateFolder={onCreateFolder}
+            ariaLabel="Category for the new feed"
+          />
           <button className={styles.primaryBtn} type="submit" disabled={!urlInput.trim() || checking}>
             {checking ? 'Checking…' : 'Add'}
           </button>
@@ -385,6 +574,24 @@ export default function FeedManagerModal({
         </div>
         {addError && <div className={styles.error}>{addError}</div>}
         {addOk && <div className={styles.ok}><CheckIcon /> {addOk}</div>}
+
+        {/* Offered only to someone who is plainly here about YouTube, and only
+            until they take it up. Add still does the obvious thing - this is the
+            other question they might have been about to ask. */}
+        {ytOffered && !ytOpen && (
+          <div className={styles.ytOffer}>
+            <span>
+              Add follows this one channel. You can also bring over everything
+              you subscribe to.
+            </span>
+            <button
+              className={styles.linkBtn}
+              onClick={() => { setYtRevealed(true); setTab('discover'); }}
+            >
+              Import my subscriptions
+            </button>
+          </div>
+        )}
 
         <div className={styles.tabs} role="tablist">
           <button
@@ -429,7 +636,7 @@ export default function FeedManagerModal({
                     {feeds.length === 0 ? (
                       <div className={styles.groupEmpty}>Nothing filed here yet.</div>
                     ) : feeds.map(f => (
-                      <FeedRow key={f.id} feed={f} folders={folders} onUpdate={onUpdateFeed} onRemove={onRemoveFeed} />
+                      <FeedRow key={f.id} feed={f} folders={folders} onUpdate={onUpdateFeed} onRemove={onRemoveFeed} onCreateFolder={onCreateFolder} />
                     ))}
                   </div>
                 );
@@ -443,25 +650,13 @@ export default function FeedManagerModal({
                     <span className={styles.categoryCount}>{grouped.uncategorized.length}</span>
                   </div>
                   {grouped.uncategorized.map(f => (
-                    <FeedRow key={f.id} feed={f} folders={folders} onUpdate={onUpdateFeed} onRemove={onRemoveFeed} />
+                    <FeedRow key={f.id} feed={f} folders={folders} onUpdate={onUpdateFeed} onRemove={onRemoveFeed} onCreateFolder={onCreateFolder} />
                   ))}
                 </div>
               )}
 
-              <div className={styles.newCategoryRow}>
-                <input
-                  className={styles.input}
-                  value={newCategory}
-                  onChange={e => setNewCategory(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); } }}
-                  placeholder="New category — Tech, Local news, Auto…"
-                  aria-label="New category name"
-                />
-                <button className={styles.ghostBtn} onClick={handleCreateCategory} disabled={!newCategory.trim()}>
-                  Add category
-                </button>
-              </div>
             </>
+
           ) : (
             <>
               {importable.length > 0 && (
@@ -490,6 +685,76 @@ export default function FeedManagerModal({
                 </div>
               )}
 
+              {/* ── YouTube subscriptions ──
+                  Hidden until asked for - see ytRevealed above.
+
+                  A file, not a "Connect YouTube" button: see the note at the top
+                  of utils/youtubeSubscriptions for why an OAuth grant is the
+                  wrong price for a list this small. Nothing leaves the browser
+                  until something is picked and Follow is pressed. */}
+              {ytOpen && (
+              <div className={styles.group}>
+                <div className={styles.discoverLabel}>From YouTube</div>
+                <div className={styles.discoverNote}>
+                  Every channel you subscribe to publishes a feed. Export your
+                  list from{' '}
+                  <a href="https://takeout.google.com/" target="_blank" rel="noopener noreferrer">
+                    Google Takeout
+                  </a>{' '}
+                  (deselect all → YouTube and YouTube Music → subscriptions) and
+                  drop <code>subscriptions.csv</code> in here. Your Google account
+                  is never involved.
+                </div>
+
+                <div className={styles.csvRow}>
+                  <button className={styles.ghostBtn} onClick={() => csvRef.current?.click()}>
+                    {ytChannels.length > 0 ? 'Choose a different file' : 'Choose subscriptions.csv'}
+                  </button>
+                  {ytChannels.length > 0 && (
+                    <span className={styles.csvSummary}>
+                      {ytChannels.length} channel{ytChannels.length === 1 ? '' : 's'}
+                      {ytNew.length !== ytChannels.length &&
+                        ` · ${ytChannels.length - ytNew.length} already followed`}
+                    </span>
+                  )}
+                  <input
+                    ref={csvRef}
+                    className={styles.csvInput}
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleCsv}
+                    aria-label="YouTube subscriptions CSV"
+                  />
+                </div>
+
+                {ytError && <div className={styles.error}>{ytError}</div>}
+
+                {ytNew.map(c => {
+                  const on = picked.has(c.feedUrl);
+                  return (
+                    <button
+                      key={c.feedUrl}
+                      className={`${styles.pick} ${on ? styles.pickOn : ''}`}
+                      onClick={() => togglePick(c.feedUrl)}
+                      aria-pressed={on}
+                    >
+                      <span className={styles.pickCheck}>{on ? <CheckIcon /> : null}</span>
+                      <span className={styles.pickMain}>
+                        <span className={styles.pickName}>{c.title || c.channelId}</span>
+                        <span className={styles.pickBlurb}>youtube.com</span>
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {ytChannels.length > 0 && ytNew.length === 0 && (
+                  <div className={styles.groupEmpty}>
+                    You already follow every channel in that file.
+                  </div>
+                )}
+              </div>
+              )}
+
               {suggestedByCategory.map(([category, feeds]) => (
                 <div key={category} className={styles.group}>
                   <div className={styles.discoverLabel}>{category}</div>
@@ -504,7 +769,14 @@ export default function FeedManagerModal({
                       >
                         <span className={styles.pickCheck}>{on ? <CheckIcon /> : null}</span>
                         <span className={styles.pickMain}>
-                          <span className={styles.pickName}>{s.name}</span>
+                          <span className={styles.pickName}>
+                            {s.name}
+                            {accessBadge(s.access) && (
+                              <span className={styles.accessBadge} title={accessBadge(s.access)!.title}>
+                                {accessBadge(s.access)!.label}
+                              </span>
+                            )}
+                          </span>
                           <span className={styles.pickBlurb}>{s.blurb}</span>
                         </span>
                         <span className={styles.pickSite}>{s.site}</span>

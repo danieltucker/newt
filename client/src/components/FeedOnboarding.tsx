@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { SuggestedFeed } from '../types';
+import { accessBadge } from '../utils/feedAccess';
 import styles from './FeedOnboarding.module.css';
 
 interface Props {
@@ -29,9 +30,18 @@ export default function FeedOnboarding({ suggested, onFollow, onDone }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // Starters only. The full directory is forty-odd feeds across eleven headings,
+  // which on a welcome screen turns "pick a few things you like" into a chore
+  // with a scrollbar - and it is the one screen that has to feel like a
+  // beginning. Everything else is a click away in Manage feeds, which is where
+  // you go when you *are* browsing. The server resolves the flag; see the note
+  // on /suggested. Falls back to the whole list if none are marked, so a change
+  // at that end can't empty this screen.
   const byCategory = useMemo(() => {
+    const starters = suggested.filter(s => s.starter);
+    const shown = starters.length > 0 ? starters : suggested;
     const map = new Map<string, SuggestedFeed[]>();
-    for (const s of suggested) {
+    for (const s of shown) {
       const list = map.get(s.category);
       if (list) list.push(s); else map.set(s.category, [s]);
     }
@@ -100,6 +110,7 @@ export default function FeedOnboarding({ suggested, onFollow, onDone }: Props) {
                 <div className={styles.grid}>
                   {feeds.map(s => {
                     const on = picked.has(s.url);
+                    const badge = accessBadge(s.access);
                     return (
                       <button
                         key={s.url}
@@ -109,7 +120,12 @@ export default function FeedOnboarding({ suggested, onFollow, onDone }: Props) {
                       >
                         <span className={styles.pickCheck}>{on ? <CheckIcon /> : null}</span>
                         <span className={styles.pickMain}>
-                          <span className={styles.pickName}>{s.name}</span>
+                          <span className={styles.pickName}>
+                            {s.name}
+                            {badge && (
+                              <span className={styles.accessBadge} title={badge.title}>{badge.label}</span>
+                            )}
+                          </span>
                           <span className={styles.pickBlurb}>{s.blurb}</span>
                           <span className={styles.pickSite}>{s.site}</span>
                         </span>

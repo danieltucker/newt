@@ -49,11 +49,27 @@ export function sanitizeFeedHtml(raw: string): string | null {
 
 // ── RSS / Atom parser ──────────────────────────────────────────────────────
 
+// Numeric character references come in both bases and feeds use both. Hex was
+// missing here, which is how "&#xA;" - a plain line break, and what Bluesky
+// writes for every one of them - ended up printed literally in article titles.
+// Anything outside the Unicode range is left as written rather than thrown over:
+// a malformed entity in someone's feed is not worth failing an ingest for.
+function decodeCodePoint(raw: string, base: number): string {
+  const n = parseInt(raw, base);
+  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return '';
+  try { return String.fromCodePoint(n); } catch { return ''; }
+}
+
 export function decodeXmlEntities(s: string): string {
   return s
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&#x([0-9a-f]+);/gi, (m, n) => decodeCodePoint(n, 16) || m)
+    .replace(/&#(\d+);/g, (m, n) => decodeCodePoint(n, 10) || m)
+    // Named entities last: &amp;#60; is an escaped "&#60;", not a "<". Decoding
+    // &amp; first would turn it into &#60; and the numeric pass would then
+    // finish the job, producing a character the feed deliberately escaped.
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+    .replace(/&amp;/g, '&');
 }
 
 export function cleanContent(s: string): string {
@@ -81,6 +97,36 @@ function extractSnippet(raw: string, maxChars = 200): string | null {
 
 function stripHtml(s: string): string {
   return s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Longest a derived title runs before it is cut at a word boundary.
+const DERIVED_TITLE_CHARS = 90;
+
+/**
+ * A headline for an item that has no <title>.
+ *
+ * Microblogs publish posts, not articles, so their feeds legitimately carry
+ * none: a Bluesky item is a <link>, a <description> and a <pubDate>, full stop.
+ * Requiring a title dropped every one of them — the feed fetched fine, parsed
+ * fine, and delivered nothing, which is the worst way for this to fail. So the
+ * first line of the post becomes the headline, the way every other reader shows
+ * them.
+ *
+ * Deliberately not a fallback to the feed's own title: fifty cards all called
+ * "@someone - Bluesky" are less use than fifty first lines, and the byline
+ * already says who wrote it.
+ */
+export function titleFromContent(raw: string): string {
+  // Tags out but line breaks kept, because the break is the signal: a post's
+  // first line is its headline. stripHtml would flatten them into spaces, so
+  // the split has to happen before the collapse, not after.
+  const text = cleanContent(raw).replace(/<[^>]+>/g, ' ').replace(/[ \t\r\f\v]+/g, ' ').trim();
+  if (!text) return '';
+  const firstLine = text.split('\n').map(l => l.trim()).find(Boolean) ?? '';
+  if (!firstLine) return '';
+  if (firstLine.length <= DERIVED_TITLE_CHARS) return firstLine;
+  const cut = firstLine.lastIndexOf(' ', DERIVED_TITLE_CHARS);
+  return `${firstLine.slice(0, cut > 40 ? cut : DERIVED_TITLE_CHARS).trim()}…`;
 }
 
 function estimateReadTime(raw: string): number | null {
@@ -177,10 +223,15 @@ export function parseFeed(xml: string, limit = 100): FeedItem[] {
       }
     }
 
-    if (title && link.trim()) {
+    // A titleless item is still an item — see titleFromContent. An item with
+    // neither a title nor anything to make one out of is still dropped, which
+    // is what the original title check was really guarding against.
+    const headline = title || titleFromContent(contentRaw);
+
+    if (headline && link.trim()) {
       const date = rawDate ? new Date(rawDate.trim()) : null;
       items.push({
-        title, link: link.trim(),
+        title: headline, link: link.trim(),
         date: date && !isNaN(date.getTime()) ? date : null,
         readTime, snippet, content, imageUrl,
         categories: categories.slice(0, 5),

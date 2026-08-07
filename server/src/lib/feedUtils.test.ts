@@ -6,6 +6,7 @@ import {
   parseFeed,
   parseFeedTitle,
   sanitizeFeedHtml,
+  titleFromContent,
 } from './feedUtils';
 
 describe('canonicalFeedKey', () => {
@@ -39,6 +40,30 @@ describe('decodeXmlEntities', () => {
 
   it('decodes numeric entities', () => {
     expect(decodeXmlEntities('&#65;&#66;&#67;')).toBe('ABC');
+  });
+
+  // Hex was missing, which is how "&#xA;" - a line break, and what Bluesky
+  // writes for every one of them - was appearing literally in article titles.
+  it('decodes hex entities, in either case', () => {
+    expect(decodeXmlEntities('&#x41;&#x42;')).toBe('AB');
+    expect(decodeXmlEntities('one&#xA;two')).toBe('one\ntwo');
+    expect(decodeXmlEntities('&#Xa;')).toBe('\n');
+  });
+
+  it('decodes astral characters as one character, not two halves', () => {
+    expect(decodeXmlEntities('&#x1F600;')).toBe('\u{1F600}');
+  });
+
+  // An escaped entity is text the feed meant literally. Decoding &amp; before
+  // the numeric pass would hand "&#60;" to it and produce a "<" nobody wrote.
+  it('does not re-decode an escaped entity', () => {
+    expect(decodeXmlEntities('&amp;#60;')).toBe('&#60;');
+    expect(decodeXmlEntities('&amp;amp;')).toBe('&amp;');
+  });
+
+  it('leaves a malformed entity alone rather than eating it', () => {
+    expect(decodeXmlEntities('&#xZZ;')).toBe('&#xZZ;');
+    expect(decodeXmlEntities('&#x110000;')).toBe('&#x110000;');
   });
 });
 
@@ -88,7 +113,7 @@ describe('parseFeed (RSS)', () => {
     </item>
   </channel></rss>`;
 
-  it('parses each valid item and skips ones missing title/link', () => {
+  it('parses each valid item and skips ones with no link', () => {
     const items = parseFeed(rss);
     expect(items).toHaveLength(2);
     expect(items[0].title).toBe('Hello');
@@ -117,6 +142,65 @@ describe('parseFeed (RSS)', () => {
 
   it('honours the item limit', () => {
     expect(parseFeed(rss, 1)).toHaveLength(1);
+  });
+});
+
+// Microblog feeds publish posts, which have no headline of their own. Bluesky's
+// items are a link, a description and a date - nothing else - so requiring a
+// <title> ingested exactly none of them while every other signal said the feed
+// was healthy.
+describe('parseFeed (titleless items)', () => {
+  const bluesky = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>@pfrazee.com - Paul Frazee</title>
+  <item>
+    <link>https://bsky.app/profile/pfrazee.com/post/3mshvvl46ok24</link>
+    <description>Depending on how you view the ship of theseus, source-code licensing means Apex Legends is built on the Quake engine.&#xA;&#xA;(No idea how bluesky will handle this image.)</description>
+    <pubDate>07 Aug 2026 06:17 +0000</pubDate>
+  </item>
+  <item>
+    <link>https://bsky.app/profile/pfrazee.com/post/nothing</link>
+  </item>
+</channel></rss>`;
+
+  it('keeps a titleless post, headlined by its first line', () => {
+    const items = parseFeed(bluesky);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('Depending on how you view the ship of theseus, source-code licensing means Apex Legends is…');
+    expect(items[0].link).toBe('https://bsky.app/profile/pfrazee.com/post/3mshvvl46ok24');
+  });
+
+  // The weekday-less RFC822 date Bluesky emits still has to land as a date, or
+  // every post sorts to one end of the river.
+  it('parses the date format these feeds use', () => {
+    expect(parseFeed(bluesky)[0].date?.toISOString()).toBe('2026-08-07T06:17:00.000Z');
+  });
+
+  it('still drops an item with neither a title nor anything to make one from', () => {
+    expect(parseFeed(bluesky).some(i => i.link.endsWith('/nothing'))).toBe(false);
+  });
+});
+
+describe('titleFromContent', () => {
+  it('takes the first line, not the first sentence', () => {
+    expect(titleFromContent('Short one\nand a second line')).toBe('Short one');
+  });
+
+  it('cuts a long single line at a word boundary', () => {
+    const long = `${'word '.repeat(40)}end`;
+    const title = titleFromContent(long);
+    expect(title.endsWith('…')).toBe(true);
+    expect(title.length).toBeLessThanOrEqual(91);
+    expect(title).not.toContain('wor…');
+  });
+
+  it('strips markup and decodes entities', () => {
+    expect(titleFromContent('<p>Tom &amp; Jerry</p>')).toBe('Tom & Jerry');
+  });
+
+  it('is empty when there is nothing to work with', () => {
+    expect(titleFromContent('   ')).toBe('');
+    expect(titleFromContent('<p></p>')).toBe('');
   });
 });
 

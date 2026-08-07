@@ -8,6 +8,7 @@ import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/note
 import { modLabel } from '../utils/platform';
 import { PageMeta, EMPTY_PAGE_META, pageEmbed, isBareUrl } from '../utils/pageMeta';
 import { markdownToHtml, looksLikeMarkdown } from '../utils/markdown';
+import { Emoji, EMOJI_GROUPS, searchEmoji } from '../utils/emoji';
 import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
@@ -73,49 +74,9 @@ const CMDS: Cmd[] = [
   { id: 'emoji',      kind: 'inline', label: 'Emoji',         badge: '🙂', hint: 'Pick a character',   keys: ['emoji', 'emoticon', 'smiley', 'face', 'reaction', 'symbol', ':)'] },
 ];
 
-// A picked shortlist rather than the whole of Unicode: what a note or a comment
-// actually reaches for. A full set is a search box, an index and a font problem,
-// which is a different feature from "put a 👍 in this sentence".
-//
-// Grouped the way a keyboard groups them so the one you want is where you
-// expect, and ordered by how often it gets used here rather than by codepoint.
-const EMOJI_GROUPS: { name: string; chars: string[] }[] = [
-  { name: 'Smileys', chars: [
-    '😀', '😃', '😄', '😁', '😅', '😂', '🙂', '🙃', '😉', '😊', '😍', '😘',
-    '😋', '😎', '🤩', '🤔', '🤨', '😐', '🙄', '😬', '😴', '😢', '😭', '😤',
-    '😱', '🤯', '😳', '🥳', '😇', '🤗', '🤐', '🤒',
-  ] },
-  { name: 'Gestures', chars: [
-    '👍', '👎', '👌', '🤝', '👏', '🙌', '🙏', '💪', '✌️', '🤞', '👋', '🫡',
-    '🤷', '🤦', '👀', '🧠',
-  ] },
-  { name: 'Hearts & sparks', chars: [
-    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💯', '✨', '⭐',
-    '🌟', '🔥', '💥', '⚡',
-  ] },
-  { name: 'Reading & work', chars: [
-    '📚', '📖', '📝', '✏️', '📌', '📎', '🔖', '🗂️', '💡', '🔍', '🔗', '💻',
-    '📱', '🖥️', '📷', '🎧', '🎵', '⏰', '🗓️', '📈', '📉', '📊', '🧾', '🗃️',
-  ] },
-  { name: 'Nature', chars: [
-    '🌱', '🌿', '🍀', '🌳', '🌸', '🌻', '🌎', '🌙', '☀️', '☁️', '🌧️', '❄️',
-    '🐈', '🐕', '🦊', '🐢',
-  ] },
-  { name: 'Food & drink', chars: [
-    '☕', '🍵', '🍺', '🍷', '🥂', '🍕', '🍔', '🌮', '🍎', '🍩', '🍪', '🎂',
-  ] },
-  { name: 'Going places', chars: [
-    '✈️', '🚀', '🚗', '🚲', '🏔️', '🏖️', '🎉', '🎁', '🏆', '🎯', '⚽', '🎮',
-  ] },
-  { name: 'Symbols', chars: [
-    '✅', '❌', '⚠️', '❓', '❗', '🚫', '🔒', '🔓', '➡️', '⬅️', '⬆️', '⬇️',
-    '🔁', '➕', '➖', '™️',
-  ] },
-];
-
 // Enough to place the panel before it exists; the CSS caps it at the same size.
 const EMOJI_PANEL_W = 268;
-const EMOJI_PANEL_H = 236;
+const EMOJI_PANEL_H = 282;
 
 // Markdown typed at the start of a block turns it into that block, the way the
 // slash menu's aliases have always promised. The trailing space is part of the
@@ -551,42 +512,106 @@ interface MenuPos { left: number; top: number | null; bottom: number | null; max
 interface Marks { bold: boolean; italic: boolean; underline: boolean; strike: boolean; }
 const NO_MARKS: Marks = { bold: false, italic: false, underline: false, strike: false };
 
+function sameMarks(a: Marks, b: Marks): boolean {
+  return a.bold === b.bold && a.italic === b.italic
+    && a.underline === b.underline && a.strike === b.strike;
+}
+
 // First-paint estimate only - the bubble sizes to its content, so the real
 // width is measured after render and the position corrected before paint.
 const BUBBLE_EST_W = 250;
 const BUBBLE_M = 8;
+const BUBBLE_H = 36;
 
 interface BubblePos { anchorX: number; left: number; top: number; }
+
+// What is actually on screen, in the same client coordinates a fixed element is
+// positioned in. They only differ on a phone: the soft keyboard shrinks the
+// *visual* viewport without touching the layout viewport, so window.innerHeight
+// still reports the full page and anything placed against it lands behind the
+// keyboard. Pinch-zoom moves it sideways for the same reason.
+interface Viewport { left: number; top: number; right: number; bottom: number; }
+function viewportBox(): Viewport {
+  const vv = window.visualViewport;
+  if (!vv) return { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  return {
+    left: vv.offsetLeft,
+    top: vv.offsetTop,
+    right: vv.offsetLeft + vv.width,
+    bottom: vv.offsetTop + vv.height,
+  };
+}
 
 // Centre the bubble over the selection. `boundsTop` is the top of the editor's
 // scroll area - selecting on the first line would otherwise float the bubble up
 // over the utility bar, so in that case it flips below the selection instead.
+// Below is a fallback and not a preference: it is where a phone puts its own
+// selection handles, so the bubble only goes there when it cannot go above.
 function computeBubblePos(r: DOMRect, boundsTop: number): BubblePos {
+  const vp = viewportBox();
   const anchorX = r.left + r.width / 2;
+  const ceiling = Math.max(vp.top + BUBBLE_M, boundsTop);
   let top = r.top - 44;
-  if (top < Math.max(BUBBLE_M, boundsTop)) top = r.bottom + BUBBLE_M;
+  if (top < ceiling) {
+    const below = r.bottom + BUBBLE_M;
+    // Neither side fits - the line is taller than the visible strip between the
+    // toolbar and the keyboard - so sit at the top of that strip rather than
+    // scrolling off the end of it.
+    top = below + BUBBLE_H <= vp.bottom ? below : ceiling;
+  }
   return { anchorX, left: clampBubbleLeft(anchorX, BUBBLE_EST_W), top };
 }
 
 function clampBubbleLeft(anchorX: number, width: number): number {
-  return Math.max(BUBBLE_M, Math.min(anchorX - width / 2, window.innerWidth - width - BUBBLE_M));
+  const vp = viewportBox();
+  return Math.max(vp.left + BUBBLE_M, Math.min(anchorX - width / 2, vp.right - width - BUBBLE_M));
+}
+
+// A bubble is anchored to a live source rather than to the rectangle that was
+// under the selection when it went up. On a phone the ground moves after the
+// fact: opening the keyboard scrolls the page to reveal the caret, and a fixed
+// bubble placed before that scroll stays where it was while the text it belongs
+// to slides out from under it. Re-asking the anchor is how it keeps up.
+type BubbleAnchor = () => DOMRect | null;
+
+function elementAnchor(el: HTMLElement): BubbleAnchor {
+  return () => (el.isConnected ? el.getBoundingClientRect() : null);
+}
+
+// The range is cloned, so it keeps reporting where those characters are now
+// even as the document reflows around them.
+function rangeAnchor(range: Range): BubbleAnchor {
+  const live = range.cloneRange();
+  return () => {
+    const r = live.getBoundingClientRect();
+    return r.width || r.height ? r : null;
+  };
+}
+
+function sameBubble(a: BubblePos | null, b: BubblePos | null): boolean {
+  if (!a || !b) return a === b;
+  return a.anchorX === b.anchorX && a.left === b.left && a.top === b.top;
 }
 
 // Keep the command menu fully on-screen: clamp horizontally, and flip above the
 // caret when there isn't room below. maxHeight makes it scroll rather than run
-// off the page.
+// off the page. Measured against the visible viewport for the same reason the
+// bubble is - on a phone the space "below" the caret is mostly keyboard.
 function computeMenuPos(base: DOMRect): MenuPos {
   const MENU_W = 288;
   const M = 8;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const vp = viewportBox();
   let left = base.left;
-  if (left + MENU_W > vw - M) left = vw - MENU_W - M;
-  if (left < M) left = M;
-  const spaceBelow = vh - base.bottom - M;
-  const spaceAbove = base.top - M;
+  if (left + MENU_W > vp.right - M) left = vp.right - MENU_W - M;
+  if (left < vp.left + M) left = vp.left + M;
+  const spaceBelow = vp.bottom - base.bottom - M;
+  const spaceAbove = base.top - vp.top - M;
   if (spaceBelow < 200 && spaceAbove > spaceBelow) {
-    return { left, top: null, bottom: vh - base.top + 4, maxHeight: Math.max(140, Math.min(300, spaceAbove - 4)) };
+    // `bottom` offsets a fixed element from the bottom of the *layout*
+    // viewport, so it stays measured against innerHeight even though the room
+    // available was measured against the visible strip.
+    const bottom = window.innerHeight - base.top + 4;
+    return { left, top: null, bottom, maxHeight: Math.max(140, Math.min(300, spaceAbove - 4)) };
   }
   return { left, top: base.bottom + 4, bottom: null, maxHeight: Math.max(140, Math.min(300, spaceBelow - 4)) };
 }
@@ -757,16 +782,93 @@ export default function RichEditor({
   // a 190px shell with overflow hidden, so a panel that lived in the flow would
   // swallow the writing area and an absolute one would be clipped away.
   const [emojiAt, setEmojiAt] = useState<{ left: number; top: number } | null>(null);
+  const [emojiQuery, setEmojiQuery] = useState('');
   const emojiRef = useRef<HTMLDivElement>(null);
   const emojiBtnRef = useRef<HTMLSpanElement>(null);
+  const emojiInputRef = useRef<HTMLInputElement>(null);
+  // Where the character goes. The grid alone could rely on suppressing
+  // mousedown to leave the caret untouched, but a search field has to take
+  // focus to be typed in, which collapses the selection - so the picker stashes
+  // it on the way up, the way the image and reference pickers do.
+  const emojiRange = useRef<Range | null>(null);
 
-  // The rendered bubble is as wide as its buttons need; re-centre on the real
-  // width before paint so nothing hangs off either edge.
-  useLayoutEffect(() => {
+  // Where the bubble is pinned. Kept in a ref rather than in state because it
+  // is read by scroll handlers that must not cause a render to run.
+  const bubbleAnchor = useRef<BubbleAnchor | null>(null);
+
+  function boundsTop(): number {
+    return scrollRef.current?.getBoundingClientRect().top ?? 0;
+  }
+
+  function raiseBubble(anchor: BubbleAnchor) {
+    const r = anchor();
+    if (!r) { dropBubble(); return; }
+    bubbleAnchor.current = anchor;
+    const next = computeBubblePos(r, boundsTop());
+    // Typing inside a link recomputes this on every keystroke and usually lands
+    // on the same pixel; a fresh object every time would re-render regardless.
+    setBubble(prev => sameBubble(prev, next) ? prev : next);
+  }
+
+  function dropBubble() {
+    bubbleAnchor.current = null;
+    setBubble(null);
+  }
+
+  // Put the rendered bubble where its anchor is now. Written straight to the
+  // node: this runs on scroll, and going through state would render the editor
+  // on every frame of a flick.
+  //
+  // The rendered bubble is also as wide as its buttons need, which is only
+  // knowable after it exists - so the real width is what gets centred, not the
+  // estimate computeBubblePos had to work from.
+  function placeBubble() {
     const el = bubbleRef.current;
-    if (!el || !bubble) return;
-    el.style.left = `${clampBubbleLeft(bubble.anchorX, el.offsetWidth)}px`;
-  }, [bubble]);
+    const anchor = bubbleAnchor.current;
+    if (!el || !anchor) return;
+    const r = anchor();
+    if (!r) return;
+    const pos = computeBubblePos(r, boundsTop());
+    el.style.left = `${clampBubbleLeft(pos.anchorX, el.offsetWidth)}px`;
+    el.style.top = `${pos.top}px`;
+    // Scrolled past what it belongs to: hide rather than follow the text off
+    // the edge of the note and hang over whatever is next to it.
+    const box = scrollRef.current?.getBoundingClientRect();
+    const gone = !!box && (r.bottom < box.top || r.top > box.bottom);
+    el.style.visibility = gone ? 'hidden' : '';
+    el.style.pointerEvents = gone ? 'none' : '';
+  }
+
+  // Every render, not just the ones that move the bubble: the JSX carries the
+  // last state-held position, so any unrelated re-render would otherwise stamp
+  // that back over wherever the scroll handlers have since put it. Free when
+  // there is no bubble up, which is nearly always.
+  useLayoutEffect(placeBubble);
+
+  // Anything that moves the text under the bubble: scrolling the note (capture,
+  // so the inner scroller counts), scrolling the page, and - the phone case -
+  // the keyboard opening, which resizes the visual viewport and scrolls the
+  // caret into view without either the note or the window firing a thing.
+  useEffect(() => {
+    if (!bubble) return;
+    let frame = 0;
+    function onMove() {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; placeBubble(); });
+    }
+    const vv = window.visualViewport;
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    vv?.addEventListener('scroll', onMove);
+    vv?.addEventListener('resize', onMove);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+      vv?.removeEventListener('scroll', onMove);
+      vv?.removeEventListener('resize', onMove);
+    };
+  }, [bubble]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Where the "/" was typed, so we can strip "/query" before applying a command
   const slashInfo = useRef<{ node: Node; offset: number } | null>(null);
@@ -781,15 +883,22 @@ export default function RichEditor({
   // handlers call `record('struct')` before they mutate.
   type Snap = { html: string; caret: CaretPath | null };
   const historyRef = useRef<HistoryStack<Snap> | null>(null);
-  if (!historyRef.current) historyRef.current = new HistoryStack<Snap>();
+  if (!historyRef.current) {
+    historyRef.current = new HistoryStack<Snap>(400, 50, 200, s => s.html.length);
+  }
   const history = historyRef.current;
 
   function snapshot(): Snap {
     const el = ref.current!;
     return { html: el.innerHTML, caret: getCaretPath(el) };
   }
+  // Passed as a factory, not a value: `record('type')` fires on every keypress
+  // but only actually keeps a snapshot when it starts a new undo group, and
+  // snapshot() serializes the whole document. Building one for every character
+  // and discarding it was the editor's single largest per-keystroke cost, and
+  // the garbage it made is what turned a long note on a phone into a stall.
   function record(kind: EditKind) {
-    if (ref.current) history.record(snapshot(), kind);
+    if (ref.current) history.record(snapshot, kind);
   }
   function restore(snap: Snap) {
     const el = ref.current;
@@ -1061,7 +1170,12 @@ export default function RichEditor({
     // toggleInlineCode and wrapSelectionInCode). They must not reach storage,
     // where they would show up as invisible junk in every text length check and
     // every search.
-    onChange(el.innerHTML.replace(/​/g, ''));
+    //
+    // Tested for before being stripped: this runs on every keystroke, and there
+    // is one in the document only while the caret is parked in a code span. A
+    // scan is cheap; rebuilding the whole serialization to change nothing is not.
+    const html = el.innerHTML;
+    onChange(html.includes('​') ? html.replace(/​/g, '') : html);
     // Editing moves the text the highlights are painted over, so the hit list
     // is stale the moment the document changes. Only costs a walk while the
     // find bar is actually open with something in it.
@@ -1093,8 +1207,15 @@ export default function RichEditor({
   // The inline marks and the shape of the block the caret is in, refreshed
   // together because every place that wanted one now wants both: the bubble's
   // heading control reports the current level, not just offers a new one.
+  //
+  // The marks are compared field by field before they are set. This runs on
+  // every selection change, which means on every keystroke, and readMarks
+  // always builds a fresh object - so setting it unconditionally re-rendered
+  // the whole editor on every character even though the answer is the same
+  // four booleans for paragraphs at a time.
   function refreshMarks() {
-    setMarks(readMarks());
+    const next = readMarks();
+    setMarks(prev => sameMarks(prev, next) ? prev : next);
     const editor = ref.current;
     setBlockTag(editor ? (getBlock(editor)?.nodeName ?? 'P') : 'P');
   }
@@ -1112,43 +1233,91 @@ export default function RichEditor({
   // came from /emoji - and flipped above that when there's no room below.
   function openEmojiAt(rect: DOMRect | undefined) {
     if (!rect) return;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - EMOJI_PANEL_W - 8));
-    const roomBelow = window.innerHeight - rect.bottom > EMOJI_PANEL_H + 12;
+    const sel = window.getSelection();
+    const editor = ref.current;
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+    emojiRange.current = range && editor?.contains(range.commonAncestorContainer)
+      ? range.cloneRange()
+      : null;
+    const vp = viewportBox();
+    const left = Math.max(vp.left + 8, Math.min(rect.left, vp.right - EMOJI_PANEL_W - 8));
+    const roomBelow = vp.bottom - rect.bottom > EMOJI_PANEL_H + 12;
+    setEmojiQuery('');
     setEmojiAt({
       left,
-      top: roomBelow ? rect.bottom + 6 : Math.max(8, rect.top - EMOJI_PANEL_H - 6),
+      top: roomBelow
+        ? rect.bottom + 6
+        : Math.max(vp.top + 8, rect.top - EMOJI_PANEL_H - 6),
     });
   }
 
+  function closeEmoji() {
+    setEmojiAt(null);
+    setEmojiQuery('');
+    emojiRange.current = null;
+  }
+
   function toggleEmoji() {
-    if (emojiAt) { setEmojiAt(null); return; }
+    if (emojiAt) { closeEmoji(); return; }
     openEmojiAt(emojiBtnRef.current?.getBoundingClientRect());
   }
 
   // Picking inserts as text, not markup: an emoji is a character in the
-  // sentence, so it undoes, spell-checks and copies like one. The panel's
-  // buttons suppress mousedown, so the caret is still where it was.
+  // sentence, so it undoes, spell-checks and copies like one. The caret goes
+  // back where the picker found it first - the search field has almost
+  // certainly taken focus by now.
   function insertEmoji(ch: string) {
-    ref.current?.focus();
+    restoreRange(emojiRange.current);
     record('struct');
     document.execCommand('insertText', false, ch);
-    setEmojiAt(null);
+    closeEmoji();
     emit();
   }
+
+  // null means "not searching" - the picker shows its groups, as it always has.
+  const emojiResults = emojiAt ? searchEmoji(emojiQuery) : null;
+
+  const emojiButton = (e: Emoji) => (
+    <button
+      key={e.ch}
+      type="button"
+      className={styles.emojiBtn}
+      // The glyph is its own label for anyone who can see it; a screen reader
+      // gets the name it is filed under instead.
+      aria-label={e.keys[0]}
+      title={e.keys[0]}
+      // Suppressing mousedown keeps focus where it is - in the search field,
+      // or in the editor when the grid is used without searching.
+      onMouseDown={ev => ev.preventDefault()}
+      onClick={() => insertEmoji(e.ch)}
+    >
+      {e.ch}
+    </button>
+  );
 
   useEffect(() => {
     if (!emojiAt) return;
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
       if (emojiRef.current?.contains(t) || emojiBtnRef.current?.contains(t)) return;
-      setEmojiAt(null);
+      closeEmoji();
     }
     // Capture, so Escape closes the picker without also closing the console it
     // is sitting in.
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); setEmojiAt(null); }
+      if (e.key === 'Escape') { e.stopPropagation(); closeEmoji(); }
     }
-    function onScroll() { setEmojiAt(null); }
+    // The panel is fixed and the page underneath is not, so anything that
+    // scrolls leaves it stranded. Closing is the honest answer for a transient
+    // picker - unlike the bubble, nothing is lost by putting it away.
+    //
+    // Except its own list. A capture listener on window sees scroll from every
+    // element on the page, the panel's scrollable list included, so reaching
+    // for an emoji further down used to dismiss the picker on the way.
+    function onScroll(e: Event) {
+      if (e.target instanceof Node && emojiRef.current?.contains(e.target)) return;
+      closeEmoji();
+    }
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey, true);
     window.addEventListener('scroll', onScroll, true);
@@ -1159,6 +1328,15 @@ export default function RichEditor({
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onScroll);
     };
+  }, [emojiAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Focus the search field on open, but only where there is a real pointer.
+  // On a phone, focusing it summons a second keyboard over the picker you just
+  // asked to look at - and the grid is the fast path there anyway.
+  useEffect(() => {
+    if (emojiAt && window.matchMedia?.('(hover: hover)').matches) {
+      emojiInputRef.current?.focus();
+    }
   }, [emojiAt]);
 
   // ── Link dialog ───────────────────────────────────────────────────────
@@ -1189,7 +1367,7 @@ export default function RichEditor({
       const selected = sel.isCollapsed ? '' : sel.toString();
       setLinkForm({ url: '', text: selected, selected, editing: false, variant: 'link' });
     }
-    setBubble(null);
+    dropBubble();
   }
 
   // Put the stashed selection back and hand focus to the editor, so execCommand
@@ -1422,8 +1600,7 @@ export default function RichEditor({
     if (anchor) {
       setLinkEl(anchor);
       setLinkTextDraft(null);
-      const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
-      setBubble(computeBubblePos(anchor.getBoundingClientRect(), boundsTop));
+      raiseBubble(elementAnchor(anchor));
     }
     return true;
   }
@@ -1534,7 +1711,7 @@ export default function RichEditor({
       sel.addRange(caret);
     }
     setEmbedEl(null);
-    setBubble(null);
+    dropBubble();
     editor.focus();
     emit();
   }
@@ -1590,7 +1767,7 @@ export default function RichEditor({
     a.textContent = data.title || data.url;
     embedEl.replaceWith(a);
     setEmbedEl(null);
-    setBubble(null);
+    dropBubble();
     // Caret after the link, so typing carries on from it rather than inside it.
     const caret = document.createRange();
     caret.setStartAfter(a);
@@ -1623,18 +1800,27 @@ export default function RichEditor({
     // Unwrap rather than delete: removing a link should leave the words behind.
     a.replaceWith(...Array.from(a.childNodes));
     closeLinkBar();
-    setBubble(null);
+    dropBubble();
     ref.current?.focus();
     emit();
   }
 
   // Track the selection to light up the active marks and raise the bubble.
+  //
+  // Coalesced onto an animation frame. Typing moves the caret, so this fires on
+  // every keystroke - and a mobile IME fires it several times per keystroke,
+  // once for the composition and again for the commit. The work inside is all
+  // forced layout (queryCommandState reads computed style, getBoundingClientRect
+  // reads geometry), which on a long document is the most expensive thing the
+  // editor does. Once per frame is as often as any of it can be seen.
   useEffect(() => {
-    function onSelectionChange() {
+    let frame = 0;
+    function readSelection() {
+      frame = 0;
       const el = ref.current;
       const sel = window.getSelection();
-      if (readOnly) { setBubble(null); return; }
-      if (!el || !sel || sel.rangeCount === 0) { setBubble(null); setEmbedEl(null); closeLinkBar(); return; }
+      if (readOnly) { dropBubble(); return; }
+      if (!el || !sel || sel.rangeCount === 0) { dropBubble(); setEmbedEl(null); closeLinkBar(); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
       refreshMarks();
@@ -1645,8 +1831,7 @@ export default function RichEditor({
       setEmbedEl(embed);
       if (embed) {
         closeLinkBar();
-        const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
-        setBubble(computeBubblePos(embed.getBoundingClientRect(), boundsTop));
+        raiseBubble(elementAnchor(embed));
         return;
       }
       // A caret resting in a link raises that link's own bar. Only when nothing
@@ -1658,19 +1843,24 @@ export default function RichEditor({
         // than carrying a half-typed label across.
         if (anchor !== linkElRef.current) setLinkTextDraft(null);
         setLinkEl(anchor);
-        const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
-        setBubble(computeBubblePos(anchor.getBoundingClientRect(), boundsTop));
+        raiseBubble(elementAnchor(anchor));
         return;
       }
       closeLinkBar();
-      if (sel.isCollapsed || !sel.toString().trim()) { setBubble(null); return; }
+      if (sel.isCollapsed || !sel.toString().trim()) { dropBubble(); return; }
       const r = range.getBoundingClientRect();
-      if (!r || (!r.width && !r.height)) { setBubble(null); return; }
-      const boundsTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
-      setBubble(computeBubblePos(r, boundsTop));
+      if (!r || (!r.width && !r.height)) { dropBubble(); return; }
+      raiseBubble(rangeAnchor(range));
+    }
+    function onSelectionChange() {
+      if (frame) return;
+      frame = requestAnimationFrame(readSelection);
     }
     document.addEventListener('selectionchange', onSelectionChange);
-    return () => document.removeEventListener('selectionchange', onSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, [readOnly]);
 
   // The command menu and the bubble should never be up at the same time
@@ -1678,10 +1868,10 @@ export default function RichEditor({
   // otherwise it would be left hanging over the page with nothing under it.
   useEffect(() => { if (!bubble) setHeadingOpen(false); }, [bubble]);
 
-  useEffect(() => { if (slashOpen) setBubble(null); }, [slashOpen]);
+  useEffect(() => { if (slashOpen) dropBubble(); }, [slashOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // …nor should the bubble sit over the link dialog
-  useEffect(() => { if (linkForm) setBubble(null); }, [linkForm]);
+  useEffect(() => { if (linkForm) dropBubble(); }, [linkForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Markdown shortcuts: when everything typed so far in the block is one of the
   // MD_RULES triggers, swallow it and turn the block into what it describes.
@@ -2706,27 +2896,38 @@ export default function RichEditor({
           role="dialog"
           aria-label="Emoji"
         >
-          {EMOJI_GROUPS.map(g => (
-            <div key={g.name}>
-              <div className={styles.emojiGroupLabel}>{g.name}</div>
-              <div className={styles.emojiGrid}>
-                {g.chars.map(ch => (
-                  <button
-                    key={ch}
-                    type="button"
-                    className={styles.emojiBtn}
-                    aria-label={ch}
-                    // Same reason as the toolbar buttons: keep the caret alive
-                    // in the editor while this is pressed.
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => insertEmoji(ch)}
-                  >
-                    {ch}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+          <div className={styles.emojiSearch}>
+            <input
+              ref={emojiInputRef}
+              className={styles.emojiSearchInput}
+              value={emojiQuery}
+              onChange={e => setEmojiQuery(e.target.value)}
+              // Enter takes the first match, so the whole thing can be done
+              // without leaving the keyboard: "/emoji", "heart", Enter.
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const first = emojiResults?.[0];
+                if (first) insertEmoji(first.ch);
+              }}
+              placeholder="Search - heart, <3, :)"
+              aria-label="Search emoji"
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+          <div className={styles.emojiList}>
+            {emojiResults
+              ? (emojiResults.length > 0
+                ? <div className={styles.emojiGrid}>{emojiResults.map(emojiButton)}</div>
+                : <div className={styles.emojiEmpty}>Nothing matches “{emojiQuery.trim()}”</div>)
+              : EMOJI_GROUPS.map(g => (
+                <div key={g.name}>
+                  <div className={styles.emojiGroupLabel}>{g.name}</div>
+                  <div className={styles.emojiGrid}>{g.items.map(emojiButton)}</div>
+                </div>
+              ))}
+          </div>
         </div>,
         document.body
       )}

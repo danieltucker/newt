@@ -92,3 +92,63 @@ describe('HistoryStack - undo/redo', () => {
     expect(h.undoTo(2)).toBeNull();
   });
 });
+
+describe('HistoryStack - lazy snapshots', () => {
+  it('does not build a snapshot for a record that coalesces away', () => {
+    const h = mk();
+    let built = 0;
+    const snap = (v: string) => () => { built++; return v; };
+    h.record(snap('a'), 'type', 0);      // starts the group - has to capture
+    expect(built).toBe(1);
+    h.record(snap('b'), 'type', 100);    // coalesced - nothing to capture
+    h.record(snap('c'), 'type', 200);
+    expect(built).toBe(1);
+    expect(h.undoTo('d')).toBe('a');
+  });
+
+  it('does not build a snapshot for the echo after a structural edit', () => {
+    const h = mk();
+    let built = 0;
+    h.record('pre', 'struct', 0);
+    h.record(() => { built++; return 'echo'; }, 'type', 20);
+    expect(built).toBe(0);
+  });
+
+  it('captures at record time, not at undo time', () => {
+    const h = mk();
+    let live = 'before';
+    h.record(() => live, 'struct', 0);
+    live = 'after';
+    expect(h.undoTo('cur')).toBe('before');
+  });
+});
+
+describe('HistoryStack - memory budget', () => {
+  const sizeOf = (s: string) => s.length;
+
+  it('drops the oldest entries to stay inside the budget', () => {
+    // Budget of 25 characters, entries of 10 - so three of them do not fit.
+    const h = new HistoryStack<string>(400, 50, 100, sizeOf, 25);
+    h.record('a'.repeat(10), 'struct', 0);
+    h.record('b'.repeat(10), 'struct', 1000);
+    h.record('c'.repeat(10), 'struct', 2000);
+    expect(h.undoTo('cur')).toBe('c'.repeat(10));
+    expect(h.undoTo('x')).toBe('b'.repeat(10));
+    expect(h.undoTo('x')).toBeNull();     // the 'a' entry was trimmed
+  });
+
+  it('keeps one entry however far over budget it is', () => {
+    const h = new HistoryStack<string>(400, 50, 100, sizeOf, 10);
+    const huge = 'x'.repeat(5000);
+    h.record(huge, 'struct', 0);
+    expect(h.undoTo('cur')).toBe(huge);
+  });
+
+  it('leaves the stack alone when no sizeOf is supplied', () => {
+    const h = new HistoryStack<string>(400, 50, 100);
+    for (let i = 0; i < 4; i++) h.record('y'.repeat(1_000_000), 'struct', i * 1000);
+    expect(h.canUndo()).toBe(true);
+    for (let i = 0; i < 4; i++) h.undoTo('cur');
+    expect(h.canUndo()).toBe(false);
+  });
+});

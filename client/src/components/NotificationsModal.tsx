@@ -148,7 +148,11 @@ export default function NotificationsModal({
                 // That detail is the whole content of the alert - "A feed is
                 // failing to load" on its own says nothing actionable - so it
                 // gets the same treatment an article link does.
-                const failingFeed = n.type === 'feed_failing' && n.articleUrl ? n.articleUrl : null;
+                // The disabled alert carries exactly the same payload and needs
+                // exactly the same treatment - it is the terminal state of the
+                // failing one, and the feed URL is even more the point there.
+                const failingFeed = (n.type === 'feed_failing' || n.type === 'feed_disabled')
+                  && n.articleUrl ? n.articleUrl : null;
                 return (
                   <div key={n.id} className={`${styles.row} ${n.read ? '' : styles.rowUnread}`}>
                     <Avatar user={n.actor} onView={onViewProfile} />

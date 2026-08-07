@@ -34,7 +34,7 @@ describe('notifAction', () => {
   it('never names the actor - that half belongs to notifActor', () => {
     const types: NotificationType[] = [
       'friend_request', 'friend_accept', 'comment_reply', 'friend_comment', 'friend_post',
-      'report_new', 'user_new', 'feed_failing',
+      'report_new', 'user_new', 'feed_failing', 'feed_disabled',
     ];
     for (const type of types) {
       expect(notifAction(type)).not.toMatch(/Jane|Someone/);
@@ -69,6 +69,14 @@ describe('notifActor', () => {
     // actor: a feed isn't a person. "Someone is failing to load" is nonsense.
     expect(notifActor({ type: 'feed_failing', actor: null })).toBe('A feed');
     expect(notifText({ type: 'feed_failing', actor: null })).toBe('A feed is failing to load');
+  });
+
+  it('says "A feed" for the switched-off alert too', () => {
+    // The terminal state of the one above, and the alert that actually means
+    // articles have stopped arriving - it must not degrade to a bare name.
+    expect(notifActor({ type: 'feed_disabled', actor: null })).toBe('A feed');
+    expect(notifText({ type: 'feed_disabled', actor: null }))
+      .toBe('A feed was switched off after repeated failures');
   });
 });
 

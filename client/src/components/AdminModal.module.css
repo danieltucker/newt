@@ -140,6 +140,36 @@
   font-size: 13px;
 }
 
+/* The affirmative counterpart to .error, and deliberately quieter: it reports
+   something that worked, so it should not compete with the banner that reports
+   something that didn't. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 24px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.noticeDismiss {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.noticeDismiss:hover { color: var(--text); }
+
 /* ── Stat cards ── */
 .statGrid {
   display: grid;
@@ -596,6 +626,57 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   text-underline-offset: 2px;
 }
 .traceToggle:hover { color: var(--text); }
+.traceToggle:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+
+/* Same shape as .traceToggle so the action stack reads as one group, but red:
+   this is the only one of them that destroys something. */
+.dangerToggle {
+  composes: traceToggle;
+  color: #e5484d;
+}
+.dangerToggle:hover { color: #e5484d; opacity: 0.8; }
+.dangerToggle:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+
+/* ── Sortable column headers ── */
+.sortHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sortHeader:hover { color: var(--text); }
+
+.sortHeaderActive { color: var(--accent); }
+
+.sortArrow {
+  font-size: 8px;
+  line-height: 1;
+}
+
+/* A feed that has been switched off is still worth reading - it is the row you
+   came to act on - so it dims rather than greys out entirely. Matches how a
+   banned user's row is treated. */
+.rowInactive td {
+  opacity: 0.62;
+}
+
+/* Pattern, note and button on one line where there's room, stacking on narrow
+   screens. The inputs carry their own bottom margin from .searchInput, so the
+   row aligns on the top edge rather than the baseline. */
+.blockForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+.blockForm .searchInput { max-width: 220px; }
+.blockForm .moreBtn { margin-top: 0; }
 
 /* A stack trace is pre-formatted text of unbounded width in a table cell, which
    is the classic way to make a panel scroll sideways. It scrolls within itself

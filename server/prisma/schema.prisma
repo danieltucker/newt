@@ -315,11 +315,64 @@ model Feed {
   // doesn't refill the bell on every scheduler tick. Cleared on recovery.
   failureAlertedAt    DateTime?
 
+  // ── Disabled ──
+  // Set means "stop fetching this, but keep everything about it". Nothing in the
+  // system deletes a Feed automatically: a dead URL is usually a moved one, and
+  // deleting the row would take the subscriptions pointing at it with no way to
+  // tell the subscribers what happened. Disabling stops the outbound requests —
+  // which is the actual cost of a broken feed — and leaves the row for an admin
+  // to retry or remove deliberately.
+  //
+  // Enforced in one place: claimFeed's compare-and-set requires disabledAt to be
+  // null, so no code path can fetch a disabled feed however it got hold of the
+  // row. The scheduler filters them out too, but only to avoid the wasted query.
+  disabledAt     DateTime?
+  // Why, from a closed set — 'failing' (auto, after FEED_FAILURE_DISABLE_THRESHOLD
+  // consecutive failures), 'blocked' (its host matches a BlockedDomain rule), or
+  // 'manual' (an admin pressed the button). The distinction matters on re-enable:
+  // clearing a 'blocked' feed while the rule still stands would just re-disable it
+  // on the next sweep, so the admin route refuses that and says so.
+  disabledReason String?
+
   items         FeedItem[]
 
   @@index([lastCheckedAt])
   // The admin panel's failing-feeds query: worst first.
   @@index([consecutiveFailures])
+  // The scheduler's hot path skips disabled feeds on every tick.
+  @@index([disabledAt])
+}
+
+// Hosts this instance refuses to poll. Two shapes, because the two questions an
+// admin asks are different: "not this publisher" and "nothing under this TLD".
+//
+//   kind 'domain' — `example.com` matches example.com and any subdomain of it,
+//                   but never notexample.com. The everyday case.
+//   kind 'suffix' — `.xyz` matches every host ending in that label boundary, so
+//                   a whole domain extension goes in one rule.
+//
+// Rules are matched against the *resolved* feed host, so redirecting through a
+// clean domain to a blocked one doesn't get past it. Adding a rule also disables
+// the feeds already stored that match it — see applyBlockRule. Removing one does
+// not automatically revive them; that is a deliberate admin action, because a
+// rule may have been added for a reason that outlived it.
+model BlockedDomain {
+  id        String   @id @default(cuid())
+  // Normalised at write time by normalizeBlockPattern: lowercased, punycode as
+  // given, no scheme, no leading dot for 'domain', leading dot for 'suffix'.
+  // Unique so the same rule can't be added twice under two spellings.
+  pattern   String   @unique
+  kind      String
+  // Free-text note from whoever added it — "spam farm", "ticket #42". The reason
+  // for a block is never recoverable from the pattern alone.
+  note      String   @default("")
+  // Denormalised like AdminAction.actorUsername, for the same reason: the record
+  // has to stay readable if the account that made it is later deleted.
+  createdById       String?
+  createdByUsername String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([kind])
 }
 
 // Every attempt to refresh a feed, whatever came of it. ErrorLog only holds the
@@ -414,8 +467,15 @@ model FeedItem {
   feed       Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
   link       String
   // Canonical form of link — lets an article be found from any URL spelling,
-  // the same key comments are threaded on
-  linkKey    String?
+  // the same key comments are threaded on.
+  //
+  // **Required, and that is load-bearing.** The river dedupes on this column
+  // (`distinct: ['linkKey']`), and SQL considers NULLs equal for that purpose:
+  // one nullable column would collapse every key-less item in the database into
+  // a single card and silently swallow the rest. It was nullable for rows
+  // written before the column existed; migration 20260807210000 backfilled them
+  // from `link` and made it NOT NULL so the collapse can't come back.
+  linkKey    String
   // The host `link` points at, lowercased and www-stripped: the site page key
   // (/s/<domain>). Stored rather than derived at query time because a feed's own
   // address is often not the site's — Ars Technica publishes at
@@ -426,6 +486,14 @@ model FeedItem {
   title      String
   pubDate    DateTime?
   fetchedAt  DateTime  @default(now())
+  // When this item first entered the river, never touched again afterwards.
+  //
+  // `fetchedAt` cannot answer that: every refresh rewrites it, and a 304 rewrites
+  // it for *every* item in the feed at once (to hold off the TTL sweep). So "what
+  // has arrived since I loaded the page" counted off fetchedAt would report an
+  // entire unchanged feed as new. This column is what the new-articles count
+  // measures against.
+  firstSeenAt DateTime @default(now())
   readTime   Int?
   snippet    String?
   // Full article HTML from the feed, sanitized on write. Backfills on the next
@@ -442,6 +510,9 @@ model FeedItem {
   // Compound, and in this order: every site-page query is "this user's feeds,
   // this host", and the feed filter is the selective half.
   @@index([feedId, linkHost])
+  // Same shape for "anything new in these feeds since <time>", which the feed
+  // polls for while it's open.
+  @@index([feedId, firstSeenAt])
 }
 
 // "I'm done with this article" on a shared item. Per-user and, since v1.11.0,

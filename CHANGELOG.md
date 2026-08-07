@@ -2,6 +2,282 @@
 
 Notable changes to Newt, newest first.
 
+## v1.14.0 - The feed asks before it moves
+
+**2026-08-07**
+
+### One card per story
+
+Articles were appearing twice. Not a rendering fault - the feed genuinely held
+two of them, and there are two ordinary ways for that to happen:
+
+- **One publisher, two feed addresses.** `arstechnica.com/feed` and
+  `feeds.arstechnica.com/arstechnica/index` are different subscriptions carrying
+  identical articles. Nothing stops you following both, and nothing said you had.
+- **Aggregators.** Daring Fireball or Hacker News links to a piece you also
+  follow at the source. Both feeds delivered it; both were right to.
+
+Each copy is its own row and has to be - articles are shared between everyone on
+the instance, and read state hangs off the row. So the river now shows one card
+per *story*, keyed on the canonical article URL: the same key comments have
+always threaded on, which is why a duplicated article shared its comments while
+appearing twice. On the account this was found on, 76 duplicate cards went.
+
+The copy kept is the one that surfaced most recently. That is the only coherent
+choice in a reverse-chronological feed - keeping the earliest would file a story
+that resurfaced this morning back at its original date, halfway down the page,
+where nobody would find it.
+
+Two things had to change underneath for that to be stable rather than merely
+usually right:
+
+- **Read and dismissed now apply to the story, not the copy.** Otherwise
+  dismissing a card would hide the copy you pressed and promote its twin into
+  the same slot on the next load - the article would come back, once, for no
+  visible reason. Marking read had the quieter version: the Unread count
+  disagreed with the list under it.
+- **The tiebreak between two copies is no longer `fetchedAt`,** which is
+  rewritten on every poll and rewritten *en masse* by a 304. The winner changed
+  from one refresh to the next, so a card swapped its title and source, and a
+  story you had read came back unread. It uses `firstSeenAt`, which is written
+  once.
+
+The totals count stories too, so "Load more · N remaining" and the Unread chip
+describe the feed you are actually looking at. Those two counts are the only raw
+SQL in the server: `COUNT(DISTINCT …)` is the one thing Prisma cannot express
+without shipping a row per story to the process to call `.length` on.
+
+Not everything is caught. Nine articles in the same sample were the same piece
+published at genuinely different URLs, which no key derived from the address can
+match up.
+
+### Nothing arrives while you're reading
+
+The feed used to be whatever the server had when the page was drawn, and the
+only way to find out whether anything had happened since was to reload the whole
+app. Now it counts.
+
+An open feed asks every few minutes - and immediately when you come back to a
+tab you left open - whether anything has landed since it was drawn. If something
+has, a pill says so. Nothing is inserted until you press it. That is the whole
+design: articles appearing under the cursor push down what you were reading and
+change where your next click goes, so arrivals are announced rather than
+performed. The pill is fixed to the top of the window rather than sitting in the
+page, because a banner in the flow would shove the grid down to tell you that
+nothing had shoved the grid down.
+
+Pressing it redraws from the top and **keeps the filters you set**. Switching
+category still clears them - a site you picked in Tech usually isn't in Local -
+but asking for new articles is not asking to be put back at the start of your
+own view.
+
+### A refresh that turns up when it's wanted
+
+The count only reports what the background refresher has already collected, so
+on its own it would say "nothing new" about a feed nobody had polled in
+twenty-nine minutes. Something has to go and ask the publishers.
+
+That something is **not a toolbar button**. A page drawn a minute ago has
+nothing to refresh, and a permanent control implies otherwise - it invites
+pressing, and every press fans out into outbound requests to answer a question
+with no answer in it. So once the page has been open for fifteen minutes, a
+**Refresh feed** button appears floating at the bottom of the window. Using it
+resets the clock and it goes away again.
+
+It stays out of the way while the new-articles pill is up: at that point they
+would be two buttons competing to be pressed, and the pill is the better one -
+it already knows there is something to show. The two are complementary rather
+than alternatives.
+
+Feeds checked within the last minute are skipped server-side, so leaning on the
+button costs nothing.
+
+Counting "new" turned out to need a new column. `fetchedAt` looks like the right
+one and isn't: every refresh rewrites it, and a 304 rewrites it for *every* item
+in the feed at once, to stop the cleanup sweep deleting a feed that simply
+hasn't published lately. Counting off that column would have reported an entire
+unchanged feed as new. `firstSeenAt` is written once, when an item is created,
+and never again.
+
+### The filters are a box; the actions are above it
+
+"Mark all read" was a double-tick in a row of filter chips, dressed exactly like
+them, and on a narrow window its label dropped and the glyph was all that was
+left - an unlabelled button that marks every article you have. One of those
+controls is undoable and the other is not, and they were the same shape.
+
+They're two bands now. Actions on top, right-aligned: Mark all read, Manage
+feeds, and the layout switch. The things that narrow the feed sit underneath in
+a box of their own, which is what makes them read as one set of controls for one
+purpose. "Mark all read" keeps its words at every width; only "Manage feeds"
+goes icon-only when the row runs short - you set your feeds up once.
+
+### Making a category is where you go looking for one
+
+Creating a feed category was a field pinned to the bottom of the Following tab,
+below every subscription you had. Filing a feed somewhere new meant scrolling
+past the whole list, naming the category, scrolling back up, and choosing it
+from a menu you had been standing next to the entire time.
+
+It is in that menu now - a **+ New category…** entry at the foot of the category
+dropdown, in both places the dropdown appears: the add-feed row, and a feed's
+own editor. Choosing it swaps the menu for a name field, and the category it
+creates is selected on the way back, which is the choice you were trying to make
+when you went looking for it.
+
+A native dropdown holds strings, not text fields, so the entry has to be a verb
+sitting among the destinations rather than another destination. It is last in
+the list for the same reason.
+
+### The list layout is a list again on a phone
+
+List and Cards looked the same on a phone, and the rule doing it said why: "a
+row with no width to spare is just a card - let it stack." So it stacked, with
+the full-size headline, the meta on its own line, and the action strip back with
+its hairline. But a phone is where a dense list earns the most, because it is
+where the least fits on screen - stacking took the one layout meant for scanning
+and made it the layout meant for reading.
+
+It stays a row that wraps now: the headline claims the first line, everything
+else shares the line under it. An article costs about 135px instead of about
+270px - four on screen where there were two.
+
+It isn't one line per article, and deliberately so. The comment and save
+controls are 44px because that is what a thumb needs, and the labels stay
+because an unlabelled bookmark glyph is the same guessing game the feed's
+toolbar was just rid of. Trading those away would buy one more article per
+screen and cost more than it bought.
+
+### Feeds that weren't findable, and one that was arriving empty
+
+Paste a YouTube channel, a Bluesky profile, a subreddit or a GitHub repo and
+Newt now finds the feed. All four publish perfectly good ones; general discovery
+just couldn't get to them.
+
+- **YouTube** advertises its feed 730 KB into a 2.5 MB page, well past what we
+  read. A `/@handle` is resolved through the page's canonical link - deliberately
+  *not* the `"channelId"` in the inlined JSON, which on a channel page belongs to
+  a recommended channel in the sidebar and would subscribe you to a stranger.
+- **Reddit** advertises nothing and hides its feeds behind a `/.rss` suffix,
+  which neither half of discovery looks for.
+- **GitHub** repos offer releases, falling back to commits so a project that
+  hasn't cut a release yet doesn't resolve to an empty feed.
+- **Bluesky** was already discoverable - and was silently delivering nothing.
+  Its posts have no `<title>`, because they're posts, and the parser dropped
+  every item that lacked one. A titleless item is headlined by its first line
+  now, the way every other reader shows them.
+
+That last one uncovered a second bug it was hiding: hex character references
+(`&#xA;`, a line break) were never decoded, only decimal ones. Bluesky writes
+every line break that way, so its titles arrived with the escape sequences
+printed in them - and it would have been affecting any feed that used hex
+entities anywhere.
+
+### Your YouTube subscriptions, without your Google account
+
+Type a YouTube address into Manage feeds and it offers, on one line, to bring
+over everything you subscribe to. Take it up and it explains how: export your
+subscriptions from Google Takeout, drop `subscriptions.csv` in, and the channels
+arrive as a pickable list filed under a YouTube category. It folds away again
+once used.
+
+The explanation is only ever shown to someone who has just typed a YouTube
+address. A paragraph about Google Takeout has no business sitting open in front
+of people who were never thinking about YouTube.
+
+A file rather than a "Connect YouTube" button on purpose: YouTube won't name
+your subscriptions without an OAuth grant through the YouTube Data API, which
+means a Google Cloud project, a client secret in the deployment, a consent
+screen in review, and a standing read-scope on your Google account - a great
+deal of machinery, and a permanent one, for a list that changes a few times a
+year and that Takeout hands over as a 2 KB file. The file is read in the
+browser; nothing leaves it until you pick something and press Follow.
+
+### More to follow
+
+The suggested list has grown from 15 feeds to 61, and from four categories to
+eleven - Programming, Design, Business, Gaming, Sport, Health and Cars join
+Tech, News, Science and Culture. Every entry was fetched and confirmed to return
+items before it went on the list, and the ones that didn't survive that check
+are named in the source so nobody re-adds them: AP News now answers 401 to its
+own RSS address, New Scientist refuses a non-browser user agent, and Sports
+Illustrated's feed is gone.
+
+Paywalled publishers are on the list rather than excluded from it - the FT, the
+Economist, the NYT, Bloomberg, WSJ, Stratechery, the New Yorker, the Atlantic
+and others - because their feeds are useful even unpaid, and leaving them out
+would drop a good deal of the best writing on the web. What is not acceptable is
+finding out at the wall, so each one is labelled where it is offered:
+**Subscription** for all of it, **Partly paywalled** for a publisher that allows
+a few free reads. The two are kept apart deliberately; flattening both to
+"paywalled" would make a metered publisher sound like a locked one.
+
+The first-run picker doesn't show all of them - it offers 18, spanning
+every category, because that screen has to feel like a beginning and stops
+working as forty-odd choices across eleven headings. The full list lives in
+Discover, which is where you go when you *are* browsing.
+
+### A broken feed now stops being fetched
+
+Nothing ever gave up on a feed. A URL that had answered 404 for a month was
+still being fetched every thirty minutes for as long as one subscriber kept
+opening it, and because articles expire after seven days, what they were opening
+was an empty entry that never explained itself. The admin panel could see the
+failure count climbing and there was nothing to do about it short of deleting
+the feed - which is the wrong lever, since a dead URL is usually a moved one and
+the feed row is what everyone's subscription points at.
+
+So there is now a middle setting. After **twenty consecutive failures** - about
+ten hours of a feed being continuously broken, well past a bad morning at the
+origin - the feed switches itself off and stops being fetched. Nothing is
+deleted, ever, automatically: the feed, its subscriptions and its whole refresh
+history stay exactly where they were, and switching it back on is one button and
+retries immediately. Admins get one notification when it happens, separate from
+the repeating "this feed is failing" alert, because it is the message that means
+articles have actually stopped arriving for everyone subscribed.
+
+The **Feeds** tab shows why a feed is off rather than only that it is, since the
+three reasons want different responses - it gave up, an admin switched it off,
+or its domain is blocked.
+
+### Sorting and filtering the feed list
+
+The feed list sorts by any column - subscribers, stored articles, failure count,
+last checked, last success, title, address - and filters by All, Healthy,
+Failing, Switched off, Blocked or Dormant. Both happen on the server, so they
+order and narrow *every* feed on the instance rather than the page that happens
+to be loaded, which is the same reason search already worked that way.
+
+Failing and Switched off are deliberately separate. They were one thing before
+this release, and folding them together now would bury the handful of feeds that
+need a decision among the many having a bad hour.
+
+### Blocking domains
+
+There is a blocklist. Two shapes, because there are two questions:
+
+- **example.com** blocks that domain and everything under it - news.example.com,
+  feeds.example.com - but never notexample.com.
+- **.xyz**, with the leading dot, blocks a whole domain extension.
+
+Matching is on whole labels in both cases. The obvious implementation - does the
+hostname end with this text - makes a rule for `example.com` block
+`notexample.com`, and `.ru` block anything ending in those two letters. That
+kind of over-block is silent: nobody reports a feed they were never allowed to
+add in the first place.
+
+A rule applies to feeds that already exist, not only to new subscriptions.
+Adding one switches off everything stored that matches it and says how many,
+because a block that only closed the front door while the server carried on
+fetching the host would be a block in name only. New subscriptions are checked
+against the *resolved* address rather than the one typed, so a shortener or a
+redirect through a clean domain doesn't walk past the rule, and an import skips
+just the blocked entries instead of failing the whole file.
+
+Removing a rule doesn't automatically bring those feeds back - it asks. A block
+usually outlives the rule that expressed it, and quietly restarting fetches to a
+host somebody objected to is not a decision to make on anyone's behalf.
+
 ## v1.13.1 - The foot of a card
 
 **2026-08-06**

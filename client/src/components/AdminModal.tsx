@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
-import { apiGet, apiPatch, apiDelete } from '../services/api';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import styles from './AdminModal.module.css';
@@ -144,7 +144,43 @@ interface AdminFeed {
   items: number;
   /** Nobody has opened it inside the demand window, so the scheduler skips it. */
   dormant: boolean;
+  /** Set means nothing polls it. Never automatic-and-destructive: see below. */
+  disabledAt: string | null;
+  /**
+   * 'failing' - switched itself off after too many consecutive failures.
+   * 'blocked' - its host matches a block rule.
+   * 'manual'  - an admin pressed the button.
+   */
+  disabledReason: 'failing' | 'blocked' | 'manual' | null;
 }
+
+// A host this instance refuses to poll. 'domain' covers the host and its
+// subdomains; 'suffix' covers a whole extension (.xyz). `feeds` is how many
+// stored feeds the rule currently matches - the only way to tell a rule that
+// did what was intended from one whose pattern was subtly wrong.
+interface BlockedDomain {
+  id: string;
+  pattern: string;
+  kind: 'domain' | 'suffix';
+  note: string;
+  createdByUsername: string;
+  createdAt: string;
+  feeds: number;
+}
+
+// Which column the feed list is ordered by. Server-side, since the list pages -
+// sorting only what has been loaded would order a page, not the list.
+type FeedSort = 'checked' | 'success' | 'requested' | 'failures' | 'title' | 'url' | 'subscribers' | 'articles';
+type FeedStatus = 'all' | 'healthy' | 'failing' | 'disabled' | 'blocked' | 'dormant';
+
+const FEED_STATUS_LABELS: Record<FeedStatus, string> = {
+  all: 'All',
+  healthy: 'Healthy',
+  failing: 'Failing',
+  disabled: 'Switched off',
+  blocked: 'Blocked',
+  dormant: 'Dormant',
+};
 
 // One refresh attempt. 'unchanged' is a 304 - the origin was reached and had
 // nothing new, which is most of what a healthy instance does and is why the log
@@ -180,6 +216,34 @@ interface AuditEntry {
   createdAt: string;
 }
 
+// A column header that sorts the feed list. The arrow marks the active column
+// and its direction; inactive headers stay unmarked rather than showing a
+// neutral glyph, so which column is in force is readable at a glance.
+function SortableTh({ label, sortKey, active, dir, onSort }: {
+  label: string;
+  sortKey: FeedSort;
+  active: FeedSort;
+  dir: 'asc' | 'desc';
+  onSort: (key: FeedSort) => void;
+}) {
+  const isActive = active === sortKey;
+  return (
+    <th>
+      <button
+        type="button"
+        className={`${styles.sortHeader} ${isActive ? styles.sortHeaderActive : ''}`}
+        onClick={() => onSort(sortKey)}
+        // Announced rather than left to the arrow, which is decorative to a
+        // screen reader and says nothing about what pressing this would do.
+        aria-sort={isActive ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}
+        {isActive && <span className={styles.sortArrow} aria-hidden="true">{dir === 'asc' ? '▲' : '▼'}</span>}
+      </button>
+    </th>
+  );
+}
+
 const TAB_TITLES: Record<Tab, string> = {
   overview: 'Overview',
   users: 'Users',
@@ -208,6 +272,19 @@ interface Props {
 function formatDate(s: string | null): string {
   if (!s) return '-';
   return new Date(s).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// The api helpers throw with the raw response body as the message, which for
+// this server is a JSON envelope. Several feed actions fail for reasons only the
+// server knows ("still covered by a block rule"), and showing the reader
+// `{"error":"..."}` would waste the one sentence that explains what happened.
+function errorText(err: unknown, fallback: string): string {
+  if (!(err instanceof Error) || !err.message) return fallback;
+  try {
+    const parsed = JSON.parse(err.message) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+  } catch { /* not JSON — fall through to the raw message */ }
+  return err.message.slice(0, 300) || fallback;
 }
 
 function relativeDate(s: string | null): string {
@@ -821,12 +898,32 @@ export default function AdminModal({
   const [feedListTotal, setFeedListTotal] = useState(0);
   const [feedListNext, setFeedListNext] = useState<number | null>(null);
   const [feedListLoadingMore, setFeedListLoadingMore] = useState(false);
-  const [feedFilter, setFeedFilter] = useState<'all' | 'failing' | 'dormant'>('all');
+  const [feedFilter, setFeedFilter] = useState<FeedStatus>('all');
+  // Sorted on the server for the same reason it is searched there: the list
+  // pages, so ordering the loaded rows would order a page rather than the list.
+  const [feedSort, setFeedSort] = useState<FeedSort>('checked');
+  const [feedDir, setFeedDir] = useState<'asc' | 'desc'>('desc');
   // Searched on the server, so it can reach past the loaded page - the list is
   // every feed on the instance, and filtering only what's rendered would answer
   // "not found" for feeds that are plainly there.
   const [feedSearch, setFeedSearch] = useState('');
   const [dormantAfterDays, setDormantAfterDays] = useState(14);
+  const [disableAfterFailures, setDisableAfterFailures] = useState(20);
+  // The blocklist, and the feeds left switched off by rules that have since been
+  // removed - those need a decision, so the panel has to be able to mention them.
+  const [blockedDomains, setBlockedDomains] = useState<BlockedDomain[]>([]);
+  const [orphanedBlocks, setOrphanedBlocks] = useState(0);
+  const [blockPattern, setBlockPattern] = useState('');
+  const [blockNote, setBlockNote] = useState('');
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockError, setBlockError] = useState('');
+  // Set while a per-feed action is in flight, so the row's buttons can be
+  // disabled without freezing the whole table.
+  const [feedBusy, setFeedBusy] = useState<string | null>(null);
+  // Bumped by any action that changes what the feed list should contain. The
+  // list is server-filtered and server-sorted, so a row cannot be patched in
+  // place - disabling a feed may move it out of the active filter entirely.
+  const [feedReloadKey, setFeedReloadKey] = useState(0);
   const [feedLog, setFeedLog] = useState<FeedLogEntry[]>([]);
   const [feedLogCursor, setFeedLogCursor] = useState<string | null>(null);
   const [feedLogLoadingMore, setFeedLogLoadingMore] = useState(false);
@@ -853,6 +950,10 @@ export default function AdminModal({
   // so two places can't fight over one piece of state.
   const [threadFor, setThreadFor] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // The affirmative counterpart. Feed and blocklist actions have consequences
+  // that aren't visible in the table they leave behind - "switched off 12 feeds"
+  // is the whole outcome of adding a block rule, and silence would hide it.
+  const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -1029,35 +1130,65 @@ export default function AdminModal({
     return () => { cancelled = true; };
   }, []);
 
-  // The feed list searches and filters on the server, so every change refetches
-  // rather than narrowing what's already loaded - a search that only looked at
-  // the first page would report "no match" for feeds that are plainly there.
-  // Debounced so holding a key down is one request, not twelve.
+  // Every query the feed list makes carries the same search, filter and sort -
+  // built in one place so "load more" cannot drift from the query that produced
+  // the rows it is appending to, which would interleave two different orderings.
+  const feedQuery = useCallback((extra?: Record<string, string>) => {
+    const params = new URLSearchParams(extra);
+    if (feedSearch.trim()) params.set('q', feedSearch.trim());
+    if (feedFilter !== 'all') params.set('status', feedFilter);
+    params.set('sort', feedSort);
+    params.set('dir', feedDir);
+    return params.toString();
+  }, [feedSearch, feedFilter, feedSort, feedDir]);
+
+  // The feed list searches, filters and sorts on the server, so every change
+  // refetches rather than narrowing what's already loaded - a search that only
+  // looked at the first page would report "no match" for feeds that are plainly
+  // there. Debounced so holding a key down is one request, not twelve.
+  //
+  // `feedReloadKey` is bumped by the row actions: disabling a feed can move it
+  // out of the current filter, so the list has to come back from the server
+  // rather than be patched in place.
   useEffect(() => {
     if (tab !== 'feeds') return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (feedSearch.trim()) params.set('q', feedSearch.trim());
-      if (feedFilter !== 'all') params.set('status', feedFilter);
-      const qs = params.toString();
       apiGet<{
         feeds: AdminFeed[];
         total: number;
         nextOffset: number | null;
         dormantAfterDays: number;
-      }>(`/api/v1/admin/feeds${qs ? `?${qs}` : ''}`)
+        disableAfterFailures: number;
+      }>(`/api/v1/admin/feeds?${feedQuery()}`)
         .then(d => {
           if (cancelled) return;
           setFeedList(d.feeds);
           setFeedListTotal(d.total);
           setFeedListNext(d.nextOffset);
           setDormantAfterDays(d.dormantAfterDays);
+          setDisableAfterFailures(d.disableAfterFailures);
         })
         .catch(() => { if (!cancelled) setError('Could not load feeds'); });
     }, feedSearch ? 300 : 0);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [tab, feedSearch, feedFilter]);
+  }, [tab, feedSearch, feedQuery, feedReloadKey]);
+
+  // The blocklist. Reloaded alongside the feed list because the two are coupled:
+  // adding a rule switches feeds off, and the rule's feed count is read from the
+  // same table the list is showing.
+  useEffect(() => {
+    if (tab !== 'feeds') return;
+    let cancelled = false;
+    apiGet<{ rules: BlockedDomain[]; orphanedBlocks: number }>('/api/v1/admin/blocked-domains')
+      .then(d => {
+        if (cancelled) return;
+        setBlockedDomains(d.rules);
+        setOrphanedBlocks(d.orphanedBlocks);
+      })
+      .catch(() => { if (!cancelled) setError('Could not load the blocked domain list'); });
+    return () => { cancelled = true; };
+  }, [tab, feedReloadKey]);
 
   // The refresh log. Same shape as the error log: the outcome filter goes to the
   // server because the tallies have to describe the whole log rather than the
@@ -1091,11 +1222,8 @@ export default function AdminModal({
     if (feedListNext === null) return;
     setFeedListLoadingMore(true);
     try {
-      const params = new URLSearchParams({ offset: String(feedListNext) });
-      if (feedSearch.trim()) params.set('q', feedSearch.trim());
-      if (feedFilter !== 'all') params.set('status', feedFilter);
       const d = await apiGet<{ feeds: AdminFeed[]; total: number; nextOffset: number | null }>(
-        `/api/v1/admin/feeds?${params.toString()}`);
+        `/api/v1/admin/feeds?${feedQuery({ offset: String(feedListNext) })}`);
       setFeedList(prev => [...prev, ...d.feeds]);
       setFeedListTotal(d.total);
       setFeedListNext(d.nextOffset);
@@ -1103,6 +1231,105 @@ export default function AdminModal({
       setError('Could not load more feeds');
     }
     setFeedListLoadingMore(false);
+  }
+
+  // Clicking a column header sorts by it; clicking the one already sorted flips
+  // the direction. Each column starts in the direction that answers the question
+  // it is there for - "most failures" and "most subscribers" descending, but
+  // titles and URLs A-Z, where descending would be perverse as a first click.
+  function sortFeedsBy(key: FeedSort) {
+    if (feedSort === key) {
+      setFeedDir(d => (d === 'desc' ? 'asc' : 'desc'));
+      return;
+    }
+    setFeedSort(key);
+    setFeedDir(key === 'title' || key === 'url' ? 'asc' : 'desc');
+  }
+
+  // ── Feed and blocklist actions ─────────────────────────────────────────────
+  // All of them bump feedReloadKey rather than patching the row: an action can
+  // move a feed out of the active filter (disabling one while 'Healthy' is
+  // selected), and a locally-patched row would sit there contradicting it.
+
+  async function feedAction(feed: AdminFeed, action: 'disable' | 'enable' | 'delete') {
+    if (action === 'delete' && !window.confirm(
+      `Delete "${feed.title || feed.url}"?\n\nThis removes the feed and its stored articles. `
+      + `Anyone subscribed keeps the subscription, and the feed will be recreated if they open it again — `
+      + `switch it off instead if you want it to stay gone.`,
+    )) return;
+
+    setFeedBusy(feed.id);
+    try {
+      if (action === 'delete') {
+        await apiDelete(`/api/v1/admin/feeds/${feed.id}`);
+      } else {
+        await apiPost(`/api/v1/admin/feeds/${feed.id}/${action}`, {});
+      }
+      setFeedReloadKey(k => k + 1);
+    } catch (err) {
+      // The server's message is the informative one here - "still covered by a
+      // block rule" is the whole reason an enable can fail.
+      setError(errorText(err, `Could not ${action} that feed`));
+    }
+    setFeedBusy(null);
+  }
+
+  async function addBlockedDomain(e: React.FormEvent) {
+    e.preventDefault();
+    const pattern = blockPattern.trim();
+    if (!pattern || blockBusy) return;
+    setBlockBusy(true);
+    setBlockError('');
+    try {
+      const d = await apiPost<{ rule: BlockedDomain; disabled: number }>(
+        '/api/v1/admin/blocked-domains', { pattern, note: blockNote.trim() });
+      setBlockPattern('');
+      setBlockNote('');
+      // Said out loud because it is the surprising half of the action: adding a
+      // rule does not only gate new subscriptions, it switches off what is
+      // already stored, and that should never be discovered afterwards.
+      if (d.disabled > 0) {
+        setNotice(`Blocked ${d.rule.pattern} and switched off ${d.disabled} ${d.disabled === 1 ? 'feed' : 'feeds'}`);
+      } else {
+        setNotice(`Blocked ${d.rule.pattern} — no stored feeds matched it`);
+      }
+      setFeedReloadKey(k => k + 1);
+    } catch (err) {
+      // Shown next to the field rather than in the panel-wide banner: it is
+      // almost always "that isn't a valid pattern", which is about the input.
+      setBlockError(errorText(err, 'Could not add that rule'));
+    }
+    setBlockBusy(false);
+  }
+
+  async function removeBlockedDomain(rule: BlockedDomain) {
+    // Two questions, asked as two dialogs. A single confirm() has only OK and
+    // Cancel, so folding "remove the rule?" and "and revive its feeds?" into one
+    // makes Cancel mean both "don't revive" and "do nothing" — and whichever the
+    // reader assumed, half the time it does the other.
+    if (!window.confirm(
+      `Unblock ${rule.pattern}?\n\nNew subscriptions to it will be allowed again.`,
+    )) return;
+
+    // Only worth asking when there is something to revive.
+    const restore = rule.feeds > 0 && window.confirm(
+      `Also switch its ${rule.feeds} ${rule.feeds === 1 ? 'feed' : 'feeds'} back on?\n\n`
+      + `OK — start fetching them again.\n`
+      + `Cancel — remove the rule but leave the feeds off.`,
+    );
+
+    setBlockBusy(true);
+    try {
+      const d = await apiDelete<{ restored: number }>(
+        `/api/v1/admin/blocked-domains/${rule.id}${restore ? '?restore=1' : ''}`);
+      setNotice(restore && d.restored > 0
+        ? `Unblocked ${rule.pattern} and switched ${d.restored} ${d.restored === 1 ? 'feed' : 'feeds'} back on`
+        : `Unblocked ${rule.pattern}`);
+      setFeedReloadKey(k => k + 1);
+    } catch {
+      setError('Could not remove that rule');
+    }
+    setBlockBusy(false);
   }
 
   async function loadMoreFeedLog() {
@@ -1402,6 +1629,15 @@ export default function AdminModal({
           </div>
 
           {error && <div className={styles.error}>{error}</div>}
+          {/* Dismissible rather than timed: "switched off 12 feeds" is a result
+              worth reading twice, and a toast that vanishes is the wrong shape
+              for something that changed what the server is doing. */}
+          {notice && (
+            <div className={styles.notice}>
+              {notice}
+              <button className={styles.noticeDismiss} onClick={() => setNotice('')} aria-label="Dismiss">✕</button>
+            </div>
+          )}
 
           {tab === 'overview' && stats && (
             <div className={styles.body}>
@@ -2009,13 +2245,13 @@ export default function AdminModal({
                 onChange={e => setFeedSearch(e.target.value)}
               />
               <div className={styles.filterRow}>
-                {(['all', 'failing', 'dormant'] as const).map(f => (
+                {(Object.keys(FEED_STATUS_LABELS) as FeedStatus[]).map(f => (
                   <button
                     key={f}
                     className={`${styles.filterChip} ${feedFilter === f ? styles.filterChipActive : ''}`}
                     onClick={() => setFeedFilter(f)}
                   >
-                    {f === 'all' ? 'All' : f === 'failing' ? 'Failing' : 'Dormant'}
+                    {FEED_STATUS_LABELS[f]}
                   </button>
                 ))}
               </div>
@@ -2024,27 +2260,45 @@ export default function AdminModal({
                 of the same address are one feed here. A dormant feed is one nobody has
                 opened in {dormantAfterDays} days - the scheduler stops polling it until
                 someone does, so a stale "last checked" on those is by design, not a fault.
+                {' '}A feed that fails {disableAfterFailures} times in a row switches itself
+                off and stops being fetched; nothing is ever deleted automatically, so
+                switching one back on is all it takes to retry.
               </div>
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    <th>Feed</th>
-                    <th>Subscribers</th>
-                    <th>Articles</th>
-                    <th>Last checked</th>
-                    <th>Last success</th>
+                    {/* Sorting happens on the server, so these order the whole
+                        list rather than the loaded page. */}
+                    <SortableTh label="Feed" sortKey="title" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Subscribers" sortKey="subscribers" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Articles" sortKey="articles" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Failures" sortKey="failures" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Last checked" sortKey="checked" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Last success" sortKey="success" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {feedList.map(f => (
-                    <tr key={f.id}>
+                    <tr key={f.id} className={f.disabledAt ? styles.rowInactive : undefined}>
                       <td className={styles.emailCell}>
                         <a className={styles.errorLink} href={f.url} target="_blank" rel="noopener noreferrer">
                           {f.title || f.url}
                         </a>
                         {f.title && <div className={styles.mutedText}>{f.url}</div>}
-                        {f.consecutiveFailures > 0 && (
+                        {/* Why it is off, in the row rather than a tooltip: the
+                            three reasons need different responses, and "blocked"
+                            in particular is not a fault to go investigating. */}
+                        {f.disabledAt ? (
+                          <div className={styles.mutedText}>
+                            <span className={styles.auditDestructive}>
+                              {f.disabledReason === 'blocked' ? 'blocked'
+                                : f.disabledReason === 'manual' ? 'switched off'
+                                : 'switched off after repeated failures'}
+                            </span>
+                            {f.disabledReason !== 'blocked' && f.lastError && ` - ${f.lastError}`}
+                          </div>
+                        ) : f.consecutiveFailures > 0 && (
                           <div className={styles.mutedText}>
                             failing - {f.lastError || 'reason not recorded'}
                           </div>
@@ -2052,6 +2306,11 @@ export default function AdminModal({
                       </td>
                       <td>{f.subscribers}</td>
                       <td>{f.items}</td>
+                      <td>
+                        {f.consecutiveFailures > 0
+                          ? <span className={styles.auditAction}>{f.consecutiveFailures}</span>
+                          : <span className={styles.mutedText}>-</span>}
+                      </td>
                       <td title={f.lastCheckedAt ? new Date(f.lastCheckedAt).toLocaleString() : undefined}>
                         {relativeTime(f.lastCheckedAt)}
                         {f.dormant && <div className={styles.mutedText}>dormant</div>}
@@ -2061,11 +2320,35 @@ export default function AdminModal({
                           ? relativeTime(f.lastSuccessAt)
                           : <span className={styles.mutedText}>never</span>}
                       </td>
-                      <td>
+                      <td className={styles.actionCell}>
                         {/* Narrows the log below to this feed - the fastest way
                             to tell a feed that is quiet from one that is stuck. */}
                         <button className={styles.traceToggle} onClick={() => setFeedLogFor(f)}>
                           History
+                        </button>
+                        {f.disabledAt ? (
+                          <button
+                            className={styles.traceToggle}
+                            disabled={feedBusy === f.id}
+                            onClick={() => feedAction(f, 'enable')}
+                          >
+                            Switch on
+                          </button>
+                        ) : (
+                          <button
+                            className={styles.traceToggle}
+                            disabled={feedBusy === f.id}
+                            onClick={() => feedAction(f, 'disable')}
+                          >
+                            Switch off
+                          </button>
+                        )}
+                        <button
+                          className={styles.dangerToggle}
+                          disabled={feedBusy === f.id}
+                          onClick={() => feedAction(f, 'delete')}
+                        >
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -2080,13 +2363,112 @@ export default function AdminModal({
                       ? 'No feed is currently failing'
                       : feedFilter === 'dormant'
                         ? 'Every feed has been opened recently'
-                        : 'No feeds yet'}
+                        : feedFilter === 'disabled'
+                          ? 'No feed has been switched off'
+                          : feedFilter === 'blocked'
+                            ? 'No feed is blocked by a domain rule'
+                            : feedFilter === 'healthy'
+                              ? 'No feed is currently healthy'
+                              : 'No feeds yet'}
                 </div>
               )}
               {feedListNext !== null && (
                 <button className={styles.moreBtn} disabled={feedListLoadingMore} onClick={loadMoreFeeds}>
                   {feedListLoadingMore ? 'Loading…' : `Load more feeds (${feedListTotal - feedList.length} left)`}
                 </button>
+              )}
+
+              {/* ── Blocked domains ────────────────────────────────────────
+                  Hosts this instance refuses to poll. A rule stops new
+                  subscriptions *and* switches off what is already stored -
+                  otherwise blocking a domain would only close the front door
+                  while the server carried on fetching it. */}
+              <div className={styles.sectionTitle}>
+                Blocked domains
+                <span className={styles.sectionNote}>
+                  {blockedDomains.length} {blockedDomains.length === 1 ? 'rule' : 'rules'}
+                </span>
+              </div>
+              <div className={styles.tableNote}>
+                <strong>example.com</strong> blocks that domain and everything under it
+                (news.example.com), but never notexample.com. <strong>.xyz</strong> — with the
+                leading dot — blocks a whole domain extension. Adding a rule switches off the
+                feeds already stored that match it; removing one asks whether to bring them back.
+              </div>
+              <form className={styles.blockForm} onSubmit={addBlockedDomain}>
+                <input
+                  className={styles.searchInput}
+                  type="text"
+                  placeholder="example.com or .xyz"
+                  value={blockPattern}
+                  onChange={e => { setBlockPattern(e.target.value); setBlockError(''); }}
+                />
+                <input
+                  className={styles.searchInput}
+                  type="text"
+                  placeholder="Why (optional)"
+                  value={blockNote}
+                  onChange={e => setBlockNote(e.target.value)}
+                  maxLength={200}
+                />
+                <button className={styles.moreBtn} type="submit" disabled={blockBusy || !blockPattern.trim()}>
+                  {blockBusy ? 'Working…' : 'Block'}
+                </button>
+              </form>
+              {blockError && <div className={styles.error}>{blockError}</div>}
+              {orphanedBlocks > 0 && (
+                <div className={styles.tableNote}>
+                  {orphanedBlocks} {orphanedBlocks === 1 ? 'feed is' : 'feeds are'} still switched off by a rule
+                  that has since been removed. Removing a rule doesn't revive them on its own — use the
+                  "Blocked" filter above and switch on the ones you want back.
+                </div>
+              )}
+              {blockedDomains.length === 0 ? (
+                <div className={styles.emptyResult}>No domains are blocked</div>
+              ) : (
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Pattern</th>
+                      <th>Covers</th>
+                      <th>Feeds</th>
+                      <th>Added</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {blockedDomains.map(r => (
+                      <tr key={r.id}>
+                        <td className={styles.emailCell}>
+                          {r.pattern}
+                          {r.note && <div className={styles.mutedText}>{r.note}</div>}
+                        </td>
+                        <td className={styles.mutedText}>
+                          {r.kind === 'suffix' ? 'the extension' : 'the domain and subdomains'}
+                        </td>
+                        {/* The count is what says whether the pattern did what
+                            was meant - a rule matching nothing usually means it
+                            was typed slightly wrong. */}
+                        <td>{r.feeds}</td>
+                        <td title={new Date(r.createdAt).toLocaleString()}>
+                          {relativeTime(r.createdAt)}
+                          {r.createdByUsername && (
+                            <div className={styles.mutedText}>by {r.createdByUsername}</div>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            className={styles.traceToggle}
+                            disabled={blockBusy}
+                            onClick={() => removeBlockedDomain(r)}
+                          >
+                            Unblock
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
 
               {/* ── The refresh log ────────────────────────────────────────

@@ -5,8 +5,9 @@ import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
 import { syncBookmarkBadges } from '../lib/unread';
 import { canonicalFeedKey } from '../lib/feedUtils';
 import { resolveFeedUrl } from '../lib/feedDiscovery';
+import { blockedRuleFor, blockedMessage } from '../lib/feedBlocklist';
 import { perUserLimiter } from '../lib/rateLimit';
-import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES } from '../lib/suggestedFeeds';
+import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES, starterFeeds } from '../lib/suggestedFeeds';
 import {
   SUBSCRIPTION_SELECT, FEED_FOLDER_SELECT,
   MAX_FEEDS_PER_USER, MAX_FEED_FOLDERS, MAX_FEED_URL, MAX_FEED_NAME,
@@ -42,6 +43,11 @@ function normalizeFeedUrl(raw: unknown): string | null {
 // anyway. Long enough that a handful of ordinary feeds are populated by the
 // time the picker closes; short enough that one dead origin can't stall it.
 const WARMUP_MS = 6000;
+
+// How recently a feed must have been checked for the Refresh button to leave it
+// alone. Short enough that pressing it after a few minutes away really does go
+// and look; long enough that repeated presses cost nothing.
+const REFRESH_MIN_AGE_MS = 60_000;
 
 const P2002 = 'P2002';
 function isDuplicate(err: unknown): boolean {
@@ -125,16 +131,26 @@ router.get('/importable', async (req: AuthRequest, res: Response): Promise<void>
   );
 });
 
-// The curated starter list, minus anything already subscribed to.
+// The curated list, minus anything already subscribed to.
+//
+// One list, sent whole, with `starter` resolved on every entry: the first-run
+// picker draws the starters and the Discover tab draws all of it, from a single
+// fetch. `starter` is normalised here rather than passed through from the data,
+// because starterFeeds() also stands a category's first feed in when nothing in
+// it was flagged — a client filtering on the raw flag would drop that category
+// off the welcome screen entirely.
 router.get('/suggested', async (req: AuthRequest, res: Response): Promise<void> => {
   const subs = await prisma.feedSubscription.findMany({
     where: { userId: req.userId! },
     select: { url: true },
   });
   const subscribed = new Set(subs.map(s => canonicalFeedKey(s.url)));
+  const starters = new Set(starterFeeds());
   res.json({
     categories: SUGGESTED_CATEGORIES,
-    feeds: SUGGESTED_FEEDS.filter(f => !subscribed.has(canonicalFeedKey(f.url))),
+    feeds: SUGGESTED_FEEDS
+      .filter(f => !subscribed.has(canonicalFeedKey(f.url)))
+      .map(f => ({ ...f, starter: starters.has(f) })),
   });
 });
 
@@ -178,6 +194,14 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       url = resolved.url;
       discoveredTitle = resolved.title;
     }
+
+    // Checked against the *resolved* address, after discovery has followed
+    // wherever the typed one led. Gating on the raw input instead would let a
+    // shortener or a redirect through a clean host walk straight past the rule.
+    // skipValidation URLs are checked too — the server vouched for those being
+    // real feeds, not for them being permitted ones.
+    const blocked = await blockedRuleFor(url);
+    if (blocked) { res.status(403).json({ error: blockedMessage(blocked) }); return; }
 
     // The unique index is on the literal URL, but "the same feed spelled
     // differently" is still the same feed — and the whole point of resolving
@@ -255,6 +279,11 @@ router.post('/batch', async (req: AuthRequest, res: Response): Promise<void> => 
 
       const key = canonicalFeedKey(url);
       if (seen.has(key)) { skipped.push({ url, reason: 'Already following' }); continue; }
+
+      // Reported per URL like every other rejection here — one blocked address
+      // in an OPML import shouldn't cost the other forty-nine.
+      const blocked = await blockedRuleFor(url);
+      if (blocked) { skipped.push({ url, reason: blockedMessage(blocked) }); continue; }
 
       let feedFolderId: string | null = null;
       if (typeof item.feedFolderId === 'string' && item.feedFolderId) {
@@ -483,6 +512,97 @@ function hostOf(url: string): string {
 // Resolves the subscriptions in scope for a request. `folder` narrows to one
 // category ('none' = Uncategorised); absent means everything, which is the
 // point of the unified feed.
+// ── Counting stories rather than rows ────────────────────────────────────────
+//
+// The river shows one card per `linkKey` (see the `distinct` in /articles), so
+// its totals have to count keys, not FeedItem rows, or the counts describe a
+// feed nobody is looking at: "Load more · 40 remaining" for 31 articles, and an
+// Unread chip permanently ahead of the list beneath it.
+//
+// `COUNT(DISTINCT …)` is the one thing Prisma cannot express - `count()` takes
+// no `distinct`, and doing it through `groupBy`/`findMany` means shipping one
+// row per story to the process to call `.length` on. These two scalars are the
+// only raw SQL in the server, and that is the reason for them.
+//
+// Both counts assume read and dismissed state is uniform across the copies of a
+// story, which is what storyItemIds() below guarantees.
+async function countStories(
+  userId: string,
+  feedIds: string[],
+  includeDismissed: boolean,
+  unreadOnly: boolean,
+): Promise<number> {
+  if (feedIds.length === 0) return 0;
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(DISTINCT i."linkKey") AS count
+    FROM "FeedItem" i
+    WHERE i."feedId" = ANY(${feedIds}::text[])
+      AND (${includeDismissed}::boolean OR NOT EXISTS (
+        SELECT 1 FROM "DismissedFeedItem" d
+        WHERE d."userId" = ${userId} AND d."itemId" = i."id"))
+      AND (${!unreadOnly}::boolean OR NOT EXISTS (
+        SELECT 1 FROM "ReadFeedItem" r
+        WHERE r."userId" = ${userId} AND r."itemId" = i."id"))
+  `;
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * Stories whose *every* copy arrived after `since` — what "new since you
+ * loaded" means once the river is deduped.
+ *
+ * The `MIN(firstSeenAt) > since` is the whole point of grouping here rather than
+ * counting rows: an article you have had all week, arriving a second time
+ * through another feed, is not news. Counting rows would announce it, and then
+ * nothing would visibly change when the reader pressed the pill, because
+ * dedupe would fold it straight back into the card already on screen.
+ */
+async function countNewStories(userId: string, feedIds: string[], since: Date): Promise<number> {
+  if (feedIds.length === 0) return 0;
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(*) AS count FROM (
+      SELECT i."linkKey"
+      FROM "FeedItem" i
+      WHERE i."feedId" = ANY(${feedIds}::text[])
+        AND NOT EXISTS (
+          SELECT 1 FROM "DismissedFeedItem" d
+          WHERE d."userId" = ${userId} AND d."itemId" = i."id")
+      GROUP BY i."linkKey"
+      HAVING MIN(i."firstSeenAt") > ${since}
+    ) fresh
+  `;
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * Every row that is the same story as the given ones, the given ones included.
+ *
+ * Read and dismissed state hangs off a FeedItem, but a FeedItem is one feed's
+ * copy of an article and the river now shows one card for all of them. Without
+ * this, dismissing that card would hide the copy you pressed and promote its
+ * twin into the same slot on the next load - the story would come back, once,
+ * for no reason the reader could see. Marking read had the quieter version of
+ * the same fault: the Unread chip counted a story that the list showed as read.
+ *
+ * Deliberately not scoped to the feeds this user follows. "I'm done with this"
+ * is about the article, and if they subscribe to something else carrying it
+ * next month they still are.
+ */
+async function storyItemIds(itemIds: string[]): Promise<string[]> {
+  if (itemIds.length === 0) return [];
+  const rows = await prisma.feedItem.findMany({
+    where: { id: { in: itemIds } },
+    select: { linkKey: true },
+  });
+  const linkKeys = [...new Set(rows.map(r => r.linkKey))];
+  if (linkKeys.length === 0) return itemIds;
+  const siblings = await prisma.feedItem.findMany({
+    where: { linkKey: { in: linkKeys } },
+    select: { id: true },
+  });
+  return [...new Set([...itemIds, ...siblings.map(s => s.id)])];
+}
+
 async function scopedFeeds(userId: string, folderParam: unknown) {
   const where: { userId: string; feedFolderId?: string | null } = { userId };
   if (typeof folderParam === 'string' && folderParam && folderParam !== 'all') {
@@ -500,11 +620,15 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
   const offset     = Math.max(0, parseInt(req.query.offset as string || '0') || 0);
   const limit      = Math.min(200, Math.max(1, parseInt(req.query.limit as string || '10') || 10));
   const includeAll = req.query.includeAll === 'true';
+  // Stamped before the query, not after: anything that lands between here and
+  // the read is genuinely not in this response, and the client will be told
+  // about it by /articles/new-count rather than silently missing it.
+  const loadedAt   = new Date();
 
   try {
     const subs = await scopedFeeds(req.userId!, req.query.folder);
     if (subs.length === 0) {
-      res.json({ articles: [], total: 0, unread: 0, hasMore: false });
+      res.json({ articles: [], total: 0, unread: 0, hasMore: false, loadedAt: loadedAt.toISOString() });
       return;
     }
 
@@ -524,8 +648,9 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
     const subByKey = new Map(subs.map(s => [canonicalFeedKey(s.url), s]));
     const feedById = new Map(feeds.map(f => [f.id, f]));
 
+    const feedIds = feeds.map(f => f.id);
     const where = {
-      feedId: { in: feeds.map(f => f.id) },
+      feedId: { in: feedIds },
       ...(includeAll ? {} : { dismissals: { none: { userId: req.userId! } } }),
     };
     // `unread` spans the whole river, not the page being returned. The client
@@ -535,12 +660,38 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
     const [items, total, unread] = await Promise.all([
       prisma.feedItem.findMany({
         where,
-        orderBy: [{ pubDate: 'desc' }, { fetchedAt: 'desc' }],
+        // ── One card per story ──
+        // Two feeds carrying the same article is ordinary, not exceptional: an
+        // aggregator links to a piece you also follow directly, or one publisher
+        // is reachable at two feed addresses (arstechnica.com/feed and
+        // feeds.arstechnica.com/arstechnica/index are different subscriptions
+        // dealing identical items). Each is its own FeedItem row — they have to
+        // be, since items are shared and read state hangs off them — so the
+        // river dealt the story once per feed.
+        //
+        // linkKey is the canonical article URL, the same key comments thread on,
+        // so it identifies the story rather than the route it arrived by. It is
+        // NOT NULL precisely so this can't collapse the key-less rows together;
+        // see the column note in schema.prisma.
+        distinct: ['linkKey'],
+        // The surviving copy is the first in this order: the most recent time
+        // the story surfaced. That isn't an arbitrary pick - in a
+        // reverse-chronological river it is the only coherent one. Keeping the
+        // *earliest* copy would file a story that resurfaced this morning back
+        // at its original date, halfway down the feed, where nobody would see it.
+        //
+        // firstSeenAt replaces fetchedAt as the tiebreak because fetchedAt is
+        // rewritten on every poll (and en masse on a 304), which made the winner
+        // between two same-dated copies change from one refresh to the next -
+        // the card would swap its title and source, and a story you had read
+        // would come back unread. firstSeenAt is written once. `id` settles the
+        // rest, so the choice is total and stable.
+        orderBy: [{ pubDate: 'desc' }, { firstSeenAt: 'desc' }, { id: 'asc' }],
         skip: offset,
         take: limit,
       }),
-      prisma.feedItem.count({ where }),
-      prisma.feedItem.count({ where: { ...where, reads: { none: { userId: req.userId! } } } }),
+      countStories(req.userId!, feedIds, includeAll, false),
+      countStories(req.userId!, feedIds, includeAll, true),
     ]);
 
     const reads = await prisma.readFeedItem.findMany({
@@ -571,9 +722,86 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
       };
     });
 
-    res.json({ articles, total, unread, hasMore: offset + articles.length < total });
+    res.json({
+      articles, total, unread,
+      hasMore: offset + articles.length < total,
+      // The watermark the client hands back to /articles/new-count. Only page 0
+      // is a load; a "load more" is the same view reaching further down it, and
+      // adopting its timestamp would quietly forgive everything that arrived in
+      // between.
+      loadedAt: loadedAt.toISOString(),
+    });
   } catch (err) {
     logger.error(err, 'Feed articles error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── New since you loaded ─────────────────────────────────────────────────────
+//
+// The feed deliberately does not restock itself. Articles appearing under the
+// cursor while you're reading push down whatever you were looking at and change
+// what your next click lands on, so arrivals are counted here and inserted only
+// when the reader asks for them.
+//
+// Counts against `firstSeenAt`, which is written once when an item is created.
+// `fetchedAt` would be wrong: a 304 rewrites it for every item in the feed at
+// once, so an unchanged feed would report its whole contents as new.
+router.get('/articles/new-count', async (req: AuthRequest, res: Response): Promise<void> => {
+  const raw = req.query.since;
+  const since = typeof raw === 'string' ? new Date(raw) : null;
+  if (!since || isNaN(since.getTime())) {
+    res.status(400).json({ error: 'since must be an ISO timestamp' });
+    return;
+  }
+
+  try {
+    const subs = await scopedFeeds(req.userId!, req.query.folder);
+    if (subs.length === 0) { res.json({ count: 0 }); return; }
+
+    // ensureFeeds, not a plain lookup: it records the demand that keeps the
+    // background scheduler interested in these feeds, and polling for new
+    // articles is exactly the demand it should be measuring.
+    const feeds = await ensureFeeds(subs.map(s => s.url));
+    // Stories, not rows — the river deals one card per story, so a count of
+    // rows would promise more than pressing the pill could deliver.
+    const count = await countNewStories(req.userId!, feeds.map(f => f.id), since);
+    res.json({ count });
+  } catch (err) {
+    logger.error(err, 'Feed new-count error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Go and fetch this user's own feeds now, rather than waiting out the 30-minute
+// staleness window or the scheduler's next tick. This is what the Refresh button
+// calls, and it answers only once the fetches are done — the point of pressing
+// it is to find out whether there is anything new, so returning before looking
+// would make it a button that lies.
+//
+// Scoped to the active category for the same reason mark-all-read is: what you
+// are looking at is what you meant.
+//
+// `refresh-all` above stays admin-only and is a different thing: it forces every
+// feed on the instance. This one is bounded by one account's subscriptions, and
+// metered by the same per-user limiter as every other feed write.
+router.post('/refresh', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const subs = await scopedFeeds(req.userId!, req.body?.folder ?? req.query.folder);
+    if (subs.length === 0) { res.json({ checked: 0 }); return; }
+
+    const feeds = await ensureFeeds(subs.map(s => s.url));
+    // Forced, but not unconditionally: a feed checked seconds ago has nothing
+    // to tell us, and without this floor holding the button down would fan one
+    // account's fifty subscriptions into fifty outbound requests per press.
+    // Everything older than the floor is fetched regardless of the ordinary
+    // 30-minute staleness window, which is the point of asking.
+    const cutoff = Date.now() - REFRESH_MIN_AGE_MS;
+    const due = feeds.filter(f => !f.lastCheckedAt || f.lastCheckedAt.getTime() < cutoff);
+    await refreshStaleFeeds(due, { force: true });
+    res.json({ checked: due.length });
+  } catch (err) {
+    logger.error(err, 'Feed refresh error');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -593,14 +821,19 @@ router.post('/articles/read', async (req: AuthRequest, res: Response): Promise<v
   if (itemIds.length === 0) { res.json({ bookmarks: [] }); return; }
 
   try {
+    // Every copy of each story, not just the card that was scrolled past — the
+    // river shows one card per story and the Unread chip counts stories, so
+    // marking one row read has to mean the story is read. See storyItemIds.
+    const allIds = await storyItemIds(itemIds);
+
     // Only items becoming read for the first time can move a badge; a re-scroll
     // over already-read items is a no-op.
     const already = await prisma.readFeedItem.findMany({
-      where: { userId: req.userId!, itemId: { in: itemIds } },
+      where: { userId: req.userId!, itemId: { in: allIds } },
       select: { itemId: true },
     });
     const alreadyRead = new Set(already.map(r => r.itemId));
-    const fresh = itemIds.filter(id => !alreadyRead.has(id));
+    const fresh = allIds.filter(id => !alreadyRead.has(id));
     if (fresh.length === 0) { res.json({ bookmarks: [] }); return; }
 
     const items = await prisma.feedItem.findMany({
@@ -661,19 +894,30 @@ router.post('/articles/read-all', async (req: AuthRequest, res: Response): Promi
 // dismissing one has to recompute it — otherwise the tile keeps advertising an
 // article the feed no longer shows, and only a later read-flush (which calls
 // syncBookmarkBadges) would quietly put it right.
-async function badgesForItem(userId: string, itemId: string) {
-  const item = await prisma.feedItem.findUnique({ where: { id: itemId }, select: { feedId: true } });
-  if (!item) return [];
-  return syncBookmarkBadges(userId, [item.feedId]);
+// Takes every copy of the story, not one item: dismissing and restoring both
+// act on all of them now, so the badges that change are those of every feed
+// that was carrying it.
+async function badgesForItems(userId: string, itemIds: string[]) {
+  if (itemIds.length === 0) return [];
+  const items = await prisma.feedItem.findMany({
+    where: { id: { in: itemIds } },
+    select: { feedId: true },
+  });
+  if (items.length === 0) return [];
+  return syncBookmarkBadges(userId, [...new Set(items.map(i => i.feedId))]);
 }
 
 router.delete('/articles/:articleId', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // All copies. Dismissing only the one the card happened to be drawn from
+    // would promote its twin into the same slot on the next load, and the
+    // article you just threw away would come back.
+    const ids = await storyItemIds([req.params.articleId]);
     await prisma.dismissedFeedItem.createMany({
-      data: [{ userId: req.userId!, itemId: req.params.articleId }],
+      data: ids.map(itemId => ({ userId: req.userId!, itemId })),
       skipDuplicates: true,
     });
-    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, req.params.articleId) });
+    res.json({ ok: true, bookmarks: await badgesForItems(req.userId!, ids) });
   } catch (err) {
     logger.error(err, 'Dismiss article error');
     res.status(500).json({ error: 'Server error' });
@@ -684,10 +928,13 @@ router.delete('/articles/:articleId', async (req: AuthRequest, res: Response): P
 // is reloaded, and this is what its Undo calls.
 router.post('/articles/:articleId/restore', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // Undo has to cover exactly what the dismissal covered, or a restored
+    // article stays half-dismissed and never comes back.
+    const ids = await storyItemIds([req.params.articleId]);
     await prisma.dismissedFeedItem.deleteMany({
-      where: { userId: req.userId!, itemId: req.params.articleId },
+      where: { userId: req.userId!, itemId: { in: ids } },
     });
-    res.json({ ok: true, bookmarks: await badgesForItem(req.userId!, req.params.articleId) });
+    res.json({ ok: true, bookmarks: await badgesForItems(req.userId!, ids) });
   } catch (err) {
     logger.error(err, 'Restore article error');
     res.status(500).json({ error: 'Server error' });

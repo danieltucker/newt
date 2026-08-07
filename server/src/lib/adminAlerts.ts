@@ -78,6 +78,38 @@ export async function notifyAdminsOfFeedFailure(
   }
 }
 
+/**
+ * A feed has been switched off after failing for long enough.
+ *
+ * Deliberately not rate-limited the way notifyAdminsOfFeedFailure is: this
+ * happens once per feed, and it is the message that says articles have stopped
+ * arriving for everyone subscribed to it. Suppressing it behind the daily
+ * re-alert window would hide the only alert that reports a state change rather
+ * than a continuing condition.
+ */
+export async function notifyAdminsOfFeedDisabled(
+  feedUrl: string,
+  title: string,
+  failures: number,
+): Promise<void> {
+  try {
+    const ids = await adminIds();
+    if (ids.length === 0) return;
+    const label = title || feedUrl;
+    await prisma.notification.createMany({
+      data: ids.map(id => ({
+        userId: id,
+        type: 'feed_disabled',
+        actorId: null,
+        articleTitle: `${label} — switched off after ${failures} failed checks`,
+        articleUrl: feedUrl,
+      })),
+    });
+  } catch (err) {
+    logger.warn({ err, feedUrl }, 'Could not notify admins of a disabled feed');
+  }
+}
+
 // One bad fetch is not news: origins time out, CDNs hiccup, and the refresher
 // already treats a stale window as backoff. Three consecutive misses means about
 // an hour and a half of a feed not working, which is a real fault.

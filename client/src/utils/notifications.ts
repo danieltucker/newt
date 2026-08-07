@@ -23,6 +23,10 @@ export function notifAction(type: AppNotification['type']): string {
     case 'user_new':       return 'created an account';
     // Admin-only and actorless, like a report: a feed is not a person.
     case 'feed_failing':   return 'is failing to load';
+    // The end state of the one above: the refresher has stopped polling it. Said
+    // as a completed action, because it is one - and it is the alert that means
+    // articles have stopped arriving for everyone subscribed.
+    case 'feed_disabled':  return 'was switched off after repeated failures';
     default:               return '';
   }
 }
@@ -34,7 +38,7 @@ export function notifActor(n: Pick<AppNotification, 'type' | 'actor'>): string {
   // The two actorless admin types each name their own subject, so that the
   // sentence says what happened rather than "Someone was reported for review".
   if (n.type === 'report_new') return 'Content';
-  if (n.type === 'feed_failing') return 'A feed';
+  if (n.type === 'feed_failing' || n.type === 'feed_disabled') return 'A feed';
   return 'Someone';
 }
 
