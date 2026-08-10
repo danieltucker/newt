@@ -19,6 +19,7 @@ import { EmbedData, embeddedUrls } from '../utils/noteEmbed';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { useDragSensors } from '../hooks/useDragSensors';
 import { modLabel } from '../utils/platform';
+import { mergeNoteDocs, mergeNoteFolders, mergeNoteOrder } from '../utils/noteMerge';
 import {
   INDENT, isFolderId, folderIdOf, sameOrder, buildRows, getProjection, computeDrop, reconcileFlat,
 } from '../utils/noteTree';
@@ -356,12 +357,31 @@ function SortableFolderRow({
   );
 }
 
+/**
+ * What a save came back as. The notes tree is versioned server-side, and a
+ * write made against an older version is reconciled rather than taken as sent -
+ * so a save can legitimately return something other than what it posted, and
+ * the console has to be told when it does. See utils/noteMerge.
+ */
+export interface NotesSaved {
+  docs: NoteDoc[];
+  folders: NoteFolder[];
+  order: string[];
+  rev: number;
+  /** The server reconciled this write against notes written elsewhere. */
+  merged: boolean;
+}
+
 interface Props {
   docs: NoteDoc[];
   folders: NoteFolder[];
   order: string[];          // top-level tree order (folder / ungrouped-note tokens)
+  /** Which revision `docs`/`folders`/`order` are. Sent back with every save. */
+  rev?: number;
   legacyNotes: string;      // old settings.notes, migrated on first use
-  onSave: (docs: NoteDoc[], folders: NoteFolder[], order: string[]) => Promise<unknown> | void;
+  onSave: (
+    docs: NoteDoc[], folders: NoteFolder[], order: string[], rev: number,
+  ) => Promise<NotesSaved | void> | void;
   sidebarWidth?: number;                       // persisted tree-column width
   onSidebarWidth?: (w: number) => void;        // persist a resize
   initialNoteId?: string;   // opened from a search hit in the main search bar
@@ -400,7 +420,7 @@ function writeLastOpen(id: string | null) {
 }
 
 export default function NotesConsole({
-  docs, folders: foldersProp, order: orderProp, legacyNotes, onSave,
+  docs, folders: foldersProp, order: orderProp, rev = 0, legacyNotes, onSave,
   sidebarWidth: sidebarWidthProp = 210, onSidebarWidth,
   initialNoteId, initialQuery = '', references, onTurnIntoPost,
   closing = false, onClose,
@@ -488,6 +508,10 @@ export default function NotesConsole({
     () => (restoredId ? 'doc' : 'tree')
   );
   const [saved, setSaved] = useState(false);
+  // Raised for a few seconds when a save came back reconciled against notes
+  // written on another device. Silence there would be worse than a badge: the
+  // tree gains rows nobody in this window added.
+  const [merged, setMerged] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [armEmpty, setArmEmpty] = useState(false);   // "Empty" asks once before it throws work away
   const [query, setQuery] = useState(initialQuery);
@@ -496,18 +520,72 @@ export default function NotesConsole({
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  // Which revision of the tree this console is editing. Sent with every save so
+  // the server can tell an edit made against the current notes from one made
+  // against whatever this tab loaded hours ago; replaced by whatever comes back.
+  const revRef = useRef(rev);
+  // The open note, readable from callbacks that don't re-run on every render.
+  const activeIdRef = useRef<string | null>(null);
+  // Bumped only when an adopted version replaces the *open* note's text. The
+  // editor is uncontrolled and reads its HTML once, at mount, so remounting is
+  // the only way to redraw it - and it costs the undo history, which is why it
+  // isn't done for a change to some other note in the tree.
+  const [adoptKey, setAdoptKey] = useState(0);
 
   const sensors = useDragSensors(8);
+
+  /**
+   * Take on a version of the tree that came from somewhere else, without
+   * discarding what is on screen. Merged rather than assigned: body edits go
+   * straight into `docsRef` and are only sent 700ms later, so the note being
+   * typed is routinely newer than anything the server has, and ties go to the
+   * local copy (see utils/noteMerge).
+   */
+  const adopt = useCallback((
+    theirDocs: NoteDoc[], theirFolders: NoteFolder[], theirOrder: string[],
+  ) => {
+    const openId = activeIdRef.current;
+    const before = docsRef.current.find(d => d.id === openId)?.body;
+
+    const nextDocs = mergeNoteDocs(theirDocs, docsRef.current);
+    const nextFolders = mergeNoteFolders(theirFolders, foldersRef.current);
+    const nextFlat = reconcileFlat(
+      mergeNoteOrder(theirOrder, flatRef.current),
+      nextFolders,
+      nextDocs.filter(d => !d.deletedAt),
+    );
+
+    docsRef.current = nextDocs;
+    foldersRef.current = nextFolders;
+    flatRef.current = nextFlat;
+    setList(nextDocs);
+    setFolders(nextFolders);
+    setFlat(nextFlat);
+
+    const after = nextDocs.find(d => d.id === openId)?.body;
+    if (openId && before !== after) setAdoptKey(k => k + 1);
+    // Deliberately no scheduleSave: the server already holds this state, and
+    // saving it back would merge again on the next reply and never settle.
+  }, []);
 
   const flush = useCallback(() => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     if (!dirtyRef.current) return;
     dirtyRef.current = false;
-    Promise.resolve(onSave(docsRef.current, foldersRef.current, flatRef.current)).then(() => {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1400);
-    }).catch(() => {});
-  }, [onSave]);
+    Promise.resolve(onSave(docsRef.current, foldersRef.current, flatRef.current, revRef.current))
+      .then(result => {
+        if (result) {
+          revRef.current = result.rev;
+          if (result.merged) {
+            adopt(result.docs, result.folders, result.order);
+            setMerged(true);
+            setTimeout(() => setMerged(false), 3200);
+          }
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1400);
+      }).catch(() => {});
+  }, [onSave, adopt]);
 
   const scheduleSave = useCallback(() => {
     dirtyRef.current = true;
@@ -557,6 +635,18 @@ export default function NotesConsole({
   // without a tidy exit - a reload, or the tab being closed outright. Deleting
   // the open note clears activeId (see commit), so it clears this too.
   useEffect(() => { writeLastOpen(activeId); }, [activeId]);
+  activeIdRef.current = activeId;
+
+  // The notes were refetched under us - the host does that when the console is
+  // opened, because a tab that has been sitting on the new tab page all day is
+  // showing that morning's notes and nothing had ever gone back to look. A
+  // higher revision is the only signal worth acting on; the props change
+  // identity on every settings write.
+  useEffect(() => {
+    if (rev <= revRef.current) return;
+    revRef.current = rev;
+    adopt(docs, foldersProp ?? [], orderProp ?? []);
+  }, [rev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comment counts for the references embedded in the open note. Seeded from
   // the saved body on every note switch - the editor is uncontrolled, so that
@@ -671,14 +761,20 @@ export default function NotesConsole({
 
   // Deleting moves the note to Recently Deleted rather than dropping it; the
   // folder springs open so it's clear where the note went.
+  //
+  // `updatedAt` moves with `deletedAt` here and in restore below, and it has to:
+  // a merge decides between two copies of a note on that field alone, so a
+  // delete that left the timestamp where it was would lose every time to a copy
+  // held by a device that hadn't heard about it (see utils/noteMerge).
   function deleteNote(id: string) {
     const now = Date.now();
-    commit(docsRef.current.map(d => d.id === id ? { ...d, deletedAt: now } : d), id);
+    commit(docsRef.current.map(d => d.id === id ? { ...d, deletedAt: now, updatedAt: now } : d), id);
     setTrashOpen(true);
   }
 
   function restoreNote(id: string) {
-    commit(docsRef.current.map(d => d.id === id ? { ...d, deletedAt: undefined } : d));
+    commit(docsRef.current.map(
+      d => d.id === id ? { ...d, deletedAt: undefined, updatedAt: Date.now() } : d));
     setActiveId(id);
     setMobilePane('doc');
   }
@@ -850,7 +946,12 @@ export default function NotesConsole({
           <div className={styles.header}>
             <span className={styles.headerTitle}>NOTES</span>
             <span className={styles.headerRight}>
-              {saved && <span className={styles.savedBadge}>Saved</span>}
+              {merged && (
+                <span className={styles.mergedBadge} title="Notes written on another device have been folded in">
+                  Merged in newer notes
+                </span>
+              )}
+              {saved && !merged && <span className={styles.savedBadge}>Saved</span>}
               <span className={styles.headerHints}>
                 <kbd>/</kbd>commands
                 <span className={styles.dot}>·</span>
@@ -1139,9 +1240,13 @@ export default function NotesConsole({
                     )}
                   </div>
                   {/* The read-only surface is a different tree, so the key carries
-                      that state too - remounting is what re-renders the body. */}
+                      that state too - remounting is what re-renders the body.
+                      adoptKey is the same lever pulled from the other side: it
+                      moves when this note's text has been replaced by a newer
+                      version from another device, which is the one other time
+                      the body on screen is no longer the body of record. */}
                   <RichEditor
-                    key={`${active.id}:${activeTrashed}`}
+                    key={`${active.id}:${activeTrashed}:${adoptKey}`}
                     initialHtml={active.body}
                     onChange={handleBody}
                     readOnly={activeTrashed}

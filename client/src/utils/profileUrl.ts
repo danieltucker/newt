@@ -4,8 +4,24 @@
 
 const PREFIX = '/u/';
 
-export function profilePathFor(username: string): string {
-  return PREFIX + encodeURIComponent(username);
+// The query string a profile link may carry. Both are deep links into what the
+// page is already able to show, so an unrecognised value is never an error -
+// ProfilePage validates the tab against its own list and treats an unknown tag
+// as a filter that matches nothing.
+export interface ProfileLinkOptions {
+  /** ?tab= - which tab to land on. */
+  tab?: string;
+  /** ?tag= - narrows the Posts tab to one of the author's tags. */
+  tag?: string;
+}
+
+export function profilePathFor(username: string, opts: ProfileLinkOptions = {}): string {
+  const base = PREFIX + encodeURIComponent(username);
+  const query = new URLSearchParams();
+  if (opts.tab) query.set('tab', opts.tab);
+  if (opts.tag) query.set('tag', opts.tag);
+  const search = query.toString();
+  return search ? `${base}?${search}` : base;
 }
 
 // The username in a path like /u/<username>, or null if the path isn't one.

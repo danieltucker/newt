@@ -7,7 +7,8 @@ import { canonicalFeedKey } from '../lib/feedUtils';
 import { resolveFeedUrl } from '../lib/feedDiscovery';
 import { blockedRuleFor, blockedMessage } from '../lib/feedBlocklist';
 import { perUserLimiter } from '../lib/rateLimit';
-import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES, starterFeeds } from '../lib/suggestedFeeds';
+import { toTsQuery, MIN_QUERY_LEN } from '../lib/feedSearch';
+import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES } from '../lib/suggestedFeeds';
 import {
   SUBSCRIPTION_SELECT, FEED_FOLDER_SELECT,
   MAX_FEEDS_PER_USER, MAX_FEED_FOLDERS, MAX_FEED_URL, MAX_FEED_NAME,
@@ -133,24 +134,17 @@ router.get('/importable', async (req: AuthRequest, res: Response): Promise<void>
 
 // The curated list, minus anything already subscribed to.
 //
-// One list, sent whole, with `starter` resolved on every entry: the first-run
-// picker draws the starters and the Discover tab draws all of it, from a single
-// fetch. `starter` is normalised here rather than passed through from the data,
-// because starterFeeds() also stands a category's first feed in when nothing in
-// it was flagged — a client filtering on the raw flag would drop that category
-// off the welcome screen entirely.
+// One list, sent whole: the first-run picker and the manager's Discover tab both
+// draw all of it, from a single fetch.
 router.get('/suggested', async (req: AuthRequest, res: Response): Promise<void> => {
   const subs = await prisma.feedSubscription.findMany({
     where: { userId: req.userId! },
     select: { url: true },
   });
   const subscribed = new Set(subs.map(s => canonicalFeedKey(s.url)));
-  const starters = new Set(starterFeeds());
   res.json({
     categories: SUGGESTED_CATEGORIES,
-    feeds: SUGGESTED_FEEDS
-      .filter(f => !subscribed.has(canonicalFeedKey(f.url)))
-      .map(f => ({ ...f, starter: starters.has(f) })),
+    feeds: SUGGESTED_FEEDS.filter(f => !subscribed.has(canonicalFeedKey(f.url))),
   });
 });
 
@@ -615,6 +609,163 @@ async function scopedFeeds(userId: string, folderParam: unknown) {
   });
   return subs;
 }
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+// Metered even though it's a GET, which the write limiter above deliberately
+// lets through. Search is the one read a user can fire on every keystroke, and
+// each one is a GIN lookup; the client debounces, but the client is not the
+// thing to trust about how often the server is asked.
+const searchLimiter = perUserLimiter({
+  windowMs: 60_000, max: 120,
+  message: 'Too many searches — please slow down for a moment.',
+});
+
+const SEARCH_LIMIT_DEFAULT = 8;
+const SEARCH_LIMIT_MAX = 25;
+
+/** `%` and `_` are wildcards to LIKE; a tag containing one should match itself. */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, c => `\\${c}`);
+}
+
+/**
+ * The feeds this user subscribes to, and nothing else.
+ *
+ * **This is the whole boundary between "search my feeds" and "search Newt's
+ * database", so it is worth being blunt about.** Feed and FeedItem rows are
+ * shared across every account on the instance — that is the point of the
+ * design, one fetch per feed no matter how many people follow it — which means
+ * FeedItem carries no userId to filter on and a query that forgets to scope by
+ * feed silently searches every article anyone here has ever ingested. That is a
+ * disclosure bug and a spam surface at once: it would let anyone read the
+ * contents of feeds they don't follow, and let a subscriber to one junk feed
+ * inject results into everybody's search box.
+ *
+ * Scoping therefore starts from FeedSubscription, which *is* per-user, and the
+ * feed ids it resolves to are the only ones any search query is allowed to see.
+ *
+ * Read-only on purpose: unlike the river's loader this does not call
+ * ensureFeeds(). Searching is not a reason to create Feed rows, mark demand, or
+ * kick off a refresh — a search should never be the thing that causes an
+ * outbound fetch.
+ */
+async function subscribedFeeds(userId: string) {
+  const subs = await prisma.feedSubscription.findMany({
+    where: { userId },
+    select: { url: true, name: true },
+  });
+  if (subs.length === 0) return { feedIds: [], feedById: new Map(), subByKey: new Map() };
+
+  const subByKey = new Map(subs.map(s => [canonicalFeedKey(s.url), s]));
+  const feeds = await prisma.feed.findMany({
+    where: { canonicalKey: { in: [...subByKey.keys()] } },
+    select: { id: true, fetchUrl: true, title: true },
+  });
+  return {
+    feedIds: feeds.map(f => f.id),
+    feedById: new Map(feeds.map(f => [f.id, f])),
+    subByKey,
+  };
+}
+
+type SearchRow = {
+  id: string;
+  title: string;
+  link: string;
+  feedId: string;
+  pubDate: Date | null;
+  categories: string[];
+  rank: number;
+};
+
+/**
+ * Search across everything the user follows — the whole archive, not the page
+ * the reader happens to be looking at.
+ *
+ * `mode=tag` matches the article's categories instead of its text, which is what
+ * the search box's `#tag` prefix asks for.
+ *
+ * Dismissed articles are included. Dismissing is "I'm done with this" said to a
+ * river flowing past; typing a search is going and looking for one specific
+ * thing, and answering "you waved that away in March" with silence is how a
+ * search box loses someone's trust.
+ */
+router.get('/search', searchLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+  const raw   = typeof req.query.q === 'string' ? req.query.q : '';
+  const tagged = req.query.mode === 'tag';
+  const limit = Math.min(SEARCH_LIMIT_MAX, Math.max(1,
+    parseInt(req.query.limit as string || '') || SEARCH_LIMIT_DEFAULT));
+
+  try {
+    const trimmed = raw.trim();
+    // Guarded before any query: a one-character prefix search matches a large
+    // share of the corpus and is never what someone means.
+    if (trimmed.length < MIN_QUERY_LEN) { res.json({ articles: [] }); return; }
+
+    const tsq = tagged ? null : toTsQuery(trimmed);
+    if (!tagged && !tsq) { res.json({ articles: [] }); return; }
+
+    const { feedIds, feedById, subByKey } = await subscribedFeeds(req.userId!);
+    if (feedIds.length === 0) { res.json({ articles: [] }); return; }
+
+    // One row per story, not per copy — the same dedupe the river does, and for
+    // the same reason: two feeds carrying one article is ordinary, and a result
+    // list that shows it twice looks broken. DISTINCT ON needs linkKey to lead
+    // the inner sort, so the ranking sort has to happen in an outer query.
+    const rows = tagged
+      ? await prisma.$queryRaw<SearchRow[]>`
+          SELECT * FROM (
+            SELECT DISTINCT ON (i."linkKey")
+              i."id", i."title", i."link", i."feedId", i."pubDate", i."categories",
+              0::real AS "rank"
+            FROM "FeedItem" i
+            WHERE i."feedId" = ANY(${feedIds}::text[])
+              AND EXISTS (
+                SELECT 1 FROM unnest(i."categories") c
+                WHERE c ILIKE ${escapeLike(trimmed) + '%'} ESCAPE '\\')
+            ORDER BY i."linkKey", i."pubDate" DESC NULLS LAST
+          ) s
+          ORDER BY s."pubDate" DESC NULLS LAST
+          LIMIT ${limit}`
+      : await prisma.$queryRaw<SearchRow[]>`
+          SELECT * FROM (
+            SELECT DISTINCT ON (i."linkKey")
+              i."id", i."title", i."link", i."feedId", i."pubDate", i."categories",
+              ts_rank(i."searchVector", to_tsquery('english', ${tsq})) AS "rank"
+            FROM "FeedItem" i
+            WHERE i."feedId" = ANY(${feedIds}::text[])
+              AND i."searchVector" @@ to_tsquery('english', ${tsq})
+            ORDER BY i."linkKey", "rank" DESC, i."pubDate" DESC NULLS LAST
+          ) s
+          -- Relevance first, recency only to settle ties. A local paper and a
+          -- national one both matching "school closures" should be separated by
+          -- how well they match, not by which polled most recently.
+          ORDER BY s."rank" DESC, s."pubDate" DESC NULLS LAST
+          LIMIT ${limit}`;
+
+    // Same naming ladder as the river, so a result and the card it corresponds
+    // to are attributed identically: the subscription's own name, then the
+    // publisher's title, then the hostname.
+    const articles = rows.map(r => {
+      const feed = feedById.get(r.feedId);
+      const sub  = feed ? subByKey.get(canonicalFeedKey(feed.fetchUrl)) : undefined;
+      return {
+        id: r.id,
+        title: r.title,
+        url: r.link,
+        source: sub?.name || feed?.title || hostOf(feed?.fetchUrl ?? ''),
+        categories: r.categories,
+        pubDate: r.pubDate,
+      };
+    });
+
+    res.json({ articles });
+  } catch (err) {
+    logger.error(err, 'Feed search error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> => {
   const offset     = Math.max(0, parseInt(req.query.offset as string || '0') || 0);

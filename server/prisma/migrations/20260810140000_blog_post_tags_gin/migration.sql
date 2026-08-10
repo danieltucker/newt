@@ -1,0 +1,17 @@
+-- A GIN index over BlogPost.tags.
+--
+-- The migration that added the column argued against an index, and was right at
+-- the time: the only query filtering on tags was `?tag=` on one author's post
+-- list, already narrowed by userId to a couple of hundred rows, so the index
+-- would have cost more to maintain on every save than the scan it saved.
+--
+-- The public tag page changes the premise. /t/<tag> asks for every public post
+-- carrying a word, across every author, with no userId to narrow it — a
+-- sequential scan of the whole table, on a route a crawler will walk
+-- exhaustively and cache-miss its way through. GIN with array_ops is what makes
+-- `tags @> ARRAY['x']` an index lookup.
+--
+-- CONCURRENTLY is deliberately not used: it cannot run inside the transaction
+-- Prisma wraps a migration in, and on a table this size the brief lock is
+-- shorter than the deploy that carries it.
+CREATE INDEX "BlogPost_tags_idx" ON "BlogPost" USING GIN ("tags" array_ops);

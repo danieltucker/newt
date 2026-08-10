@@ -392,6 +392,11 @@
   line-height: 1.65;
   color: var(--paper-text-2);
   caret-color: var(--paper-accent);
+  /* The document surface has its own accent (see the paper ramp in
+     styles/tokens.css), so the app-wide --select-bg is re-pointed at it here
+     rather than a second ::selection rule being written. Everything below that
+     needs a selection colour reads this one variable. */
+  --select-bg: color-mix(in oklab, var(--paper-accent) 30%, transparent);
 }
 
 .editor:global(.note-empty)::before {
@@ -425,7 +430,14 @@
   color: var(--paper-text);
 }
 
+/* Sticky, directly under .toolbar - the component sets `top` inline from the
+   toolbar's measured height, since that height changes with the width and with
+   whether the caret is in a table. z-index sits one below the toolbar so the
+   toolbar wins any overlap while the two are settling.
+   Opaque background, same reason as the toolbar's. */
 .findBar {
+  position: sticky;
+  z-index: 3;
   flex-shrink: 0;
   display: flex;
   align-items: flex-start;
@@ -597,7 +609,7 @@
 
 /* Clicking an image selects it, so Backspace removes the whole thing rather
    than putting a caret inside a replaced element that cannot hold one. */
-.editor img::selection { background: rgb(91 91 230 / 0.3); }
+.editor img::selection { background: var(--select-bg); }
 
 /* ── Image upload feedback ── */
 .uploadNote, .uploadError {
@@ -858,9 +870,13 @@
   cursor: pointer;
 }
 
-/* The selection ring is what says "the bar above belongs to this one" */
+/* The selection ring is what says "the bar above belongs to this one". Both of
+   these were a hardcoded #5b5be6 wash, which is the *light* paper accent - so a
+   selected embed in dark mode was painted in the light theme's violet. It reads
+   --select-bg now, which resolves to the paper accent inside the editor and to
+   the app accent wherever an embed is rendered outside one. */
 :global(.note-embed)::selection,
-:global(.note-embed *)::selection { background: rgb(91 91 230 / 0.22); }
+:global(.note-embed *)::selection { background: var(--select-bg); }
 
 :global(.note-embed .note-embed-a) {
   color: inherit;

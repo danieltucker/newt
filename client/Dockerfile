@@ -26,4 +26,8 @@ RUN npm run build --workspace=client
 FROM nginx:alpine AS runner
 COPY --from=builder /app/client/dist /usr/share/nginx/html
 COPY client/nginx.conf /etc/nginx/conf.d/default.conf
+# Included by both document-serving locations in nginx.conf. Not in conf.d/,
+# because everything in conf.d is auto-included into http{} and a bare list of
+# add_header directives there would apply to every response on the server.
+COPY client/security-headers.conf /etc/nginx/security-headers.conf
 EXPOSE 80

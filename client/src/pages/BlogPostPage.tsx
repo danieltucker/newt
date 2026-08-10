@@ -4,9 +4,11 @@ import { postEmbed } from '../utils/noteEmbed';
 import { BlogPost, CommentPrefs } from '../types';
 import { profilePathFor } from '../utils/profileUrl';
 import { blogEditPathFor } from '../utils/blogUrl';
+import { tagPathFor } from '../utils/hubUrl';
 import { startRepost } from '../utils/composerSeed';
 import { POST_VIS_META } from '../components/VisibilityMeta';
 import PostBody from '../components/PostBody';
+import PostTags from '../components/PostTags';
 import Lightbox, { LightboxImage } from '../components/Lightbox';
 import CommentsPanel from '../components/CommentsPanel';
 import FollowBlogButton from '../components/FollowBlogButton';
@@ -225,6 +227,22 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
             <span className={styles.chip} title={vis.hint}>{vis.tag}</span>
           )}
         </div>
+
+        {/* Under the byline, above the piece: a reader wants to know what this
+            is about before reading it, not after.
+
+            They lead to /t/<tag> - everyone's posts under that word - rather
+            than to this author's, which is where they used to go. A tag reads as
+            a subject, and a subject is a bigger place than one person's archive;
+            the narrower view still exists on the author's profile (see
+            profilePathFor's ?tag=), reached from there rather than from here.
+            This is also the destination the crawlable copy of this page emits,
+            and the two must not disagree. */}
+        <PostTags
+          tags={post.tags}
+          className={styles.tags}
+          onSelect={tag => navigate(tagPathFor(tag))}
+        />
 
         <PostBody html={post.body} />
       </article>

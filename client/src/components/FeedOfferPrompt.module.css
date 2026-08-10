@@ -1,0 +1,147 @@
+/* Bottom-left, deliberately opposite the back-to-top / notes column on the
+   right (see BackToTop.module.css) so the question never lands on top of a
+   control the user is reaching for. Below modals in the stack - a reader or the
+   feed manager opened over the top should cover it, since the same answer is
+   available in there. */
+.card {
+  position: fixed;
+  left: max(24px, env(safe-area-inset-left, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(380px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 10px 30px color-mix(in oklab, var(--shadow) 60%, transparent);
+  animation: rise 0.2s ease-out;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* The publisher's name can be anything a feed says it is, so it gets a line to
+   wrap onto rather than pushing the buttons off the card. */
+.name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  /* Same literal the feed manager's errors use - there is no danger token. */
+  color: #ff6b6b;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ghost,
+.primary {
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ghost:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 88%, #000);
+}
+
+.ghost:disabled,
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ghost:focus-visible,
+.primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* On a phone the card spans the width rather than floating in a corner, and the
+   buttons drop below the text - three things side by side at 360px leaves the
+   publisher's name about four characters. Clears the bottom bar the same way
+   the other pinned controls do. */
+@media (max-width: 640px) {
+  .card {
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .ghost,
+  .primary {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+}

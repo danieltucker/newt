@@ -54,7 +54,13 @@ export default function SiteTile({ bookmark, dragOverlay, onEdit, onDelete, onVi
     transition,
     opacity: isDragging && !dragOverlay ? 0.4 : 1,
     boxShadow: isDragging ? `0 20px 44px rgba(0,0,0,0.45)` : undefined,
-    zIndex: isDragging ? 60 : undefined,
+    // The open menu hangs off the bottom of the tile, and on the last row that
+    // is over the reading list. It can't climb out on its own: `.tile:hover`
+    // transforms, which makes the tile a stacking context, so the dropdown's
+    // own z-index only ever sorts it against the rest of the tile. The tile is
+    // what has to be lifted - above the reading list and the feed below it,
+    // still under the sticky search bar it may scroll past.
+    zIndex: isDragging ? 60 : menuOpen ? 30 : undefined,
   };
 
   function handleClick(e: React.MouseEvent) {

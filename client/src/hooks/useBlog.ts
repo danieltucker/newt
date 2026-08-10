@@ -45,6 +45,8 @@ export interface PostDraft {
   // '' clears the hero - the server treats an empty string as "no cover image"
   // rather than as an omitted field, so this must not be undefined to unset one.
   heroImage: string;
+  // Same rule as heroImage: [] is "no tags", not "leave them alone".
+  tags: string[];
 }
 
 export function createPost(draft: PostDraft): Promise<BlogPost> {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMyPosts } from '../hooks/useBlog';
 import { POST_VIS_META } from '../components/VisibilityMeta';
+import PostTags from '../components/PostTags';
 import { BlogPostSummary } from '../types';
 import { blogPathFor, blogEditPathFor } from '../utils/blogUrl';
 import { relTime } from '../utils/notifications';
@@ -84,7 +85,16 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
             return (
               <div key={p.id} className={`${styles.row} ${isDraft ? styles.rowDraft : ''}`}>
                 {p.heroImage && <img className={styles.rowThumb} src={p.heroImage} alt="" />}
-                <button className={styles.rowMain} onClick={() => navigate(blogEditPathFor(p.id))}>
+                {/* The row opens the post, it doesn't open the editor. A list
+                    of things you wrote should hand you the thing you wrote;
+                    dropping straight into a composer meant every glance at an
+                    old post risked editing it. Editing is the button below,
+                    and the reader carries its own "Edit post" too.
+
+                    Drafts open here as well - the post route serves a private
+                    post to its own author (see canSeePost), so there is no
+                    post in this list without a page to open. */}
+                <button className={styles.rowMain} onClick={() => navigate(blogPathFor(username, p.slug))}>
                   <div className={styles.rowTop}>
                     <span className={styles.rowTitle}>{p.title}</span>
                     {/* A draft is the one state worth spotting from across the
@@ -99,6 +109,10 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
                     {!p.commentsEnabled && <span className={styles.mutedChip}>Comments off</span>}
                   </div>
                   {p.excerpt && <div className={styles.excerpt}>{p.excerpt}</div>}
+                  {/* Display only. The row is already one big button, and a
+                      tag inside it that filtered something would be a second
+                      destination hidden in the first. */}
+                  <PostTags tags={p.tags} className={styles.rowTags} />
                   <div className={styles.rowMeta}>
                     {isDraft
                       ? <>Not published · edited {relTime(p.updatedAt)}</>
@@ -107,14 +121,14 @@ export default function MyBlogPage({ accessToken, username, navigate, embedded }
                 </button>
 
                 <div className={styles.rowActions}>
-                  {p.visibility !== 'private' && (
-                    <button
-                      className={styles.ghostBtn}
-                      onClick={() => navigate(blogPathFor(username, p.slug))}
-                    >
-                      View
-                    </button>
-                  )}
+                  {/* Was "View", on published posts only - the row itself is
+                      the way in now, so this is the door the row used to be. */}
+                  <button
+                    className={styles.ghostBtn}
+                    onClick={() => navigate(blogEditPathFor(p.id))}
+                  >
+                    Edit
+                  </button>
                   {confirming === p.id ? (
                     <>
                       <button

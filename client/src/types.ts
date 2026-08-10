@@ -38,16 +38,13 @@ export interface ImportableFeed {
   feedUrl: string;
 }
 
-/** One of the curated starter feeds offered on first run. */
+/** One of the curated feeds offered on first run and in Discover. */
 export interface SuggestedFeed {
   name: string;
   url: string;
   site: string;
   blurb: string;
   category: string;
-  /** Part of the short list the first-run picker offers. The Discover tab in
-   *  the feed manager shows everything, starter or not. */
-  starter?: boolean;
   /** Set when the publisher paywalls what the feed links to: 'metered' for a
    *  free allowance, 'subscriber' for all of it. Absent means free to read. */
   access?: 'metered' | 'subscriber';
@@ -334,6 +331,9 @@ export interface BlogPostSummary {
   excerpt: string;
   // Cover image as a site-relative /api/v1/images/<id> path, '' for none.
   heroImage: string;
+  // The author's own labels, already lowercased and deduped by the server (see
+  // normalizeTags). Displayed with a '#', never stored with one.
+  tags: string[];
   visibility: CommentVisibility;
   commentsEnabled: boolean;
   // Absolute canonical URL. Also the key its comment thread hangs on, so it is

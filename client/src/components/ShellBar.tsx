@@ -1,6 +1,8 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './ShellBar.module.css';
 import NewtMark from './NewtMark';
+import CloseButton from './CloseButton';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { accountMenuItems, ShellMenuItem } from '../utils/shellNav';
 
@@ -18,6 +20,14 @@ export const RAIL_NARROW = '(max-width: 900px)';
 // expands over the whole row when tapped, which is the trade every mobile
 // chrome makes: search is the widest thing in the bar or it isn't in the bar.
 const SEARCH_NARROW = '(max-width: 620px)';
+
+// Below this the bookmarks rail stops being a dropdown hanging off the hamburger
+// and becomes a full-screen sheet - the same room the reading list and the notes
+// console open into on a phone, with the same backdrop, the same full bleed and
+// the same CloseButton. It used to be a panel that stopped at the shell bar and
+// wore a menu's chrome, which made bookmarks the one place in the app where
+// "open a thing on a phone" meant something visibly different.
+const BOOKMARKS_SHEET = '(max-width: 640px)';
 
 // The compact chrome for reading views - a profile, a post, the blog manager.
 // The new tab keeps its tall greeting header; those pages don't want 120px of
@@ -54,12 +64,11 @@ interface Props {
 // `role` is opt-out because only one of the two carries a list of menuitems -
 // the other holds the bookmarks rail, and calling that a menu would promise
 // arrow-key navigation between rows that aren't menuitems.
-function Menu({ open, onClose, align = 'left', role = 'menu', className = '', children }: {
+function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
   open: boolean;
   onClose: () => void;
   align?: 'left' | 'right';
   role?: string;
-  className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -87,11 +96,55 @@ function Menu({ open, onClose, align = 'left', role = 'menu', className = '', ch
   return (
     <div
       ref={ref}
-      className={`${styles.menu} ${align === 'right' ? styles.menuRight : ''} ${className}`}
+      className={`${styles.menu} ${align === 'right' ? styles.menuRight : ''}`}
       role={role}
     >
       {children}
     </div>
+  );
+}
+
+// The bookmarks rail on a phone: a modal over everything, not a panel under the
+// bar. Portalled to the body because .bar carries a backdrop-filter, which makes
+// it the containing block for anything fixed inside it - a sheet rendered in
+// place could never reach past the bar it hangs from, which is exactly what kept
+// this looking unlike every other overlay.
+function BookmarksSheet({ open, onClose, children }: {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  // Escape closes, and the page behind must not scroll while the sheet is up -
+  // the same bargain every other full overlay in the app makes (see ReadingList).
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return createPortal(
+    /* mousedown, not click: a drag that starts on a folder row and ends on the
+       backdrop is not a request to close. */
+    <div
+      className={styles.sheetBackdrop}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Bookmarks">
+        <div className={styles.sheetHead}>
+          <h2 className={styles.sheetTitle}>Bookmarks</h2>
+          <CloseButton onClick={onClose} label="Close bookmarks" />
+        </div>
+        <div className={styles.sheetBody}>{children}</div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -117,6 +170,7 @@ export default function ShellBar({
   const [searchOpen, setSearchOpen] = useState(false);
   const railNarrow = useMediaQuery(RAIL_NARROW);
   const searchNarrow = useMediaQuery(SEARCH_NARROW);
+  const bookmarksAsSheet = useMediaQuery(BOOKMARKS_SHEET);
   const searchExpanded = searchNarrow && searchOpen;
   const centerRef = useRef<HTMLDivElement>(null);
 
@@ -171,6 +225,11 @@ export default function ShellBar({
     return () => document.removeEventListener('keydown', onKey);
   }, [searchExpanded]);
 
+  // Stable: BookmarksSheet's effect adds a listener and locks body scroll, so a
+  // fresh closure each render would tear that down and rebuild it every time -
+  // and restore an overflow it had already set to hidden.
+  const closeNav = useCallback(() => setNavOpen(false), []);
+
   // One menu at a time - two open dropdowns on the same row read as a bug.
   function openNav() { setAcctOpen(false); setNavOpen(o => !o); }
   function openAcct() { setNavOpen(false); setAcctOpen(o => !o); }
@@ -218,26 +277,27 @@ export default function ShellBar({
                   <line x1="3" y1="18" x2="21" y2="18" />
                 </svg>
               </button>
-              {/* Not a menu of menuitems - see Menu. The rail scrolls within
-                  itself so a long folder list can't push it past the bottom of
-                  the screen. */}
-              <Menu open={navOpen} onClose={() => setNavOpen(false)} role="group" className={styles.menuSheet}>
-                <div className={styles.menuRailHead}>
-                  <div className={styles.menuRailLabel}>Bookmarks</div>
-                  {/* Only drawn once this is a sheet - a dropdown closes by
-                      clicking off it, a sheet has no off. */}
-                  <button
-                    className={styles.sheetClose}
-                    onClick={() => setNavOpen(false)}
-                    aria-label="Close bookmarks"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className={styles.menuRail}>
-                  {bookmarksRail?.(() => setNavOpen(false))}
-                </div>
-              </Menu>
+              {/* Two shapes, one rail: a dropdown on a laptop, a full-screen
+                  modal on a phone. Chosen in JS rather than restyled in CSS
+                  because the phone version has to be portalled out of the bar -
+                  see BookmarksSheet. */}
+              {bookmarksAsSheet ? (
+                <BookmarksSheet open={navOpen} onClose={closeNav}>
+                  {bookmarksRail?.(closeNav)}
+                </BookmarksSheet>
+              ) : (
+                /* Not a menu of menuitems - see Menu. The rail scrolls within
+                   itself so a long folder list can't push it past the bottom of
+                   the screen. */
+                <Menu open={navOpen} onClose={closeNav} role="group">
+                  <div className={styles.menuRailHead}>
+                    <div className={styles.menuRailLabel}>Bookmarks</div>
+                  </div>
+                  <div className={styles.menuRail}>
+                    {bookmarksRail?.(closeNav)}
+                  </div>
+                </Menu>
+              )}
             </div>
           )}
 

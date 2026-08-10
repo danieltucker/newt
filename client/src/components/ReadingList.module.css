@@ -10,6 +10,10 @@
 .backdrop {
   position: fixed;
   inset: 0;
+  /* Full-bleed on a phone, so without this the bottom of the list - and the Add
+     form's own buttons - are laid out behind the keyboard. See
+     hooks/useKeyboardInset; the value is 0 whenever there isn't one. */
+  bottom: var(--kb-inset, 0px);
   z-index: var(--z-modal);
   display: flex;
   align-items: center;
@@ -331,6 +335,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Not just tidiness. `overflow-y: auto` on its own computes overflow-x to
+     `auto` as well, so anything a pixel too wide made this a two-axis scroller -
+     and a two-axis scroller under a thumb drifts sideways on every vertical
+     swipe. That was the reading list "moving right and left" on a phone. The
+     cards are made to fit below; this is the guarantee that a long publisher
+     name or an unbreakable URL can never take it back. */
+  overflow-x: hidden;
   padding: 16px 20px 24px;
   border-top: 1px solid var(--border);
 }
@@ -1147,6 +1158,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Everything in here but the publisher's name refuses to shrink - the read
+     time and the Visited pill are both nowrap and flex-shrink: 0 - so without
+     this the line reports a min-content width of its own and pushes the card
+     out past whatever is holding it. The name inside already truncates. */
+  min-width: 0;
   font-size: 12px;
   color: var(--muted);
 }
@@ -1210,6 +1226,60 @@
   .empty { font-size: 15px; }
 
   .commentRow { gap: 8px; }
+
+  /* ── List rows, on a phone ──
+     A list row is a row of parts that all refuse to shrink: the meta line, the
+     two action pills and the delete button are every one of them
+     flex-shrink: 0, and only the headline gives way. Add them up at the touch
+     control scale and the row wants around 500px, which a 360px screen cannot
+     give it - so the row overflowed the body, the body became a sideways
+     scroller (see .modalBody), and the whole list slid left and right under a
+     vertical swipe. The Visited pill is the last ~68px of that total, which is
+     why removing it appeared to fix it.
+
+     So the row wraps instead of overflowing, the way the feed's list view
+     already does: the headline takes the first line, the byline and the
+     controls share the second. About 30px an article, and it is still the
+     densest of the three layouts by some way. */
+  .gridList .cardWrap {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .gridList .card {
+    flex: 1 1 100%;
+    padding: 14px 16px 0;
+  }
+
+  /* Two lines of headline beat one line of headline and an ellipsis, now that
+     the line is the full width of the phone. */
+  .gridList .title { white-space: normal; }
+
+  /* A line each, rather than a line shared. Letting the byline and the controls
+     share the second line reads well on paper and does not survive a 390px
+     screen: they want about 460px between them, so one of them has to give -
+     and every way of choosing which is worse than not choosing. Shrinking the
+     byline erases the publisher's name outright (the read time and the Visited
+     pill are both nowrap and unshrinkable, so it is the name that goes), and
+     letting the line wrap on its own makes the row two lines tall or three
+     depending on whether that article happens to carry a Visited pill, which is
+     a list of rows that don't line up.
+
+     So: headline, byline, controls. Three lines and a predictable one. */
+  .gridList .cardFooter {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 0 16px;
+  }
+
+  .gridList .meta { min-width: 0; }
+
+  /* Only two things left on the last line and room for both, so the auto margin
+     that pushes the delete button to the end has nothing it can strand. */
+  .gridList .commentRow { margin: 0 auto 0 16px; }
+
+  .gridList .cardActions { padding-right: 12px; }
 }
 
 /* ── The room, on a phone ──

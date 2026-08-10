@@ -1,6 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
 import { StarIcon } from './TagChip';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import styles from './FeedFilterBar.module.css';
+
+/**
+ * Where one chip per group stops fitting and they fold into a single Filters
+ * menu. Deliberately generous: below this the bar shares its row with a layout
+ * switch and an Add button on the reading list, and three labelled chips plus
+ * their selections is what tipped that row into wrapping.
+ *
+ * A viewport query rather than a measurement of the bar itself, because both
+ * surfaces that use it are as wide as the window (the feed column, the reading
+ * list's full-bleed modal) - so the window is a fair proxy, and it costs no
+ * layout pass to ask.
+ */
+const EXPAND_AT = 900;
+
+/**
+ * Beyond this many groups the row is too busy to spread out whatever the width,
+ * so it folds regardless. Nothing passes more than three today; this is here so
+ * that a fourth doesn't quietly make the bar the loudest thing on the page.
+ */
+const EXPAND_MAX_GROUPS = 3;
+
+/** The group list itself, as an `openId`. Only the folded bar has one. */
+const ROOT = '__root';
 
 export interface FilterOption {
   value: string;
@@ -88,34 +112,64 @@ const XIcon = () => (
  * put "Mark all read" in the same row, in the same dress, as a filter chip - one
  * of those is undoable and the other is not. The feed lays its actions out
  * itself now, above this bar; see the controlBar note in FeedPanel.
+ *
+ * ── Two shapes, one control ──
+ * Folding everything behind one button is the right answer on a phone and a
+ * needless extra tap on a desktop, where there is room to put Category, Site and
+ * Topic side by side and show what each is set to without opening anything. So
+ * above EXPAND_AT each group gets its own chip and its own dropdown, and below
+ * it they collapse back into the Filters menu and its drill-down.
+ *
+ * The two shapes share their option list (`optionsFor`) and their open/close
+ * state (`openId`), so they can't drift apart: only the trigger differs.
  */
 export default function FeedFilterBar({ groups, unread, favorites, className = '' }: Props) {
-  const [open, setOpen] = useState(false);
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  // Which popover is showing. In the folded bar that's ROOT for the group list
+  // or a group id once you've drilled into one; spread out, it's just the id of
+  // the chip you clicked. Sharing one value is what lets both shapes reuse the
+  // same list and the same dismiss handling.
+  const [openId, setOpenId] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const wide = useMediaQuery(`(min-width: ${EXPAND_AT}px)`);
 
   useEffect(() => {
-    if (!open) return;
+    if (openId === null) return;
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
     }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false); }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
     document.addEventListener('mousedown', onOutside);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onOutside);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [openId]);
 
   // Only groups with something to choose between are worth showing: a feed from
   // a single site has no site filter worth opening.
   const usable = groups.filter(g => g.options.length > 1 || g.value !== null);
   const active = usable.filter(g => g.value !== null);
+  const expanded = wide && usable.length > 0 && usable.length <= EXPAND_MAX_GROUPS;
 
-  function openGroup(id: string) {
-    setActiveGroup(prev => (prev === id ? null : id));
+  // Rotating the phone or dragging the window across EXPAND_AT moves the anchor
+  // the panel is hanging off, and a panel left open through that lands next to a
+  // chip that is no longer the one you pressed.
+  useEffect(() => { setOpenId(null); }, [expanded]);
+
+  function close() { setOpenId(null); setQ(''); }
+
+  function toggle(id: string) {
+    setOpenId(prev => (prev === id ? null : id));
+    setQ('');
+  }
+
+  /** The folded bar's trigger: pressing it again shuts the menu, even from two
+   *  levels in. `toggle(ROOT)` would walk you back to the group list instead,
+   *  which is what the back row inside the panel is for. */
+  function toggleRoot() {
+    setOpenId(prev => (prev === null ? ROOT : null));
     setQ('');
   }
 
@@ -125,10 +179,87 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
 
   if (usable.length === 0 && !unread && !favorites) return null;
 
-  const current = usable.find(g => g.id === activeGroup) ?? null;
+  const current = usable.find(g => g.id === openId) ?? null;
   const filtered = current && q.trim()
     ? current.options.filter(o => o.label.toLowerCase().includes(q.trim().toLowerCase()))
     : current?.options ?? [];
+
+  /**
+   * The rows you pick from, identical in both shapes. Only what sits above them
+   * differs: the folded bar puts a back row there, the spread-out one nothing,
+   * because its chip is already the thing you'd be going back to.
+   */
+  function optionsFor(group: FilterGroup) {
+    return (
+      <>
+        {group.searchable && (
+          <input
+            className={styles.search}
+            placeholder="Search…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            autoFocus
+          />
+        )}
+        <div className={styles.optionList}>
+          <button
+            className={`${styles.option} ${group.value === null ? styles.optionActive : ''}`}
+            onClick={() => { group.onChange(null); close(); }}
+          >
+            {group.allLabel}
+          </button>
+          {filtered.map(o => {
+            const star = group.onToggleStar;
+            // Two controls in one row when the group is starrable:
+            // the star curates, the label filters. Same bargain the
+            // reading list's tag chips struck before they folded in
+            // here, so nothing was lost by folding them.
+            const row = (
+              <>
+                {o.color && <span className={styles.optionDot} style={{ background: o.color }} aria-hidden />}
+                <span className={styles.optionLabel}>{o.label}</span>
+                {o.hint && <span className={styles.optionHint}>{o.hint}</span>}
+              </>
+            );
+            const pick = () => {
+              group.onChange(o.value === group.value ? null : o.value);
+              close();
+            };
+            if (!star) {
+              return (
+                <button
+                  key={o.value}
+                  className={`${styles.option} ${o.value === group.value ? styles.optionActive : ''}`}
+                  onClick={pick}
+                >
+                  {row}
+                </button>
+              );
+            }
+            return (
+              <span
+                key={o.value}
+                className={`${styles.option} ${styles.optionStarrable} ${o.value === group.value ? styles.optionActive : ''}`}
+              >
+                <button
+                  className={`${styles.starBtn} ${o.starred ? styles.starOn : ''}`}
+                  onClick={() => star(o.value)}
+                  aria-pressed={o.starred === true}
+                  title={o.starTitle ?? (o.starred
+                    ? `Remove “${o.label}” from favorites`
+                    : `Favorite “${o.label}” - articles tagged this way get flagged`)}
+                >
+                  <StarIcon filled={o.starred === true} />
+                </button>
+                <button className={styles.optionPick} onClick={pick}>{row}</button>
+              </span>
+            );
+          })}
+          {filtered.length === 0 && <div className={styles.noMatch}>No matches</div>}
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className={`${styles.bar} ${className}`}>
@@ -150,12 +281,76 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
 
         {favorites}
 
-        {usable.length > 0 && (
+        {/* ── Spread out: a chip per group ──
+            Each one is its own dropdown and its own read-out. What you've
+            chosen is printed on the chip that chose it, which is the whole
+            reason to spend the width: the folded bar can tell you that two
+            filters are on, but not which two without opening it. */}
+        {expanded && (
+          <div className={styles.filterSet} ref={ref}>
+            {usable.map(g => {
+              const isOpen = openId === g.id;
+              const on = g.value !== null;
+              return (
+                <div key={g.id} className={styles.filterWrap}>
+                  {on ? (
+                    /* A span holding two buttons, not a button holding a
+                       button: an active chip both re-opens its list and
+                       clears itself, and nesting the second inside the first
+                       is invalid markup that browsers untangle differently.
+                       Same arrangement as a starrable option row below. */
+                    <span className={`${styles.chip} ${styles.chipActive} ${styles.splitChip}`}>
+                      <button
+                        className={styles.splitTrigger}
+                        onClick={() => toggle(g.id)}
+                        aria-expanded={isOpen}
+                        aria-haspopup="menu"
+                        title={`Change ${g.label.toLowerCase()} filter`}
+                      >
+                        <span className={styles.chipLabel}>{g.label}</span>
+                        <span className={styles.chipValue}>{labelFor(g)}</span>
+                        <ChevronIcon />
+                      </button>
+                      <button
+                        className={styles.chipClear}
+                        onClick={() => { g.onChange(null); close(); }}
+                        title={`Clear ${g.label.toLowerCase()} filter`}
+                        aria-label={`Clear ${g.label.toLowerCase()} filter`}
+                      >
+                        <XIcon />
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className={styles.chip}
+                      onClick={() => toggle(g.id)}
+                      aria-expanded={isOpen}
+                      aria-haspopup="menu"
+                    >
+                      {g.label}
+                      <ChevronIcon />
+                    </button>
+                  )}
+
+                  {isOpen && (
+                    <div className={styles.panel} role="menu">{optionsFor(g)}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Folded: one chip, everything behind it ──
+            The narrow shape, and the only one that needs the active pills:
+            with the selections hidden inside the menu, they are the only thing
+            on screen saying what is currently narrowing the list. */}
+        {!expanded && usable.length > 0 && (
           <div className={styles.filterWrap} ref={ref}>
             <button
               className={`${styles.chip} ${active.length > 0 ? styles.chipActive : ''}`}
-              onClick={() => { setOpen(v => !v); setActiveGroup(null); }}
-              aria-expanded={open}
+              onClick={toggleRoot}
+              aria-expanded={openId !== null}
               aria-haspopup="menu"
             >
               <FilterIcon />
@@ -164,12 +359,12 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
               <ChevronIcon />
             </button>
 
-            {open && (
+            {openId !== null && (
               <div className={styles.panel} role="menu">
                 {current === null ? (
                   <div className={styles.groupList}>
                     {usable.map(g => (
-                      <button key={g.id} className={styles.groupRow} onClick={() => openGroup(g.id)}>
+                      <button key={g.id} className={styles.groupRow} onClick={() => toggle(g.id)}>
                         <span className={styles.groupLabel}>{g.label}</span>
                         <span className={styles.groupValue}>
                           {g.value === null ? g.allLabel : labelFor(g)}
@@ -180,7 +375,7 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
                     {active.length > 0 && (
                       <button
                         className={styles.clearAll}
-                        onClick={() => { active.forEach(g => g.onChange(null)); setOpen(false); }}
+                        onClick={() => { active.forEach(g => g.onChange(null)); close(); }}
                       >
                         Clear all filters
                       </button>
@@ -188,75 +383,11 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
                   </div>
                 ) : (
                   <>
-                    <button className={styles.backRow} onClick={() => setActiveGroup(null)}>
+                    <button className={styles.backRow} onClick={() => toggle(ROOT)}>
                       <span className={styles.backChevron}><ChevronIcon /></span>
                       {current.label}
                     </button>
-                    {current.searchable && (
-                      <input
-                        className={styles.search}
-                        placeholder="Search…"
-                        value={q}
-                        onChange={e => setQ(e.target.value)}
-                        autoFocus
-                      />
-                    )}
-                    <div className={styles.optionList}>
-                      <button
-                        className={`${styles.option} ${current.value === null ? styles.optionActive : ''}`}
-                        onClick={() => { current.onChange(null); setOpen(false); }}
-                      >
-                        {current.allLabel}
-                      </button>
-                      {filtered.map(o => {
-                        const star = current.onToggleStar;
-                        // Two controls in one row when the group is starrable:
-                        // the star curates, the label filters. Same bargain the
-                        // reading list's tag chips struck before they folded in
-                        // here, so nothing was lost by folding them.
-                        const row = (
-                          <>
-                            {o.color && <span className={styles.optionDot} style={{ background: o.color }} aria-hidden />}
-                            <span className={styles.optionLabel}>{o.label}</span>
-                            {o.hint && <span className={styles.optionHint}>{o.hint}</span>}
-                          </>
-                        );
-                        const pick = () => {
-                          current.onChange(o.value === current.value ? null : o.value);
-                          setOpen(false);
-                        };
-                        if (!star) {
-                          return (
-                            <button
-                              key={o.value}
-                              className={`${styles.option} ${o.value === current.value ? styles.optionActive : ''}`}
-                              onClick={pick}
-                            >
-                              {row}
-                            </button>
-                          );
-                        }
-                        return (
-                          <span
-                            key={o.value}
-                            className={`${styles.option} ${styles.optionStarrable} ${o.value === current.value ? styles.optionActive : ''}`}
-                          >
-                            <button
-                              className={`${styles.starBtn} ${o.starred ? styles.starOn : ''}`}
-                              onClick={() => star(o.value)}
-                              aria-pressed={o.starred === true}
-                              title={o.starTitle ?? (o.starred
-                                ? `Remove “${o.label}” from favorites`
-                                : `Favorite “${o.label}” - articles tagged this way get flagged`)}
-                            >
-                              <StarIcon filled={o.starred === true} />
-                            </button>
-                            <button className={styles.optionPick} onClick={pick}>{row}</button>
-                          </span>
-                        );
-                      })}
-                      {filtered.length === 0 && <div className={styles.noMatch}>No matches</div>}
-                    </div>
+                    {optionsFor(current)}
                   </>
                 )}
               </div>
@@ -264,8 +395,10 @@ export default function FeedFilterBar({ groups, unread, favorites, className = '
           </div>
         )}
 
-        {/* What's actually narrowing the list, and how to stop it doing so. */}
-        {active.map(g => (
+        {/* What's actually narrowing the list, and how to stop it doing so.
+            Only while folded - spread out, each chip carries its own value and
+            its own clear, so these would be a second copy of both. */}
+        {!expanded && active.map(g => (
           <button
             key={g.id}
             className={styles.activePill}

@@ -91,3 +91,39 @@ export async function trustLevelFor(userId: string | undefined): Promise<TrustLe
 export async function limitsForUser(userId: string | undefined): Promise<ReachLimits> {
   return reachLimitsFor(await trustLevelFor(userId));
 }
+
+// ── The same ladder, as a where clause ───────────────────────────────────────
+
+/**
+ * Whose content Newt will actively put in front of a search engine: everyone at
+ * 'established' or above, which is everybody except accounts under a day old
+ * that have not enrolled in 2FA.
+ *
+ * This is trustLevelOf's rule again, written as a Prisma filter because the
+ * sitemap and the tag pages have to apply it to every author at once rather than
+ * one at a time. **The two must stay in step** — if the ladder changes what earns
+ * 'established', this changes with it. It lives here, next to the function it
+ * mirrors, precisely so that is hard to forget.
+ *
+ * Why gate this when there is deliberately no per-user "hide from search"
+ * switch? Because they are different axes. That decision was about a user's
+ * choice over their own content, and nothing here touches it: a new account's
+ * public post still has an indexable page at its own URL, still unfurls, and is
+ * still readable by anyone with the link. What it does not get is Newt handing
+ * the URL to Google, or a slot on a browsable hub page, on its first day.
+ *
+ * Registration is open and unverified. Without this, a spam run costs nothing
+ * and the damage — a domain that teaches crawlers it is full of junk — lands on
+ * every other author on the instance rather than on the spammer.
+ */
+export function indexableAuthorWhere(now: Date = new Date()) {
+  return {
+    bannedAt: null,
+    OR: [
+      // 2FA promotes immediately, exactly as it does above: it is the
+      // per-account manual cost a spam farm does not pay.
+      { totpEnabled: true },
+      { createdAt: { lte: new Date(now.getTime() - NEW_ACCOUNT_MS) } },
+    ],
+  };
+}

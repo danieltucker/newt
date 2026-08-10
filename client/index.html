@@ -9,6 +9,21 @@
          the safe-area rules in styles/tokens.css. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Newt - a new tab worth opening</title>
+    <!--SSR-HEAD-->
+    <!-- The two SSR markers are where server/src/lib/htmlShell.ts injects a
+         page's own <head> and a crawlable copy of its content, for the public
+         routes nginx proxies to Express (/u/, /a/, /t/ - see nginx.conf).
+         Without them every URL the app serves carries the title above, which is
+         why a shared link used to unfurl as a blank card everywhere.
+
+         The title above is kept for the dev server and for every route that
+         isn't injected; renderShell strips it whenever it writes a real one, so
+         a document never ends up with two.
+
+         Neither marker is load-bearing in the way the CSP-hashed script below
+         is: renderShell falls back to injecting before </head> and </body> if
+         they're missing. Moving them is fine. Renaming them is not - the
+         strings are matched literally. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/favicon/favicon-32.png" sizes="32x32">
     <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon-180.png">
@@ -58,6 +73,7 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--SSR-BODY-->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

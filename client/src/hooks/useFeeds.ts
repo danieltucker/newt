@@ -59,7 +59,7 @@ export function useFeeds(accessToken: string | null) {
 
   /**
    * Follow several at once. Categories may be named rather than identified -
-   * the starter picker offers ones that don't exist yet - so this reloads
+   * the first-run picker offers ones that don't exist yet - so this reloads
    * afterwards rather than trying to reconstruct what the server created.
    */
   const addFeeds = useCallback(async (
@@ -132,7 +132,7 @@ export function useImportableFeeds(accessToken: string | null, enabled: boolean)
   return { importable, reload: load };
 }
 
-/** The curated starter list, minus anything already followed. */
+/** The curated list, minus anything already followed. */
 export function useSuggestedFeeds(accessToken: string | null, enabled: boolean) {
   const [suggested, setSuggested] = useState<SuggestedFeed[]>([]);
   const [categories, setCategories] = useState<{ name: string; color: string }[]>([]);

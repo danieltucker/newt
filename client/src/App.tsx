@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { useKeyboardInset } from './hooks/useKeyboardInset';
 import AuthPage from './pages/AuthPage';
 import LandingPage from './pages/LandingPage';
 import NewTabPage, { ShellView } from './pages/NewTabPage';
@@ -7,12 +8,14 @@ import ProfilePage from './pages/ProfilePage';
 import PublicArticlePage from './pages/PublicArticlePage';
 import BlogPostPage from './pages/BlogPostPage';
 import FeaturePage from './pages/FeaturePage';
+import HubPage from './pages/HubPage';
 import SelfHostPage from './pages/SelfHostPage';
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
 import { parseSitePath } from './utils/siteUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
 import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
+import { parseTagPath, isRecentPath } from './utils/hubUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -59,6 +62,11 @@ function applyThemeColor(theme: ResolvedTheme) {
 export default function App() {
   const { accessToken, username, isAdmin, loading, login, register, logout, verifyTotp } = useAuth();
   const [themeSetting, setThemeSetting] = useState<ThemeSetting>(getInitialSetting);
+
+  // Publishes --kb-inset for the full-screen surfaces that have to get out of
+  // the keyboard's way on a phone. Mounted here so there is exactly one
+  // subscription to the visual viewport for the whole app.
+  useKeyboardInset();
 
   // Lightweight client-side routing (no router dep - same pathname approach as
   // the article deep links). `navigate` pushes history and re-renders in place.
@@ -121,6 +129,9 @@ export default function App() {
   // ?tab=<name> deep-links a profile tab. Validated by ProfilePage, which owns
   // the list of tabs and which of them are self-only.
   const profileTab = new URLSearchParams(search).get('tab');
+  // ?tag=<tag> narrows the profile's Posts tab - what a tag on a post links to.
+  // Unknown tags are harmless: they simply match nothing.
+  const profileTag = new URLSearchParams(search).get('tag');
 
   // The marketing pages are matched before the auth split, because they're the
   // same page either way: a signed-in visitor following a link to
@@ -134,6 +145,18 @@ export default function App() {
   }
   if (isSelfHostPath(path)) {
     return <SelfHostPage navigate={navigate} signedIn={signedIn} />;
+  }
+
+  // The cross-author hubs, matched here for the same reason the marketing pages
+  // are: they read identically signed in or out. A visitor arriving from a
+  // search result must land on the page they clicked, and bouncing a signed-in
+  // reader to their new tab would break every link the crawlable copy emits.
+  const hubTag = parseTagPath(path);
+  if (hubTag) {
+    return <HubPage hub={{ kind: 'tag', tag: hubTag }} signedIn={signedIn} navigate={navigate} />;
+  }
+  if (isRecentPath(path)) {
+    return <HubPage hub={{ kind: 'recent' }} signedIn={signedIn} navigate={navigate} />;
   }
 
   // Everything public, for a visitor who isn't signed in: a shared /u/<name>
@@ -159,6 +182,7 @@ export default function App() {
           currentUsername={username}
           navigate={navigate}
           initialTab={profileTab}
+          initialTag={profileTag}
         />
       );
     }
@@ -216,7 +240,7 @@ export default function App() {
   const view: ShellView | null =
     editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
-    : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab }
+    : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab, tag: profileTag }
     : siteDomain ? { kind: 'site', domain: siteDomain }
     : (path === '/blog' || path === '/blog/') ? { kind: 'myblog' }
     : null;

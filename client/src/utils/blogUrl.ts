@@ -44,6 +44,13 @@ export function parseBlogPath(pathname: string): BlogRef | null {
 // presented as one of our authors. A deployment whose browser origin differs
 // from the one post URLs were built with simply falls back to the hostname.
 export function blogAuthorOfUrl(raw: string): string | null {
+  return blogRefOfUrl(raw)?.username ?? null;
+}
+
+// The same check, keeping the slug as well: what a caller needs to *route* to a
+// post rather than merely credit it. blogAuthorOfUrl is written in terms of this
+// so the origin check above — the part that matters — exists once.
+export function blogRefOfUrl(raw: string): BlogRef | null {
   let url: URL;
   try {
     url = new URL(raw, window.location.origin);
@@ -51,7 +58,7 @@ export function blogAuthorOfUrl(raw: string): string | null {
     return null;
   }
   if (url.origin !== window.location.origin) return null;
-  return parseBlogPath(url.pathname)?.username ?? null;
+  return parseBlogPath(url.pathname);
 }
 
 // The author's own editor route for a post. Kept here so every blog URL the

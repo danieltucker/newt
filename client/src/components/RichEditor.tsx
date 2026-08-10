@@ -976,6 +976,47 @@ export default function RichEditor({
     else if (r.bottom > box.bottom - margin) scroller.scrollTop += r.bottom - (box.bottom - margin);
   }
 
+  // Same nudge, aimed at the caret. A collapsed range measures 0x0 in some
+  // engines, so the line it sits on stands in for it.
+  function revealCaret() {
+    const editor = ref.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return;
+    const r = range.getBoundingClientRect();
+    if (r.height || r.width) { revealMatch(range); return; }
+    const block = getBlock(editor);
+    if (!block) return;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const b = block.getBoundingClientRect();
+    const box = scroller.getBoundingClientRect();
+    const margin = 48;
+    if (b.top < box.top + margin) scroller.scrollTop -= box.top + margin - b.top;
+    else if (b.bottom > box.bottom - margin) scroller.scrollTop += b.bottom - (box.bottom - margin);
+  }
+
+  /* The keyboard opening takes the bottom of the screen away, and the host
+     shrinks to fit (see --kb-inset). The caret does not move when that happens,
+     so a line that was two thirds down the editor is now off the end of a
+     shorter scroller - which is exactly the moment you least want to lose sight
+     of it. The browser scrolls the caret into view for its own reasons; a
+     container resizing under it is not one of them. */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv || readOnly) return;
+    const onResize = () => {
+      const editor = ref.current;
+      const focus = document.activeElement;
+      if (!editor || !focus || !(editor === focus || editor.contains(focus))) return;
+      // After the host has re-laid out at the new height, not before.
+      requestAnimationFrame(revealCaret);
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, [readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
    * Recompute the hit list against the document as it stands. `keepIndex` holds
    * the user's place across an edit; otherwise the cursor returns to the first
@@ -1011,6 +1052,24 @@ export default function RichEditor({
     setFindHits({ count: ranges.length, index: next });
     revealMatch(ranges[next]);
   }
+
+  /* The find bar sticks under the formatting toolbar rather than scrolling off
+     with the text. Where "under" is has to be measured: the toolbar wraps to as
+     many rows as the width allows, and grows another one whenever the caret is
+     in a table, so the offset is not a constant anyone can write in the
+     stylesheet. Only tracked while the bar is open - the observer has nothing to
+     tell anyone the rest of the time. */
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarH, setToolbarH] = useState(0);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || !findOpen) return;
+    const measure = () => setToolbarH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [findOpen]);
 
   function openFind(withReplace = false) {
     if (!findable) return;
@@ -2695,7 +2754,7 @@ export default function RichEditor({
   return (
     <>
       {/* ── Utility bar ── */}
-      <div className={styles.toolbar} role="toolbar" aria-label="Formatting">
+      <div className={styles.toolbar} ref={toolbarRef} role="toolbar" aria-label="Formatting">
         {inlineBtns}
         <span className={styles.tbSep} />
         <TBtn title="Heading 1" onRun={() => applyBlock('h1')}>H1</TBtn>
@@ -2739,9 +2798,20 @@ export default function RichEditor({
       {/* ── Find & replace ──
           Sits under the toolbar rather than floating over the text: it is open
           for as long as a search lasts, and a panel that covers the words being
-          searched is its own obstacle. */}
+          searched is its own obstacle.
+
+          And it stays under it. The toolbar is sticky; this was not, so on a
+          host where the page scrolls (the blog editor) stepping through hits
+          scrolled the field you were typing in off the top of the screen while
+          the bold button stayed put. Its resting place is the toolbar's, plus
+          however tall the toolbar currently is. */}
       {findOpen && (
-        <div className={styles.findBar} role="search" aria-label="Find and replace">
+        <div
+          className={styles.findBar}
+          style={{ top: `calc(var(--editor-toolbar-top, 0px) + ${toolbarH}px)` }}
+          role="search"
+          aria-label="Find and replace"
+        >
           <button
             className={styles.findToggle}
             onClick={() => setReplaceOpen(o => !o)}

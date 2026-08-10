@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RichEditor from '../components/RichEditor';
+import TagChipInput from '../components/TagChipInput';
 import { POST_VIS_META, VIS_ORDER } from '../components/VisibilityMeta';
 import { BlogPost, CommentVisibility } from '../types';
 import { createPost, updatePost, loadOwnPost, deletePost } from '../hooks/useBlog';
@@ -58,6 +59,10 @@ function textLength(html: string): number {
   return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().length;
 }
 
+// Keep in step with MAX_POST_TAGS in server/src/lib/blog.ts. Enforced there;
+// this stops the field accepting a ninth tag the save would then bounce.
+const MAX_POST_TAGS = 8;
+
 // How long typing has to pause before htmlIsBlank/textLength are run over the
 // post again. Short enough that the counter feels live, long enough that a
 // burst of typing costs one pass rather than one per character.
@@ -78,13 +83,15 @@ interface Snapshot {
   visibility: CommentVisibility;
   commentsEnabled: boolean;
   heroImage: string;
+  tags: string[];
 }
 
 function snapshotOf(
   title: string, body: string,
   visibility: CommentVisibility, commentsEnabled: boolean, heroImage: string,
+  tags: string[],
 ): Snapshot {
-  return { title: title.trim(), body, visibility, commentsEnabled, heroImage };
+  return { title: title.trim(), body, visibility, commentsEnabled, heroImage, tags };
 }
 
 function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
@@ -92,7 +99,13 @@ function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
     && a.visibility === b.visibility
     && a.commentsEnabled === b.commentsEnabled
     && a.heroImage === b.heroImage
+    && sameTags(a.tags, b.tags)
     && a.body === b.body;
+}
+
+// Order counts: the author chose it, and reordering is an edit worth saving.
+function sameTags(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
@@ -249,6 +262,10 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
 
   const [title, setTitle] = useState(seed?.title ?? '');
   const [heroImage, setHeroImage] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  // TagChipInput keeps the half-typed tag out here so the surface can decide
+  // what to do with it - see the note beside the field.
+  const [tagInput, setTagInput] = useState('');
   const [visibility, setVisibility] = useState<CommentVisibility>('private');
   const [commentsEnabled, setCommentsEnabled] = useState(true);
   // Seeded rather than empty for a repost: the card is real content the author
@@ -295,13 +312,16 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
         setPost(p);
         setTitle(p.title);
         setHeroImage(p.heroImage);
+        setTags(p.tags);
         setVisibility(p.visibility);
         setCommentsEnabled(p.commentsEnabled);
         bodyRef.current = p.body;
         setBodyEmpty(htmlIsBlank(p.body));
         setTextLen(textLength(p.body));
         setEmbedUrls(embeddedUrls(p.body));
-        savedRef.current = snapshotOf(p.title, p.body, p.visibility, p.commentsEnabled, p.heroImage);
+        savedRef.current = snapshotOf(
+          p.title, p.body, p.visibility, p.commentsEnabled, p.heroImage, p.tags,
+        );
         setState('ready');
       })
       .catch(() => { if (!cancelled) setState('notfound'); });
@@ -362,7 +382,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   // load/save time so Save can be greyed out when there is nothing new to send.
   // `bodyRev` is not read here - it is what causes the render that recomputes
   // it, since a dependency array can't watch a ref.
-  const current = snapshotOf(title, bodyRef.current, visibility, commentsEnabled, heroImage);
+  const current = snapshotOf(title, bodyRef.current, visibility, commentsEnabled, heroImage, tags);
   // A brand-new post has no server copy yet, so anything in it counts as unsaved.
   const dirty = savedRef.current === null || !sameSnapshot(current, savedRef.current);
 
@@ -390,20 +410,24 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
     setBusy(true);
     setError('');
     try {
-      const payload = { title: title.trim(), body: bodyRef.current, visibility: vis, commentsEnabled, heroImage };
+      const payload = { title: title.trim(), body: bodyRef.current, visibility: vis, commentsEnabled, heroImage, tags };
       const saved = effectiveId
         ? await updatePost(effectiveId, payload)
         : await createPost(payload);
       setPost(saved);
       setCreatedId(saved.id);
       setHeroImage(saved.heroImage);
+      // The server lowercases and dedupes, so what it stored may differ from
+      // what was typed - taking its answer back is what stops the next
+      // comparison reading as an unsaved edit forever.
+      setTags(saved.tags);
       setVisibility(saved.visibility);
       setSavedAt(new Date().toISOString());
       // Snapshot the state the next render will see - the server echoes back
-      // visibility and heroImage, but the body stays as typed (RichEditor is
-      // uncontrolled, so a server-sanitized copy would never reach the editor).
+      // visibility, heroImage and tags, but the body stays as typed (RichEditor
+      // is uncontrolled, so a server-sanitized copy would never reach the editor).
       savedRef.current = snapshotOf(
-        title, bodyRef.current, saved.visibility, commentsEnabled, saved.heroImage,
+        title, bodyRef.current, saved.visibility, commentsEnabled, saved.heroImage, saved.tags,
       );
       // Reflect a server-side re-slug (a renamed draft) without a reload
       if (!effectiveId) window.history.replaceState({}, '', `/blog/${saved.id}`);
@@ -453,7 +477,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
     // Restart on any edit. `current` is a fresh object every render and can't be
     // a dependency; these are the things it is built from, with bodyRev
     // standing in for the body itself.
-  }, [autosaves, canSave, bodyRev, title, visibility, commentsEnabled, heroImage]);
+  }, [autosaves, canSave, bodyRev, title, visibility, commentsEnabled, heroImage, tags]);
 
   // What the debounce still owes, sent on the way out. Rebuilt each render
   // because the cleanup that calls it runs once, long after this render's
@@ -466,7 +490,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   flushRef.current = autosaves && canSave
     ? () => {
         if (!effectiveId && !claimCreate()) return;
-        const payload = { title: title.trim(), body: bodyRef.current, visibility, commentsEnabled, heroImage };
+        const payload = { title: title.trim(), body: bodyRef.current, visibility, commentsEnabled, heroImage, tags };
         const p = effectiveId ? updatePost(effectiveId, payload) : createPost(payload);
         p.catch(() => {});
       }
@@ -592,6 +616,26 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
           // the cursor belongs where the author still has something to add.
           autoFocus={isNew && !seed}
         />
+
+        {/* Under the title, above the link: a tag is a fact about the post,
+            not a formatting decision, so it belongs with the other things that
+            describe it rather than beside the Save button.
+
+            The half-typed tag lives in tagInput and is committed by Tab, comma,
+            Enter or blur - so clicking Save (which blurs first) picks up a word
+            still sitting in the box, rather than dropping it. */}
+        <div className={styles.tagsBlock}>
+          <TagChipInput
+            tags={tags}
+            onChange={next => setTags(next.slice(0, MAX_POST_TAGS))}
+            inputValue={tagInput}
+            onInputChange={setTagInput}
+            placeholder="Tags - Tab or comma to add"
+          />
+          {tags.length >= MAX_POST_TAGS && (
+            <div className={styles.tagsHint}>That’s the {MAX_POST_TAGS}-tag limit.</div>
+          )}
+        </div>
 
         <div className={styles.urlLine}>
           {post?.slug

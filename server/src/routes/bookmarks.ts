@@ -3,10 +3,11 @@ import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
 import { discoverFeed } from '../lib/feedDiscovery';
-import { addFeedSubscription } from '../lib/feedSubscriptions';
+import { addFeedSubscription, MAX_FEEDS_PER_USER } from '../lib/feedSubscriptions';
+import { blockedRuleFor, blockedMessage } from '../lib/feedBlocklist';
+import { canonicalFeedKey } from '../lib/feedUtils';
 import { feedUnreadCount } from '../lib/unread';
 import { perUserLimiter } from '../lib/rateLimit';
-import logger from '../lib/logger';
 
 const router = Router();
 router.use(requireAuth);
@@ -128,34 +129,104 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       position: count,
     },
   });
+  // No feed work here. Discovery is an outbound fetch of an attacker-chosen host
+  // and takes seconds; the tile should appear the moment it is saved. The client
+  // asks /discover-feed straight afterwards and prompts from the answer.
   res.status(201).json(bookmark);
-
-  // Fire-and-forget: discover the site's RSS feed and subscribe to it, so its
-  // articles turn up in the feed automatically. Manageable from the feed
-  // manager; disabled entirely when the user turns RSS off in settings.
-  autoAddFeed(req.userId!, bookmark.id, name, domain).catch(err =>
-    logger.warn(err, 'Feed auto-add failed')
-  );
 });
 
-async function autoAddFeed(userId: string, bookmarkId: string, bookmarkName: string, domain: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { settings: true } });
+/**
+ * Does this bookmark's site publish a feed the user could follow?
+ *
+ * This used to subscribe on its own the moment a bookmark was saved, which
+ * meant adding a link to a shop or a bank quietly filled the river with its
+ * blog. Following a publisher is a reading decision, so it is now asked rather
+ * than assumed — the client shows the answer as a prompt with a Follow button.
+ *
+ * Answers `{ offer: null }` for every "nothing to ask about" case rather than an
+ * error: no feed, RSS turned off, the address is blocklisted, or the user
+ * already follows it. The caller has one thing to decide (prompt or don't) and
+ * a 404 for "this site has no feed" would make an ordinary outcome look broken.
+ *
+ * POST, not GET, because it writes what it learns — `feedUrl` drives the tile's
+ * unread badge whether or not the offer is taken — and because it belongs on
+ * the per-account write limiter, being the one route here that reaches out to
+ * the open internet.
+ */
+router.post('/:id/discover-feed', async (req: AuthRequest, res: Response): Promise<void> => {
+  const bookmark = await prisma.bookmark.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!bookmark) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { settings: true } });
   const settings = user?.settings as { rssEnabled?: boolean } | null;
-  if (settings?.rssEnabled === false) return;
+  if (settings?.rssEnabled === false) { res.json({ offer: null }); return; }
 
-  const feedUrl = await discoverFeed(domain);
-  if (!feedUrl) return;
+  // Already known (the periodic check-feed sweep discovers too) means no second
+  // round trip. Recorded either way, including the miss, so a site with no feed
+  // isn't re-probed on every sweep.
+  let feedUrl = bookmark.feedUrl ?? null;
+  if (!feedUrl) {
+    feedUrl = await discoverFeed(bookmark.domain);
+    await prisma.bookmark.updateMany({
+      where: { id: bookmark.id, userId: req.userId! },
+      data: { feedUrl, feedCheckedAt: new Date() },
+    });
+  }
+  if (!feedUrl) { res.json({ offer: null }); return; }
 
-  // Remembered on the bookmark whatever happens next: it drives the tile's
-  // unread badge, and it is what makes the site offerable in the manager's
-  // "from your bookmarks" list if the subscription is later removed.
-  await prisma.bookmark.updateMany({ where: { id: bookmarkId, userId }, data: { feedUrl } });
+  if (await blockedRuleFor(feedUrl)) { res.json({ offer: null }); return; }
+
+  // Canonical, for the same reason /feeds does it: the discovered address and a
+  // subscription the user typed themselves are often the same feed spelled two
+  // ways, and offering to follow something they already follow is noise.
+  const key = canonicalFeedKey(feedUrl);
+  const existing = await prisma.feedSubscription.findMany({
+    where: { userId: req.userId! },
+    select: { url: true },
+  });
+  if (existing.some(s => canonicalFeedKey(s.url) === key)) { res.json({ offer: null }); return; }
+
+  // The publisher's own name for itself if we've ever fetched the feed, else the
+  // name on the tile — which is the name the user just typed, so never worse
+  // than a hostname.
+  const feed = await prisma.feed.findUnique({ where: { canonicalKey: key }, select: { title: true } });
+  res.json({ offer: { url: feedUrl, title: feed?.title || bookmark.name } });
+});
+
+/**
+ * Take the offer above: follow the feed found for this bookmark.
+ *
+ * Reads the URL off the bookmark rather than the request body, so accepting a
+ * prompt can only ever subscribe to the address the server itself discovered.
+ * The blocklist is re-checked here because /discover-feed and this call are
+ * separate requests and a rule can land between them.
+ */
+router.post('/:id/follow-feed', async (req: AuthRequest, res: Response): Promise<void> => {
+  const bookmark = await prisma.bookmark.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!bookmark) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const feedUrl = bookmark.feedUrl;
+  if (!feedUrl) { res.status(404).json({ error: 'No feed found for that site' }); return; }
+
+  const blocked = await blockedRuleFor(feedUrl);
+  if (blocked) { res.status(403).json({ error: blockedMessage(blocked) }); return; }
+
+  const count = await prisma.feedSubscription.count({ where: { userId: req.userId! } });
+  if (count >= MAX_FEEDS_PER_USER) {
+    res.status(400).json({ error: `You can follow up to ${MAX_FEEDS_PER_USER} feeds` });
+    return;
+  }
 
   // Lands Uncategorised — a bookmark's folder says where the *link* belongs,
   // which is no guide at all to how its publisher should be filed in a reader.
   // addFeedSubscription dedupes canonically and respects the per-user cap.
-  await addFeedSubscription(userId, feedUrl, bookmarkName);
-}
+  const added = await addFeedSubscription(req.userId!, feedUrl, bookmark.name);
+
+  // Pull it in now so the river isn't missing what was just followed.
+  ensureFeeds([feedUrl]).then(feeds => refreshStaleFeeds(feeds)).catch(() => {});
+
+  res.json({ ok: true, added, feedUrl });
+});
 
 router.put('/reorder', async (req: AuthRequest, res: Response): Promise<void> => {
   const items: { id: string; position: number }[] = req.body;

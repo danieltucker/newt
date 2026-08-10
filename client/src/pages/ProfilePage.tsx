@@ -12,6 +12,7 @@ import { profilePathFor } from '../utils/profileUrl';
 import { blogPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
 import PostBody from '../components/PostBody';
+import PostTags from '../components/PostTags';
 import SiteFooter from '../components/SiteFooter';
 import FollowBlogButton from '../components/FollowBlogButton';
 import FriendsPanel from '../components/FriendsPanel';
@@ -46,6 +47,9 @@ interface Props {
   onOpenThread?: (url: string, commentId?: string) => void;
   /** Raw ?tab= value from the URL. Unrecognised values fall back to Posts. */
   initialTab?: string | null;
+  /** Raw ?tag= value from the URL - narrows the Posts tab. A tag the author has
+   *  never used simply matches nothing, which is the honest answer. */
+  initialTag?: string | null;
   /** Open Settings on the Account section, where the photo, cover and links are
    *  edited. Absent standalone, where there is no settings panel to open - so the
    *  avatar's Edit affordance appears only inside the app shell. */
@@ -75,6 +79,13 @@ const DEFAULT_TAB: Tab = 'posts';
 function tabFromParam(raw: string | null | undefined): Tab {
   if (raw === 'content') return 'history';
   return TABS.includes(raw as Tab) ? (raw as Tab) : DEFAULT_TAB;
+}
+
+// Mirrors the server's normalizeTags for the single-tag case: a link may have
+// been typed or copied with a '#', in any case, and it has to find the posts
+// stored under the bare lowercase word. '' means no filter.
+function normalizeTagParam(raw: string | null | undefined): string {
+  return (raw ?? '').trim().replace(/^#+/, '').trim().toLowerCase();
 }
 
 function initialOf(name: string): string {
@@ -112,10 +123,13 @@ function Shell({ embedded, children }: { embedded?: boolean; children: ReactNode
   );
 }
 
-export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, onOpenThread, initialTab, onEditProfile }: Props) {
+export default function ProfilePage({ username, accessToken, currentUsername, navigate, embedded, library, onOpenArticle, onOpenThread, initialTab, initialTag, onEditProfile }: Props) {
   const [state, setState] = useState<LoadState>('loading');
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromParam(initialTab));
+  // Normalised the way the server stores tags, so a link carrying "#News" and a
+  // chip carrying "news" are the same filter. '' is "no filter", a real state.
+  const [tag, setTag] = useState(() => normalizeTagParam(initialTag));
   // Bumped to re-run the header fetch without clearing what's on screen - see
   // the profile-updated listener below.
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -123,6 +137,15 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
   // Following a ?tab= link while already on a profile changes the prop but not
   // the mounted state, so the tab has to follow it.
   useEffect(() => { setTab(tabFromParam(initialTab)); }, [initialTab, username]);
+  useEffect(() => { setTag(normalizeTagParam(initialTag)); }, [initialTag, username]);
+
+  // Picking a tag rewrites the URL rather than only the state, so the filtered
+  // view is a place: shareable, and something the back button can leave.
+  const selectTag = useCallback((next: string) => {
+    setTag(next);
+    setTab('posts');
+    navigate(profilePathFor(username, { tag: next || undefined }));
+  }, [navigate, username]);
 
   // A different profile is a different page: drop the old header rather than
   // showing it under the new name while the fetch below is in flight. Declared
@@ -257,7 +280,13 @@ export default function ProfilePage({ username, accessToken, currentUsername, na
           />
 
           {tab === 'posts' && (
-            <PostsTab username={profile.username} authKey={accessToken} onOpen={goPost} />
+            <PostsTab
+              username={profile.username}
+              authKey={accessToken}
+              onOpen={goPost}
+              tag={tag}
+              onSelectTag={selectTag}
+            />
           )}
           {tab === 'history' && (
             <HistoryTab username={profile.username} authKey={accessToken}
@@ -715,6 +744,9 @@ function PostCard({ post, onOpen }: { post: BlogPostSummary; onOpen: (slug: stri
       </div>
       <div className={styles.postTitle}>{post.title}</div>
       {post.excerpt && <div className={styles.postExcerpt}>{post.excerpt}</div>}
+      {/* Display only - the card is itself a button, so a tag in here that led
+          somewhere else would be a second destination inside the first. */}
+      <PostTags tags={post.tags} className={styles.postCardTags} />
       <div className={styles.commentTime}>{relTime(post.publishedAt)}</div>
     </button>
   );
@@ -767,7 +799,12 @@ function HistoryTab({ username, authKey, onOpenComment, onOpenPost }: {
 //
 // Long posts are clamped to a screen's worth so the tab stays scannable; the
 // permalink is where you go to read one properly and to reply to it.
-function PostArticle({ post, onOpen }: { post: BlogPost; onOpen: (slug: string) => void }) {
+function PostArticle({ post, onOpen, tag, onSelectTag }: {
+  post: BlogPost;
+  onOpen: (slug: string) => void;
+  tag: string;
+  onSelectTag: (tag: string) => void;
+}) {
   return (
     <article className={styles.postFull}>
       {post.heroImage && <img className={styles.postFullHero} src={post.heroImage} alt="" />}
@@ -786,52 +823,98 @@ function PostArticle({ post, onOpen }: { post: BlogPost; onOpen: (slug: string) 
         {post.title}
       </button>
 
+      {/* Live here rather than only on the reader: this tab *is* the author's
+          index, so filtering it is the thing a tag is for. */}
+      <PostTags
+        tags={post.tags}
+        active={tag}
+        onSelect={onSelectTag}
+        className={styles.postFullTags}
+      />
+
       <PostBody html={post.body} clamp onExpand={() => onOpen(post.slug)} />
     </article>
   );
 }
 
 // ── Posts tab ────────────────────────────────────────────────────────────────
-function PostsTab({ username, authKey, onOpen }: {
+function PostsTab({ username, authKey, onOpen, tag, onSelectTag }: {
   username: string;
   authKey: string | null;
   onOpen: (slug: string) => void;
+  /** The tag being filtered on, '' for none. */
+  tag: string;
+  onSelectTag: (tag: string) => void;
 }) {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const base = `/api/v1/blogs/${encodeURIComponent(username)}/posts`;
+  // The tag filter goes to the server rather than sifting the loaded page: this
+  // list is paged, so filtering what happens to be loaded would report "no
+  // posts" for a tag whose posts are two pages down. Both parameters are built
+  // through one URL so the cursor can't land on the wrong side of the '?'.
+  const listUrl = useCallback((nextCursor?: string) => {
+    const query = new URLSearchParams();
+    if (tag) query.set('tag', tag);
+    if (nextCursor) query.set('cursor', nextCursor);
+    const search = query.toString();
+    return `/api/v1/blogs/${encodeURIComponent(username)}/posts${search ? `?${search}` : ''}`;
+  }, [username, tag]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(base)
+    // A tag change is a different list, not more of this one - the old cursor
+    // points into the unfiltered sequence and would page it in underneath.
+    setCursor(null);
+    apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(listUrl())
       .then(d => { if (!cancelled) { setPosts(d.posts); setCursor(d.nextCursor); } })
       .catch(() => { if (!cancelled) setPosts([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [base, authKey]);
+  }, [listUrl, authKey]);
 
   async function loadMore() {
     if (!cursor) return;
     setLoadingMore(true);
     try {
-      const d = await apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(
-        `${base}?cursor=${encodeURIComponent(cursor)}`);
+      const d = await apiGet<{ posts: BlogPost[]; nextCursor: string | null }>(listUrl(cursor));
       setPosts(prev => [...prev, ...d.posts]);
       setCursor(d.nextCursor);
     } catch { /* leave as-is */ }
     setLoadingMore(false);
   }
 
-  if (loading) return <div className={styles.centered}>Loading…</div>;
-  if (posts.length === 0) return <div className={styles.centered}>No posts yet.</div>;
+  // The filter has to be visible and reversible from here: arriving on a
+  // ?tag= link, an empty result would otherwise read as "this author has
+  // written nothing" rather than "nothing under this tag".
+  const banner = tag ? (
+    <div className={styles.tagFilter}>
+      <span className={styles.tagFilterLabel}>Tagged <strong>#{tag}</strong></span>
+      <button className={styles.tagFilterClear} onClick={() => onSelectTag('')}>
+        Show all posts
+      </button>
+    </div>
+  ) : null;
+
+  if (loading) return <>{banner}<div className={styles.centered}>Loading…</div></>;
+  if (posts.length === 0) {
+    return (
+      <>
+        {banner}
+        <div className={styles.centered}>{tag ? 'No posts with that tag.' : 'No posts yet.'}</div>
+      </>
+    );
+  }
 
   return (
     <div className={styles.list}>
-      {posts.map(p => <PostArticle key={p.id} post={p} onOpen={onOpen} />)}
+      {banner}
+      {posts.map(p => (
+        <PostArticle key={p.id} post={p} onOpen={onOpen} tag={tag} onSelectTag={onSelectTag} />
+      ))}
       {cursor && (
         <button className={styles.moreBtn} disabled={loadingMore} onClick={loadMore}>
           {loadingMore ? 'Loading…' : 'Load more'}
@@ -842,21 +925,40 @@ function PostsTab({ username, authKey, onOpen }: {
 }
 
 // ── One comment, as a card ───────────────────────────────────────────────────
+// The whole card is a link into the conversation this comment came from, and it
+// says so three ways: the article's title behaves like a link (it takes the
+// accent and underlines when the card is pointed at or focused), the comment
+// itself sits behind a quote rule so it reads as "this reply, on that article"
+// rather than one slab of text under a heading, and the foot names what a click
+// will do. The hint stays visible when nothing is hovering, because a touch
+// screen never hovers and the affordance can't be hover-only.
 function CommentCard({ comment: c, onOpen }: {
   comment: ProfileComment;
   onOpen: (url: string, commentId: string) => void;
 }) {
+  const host = hostOf(c.articleUrl);
   return (
     <button className={styles.commentCard} onClick={() => onOpen(c.articleUrl, c.id)}>
-      <div className={styles.commentTop}>
-        <span className={styles.articleTitle}>{c.articleTitle || hostOf(c.articleUrl)}</span>
-        <span className={styles.dot}>·</span>
-        <span className={styles.host}>{hostOf(c.articleUrl)}</span>
+      <div className={styles.commentSource}>
+        <span className={styles.sourceLabel}>on</span>
+        <span className={styles.articleTitle}>{c.articleTitle || host}</span>
+        <span className={styles.dot} aria-hidden>·</span>
+        <span className={styles.host}>{host}</span>
         {c.visibility === 'friends' && <span className={styles.chip}>Friends</span>}
       </div>
-      {c.title && <div className={styles.commentTitle}>{c.title}</div>}
-      <div className={`${styles.commentBody} note-embed-read`} dangerouslySetInnerHTML={{ __html: c.body }} />
-      <div className={styles.commentTime}>{relTime(c.createdAt)}</div>
+
+      <div className={styles.commentQuote}>
+        {c.title && <div className={styles.commentTitle}>{c.title}</div>}
+        <div className={`${styles.commentBody} note-embed-read`} dangerouslySetInnerHTML={{ __html: c.body }} />
+      </div>
+
+      <div className={styles.commentFoot}>
+        <span className={styles.commentTime}>{relTime(c.createdAt)}</span>
+        <span className={styles.openHint}>
+          Read the thread
+          <span className={styles.openHintArrow} aria-hidden>→</span>
+        </span>
+      </div>
     </button>
   );
 }

@@ -164,6 +164,127 @@
   flex-shrink: 0;
 }
 
+/* Sits at the end of the folder chips, dashed so it reads as an action rather
+   than as one more folder to pick from. */
+.newFolderChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.newFolderChip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.newFolder {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface2);
+  animation: slide 0.18s ease;
+}
+
+.newFolderInput {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 12px;
+  min-height: 40px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.newFolderInput:focus { border-color: var(--accent); }
+.newFolderInput::placeholder { color: var(--muted); }
+
+.swatchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, box-shadow 0.1s;
+}
+
+.swatch:hover { transform: scale(1.12); }
+
+.swatchSelected {
+  border-color: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.folderError {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #ff6b6b;
+}
+
+.newFolderActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.newFolderCancel,
+.newFolderCreate {
+  padding: 0 14px;
+  min-height: 36px;
+  border-radius: var(--ctl-r);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: filter 0.15s, background 0.15s, transform 0.12s;
+}
+
+.newFolderCancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.newFolderCancel:hover { background: var(--surface); }
+
+.newFolderCreate {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.newFolderCreate:hover { filter: brightness(1.08); }
+.newFolderCreate:active { transform: scale(0.97); }
+.newFolderCreate:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+@keyframes slide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

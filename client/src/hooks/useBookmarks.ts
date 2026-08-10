@@ -2,6 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../services/api';
 import { Bookmark } from '../types';
 
+/** A feed found behind a freshly added bookmark, pending the user's yes or no. */
+export interface FeedOffer {
+  url: string;
+  /** The publisher's name for itself, falling back to the name on the tile. */
+  title: string;
+}
+
 export function useBookmarks(accessToken: string | null, folderId: string | null) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,10 +69,34 @@ export function useBookmarks(accessToken: string | null, folderId: string | null
     setBookmarks(prev => prev.map(b => b.id === id ? updated : b));
   }, []);
 
+  // Whether the site behind a bookmark publishes a feed worth offering. Slow by
+  // nature - the server is fetching the site to find out - and never throws: a
+  // failed lookup means no prompt, which is exactly what "no feed" looks like.
+  const discoverFeed = useCallback(async (id: string): Promise<FeedOffer | null> => {
+    try {
+      const res = await apiFetch(`/api/v1/bookmarks/${id}/discover-feed`, { method: 'POST' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.offer ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Take the offer. The address is read from the bookmark server-side, so this
+  // sends nothing but the id.
+  const followFeed = useCallback(async (id: string) => {
+    const res = await apiFetch(`/api/v1/bookmarks/${id}/follow-feed`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || "Couldn't follow that feed");
+    }
+  }, []);
+
   const markVisited = useCallback(async (id: string) => {
     setBookmarks(prev => prev.map(b => b.id === id ? { ...b, lastVisitedAt: new Date().toISOString(), unreadCount: 0 } : b));
     apiFetch(`/api/v1/bookmarks/${id}/visited`, { method: 'POST' }).catch(() => {});
   }, []);
 
-  return { bookmarks, setBookmarks, loading, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, markVisited, reload: load };
+  return { bookmarks, setBookmarks, loading, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, discoverFeed, followFeed, markVisited, reload: load };
 }

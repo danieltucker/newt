@@ -501,6 +501,16 @@ model FeedItem {
   content    String?
   imageUrl   String?
   categories String[]  @default([])
+  // Weighted tsvector over title (A) and snippet (B), maintained by Postgres as
+  // a GENERATED ALWAYS ... STORED column — see migration 20260810160000 for why
+  // it's generated rather than triggered, and what's deliberately not in it.
+  //
+  // Declared here only so `migrate` doesn't read the column as drift and offer
+  // to drop it. Prisma has no tsvector type, and Unsupported fields can't be
+  // selected or written through the client, which is exactly right on both
+  // counts: nothing may write a generated column, and no query should ever ship
+  // this to a caller. It's read through $queryRaw in routes/feeds.ts.
+  searchVector Unsupported("tsvector")?
   dismissals DismissedFeedItem[]
   reads      ReadFeedItem[]
 
@@ -513,6 +523,7 @@ model FeedItem {
   // Same shape for "anything new in these feeds since <time>", which the feed
   // polls for while it's open.
   @@index([feedId, firstSeenAt])
+  @@index([searchVector], type: Gin)
 }
 
 // "I'm done with this article" on a shared item. Per-user and, since v1.11.0,
@@ -639,6 +650,11 @@ model BlogPost {
   // "" means none. Stored relative for the same reason embedded images are: it
   // survives the dev origin, a LAN address and the public domain unchanged.
   heroImage       String   @default("")
+  // The author's own labels for the post, lowercased and deduped on write (see
+  // normalizeTags). A list rather than a relation for the same reason
+  // FeedItem.categories is one: a tag here is a word, not a record — nothing
+  // hangs off it, and the whole set is read and rewritten with the post.
+  tags            String[] @default([])
   // 'public' (anyone, incl. logged-out) | 'friends' (accepted friends) | 'private' (author only)
   visibility      String   @default("private")
   commentsEnabled Boolean  @default(true)
@@ -651,6 +667,13 @@ model BlogPost {
   @@unique([userId, slug])
   @@index([userId, publishedAt])
   @@index([visibility, publishedAt])
+  // The tags column shipped without an index, on the reasoning that the only
+  // query filtering on it was one author's own post list — already narrowed to a
+  // couple of hundred rows by userId. The public tag page (/t/<tag>) broke that
+  // premise: it asks "every public post carrying this word", across every
+  // author, which without this is a sequential scan of the whole table on a
+  // route a crawler will walk exhaustively.
+  @@index([tags(ops: ArrayOps)], type: Gin)
 }
 
 // An image embedded in a note, comment or blog post. Bytes live in the database

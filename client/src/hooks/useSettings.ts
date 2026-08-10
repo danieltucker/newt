@@ -30,6 +30,19 @@ export interface UserSettings {
   // each ungrouped note, so folders and loose notes can be interleaved freely.
   noteTreeOrder?: string[];
   noteSidebarWidth?: number;   // width (px) of the notes console tree column
+  /**
+   * Which revision of the notes tree this copy is. Handed out by the server and
+   * echoed back on every notes write so it can tell an edit made against the
+   * current tree from one made against whatever an old tab still has on screen.
+   * See utils/noteMerge and the PATCH handler in server routes/settings.
+   */
+  notesRev?: number;
+  /**
+   * Set on a PATCH *reply* only, never stored: the write was reconciled against
+   * newer notes rather than taken as sent, and the caller should adopt what
+   * came back.
+   */
+  notesMerged?: boolean;
   articleOpenMode: 'new-tab' | 'same-tab' | 'iframe';
   readingListOpenMode?: 'new-tab' | 'same-tab' | 'reader';
   bookmarkOpenMode?: 'same-tab' | 'new-tab';
@@ -71,6 +84,7 @@ const DEFAULTS: UserSettings = {
   noteFolders: [],
   noteTreeOrder: [],
   noteSidebarWidth: 210,
+  notesRev: 0,
   articleOpenMode: 'new-tab',
   readingListOpenMode: 'new-tab',
   bookmarkOpenMode: 'same-tab',
@@ -103,11 +117,27 @@ export function useSettings(accessToken: string | null) {
       .catch(() => setLoaded(true));
   }, [accessToken]);
 
+  /**
+   * Read the settings again. Everything here is fetched once, at sign-in, which
+   * is right for a preference and wrong for the notes: a tab open since this
+   * morning is holding this morning's notes, and opening the console in it is
+   * the moment that matters. Callers do this before showing a surface whose
+   * content another device may have moved on from.
+   */
+  const refresh = useCallback(async () => {
+    const s = await apiGet<UserSettings>('/api/v1/settings');
+    setSettings(s);
+    return s;
+  }, []);
+
   const update = useCallback(async (patch: Partial<UserSettings>) => {
     const updated = await apiPatch<UserSettings>('/api/v1/settings', patch);
-    setSettings(updated);
+    // `notesMerged` describes the request, not the account - keeping it in
+    // state would leave the flag raised over every later render.
+    const { notesMerged: _merged, ...stored } = updated;
+    setSettings(stored);
     return updated;
   }, []);
 
-  return { settings, update, loaded };
+  return { settings, update, refresh, loaded };
 }

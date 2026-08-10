@@ -116,6 +116,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Below the byline's rule, above the piece. Pulled up a little so the tags read
+   as part of the post's masthead rather than as the first line of the body. */
+.tags { margin: -8px 0 26px; }
+
 .authorBtn {
   display: inline-flex;
   align-items: center;

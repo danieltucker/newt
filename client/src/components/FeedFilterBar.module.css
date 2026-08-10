@@ -69,9 +69,89 @@
   background: color-mix(in oklab, currentColor 16%, transparent);
 }
 
+/* ── Spread out: a chip per group ───────────────────────── */
+
+/* Its own flex box rather than letting the chips sit loose in .left, so the
+   groups read as one set of related controls next to the unread and favorites
+   chips rather than as five equal siblings. Tighter than .left's gap for the
+   same reason. */
+.filterSet {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* An active chip is a span with a trigger and a clear inside it (nesting a
+   button in a button is invalid markup), so the padding it would have carried
+   moves onto those two - otherwise the halves of the chip aren't clickable to
+   its edges, which is exactly where you aim. */
+.splitChip {
+  padding: 0;
+  gap: 0;
+  max-width: 260px;
+}
+
+.splitTrigger,
+.chipClear {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.splitTrigger {
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  border-radius: 999px 0 0 999px;
+}
+
+/* "Site" then what it's set to. The group name stays because a bare value is
+   ambiguous the moment two groups can hold the same word - a site and a topic
+   both called "Design" is not a stretch. */
+.chipLabel {
+  font-weight: 500;
+  opacity: 0.72;
+  flex: none;
+}
+
+.chipLabel::after { content: ':'; }
+
+.chipValue {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipClear {
+  padding: 0 10px 0 5px;
+  border-radius: 0 999px 999px 0;
+  opacity: 0.55;
+  flex: none;
+  transition: opacity 0.12s;
+}
+
+.chipClear:hover { opacity: 1; }
+
 /* ── The dropdown ───────────────────────────────────────── */
 
 .filterWrap { position: relative; }
+
+/* The last group's panel is the one with a right edge to run off - the set
+   starts at the left of the bar, so everything before it has room. Anchoring
+   from the right keeps it inside the window at the widths just above EXPAND_AT,
+   where the bar reaches most of the way across. */
+.filterSet .filterWrap:last-child .panel {
+  left: auto;
+  right: 0;
+}
 
 /* The chip this hangs off is the last thing in a wrapping row, so on a phone it
    is usually sitting near the right edge - and a 250px panel anchored to its
@@ -383,6 +463,18 @@
   }
 
   .activePill { padding-right: 11px; }
+
+  /* .chip's padding above lands on the span, which has none to give - the two
+     buttons inside it own the edges. Restated on them so a chip on a landscape
+     tablet (wide enough to spread out, no pointer to hover) is as easy to hit
+     as the ones beside it. */
+  .splitChip { padding: 0; }
+  .splitTrigger { padding-left: 14px; }
+
+  .chipClear {
+    padding: 0 13px 0 6px;
+    opacity: 1;
+  }
 
   .chipCount { font-size: 11.5px; }
 

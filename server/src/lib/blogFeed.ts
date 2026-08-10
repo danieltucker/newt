@@ -75,6 +75,11 @@ export interface FeedItemData {
   // absolutizing happens only where the value leaves this deployment (the RSS
   // rendering, which an external reader resolves against nothing of ours).
   heroImage: string;
+  // The author's tags. They go out as <category> to an external reader and land
+  // in FeedItem.categories internally, which is where every other feed's topics
+  // live - so a tag an author typed is the same kind of thing as a topic the
+  // Guardian ships, and the river's topic filter finds both.
+  tags: string[];
 }
 
 // A hero lives outside the post body, so an external reader following the XML
@@ -108,7 +113,8 @@ export function renderRss(feed: {
       <title>${xmlEscape(i.title)}</title>
       <link>${xmlEscape(i.link)}</link>
       <guid isPermaLink="true">${xmlEscape(i.link)}</guid>
-      <pubDate>${i.pubDate.toUTCString()}</pubDate>
+      <pubDate>${i.pubDate.toUTCString()}</pubDate>${i.tags.map(t => `
+      <category>${xmlEscape(t)}</category>`).join('')}
       <description>${cdata(i.description)}</description>
       <content:encoded>${cdata(withHero(i.content, i.heroImage))}</content:encoded>
     </item>`).join('\n');
@@ -174,7 +180,8 @@ export async function resolveBlogFeed(target: BlogFeedTarget): Promise<ResolvedF
     orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
     take: FEED_ITEM_LIMIT,
     select: {
-      title: true, url: true, body: true, excerpt: true, heroImage: true, publishedAt: true,
+      title: true, url: true, body: true, excerpt: true, heroImage: true, tags: true,
+      publishedAt: true,
       user: { select: { username: true, firstName: true, lastName: true } },
     },
   });
@@ -192,6 +199,7 @@ export async function resolveBlogFeed(target: BlogFeedTarget): Promise<ResolvedF
       content: p.body,
       pubDate: p.publishedAt,
       heroImage: p.heroImage,
+      tags: p.tags,
     })),
   };
 }
@@ -230,13 +238,16 @@ export async function refreshBlogFeed(feedId: string, target: BlogFeedTarget, no
         readTime: readTimeOf(item.content), snippet: item.description,
         // Site-relative, and stays that way: subscribers render it from this
         // same origin, which is exactly where the bytes are served from.
-        content: item.content, imageUrl: item.heroImage || null, categories: [],
+        content: item.content, imageUrl: item.heroImage || null, categories: item.tags,
       },
       update: {
         title: item.title, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link),
         pubDate: item.pubDate, fetchedAt: now,
         readTime: readTimeOf(item.content), snippet: item.description,
-        content: item.content, imageUrl: item.heroImage || null,
+        // Retagging a post has to reach the copies already in subscribers'
+        // folders - unlike firstSeenAt, this is a fact about the post, not
+        // about when it arrived.
+        content: item.content, imageUrl: item.heroImage || null, categories: item.tags,
       },
     }).catch(err => logger.warn({ err, link: item.link }, 'Blog feed item upsert failed'));
   }

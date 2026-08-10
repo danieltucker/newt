@@ -245,6 +245,80 @@
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ── The same menu, as a sheet ──
+   Used below 640px. See the note on `asSheet` in SaveButton.tsx for why a
+   popover cannot work down here: it is cropped by the scrolling box the cards
+   live in, and the scroll that would bring it into view is the same scroll that
+   dismisses it.
+
+   Bottom-anchored because that is where a thumb is, and because the list of
+   folders can be long - a sheet can be as tall as it needs and scroll inside
+   itself, which a popover pinned above a card cannot. */
+.sheetScrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-end;
+  background: var(--overlay);
+  animation: sheetFade 0.15s ease;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* Never taller than the room left above the keyboard, which is up whenever a
+     folder is being named. --kb-inset is 0 the rest of the time. */
+  max-height: calc(80vh - var(--kb-inset, 0px));
+  margin-bottom: var(--kb-inset, 0px);
+  padding: 8px 10px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -14px 40px var(--shadow);
+  animation: sheetUp 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The one affordance that says "this came up from the bottom edge and goes back
+   down there" without a line of text spending the width to say it. */
+.sheetGrip {
+  width: 36px;
+  height: 4px;
+  margin: 2px auto 8px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.sheetTitle {
+  padding: 0 10px 8px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+/* The scrolling part, so the title and the grip stay put over a long list. */
+.sheetList {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@keyframes sheetFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheetScrim, .sheet { animation: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menu { animation: none; }
   .group, .main, .caret, .item { transition: none; }
@@ -266,4 +340,12 @@
   .item {
     font-size: 14px;
   }
+}
+
+/* Items in a sheet are the full width of the screen and the only thing to hit,
+   so they get the larger control height rather than the menu's. Last in the
+   file so it outranks the touch block above. */
+.sheet .item {
+  min-height: var(--ctl-h-lg);
+  font-size: 15px;
 }

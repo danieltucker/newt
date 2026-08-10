@@ -34,6 +34,14 @@ services:
       # this token. Once an admin exists the token is inert — manage further
       # admins from the in-app admin panel. Generate with: openssl rand -hex 24
       ADMIN_SETUP_TOKEN: ${ADMIN_SETUP_TOKEN:-}
+      # Model-training and AI-answer crawlers (GPTBot, ClaudeBot, CCBot, …), as
+      # robots.txt will report them. Denying is reversible and allowing is not,
+      # which is why 'deny' is the default rather than a position on the question.
+      AI_CRAWLERS: ${AI_CRAWLERS:-deny}
+      # Where the server fetches the built index.html to wrap its server-rendered
+      # pages in. The client container serves it, so this is that service by name;
+      # only change it if the service is renamed.
+      SHELL_ORIGIN: ${SHELL_ORIGIN:-http://client}
     depends_on:
       postgres:
         condition: service_healthy

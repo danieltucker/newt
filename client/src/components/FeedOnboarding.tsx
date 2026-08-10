@@ -30,18 +30,14 @@ export default function FeedOnboarding({ suggested, onFollow, onDone }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // Starters only. The full directory is forty-odd feeds across eleven headings,
-  // which on a welcome screen turns "pick a few things you like" into a chore
-  // with a scrollbar - and it is the one screen that has to feel like a
-  // beginning. Everything else is a click away in Manage feeds, which is where
-  // you go when you *are* browsing. The server resolves the flag; see the note
-  // on /suggested. Falls back to the whole list if none are marked, so a change
-  // at that end can't empty this screen.
+  // The whole directory, grouped under its categories in the order the server
+  // sends them. This screen used to show a short "starter" subset, which made
+  // each heading look like it held two publications and hid the rest from the
+  // one person who has never seen the list. Per-category "Select all" and a
+  // scroll are a better answer than a shorter list.
   const byCategory = useMemo(() => {
-    const starters = suggested.filter(s => s.starter);
-    const shown = starters.length > 0 ? starters : suggested;
     const map = new Map<string, SuggestedFeed[]>();
-    for (const s of shown) {
+    for (const s of suggested) {
       const list = map.get(s.category);
       if (list) list.push(s); else map.set(s.category, [s]);
     }

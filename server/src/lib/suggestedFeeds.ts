@@ -22,13 +22,13 @@
 //   - Sports Illustrated, NIH news releases — 404, feeds retired
 //   - Washington Post — resolves, but returns 4 items, too thin to be useful
 //
-// ── Two lists, one file ──
-// `starter` marks the subset the first-run picker shows. That screen is meant to
-// make an empty reader feel like a reader in one screenful, and it stops working
-// as forty-odd choices across eleven headings — at which point picking feeds is
-// itself the chore it was supposed to spare you. The manager's Discover tab
-// shows everything, because that is where you go when you *are* looking for
-// something. See starterFeeds() and the `starter` query param on /suggested.
+// ── One list ──
+// Everything here is offered in both places it can be: the first-run picker and
+// the manager's Discover tab. The picker used to draw a short "starter" subset,
+// on the theory that a screenful was friendlier than a directory; in practice it
+// hid most of the list from the one audience that hasn't seen any of it, and the
+// categories on that screen read as though they held two feeds each. It scrolls
+// instead, grouped by category, and nothing is subscribed until it's picked.
 
 /**
  * How much of a publisher's writing the feed actually gets you.
@@ -46,8 +46,6 @@ export interface SuggestedFeed {
   site: string;
   blurb: string;
   category: string;
-  /** Offered on the first-run screen. See the note above. */
-  starter?: boolean;
   /** Set when the articles are behind a paywall, whole or partial. */
   access?: FeedAccess;
 }
@@ -66,7 +64,7 @@ export const SUGGESTED_CATEGORIES: SuggestedCategory[] = [
   { name: 'Design',      color: '#E0479E' },
   { name: 'Business',    color: '#00A8E8' },
   { name: 'Gaming',      color: '#A259FF' },
-  { name: 'Sport',       color: '#1DB954' },
+  { name: 'Sports',      color: '#1DB954' },
   { name: 'Health',      color: '#24A0ED' },
   { name: 'Cars',        color: '#FF6600' },
 ];
@@ -79,7 +77,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theverge.com',
     blurb: 'Consumer tech, gadgets and the culture around them.',
     category: 'Tech',
-    starter: true,
   },
   {
     name: 'Ars Technica',
@@ -87,7 +84,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'arstechnica.com',
     blurb: 'Deep, technical reporting on computing and policy.',
     category: 'Tech',
-    starter: true,
   },
   {
     name: 'Hacker News',
@@ -95,7 +91,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'news.ycombinator.com',
     blurb: 'The front page — programming, startups, and arguments.',
     category: 'Tech',
-    starter: true,
   },
   {
     name: 'TechCrunch',
@@ -164,7 +159,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'npr.org',
     blurb: 'US and world headlines, updated through the day.',
     category: 'News',
-    starter: true,
   },
   {
     name: 'BBC News',
@@ -172,7 +166,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'bbc.co.uk',
     blurb: 'World news from the BBC.',
     category: 'News',
-    starter: true,
   },
   {
     name: 'The Guardian',
@@ -180,7 +173,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theguardian.com',
     blurb: 'World news and long-form reporting.',
     category: 'News',
-    starter: true,
   },
   {
     name: 'Al Jazeera',
@@ -241,7 +233,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'quantamagazine.org',
     blurb: 'Mathematics and fundamental science, beautifully explained.',
     category: 'Science',
-    starter: true,
   },
   {
     name: 'NASA',
@@ -249,7 +240,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'nasa.gov',
     blurb: 'Missions, discoveries and the occasional stunning photo.',
     category: 'Science',
-    starter: true,
   },
   {
     name: 'Science Daily',
@@ -301,7 +291,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'aeon.co',
     blurb: 'Essays on philosophy, science and being a person.',
     category: 'Culture',
-    starter: true,
   },
   {
     name: 'Kottke',
@@ -309,7 +298,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'kottke.org',
     blurb: 'A long-running blog of interesting things.',
     category: 'Culture',
-    starter: true,
   },
   {
     name: 'The Atlantic',
@@ -356,7 +344,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'lobste.rs',
     blurb: 'Computing link aggregator. Quieter and more technical than HN.',
     category: 'Programming',
-    starter: true,
   },
   {
     name: 'Simon Willison',
@@ -364,7 +351,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'simonwillison.net',
     blurb: 'Working notes on LLMs, Python and building things.',
     category: 'Programming',
-    starter: true,
   },
   {
     name: 'Julia Evans',
@@ -395,7 +381,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'smashingmagazine.com',
     blurb: 'Long, practical articles on design and front-end craft.',
     category: 'Design',
-    starter: true,
   },
   {
     name: 'A List Apart',
@@ -426,7 +411,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'cnbc.com',
     blurb: 'Markets and business news through the trading day.',
     category: 'Business',
-    starter: true,
   },
   {
     name: 'MarketWatch',
@@ -474,7 +458,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'rockpapershotgun.com',
     blurb: 'PC games, written by people who clearly enjoy writing.',
     category: 'Gaming',
-    starter: true,
   },
   {
     name: 'Eurogamer',
@@ -498,43 +481,56 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     category: 'Gaming',
   },
 
-  // ── Sport ──
+  // ── Sports ──
   {
     name: 'BBC Sport',
     url: 'https://feeds.bbci.co.uk/sport/rss.xml',
     site: 'bbc.co.uk',
     blurb: 'Everything the BBC covers, which is most of it.',
-    category: 'Sport',
-    starter: true,
+    category: 'Sports',
   },
   {
     name: 'ESPN',
     url: 'https://www.espn.com/espn/rss/news',
     site: 'espn.com',
     blurb: 'US sport, top stories.',
-    category: 'Sport',
+    category: 'Sports',
   },
   {
     name: 'Guardian Sport',
     url: 'https://www.theguardian.com/sport/rss',
     site: 'theguardian.com',
     blurb: 'Sport with a bit more writing in it.',
-    category: 'Sport',
+    category: 'Sports',
   },
   {
     name: 'Sky Sports',
     url: 'https://www.skysports.com/rss/12040',
     site: 'skysports.com',
     blurb: 'Breaking sport news, heavy on football.',
-    category: 'Sport',
+    category: 'Sports',
   },
   {
     name: 'Defector',
     url: 'https://defector.com/feed',
     site: 'defector.com',
     blurb: 'Worker-owned sport and culture writing, with a sense of humour.',
-    category: 'Sport',
+    category: 'Sports',
     access: 'metered',
+  },
+  {
+    name: 'CBS Sports',
+    url: 'https://www.cbssports.com/rss/headlines/',
+    site: 'cbssports.com',
+    blurb: 'US headlines across the major leagues, all day.',
+    category: 'Sports',
+  },
+  {
+    name: 'Yahoo Sports',
+    url: 'https://sports.yahoo.com/rss/',
+    site: 'sports.yahoo.com',
+    blurb: 'High-volume US coverage — scores, trades and transfers.',
+    category: 'Sports',
   },
 
   // ── Health ──
@@ -544,7 +540,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'statnews.com',
     blurb: 'Health, medicine and the business of both. Properly reported.',
     category: 'Health',
-    starter: true,
   },
   {
     name: 'KFF Health News',
@@ -568,7 +563,6 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'theautopian.com',
     blurb: 'Cars written about by people who repair them badly and often.',
     category: 'Cars',
-    starter: true,
   },
   {
     name: 'Car and Driver',
@@ -585,26 +579,3 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     category: 'Cars',
   },
 ];
-
-/**
- * The subset the first-run picker offers — one or two per category, chosen to
- * span the list rather than to be the "best" of it.
- *
- * A category with nothing marked would silently vanish from that screen, so the
- * first feed in each stands in. That way adding a category to the list above is
- * enough; forgetting the flag costs a default, not a hole.
- */
-export function starterFeeds(): SuggestedFeed[] {
-  const seenCategory = new Set<string>();
-  const picked = SUGGESTED_FEEDS.filter(f => f.starter);
-  for (const f of picked) seenCategory.add(f.category);
-  const fallbacks = SUGGESTED_FEEDS.filter(f => {
-    if (seenCategory.has(f.category)) return false;
-    seenCategory.add(f.category);
-    return true;
-  });
-  // Back into list order, so the picker's categories appear in the order
-  // SUGGESTED_CATEGORIES declares them.
-  const chosen = new Set([...picked, ...fallbacks]);
-  return SUGGESTED_FEEDS.filter(f => chosen.has(f));
-}

@@ -1,0 +1,191 @@
+/* The two cross-author pages. Standalone, like PublicArticlePage and the
+   marketing pages: a visitor arriving from a search result may have no account,
+   so there is no app shell to sit inside - no folders, no feed, no notes. */
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px max(20px, env(safe-area-inset-left, 0px));
+}
+
+.brand {
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.nav a:hover {
+  color: var(--text);
+}
+
+.main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px max(20px, env(safe-area-inset-left, 0px))
+           calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 700;
+  margin: 0;
+  /* A tag is whatever an author typed, up to MAX_TAG_LENGTH, and a single long
+     word has nowhere to break. */
+  overflow-wrap: anywhere;
+}
+
+.feedLink {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.feedLink:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.subtitle {
+  margin: 6px 0 28px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.centered {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 16px 18px;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.card:hover {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+
+.heroLink {
+  display: block;
+  margin: -16px -18px 14px;
+}
+
+.hero {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 14px 14px 0 0;
+}
+
+.postTitle {
+  margin: 0;
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.postTitle a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.postTitle a:hover {
+  color: var(--accent);
+}
+
+.excerpt {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.byline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.author {
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.author:hover {
+  color: var(--accent);
+}
+
+.dot {
+  opacity: 0.6;
+}
+
+.tags {
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 14px 15px;
+  }
+
+  .heroLink {
+    margin: -14px -15px 12px;
+  }
+}

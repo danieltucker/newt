@@ -425,7 +425,14 @@
 /* ── Lists ── */
 .list { display: flex; flex-direction: column; gap: 10px; }
 
-.commentCard, .historyRow {
+/* ── Comment cards ──
+   A comment card is a link into the conversation it came from. It used to admit
+   that only by shifting its border a shade on hover, which is the same nothing
+   every other box on the page does. Now the card lifts, the article's title
+   turns into a link, the quote rule beside the comment takes the accent, and the
+   foot spells out where a click lands. See CommentCard for why the hint is not
+   hover-only. */
+.commentCard {
   display: block;
   width: 100%;
   text-align: left;
@@ -436,9 +443,38 @@
   cursor: pointer;
   font: inherit;
   color: var(--text);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.18s, transform 0.18s;
 }
-.commentCard:hover, .historyRow:hover {
-  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+.commentCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 4%, var(--surface));
+  box-shadow: 0 8px 22px var(--shadow);
+  transform: translateY(-1px);
+}
+/* Keyboard parity: the card is a button, so tabbing to it has to show what
+   pointing at it shows - the title turning into a link most of all. */
+.commentCard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.commentCard:active { transform: translateY(0); box-shadow: none; }
+
+/* The line naming where the comment was left. "on <title> · <host>" reads as a
+   sentence, which is what makes the title obviously the destination rather than
+   a heading the card gave itself. */
+.commentSource {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 9px;
+  flex-wrap: wrap;
+}
+
+.sourceLabel {
+  color: var(--muted);
+  flex-shrink: 0;
 }
 
 .commentTop {
@@ -451,16 +487,79 @@
   flex-wrap: wrap;
 }
 
+/* Underlined via text-decoration-color rather than by adding the underline on
+   hover: the underline is always laid out, so the line of text never shifts as
+   it appears, and it can fade in with the colour change. */
 .articleTitle {
   color: var(--text);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
   max-width: 100%;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.commentCard:hover .articleTitle,
+.commentCard:focus-visible .articleTitle {
+  color: var(--accent);
+  text-decoration-color: currentColor;
 }
 .dot { color: var(--muted); }
 .host { color: var(--muted); }
+
+/* The comment's own words, set off from the source line above it the way a
+   quotation is. The rule picks up the accent with the rest of the card, so the
+   whole thing answers to one hover instead of a border ticking over on its own. */
+.commentQuote {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  transition: border-color 0.15s;
+}
+.commentCard:hover .commentQuote {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.commentFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+/* .commentTime carries a top margin for the post cards, which have nothing
+   under them; in this row the flex gap already does that job. */
+.commentFoot .commentTime { margin-top: 0; }
+
+.openHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.commentCard:hover .openHint,
+.commentCard:focus-visible .openHint { color: var(--accent); }
+
+.openHintArrow {
+  display: inline-block;
+  transition: transform 0.18s ease;
+}
+.commentCard:hover .openHintArrow { transform: translateX(3px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .commentCard:hover,
+  .commentCard:active { transform: none; }
+  .commentCard:hover .openHintArrow { transform: none; }
+}
 
 .chip {
   font-size: 10.5px;
@@ -540,9 +639,68 @@
 }
 .postFullTitle:hover { color: var(--accent); }
 
+/* Between the title and the body: what the post is about, before you read it.
+   The negative top margin claws back part of .postFullTitle's bottom gap so the
+   tags read as belonging to the title rather than to the first paragraph. */
+.postFullTags { margin: -6px 0 12px; }
+
+/* The history tab's compact card, where the tags sit between the excerpt and
+   the timestamp rather than under a heading. */
+.postCardTags { margin: 8px 0 2px; }
+
 @media (max-width: 620px) {
   .postFull { padding: 16px 15px; }
   .postFullTitle { font-size: 19px; }
+}
+
+/* The tag filter's own bar, above the list. It has to say what is being
+   filtered and undo it in one place - an empty filtered list is otherwise
+   indistinguishable from an author who has written nothing. */
+.tagFilter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+.tagFilterLabel {
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tagFilterLabel strong {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.tagFilterClear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tagFilterClear:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
 }
 
 .postCard {
@@ -559,8 +717,25 @@
   /* A post is the substantial thing on a profile - give it a visible spine
      so it reads as more than another comment in the timeline. */
   border-left: 3px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.18s, transform 0.18s;
 }
-.postCard:hover { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+/* Matches .commentCard: the two sit in the same list on the History tab, and a
+   post that stayed flat while the comment beside it lifted would read as the
+   one card in the stream that isn't clickable. */
+.postCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  background: color-mix(in oklab, var(--accent) 4%, var(--surface));
+  box-shadow: 0 8px 22px var(--shadow);
+  transform: translateY(-1px);
+}
+.postCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.postCard:active { transform: translateY(0); box-shadow: none; }
+.postCard:hover .postTitle { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .postCard:hover,
+  .postCard:active { transform: none; }
+}
 
 /* Inset rather than bleeding to the card edge: .postCard's accent spine is a
    left border, and a full-bleed image would have to sit on top of it. A shallow
@@ -592,6 +767,7 @@
   color: var(--text);
   margin-bottom: 5px;
   overflow-wrap: anywhere;
+  transition: color 0.15s;
 }
 
 .postExcerpt {

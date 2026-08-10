@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import styles from './SearchBar.module.css';
 import { bookmarkHref, faviconUrl } from '../utils/color';
 import { noteText, noteSnippet } from '../utils/noteText';
+import { blogAuthorOfUrl } from '../utils/blogUrl';
+import { useFeedSearch } from '../hooks/useFeedSearch';
 
 // Rotating placeholder hints - cycled with a per-letter flip animation
 const HINTS = [
@@ -53,8 +55,10 @@ interface ArticleHint {
   categories?: string[]; // feed articles
 }
 
-// All tag-like labels on an item, normalised
-function tagsOf(a: ArticleHint): string[] {
+// All tag-like labels on an item, normalised. Structural rather than typed to
+// ArticleHint so it also serves the server's feed hits, which carry categories
+// but no reading-list tag string.
+function tagsOf(a: { tag?: string; categories?: string[] }): string[] {
   const fromTag = a.tag ? a.tag.split(',').map(t => t.trim()).filter(Boolean) : [];
   return [...fromTag, ...(a.categories ?? [])];
 }
@@ -78,9 +82,17 @@ interface Props {
   searchNewTab?: boolean;
   bookmarks?: BookmarkHint[];
   readingItems?: ArticleHint[];
-  feedArticles?: ArticleHint[];
   notes?: NoteHint[];
   onOpenNote?: (id: string, query: string) => void;
+  /**
+   * Opens an article or post inside Newt — the reader and its comments, or the
+   * post's own page — rather than sending the browser to the publisher.
+   *
+   * Without it, article results fall back to leaving for the source URL, which
+   * is what a standalone SearchBar (one with no shell around it to open a reader
+   * in) can honestly do.
+   */
+  onOpenArticle?: (url: string) => void;
 }
 
 export default function SearchBar({
@@ -88,14 +100,21 @@ export default function SearchBar({
   searchNewTab = false,
   bookmarks = [],
   readingItems = [],
-  feedArticles = [],
   notes = [],
   onOpenNote,
+  onOpenArticle,
 }: Props) {
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Feed articles are the one corpus too large to hold in the page: bookmarks,
+  // notes and the reading list are the user's own and bounded, but the river is
+  // every article from every subscription, going back as far as the database
+  // does. So this one is searched where it lives. Ranked and already narrowed to
+  // this user's subscriptions by the server - see routes/feeds.ts.
+  const feedHits = useFeedSearch(value);
 
   // Rotating hint: flip the current one out, swap text, flip the next one in
   const [hintIdx, setHintIdx] = useState(0);
@@ -171,10 +190,15 @@ export default function SearchBar({
       .slice(0, tagOnly ? 6 : 3)
       .forEach(a => results.push({ kind: 'article', id: a.id, title: a.title, source: a.source, url: a.url, matchedTag: matchTag(a) }));
 
-    feedArticles
-      .filter(a => matchText(a) || matchTag(a))
+    // Already filtered and ranked by the server — taken in the order given
+    // rather than re-sorted here, since relevance is the thing the client
+    // doesn't have the data to judge.
+    feedHits
       .slice(0, tagOnly ? 6 : 4)
-      .forEach(a => results.push({ kind: 'article', id: `feed-${a.id}`, title: a.title, source: a.source, url: a.url, matchedTag: matchTag(a) }));
+      .forEach(a => results.push({
+        kind: 'article', id: `feed-${a.id}`, title: a.title, source: a.source, url: a.url,
+        matchedTag: tagsOf(a).find(t => t.toLowerCase().startsWith(q)),
+      }));
 
     if (tagOnly) return results;
 
@@ -186,7 +210,7 @@ export default function SearchBar({
     }
 
     return results;
-  }, [value, bookmarks, readingItems, feedArticles, notes, onOpenNote, searchEngine]);
+  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, searchEngine]);
 
   function navigate(url: string) {
     if (searchNewTab) {
@@ -207,14 +231,27 @@ export default function SearchBar({
       setSelectedIndex(-1);
     } else if (item.kind === 'bookmark') {
       navigate(bookmarkHref(item.domain));
+    } else if (item.kind === 'article' && onOpenArticle) {
+      // Articles and posts stop in Newt first: the reader, its comments and the
+      // save controls are all here, and a search result is usually a "was this
+      // the one?" rather than a decision to leave. The publisher is one click
+      // further on, and still one click, which is the trade being made.
+      //
+      // Deliberately not routed through navigate(): searchNewTab is a preference
+      // about handing a query to a search engine, and honouring it here would
+      // open a second Newt tab to show a panel this one can already display.
+      onOpenArticle(item.url);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
     } else if (item.url) {
       navigate(item.url);
     }
     // Bare shortcut prefix (no query yet) - nothing to open
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
     if (selectedIndex >= 0 && suggestions[selectedIndex]) {
       pick(suggestions[selectedIndex]);
       return;
@@ -237,6 +274,19 @@ export default function SearchBar({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Enter is handled here rather than left to the form's implicit submission,
+    // which is what stopped Go/Search doing anything on a phone: this form has
+    // one field and no submit button, and that is precisely the shape WebKit
+    // declines to submit. Handled before the dropdown guard below, because the
+    // dropdown is closed for exactly the query you most want to send.
+    if (e.key === 'Enter') {
+      // A composing IME uses Enter to accept its candidate - submitting there
+      // would search for half a word.
+      if ((e.nativeEvent as KeyboardEvent).isComposing) return;
+      e.preventDefault();
+      handleSubmit();
+      return;
+    }
     if (!open || suggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -305,6 +355,10 @@ export default function SearchBar({
             onKeyDown={handleKeyDown}
             onFocus={() => { if (value.trim()) setOpen(true); }}
             onBlur={handleBlur}
+            // So the phone's return key says "Go" rather than "return", which
+            // is the difference between a key that looks like it submits and
+            // one that looks like it inserts a line break.
+            enterKeyHint="search"
             aria-label="Search the web or enter an address"
           />
           {!value && (
@@ -360,7 +414,13 @@ export default function SearchBar({
                     {item.matchedTag && <span className={styles.tagHit}> · #{item.matchedTag}</span>}
                   </span>
                 </div>
-                <span className={styles.badge}>Article</span>
+                {/* Something written here is a Post and opens its own page; an
+                    article from anywhere else opens the reader. Both stay in
+                    Newt, so the badge is about what you'll land on, not whether
+                    you're about to leave. */}
+                <span className={styles.badge}>
+                  {blogAuthorOfUrl(item.url) ? 'Post' : 'Article'}
+                </span>
               </div>
             );
             if (item.kind === 'url') return (

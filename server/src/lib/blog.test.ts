@@ -8,6 +8,9 @@ import {
   isBlogVisibility,
   postPathFor,
   normalizeHeroImage,
+  normalizeTags,
+  MAX_POST_TAGS,
+  MAX_TAG_LENGTH,
 } from './blog';
 
 describe('slugify', () => {
@@ -208,5 +211,43 @@ describe('postPathFor', () => {
 
   it('encodes a username with characters that are unsafe in a path', () => {
     expect(postPathFor('a b/c', 'x-2026-07-24')).toBe('/u/a%20b%2Fc/x-2026-07-24');
+  });
+});
+
+describe('normalizeTags', () => {
+  it('lowercases, trims and keeps the author’s order', () => {
+    expect(normalizeTags([' Rust ', 'Web Dev'])).toEqual(['rust', 'web dev']);
+  });
+
+  it('strips a typed # so "#news" and "news" are one tag', () => {
+    expect(normalizeTags(['#news', 'news'])).toEqual(['news']);
+    expect(normalizeTags(['## spaced'])).toEqual(['spaced']);
+  });
+
+  it('drops empties rather than storing a blank tag', () => {
+    expect(normalizeTags(['', '  ', '#', 'real'])).toEqual(['real']);
+  });
+
+  it('returns an empty list for an empty input', () => {
+    expect(normalizeTags([])).toEqual([]);
+  });
+
+  it('rejects anything that is not a list of strings', () => {
+    expect(normalizeTags(undefined)).toBeNull();
+    expect(normalizeTags('rust')).toBeNull();
+    expect(normalizeTags(['rust', 7])).toBeNull();
+  });
+
+  it('rejects a tag longer than a label, and a list longer than a set', () => {
+    expect(normalizeTags(['x'.repeat(MAX_TAG_LENGTH)])).toEqual(['x'.repeat(MAX_TAG_LENGTH)]);
+    expect(normalizeTags(['x'.repeat(MAX_TAG_LENGTH + 1)])).toBeNull();
+    expect(normalizeTags(Array.from({ length: MAX_POST_TAGS }, (_, i) => `t${i}`)))
+      .toHaveLength(MAX_POST_TAGS);
+    expect(normalizeTags(Array.from({ length: MAX_POST_TAGS + 1 }, (_, i) => `t${i}`))).toBeNull();
+  });
+
+  it('counts the list after deduping, so repeats cannot trip the cap', () => {
+    expect(normalizeTags(Array.from({ length: MAX_POST_TAGS + 4 }, () => 'same')))
+      .toEqual(['same']);
   });
 });

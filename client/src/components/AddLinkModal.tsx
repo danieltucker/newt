@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './AddLinkModal.module.css';
 import { Folder } from '../types';
-import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl } from '../utils/color';
+import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl, PALETTE } from '../utils/color';
 import CloseButton from './CloseButton';
 
 interface Props {
@@ -9,16 +9,26 @@ interface Props {
   defaultFolderId: string | null;
   defaultUrl?: string;
   onAdd: (payload: { folderId: string; domain: string; name: string; faviconUrl: string; color: string }) => Promise<void>;
+  /** Resolves to the new folder so the link being added can be filed into it. */
+  onCreateFolder: (name: string, color: string) => Promise<Folder>;
   onClose: () => void;
 }
 
-export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onAdd, onClose }: Props) {
+export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onAdd, onCreateFolder, onClose }: Props) {
   const [url, setUrl] = useState(defaultUrl ?? '');
   const [nameOverride, setNameOverride] = useState('');
   const [nameEdited, setNameEdited] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(defaultFolderId || folders[0]?.id || '');
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Inline folder creation, rather than a second modal on top of this one: the
+  // link being typed stays on screen and the new folder is selected on the spot.
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [folderColor, setFolderColor] = useState(PALETTE[0]);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderError, setFolderError] = useState('');
 
   const prevDomainRef = useRef<string | null>(null);
 
@@ -47,7 +57,7 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
   }
 
   async function handleAdd() {
-    if (!domain || !color) return;
+    if (!domain || !color || !selectedFolderId) return;
     setLoading(true);
     try {
       await onAdd({
@@ -60,6 +70,33 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
       onClose();
     } finally {
       setLoading(false);
+    }
+  }
+
+  function openNewFolder() {
+    // Start on a colour no folder is using yet, so the swatches don't hand the
+    // user a duplicate of the folder sitting right next to it.
+    const used = new Set(folders.map(f => f.color.toLowerCase()));
+    setFolderColor(PALETTE.find(c => !used.has(c.toLowerCase())) ?? PALETTE[0]);
+    setFolderName('');
+    setFolderError('');
+    setNewFolderOpen(true);
+  }
+
+  async function handleCreateFolder() {
+    const name = folderName.trim();
+    if (!name || creatingFolder) return;
+    setCreatingFolder(true);
+    setFolderError('');
+    try {
+      const folder = await onCreateFolder(name, folderColor);
+      setSelectedFolderId(folder.id);
+      setNewFolderOpen(false);
+      setFolderName('');
+    } catch {
+      setFolderError("Couldn't create that folder");
+    } finally {
+      setCreatingFolder(false);
     }
   }
 
@@ -114,9 +151,16 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
         {/* URL input */}
         <div className={styles.field}>
           <label className={styles.label}>Website URL</label>
+          {/* Same as the reading list's add field: as `type="text"` a phone
+              capitalises and autocorrects what it takes for prose, and an
+              address is not prose. */}
           <input
             className={styles.urlInput}
-            type="text"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="figma.com"
             value={url}
             onChange={e => setUrl(e.target.value)}
@@ -161,12 +205,65 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
                 </button>
               );
             })}
+            {!newFolderOpen && (
+              <button className={styles.newFolderChip} onClick={openNewFolder}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                New folder
+              </button>
+            )}
           </div>
+          {folders.length === 0 && !newFolderOpen && (
+            <div className={styles.helper}>Every link lives in a folder — make one to file this in.</div>
+          )}
+
+          {newFolderOpen && (
+            <div className={styles.newFolder}>
+              <input
+                className={styles.newFolderInput}
+                type="text"
+                placeholder="Folder name"
+                maxLength={100}
+                value={folderName}
+                onChange={e => setFolderName(e.target.value)}
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleCreateFolder(); }
+                  // Escape backs out of the folder, not out of the link.
+                  if (e.key === 'Escape') { e.stopPropagation(); setNewFolderOpen(false); }
+                }}
+              />
+              <div className={styles.swatchRow}>
+                {PALETTE.map(c => (
+                  <button
+                    key={c}
+                    className={`${styles.swatch} ${c === folderColor ? styles.swatchSelected : ''}`}
+                    style={{ background: c }}
+                    aria-label={`Colour ${c}`}
+                    aria-pressed={c === folderColor}
+                    onClick={() => setFolderColor(c)}
+                  />
+                ))}
+              </div>
+              {folderError && <div className={styles.folderError}>{folderError}</div>}
+              <div className={styles.newFolderActions}>
+                <button className={styles.newFolderCancel} onClick={() => setNewFolderOpen(false)}>Cancel</button>
+                <button
+                  className={styles.newFolderCreate}
+                  onClick={handleCreateFolder}
+                  disabled={!folderName.trim() || creatingFolder}
+                >
+                  {creatingFolder ? 'Creating…' : 'Create folder'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className={styles.actions}>
           <button className={styles.cancelBtn} onClick={onClose}>Cancel</button>
-          <button className={styles.addBtn} onClick={handleAdd} disabled={!domain || loading}>
+          <button className={styles.addBtn} onClick={handleAdd} disabled={!domain || !selectedFolderId || loading}>
             {loading ? 'Adding…' : 'Add link'}
           </button>
         </div>

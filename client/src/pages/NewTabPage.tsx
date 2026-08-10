@@ -3,6 +3,7 @@ import styles from './NewTabPage.module.css';
 import ShellBar, { RAIL_NARROW } from '../components/ShellBar';
 import SiteFooter from '../components/SiteFooter';
 import BackToTop from '../components/BackToTop';
+import FeedOfferPrompt from '../components/FeedOfferPrompt';
 import { toggleFavorite } from '../utils/favoriteTags';
 import SearchBar from '../components/SearchBar';
 import FolderSidebar from '../components/FolderSidebar';
@@ -30,6 +31,7 @@ import MyBlogPage from './MyBlogPage';
 import SitePage from './SitePage';
 import BlogEditorPage from './BlogEditorPage';
 import { parseArticlePath } from '../utils/articleUrl';
+import { blogPathFor, blogRefOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
 import { canonicalFeedUrl } from '../utils/feedKey';
@@ -41,10 +43,10 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
 import { useReadingFolders, nextShelfColor } from '../hooks/useReadingFolders';
-import { useSettings } from '../hooks/useSettings';
+import { useSettings, NoteDoc, NoteFolder } from '../hooks/useSettings';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { apiGet, apiFetch, apiPost, apiPut } from '../services/api';
-import { Bookmark, Folder, FeedArticle, CommentPrefs } from '../types';
+import { Bookmark, Folder, CommentPrefs } from '../types';
 import { ThemeSetting, ResolvedTheme } from '../App';
 
 // Background depth - max px each blob leans as the cursor crosses the viewport.
@@ -65,7 +67,7 @@ const BLOB_LEAN = [-18, 32, 56] as const;
 // across the top. The bare-letter shortcuts below already stand down inside a
 // text field, so nothing here steals a keystroke from the editor.
 export type ShellView =
-  | { kind: 'profile'; username: string; tab?: string | null }
+  | { kind: 'profile'; username: string; tab?: string | null; tag?: string | null }
   | { kind: 'post'; username: string; slug: string }
   | { kind: 'site'; domain: string }
   | { kind: 'myblog' }
@@ -93,7 +95,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile, navigate, view }: Props) {
-  const { settings, update: updateSetting, loaded: settingsLoaded } = useSettings(accessToken);
+  const { settings, update: updateSetting, refresh: refreshSettings, loaded: settingsLoaded } = useSettings(accessToken);
 
   // Sync theme setting from server on first load
   useEffect(() => {
@@ -135,6 +137,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     subscriptions, folders: feedFolders, loaded: feedsLoaded,
     addFeed, addFeeds, updateFeed, removeFeed,
     createFolder: createFeedFolder, updateFolder: updateFeedFolder, removeFolder: removeFeedFolder,
+    reload: reloadFeeds,
   } = useFeeds(accessToken);
   const [showFeedManager, setShowFeedManager] = useState(false);
   const rssOn = settings.rssEnabled !== false;
@@ -146,7 +149,12 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const { importable, reload: reloadImportable } = useImportableFeeds(accessToken, showFeedManager);
   const { suggested } = useSuggestedFeeds(accessToken, showFeedManager || needsOnboarding);
 
-  const { bookmarks, setBookmarks, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, markVisited } = useBookmarks(accessToken, activeFolderId);
+  const { bookmarks, setBookmarks, addBookmark, updateBookmark, deleteBookmark, reorderBookmarks, persistBookmarkOrder, checkFeed, discoverFeed, followFeed, markVisited } = useBookmarks(accessToken, activeFolderId);
+
+  // The pending "this site has a feed" question, or null. One at a time: adding
+  // two bookmarks in a row replaces the question rather than stacking cards, and
+  // the second is the one the user is thinking about.
+  const [feedOffer, setFeedOffer] = useState<{ bookmarkId: string; title: string } | null>(null);
   // Held whole as well as destructured: the embedded ProfilePage takes the
   // binding so its Library tab shares this exact list instead of loading a
   // second copy that would drift from it.
@@ -242,16 +250,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [activeFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Feed articles for search (accumulated across folder switches)
-  const [feedArticles, setFeedArticles] = useState<FeedArticle[]>([]);
-
-  function handleFeedArticlesLoaded(articles: FeedArticle[]) {
-    setFeedArticles(prev => {
-      const existingIds = new Set(prev.map(a => a.id));
-      const fresh = articles.filter(a => !existingIds.has(a.id));
-      return fresh.length ? [...prev, ...fresh] : prev;
-    });
-  }
+  // Feed articles used to be accumulated here to give the search box something
+  // to filter. They aren't any more: SearchBar queries /feeds/search directly,
+  // which reaches the whole archive instead of whatever had been loaded.
 
   // Pending feed article save (shows SaveArticleModal)
   type PendingSave = { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null; markSaved: () => void };
@@ -287,6 +288,23 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     return { url, commentId: c ?? undefined };
   });
   const openThread = useCallback((url: string, commentId?: string) => setThread({ url, commentId }), []);
+
+  // Where a search result for an article or a post actually goes.
+  //
+  // A post written on this instance has a real page of its own, so it gets that
+  // page rather than the reader - the reader would be Newt showing a syndicated
+  // copy of something it hosts, with the author's own layout, tags and comments
+  // sitting one redundant level away. Everything else opens the reader, which is
+  // the Newt page for an article from anywhere else.
+  //
+  // blogRefOfUrl is origin-checked, and that is the load-bearing part: a feed can
+  // carry any link at all, and a lookalike /u/<name>/<slug> on someone else's
+  // host must open as the foreign article it is, not as a local author's post.
+  const openSearchResult = useCallback((url: string) => {
+    const ref = blogRefOfUrl(url);
+    if (ref) navigate(blogPathFor(ref.username, ref.slug));
+    else openThread(url);
+  }, [navigate, openThread]);
 
   // A publisher's page is a real route, unlike the reader above: it is a page
   // you scroll and can link to, not an overlay over the one you were on.
@@ -339,6 +357,33 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     setNotesFading(true);
     setTimeout(() => { setShowNotes(false); setNotesFading(false); setNotesTarget(null); }, 320);
   }
+
+  // Go and read the notes again whenever the console opens. Settings are
+  // fetched once, at sign-in, so a tab that has been open since this morning is
+  // holding this morning's notes - and writing in it used to post that whole
+  // stale set back over everything written since. The server no longer lets
+  // that destroy anything (see the notes revision in routes/settings), but the
+  // console should still be showing what is actually there.
+  useEffect(() => {
+    if (!showNotes) return;
+    refreshSettings().catch(() => {});
+  }, [showNotes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sends the revision the console is editing, and reports back what the server
+  // actually stored - which is not always what was sent, when two devices have
+  // both been writing.
+  const saveNotes = useCallback(async (
+    noteDocs: NoteDoc[], noteFolders: NoteFolder[], noteTreeOrder: string[], notesRev: number,
+  ) => {
+    const s = await updateSetting({ noteDocs, noteFolders, noteTreeOrder, notesRev });
+    return {
+      docs: s.noteDocs ?? [],
+      folders: s.noteFolders ?? [],
+      order: s.noteTreeOrder ?? [],
+      rev: s.notesRev ?? notesRev,
+      merged: !!s.notesMerged,
+    };
+  }, [updateSetting]);
 
   // Stable identity: the search bar memoises its suggestions on this
   const openNoteFromSearch = useCallback((id: string, query: string) => {
@@ -491,8 +536,25 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   async function handleAddLink(payload: {
     folderId: string; domain: string; name: string; faviconUrl: string; color: string;
   }) {
-    await addBookmark(payload);
+    const bookmark = await addBookmark(payload);
     if (payload.folderId !== activeFolderId) setActiveFolderId(payload.folderId);
+
+    // Not awaited: the server has to fetch the site to find out, which takes
+    // seconds, and the modal should close on the save rather than on a question
+    // about it. The prompt appears whenever the answer does - or never, which is
+    // the common case and looks like nothing happened, as it should.
+    if (!rssOn) return;
+    discoverFeed(bookmark.id).then(offer => {
+      if (offer) setFeedOffer({ bookmarkId: bookmark.id, title: offer.title });
+    });
+  }
+
+  // Accepting the prompt. The subscription list is reloaded rather than patched:
+  // the server decides the feed's category and position, and the river behind
+  // this page is the thing that has to agree with it.
+  async function handleFollowOfferedFeed(bookmarkId: string) {
+    await followFeed(bookmarkId);
+    await reloadFeeds();
   }
 
   async function handleCreateFolder(name: string, color: string) {
@@ -728,9 +790,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       searchNewTab={settings.searchNewTab}
       bookmarks={[...Object.values(bookmarksByFolder).flat(), ...pinnedBookmarks]}
       readingItems={readingList}
-      feedArticles={feedArticles.map(a => ({ id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories }))}
       notes={(settings.noteDocs ?? []).filter(n => !n.deletedAt)}
       onOpenNote={openNoteFromSearch}
+      onOpenArticle={openSearchResult}
     />
   );
 
@@ -839,6 +901,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onOpenArticle={setArticleUrl}
                 onOpenThread={openThread}
                 initialTab={view.tab}
+                initialTag={view.tag}
                 // Clicking your own avatar lands on Account, where the photo,
                 // the cover and the links all live.
                 onEditProfile={() => { setSettingsSection('account'); setShowSettings(true); }}
@@ -990,7 +1053,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 }}
                 readingFolders={readingFolders}
                 onCreateFolder={handleCreateReadingFolder}
-                onArticlesLoaded={handleFeedArticlesLoaded}
                 refreshKey={feedRefreshKey}
                 pageSize={settings.rssFeedPageSize ?? 10}
                 layout={settings.rssLayout ?? 'magazine'}
@@ -1021,6 +1083,17 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           the notes launcher below. */}
       <BackToTop />
 
+      {/* "That site has a feed - want it?", after a bookmark is saved. Bottom
+          left, opposite the two controls above. */}
+      {feedOffer && (
+        <FeedOfferPrompt
+          key={feedOffer.bookmarkId}
+          title={feedOffer.title}
+          onFollow={() => handleFollowOfferedFeed(feedOffer.bookmarkId)}
+          onDismiss={() => setFeedOffer(null)}
+        />
+      )}
+
       {/* Notes launcher - small round button, bottom-right */}
       {!showNotes && (
         <button
@@ -1039,6 +1112,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           defaultFolderId={activeFolderId}
           defaultUrl={bookmarkletAddUrl || undefined}
           onAdd={handleAddLink}
+          onCreateFolder={createFolder}
           onClose={() => {
             setShowAddLink(false);
             setBookmarkletAddUrl('');
@@ -1228,15 +1302,20 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         />
       )}
 
-      {showNotes && (
+      {/* Not until the settings are in. The console seeds its working set from
+          these props once, at mount, so opening it against the defaults would
+          seed it with no notes and a blank one made to fill the gap - and then
+          fold that blank note into the real tree when the settings arrived. */}
+      {showNotes && settingsLoaded && (
         <NotesConsole
           docs={settings.noteDocs ?? []}
           folders={settings.noteFolders ?? []}
           order={settings.noteTreeOrder ?? []}
+          rev={settings.notesRev ?? 0}
           sidebarWidth={settings.noteSidebarWidth ?? 210}
           onSidebarWidth={noteSidebarWidth => updateSetting({ noteSidebarWidth })}
           legacyNotes={settings.notes}
-          onSave={(noteDocs, noteFolders, noteTreeOrder) => updateSetting({ noteDocs, noteFolders, noteTreeOrder })}
+          onSave={saveNotes}
           initialNoteId={notesTarget?.id}
           initialQuery={notesTarget?.query}
           references={noteReferences}

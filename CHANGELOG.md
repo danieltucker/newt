@@ -2,6 +2,313 @@
 
 Notable changes to Newt, newest first.
 
+## v1.15.0 - Two devices, one phone, and the keyboard
+
+**2026-08-10**
+
+### A note written in two places is no longer a note written in one
+
+Notes opened on a computer whose tab had been sitting there since the morning
+deleted the work done since. Nothing about that was a race or a glitch: the
+notes tree is saved whole, so the first thing typed in that tab posted its
+entire copy of the notes - the morning's copy - over everything written in
+between. A complete, well-formed set of notes, from several hours ago.
+
+Two things had to change, and only the second of them is a guarantee.
+
+**The console goes and reads the notes again when it opens.** Settings are
+fetched once, at sign-in, and nothing had ever gone back to look. So a tab left
+open was showing an old tree and had no way to find out.
+
+**And a save now says which version it was based on.** The server hands out a
+revision number with the notes and takes it back with every write. When it
+matches, the write is stored as sent. When it doesn't - or when it isn't sent at
+all, which is what a tab running older code looks like - the two versions are
+merged instead of one replacing the other:
+
+- A note both sides have is resolved by when it was last edited. The later text
+  wins.
+- A note only the writer has is new work, and is kept.
+- A note only the server has is work the writer never saw, because it was
+  written after that page loaded. That is kept too.
+
+The last rule is the one that costs something. A *permanent* delete - Recently
+Deleted, then Delete for good - made in a tab that is behind looks exactly like
+a note that tab has never heard of, so the note comes back. That is the right
+way round: an unwanted note that reappears is a nuisance, and a wanted one that
+vanishes is gone. Ordinary deletes are unaffected; those leave the note in place
+with a stamp on it, and merge like any other edit.
+
+When a save does get merged, the console says so and takes the result on board,
+including any note that arrived from the other machine - without disturbing the
+sentence being typed, which is newer than either version and wins on that basis.
+
+### The keyboard stops sitting on top of what you are writing
+
+Text being typed in a note on a phone kept disappearing under the keyboard.
+
+The console is a fixed, full-height panel, and a fixed element is laid out
+against a viewport that iOS does not shrink when the keyboard comes up. So the
+console was still full height, the writing surface still ended at the bottom of
+the screen, and the bottom third of it was behind the keys - along with the
+caret, which is generally the part you are looking at.
+
+Newt now measures the keyboard and stops the console at the top of it. The
+caret is scrolled back into view when that happens, because the line that was
+two thirds down the editor is off the end of a shorter one. The reading list,
+which is also full-bleed on a phone, gets out of the way the same. This is
+measured rather than declared: the one-line viewport setting that would do it
+is Chromium-only, and the phone this was reported on runs WebKit.
+
+### The reading list stops sliding sideways
+
+Articles drifted left and right under a vertical swipe.
+
+A list-layout row is built from parts that all refuse to shrink - the byline,
+the two action pills, the delete button - with only the headline giving way. On
+a 360px screen they want around 500px between them, so the row overflowed, and
+a container that overflows sideways becomes a sideways scroller. Vertical swipes
+on a two-axis scroller drift. The Visited pill is the last 68px of that total,
+which is why it looked like the cause of it.
+
+Rows wrap now: headline, byline, controls, a line each. Deliberately three lines
+and not two - sharing a line between the byline and the controls means one of
+them has to give, and shrinking the byline erases the publisher's name while
+letting the line break where it likes makes a row two lines tall or three
+depending on whether that article happens to have been visited. It is still
+comfortably the densest of the three layouts. The scroll area is also nailed to
+one axis, so nothing can bring the drift back.
+
+### The Save menu comes up from the bottom on a phone
+
+Pressing the caret beside Save appeared to shove the page upward and open
+nothing.
+
+It was doing exactly that. The menu opens upward, because the button is at the
+foot of a card - and the cards scroll inside a box, so a card near the top of
+that box had its menu cropped by the box's own edge. Focusing the first item
+then scrolled the list to bring the cropped menu into range, and the handler
+that closes a menu when its list scrolls away closed the menu that had caused
+the scroll.
+
+Below 640px it is a sheet at the bottom of the screen instead: fixed to the
+viewport, so there is nothing to crop it and nothing to scroll it into view, as
+tall as the list of folders needs, and where a thumb already is. It also stays
+open while a new folder is being named, which the keyboard's own scroll used to
+close.
+
+### Adding an article by URL
+
+The URL field was a plain text field, so a phone treated an address as prose -
+capitalising it, autocorrecting the host to the nearest English word, and
+offering a space bar where the slash should be. It says it is a URL field now,
+in the reading list and in Add Link both. Typing `verge.com/article` without a
+scheme still works.
+
+### The refresh button turns up after the phone has been asleep
+
+Picking up a phone after a couple of hours gave a feed with no way to refresh it
+- which is the page that most needs one.
+
+The button was scheduled by a timer set fifteen minutes ahead, and a sleeping
+phone suspends the page. Depending on how long it was out, that timer fires
+late, fires at once on waking, or never fires at all because the page was
+discarded and restored with its timers gone. How old the page is is now read off
+a stored timestamp, which survives all of that, and it is re-read on every way a
+page can come back: switching tabs, a back/forward-cache restore, and the window
+simply regaining focus. Those are three different events and none of them
+substitutes for the others.
+
+### Find and replace stays under the toolbar
+
+In the blog editor, stepping through search results scrolled the field being
+typed in off the top of the screen while the formatting bar stayed put. The find
+bar is sticky now, and comes to rest against the bottom of the toolbar - a
+distance that has to be measured rather than written down, since the toolbar
+wraps to as many rows as the width allows and grows another whenever the caret
+is in a table.
+
+### The welcome screen offers the whole list
+
+Picking feeds on a new account showed one or two publications per heading — a
+short list drawn from a longer one, on the reasoning that a directory is a poor
+welcome. What it actually did was hide most of the list from the only person who
+has never seen it, and leave eleven categories looking like they held a couple
+of feeds each.
+
+All of them are on that screen now, grouped under their category, with the
+"Select all" that was already there for anyone who wants a whole heading. It
+scrolls; that is a smaller cost than not knowing what is on offer.
+
+Sport is now **Sports**, which is what it should have been called, and two more
+feeds join it: CBS Sports and Yahoo Sports. The rename only affects categories
+created from here on — a category already made from the old list keeps the name
+it was given, and can be renamed in Manage feeds.
+
+### A bookmark's menu stops disappearing behind the reading list
+
+On the panel layout, the ··· menu on a tile in the bottom row opened straight
+into the reading list panel beneath it — and behind it. Edit and Delete were
+the two entries far enough down to be covered.
+
+The menu had a layer set that should have carried it over the top, and it never
+applied: lifting a tile under the cursor is a `transform`, and a transformed
+element becomes the ceiling for everything inside it. So the menu was only ever
+sorted against its own tile. The tile is what gets raised now, while its menu is
+open — above the reading list and the feed under it, below the search bar it may
+scroll past.
+
+### A folder can be made while you are saving a link
+
+Adding a bookmark offered the folders you already had and nothing else. If the
+site in front of you didn't belong in any of them, the link had to be abandoned
+— close the dialog, make the folder from the sidebar, then start again and
+retype the address.
+
+**Add a link** now ends its row of folder chips with **+ New folder**. Choosing
+it opens a name field and the same twelve colours a folder is picked from
+anywhere else, in place, with the address you typed still on screen. The folder
+it creates is selected on the way back, so the link lands in it — and the page
+moves to that folder once the link is saved, which is where the thing you just
+filed now lives.
+
+It is inline rather than a second dialog stacked on the first: one of those
+would have covered the half-filled form it was opened from.
+
+### Newt pages can now be found
+
+Every URL Newt served carried the same title — *"Newt - a new tab worth opening"* —
+and an empty page underneath it. That is what a search engine saw at a post's
+address, and what Slack, Discord and iMessage saw when someone pasted a link:
+nothing to draw a card from, so every Newt link anyone has ever shared unfurled
+as a blank rectangle.
+
+Public pages now describe themselves. A post carries its own title, its excerpt,
+its cover image, its author and its dates; a profile carries the author's name
+and post count; a tag carries what it is a tag for. Nothing about the app
+changes — the page you see is the page you saw — but a link to it is no longer
+anonymous.
+
+**Comments are part of the post.** Public comments on a post are now rendered
+into that post's page, which is where they belong: a comment answering an
+article is about that article's subject, and the same comment listed on its
+author's profile is not about anything. Profile comment tabs stay out of search;
+so do `/a/` thread pages, which are discussions of *other people's* articles and
+have no business competing with them.
+
+**Your posts have an index.** A profile lists an author's posts as ordinary
+links, with real Previous and Next pages. That sounds like nothing, and it was
+the single largest gap: the app's own profile uses infinite scroll, and a search
+engine cannot press "load more" — so everything below the first screen of every
+author's work was unreachable no matter how good the description was.
+
+**Tags are places.** `#editors` on a post used to lead to that author's other
+posts about editors. It now leads to `/t/editors` — everyone's. Each tag page is
+also a feed, so a tag is something you can follow, in Newt's own reader or
+anywhere else. The narrower view is still on the author's profile.
+
+**A front door.** `/recent` lists the latest public posts. Being on it is earned
+rather than automatic: an author needs 2FA enabled, more than one post, and no
+report a moderator has upheld in the last 90 days. That is not about quality —
+it is that a page listing everything new, on a site anyone can register for, is
+worth spamming, and the cost of spam lands on everyone's pages rather than the
+spammer's.
+
+There is deliberately no "hide from search" setting. Public, friends and private
+already say what they mean, and a fourth axis would have made a clear choice
+muddy. What that does mean is that un-publishing has to work properly, so a post
+that stops being public now answers a real 404 rather than a page that says
+"not found" while quietly telling Google to keep it — the difference between
+leaving the index and staying in it forever.
+
+Two more things, for the record. Newt's sitemap holds off on accounts less than
+a day old that have not enabled 2FA: their posts are still public, still
+linkable and still unfurl, they are simply not handed to Google on day one.
+And model-training crawlers — GPTBot, ClaudeBot, CCBot and the rest — are turned
+away by default. That is reversible with a single setting if you self-host and
+want it the other way; the default is the one that can be changed its mind about
+later.
+
+### A bookmarked site asks before it joins your feed
+
+Saving a bookmark used to go looking for the site's feed and subscribe you to it
+without saying so. That guess is right often enough to be tempting — you bookmark
+the sites you read — and wrong in a way that was hard to trace: a link to a shop,
+a bank or a ticket site would quietly start dealing its marketing blog into the
+river, and the only place that said where it came from was Manage feeds.
+
+Now it asks. When the site behind a new bookmark turns out to publish a feed, a
+small card appears in the bottom corner — *"The Verge publishes a feed. Follow
+it?"* — with **Follow** and **No thanks**. It waits a few seconds and then goes
+away on its own, and waits longer than that if the pointer is on it. Escape
+dismisses it. Saying no just closes the card; nothing is remembered against the
+site, so the offer is still there in Manage feeds under "from your bookmarks".
+
+Nothing asks twice about a feed you already follow, however it was spelled when
+you added it, and nothing asks at all if RSS is turned off in Settings. The
+unread badge on the tile is unaffected either way: that only ever needed to know
+where the feed was, not whether you subscribe to it.
+
+One thing that was missing before: a feed reached this way is now checked against
+the blocked-domain list, which the *Add feed* box has always done and this path
+never did.
+
+### Search reaches the whole feed, not the last two days of it
+
+Searching for an article you know you read and not finding it was not a ranking
+problem. The article was not in the data being searched.
+
+Search ran entirely in the browser, over a snapshot: when the page loaded it
+fetched the 200 newest articles across every subscription and filtered that
+array by substring. Two hundred sounds generous until you count what a dozen
+active feeds publish in a day. Anything older than roughly a day or two of your
+own river had fallen out of the window, and no headline you could type would
+bring it back — while the same article was still sitting in its feed, one click
+away, which is exactly how you'd find out.
+
+Search now runs on the server, against every article in every feed you follow,
+as far back as the database goes. Three things change with it:
+
+**It reads the summary, not just the headline.** A local paper's piece titled
+*"District votes on Maple and Oak"* is about a school closing whether or not it
+says so above the fold.
+
+**It matches words rather than letters.** "school" finds "schools". Partial
+words match too, which is what finally connects a search for *closing* to a
+headline about a *closure* — the two don't share a stem, but they share a
+beginning.
+
+**Results are ranked, and a headline beats a passing mention.** A match in the
+title counts for several times a match in the summary, so the article about the
+thing comes before the weekly roundup that mentions it.
+
+`#tag` searches work the same way and now reach the whole archive too, matching
+tags that start with what you typed.
+
+### A search result opens in Newt
+
+Picking an article from the search box used to hand the browser straight to the
+publisher. That is the right destination eventually and the wrong one first: a
+result you picked out of a dropdown is usually a *was this the one?*, and
+answering it shouldn't cost you the page you were on.
+
+Articles now open the reader — the piece, its comments, and the save controls,
+with **Open original** there when you do want to go. A post written on this
+instance opens its own page instead, since that page already is the Newt page
+for it; the reader would only show a syndicated copy of something we host. The
+badge on the result says which you'll get, *Article* or *Post*.
+
+Bookmarks are unchanged. A bookmark is somewhere you've already decided to go.
+
+Two things worth saying plainly. Searching only ever looks at feeds **you**
+subscribe to — feed articles are stored once and shared by everyone on the
+instance, so this is enforced by deriving the search from your subscription list
+rather than by filtering afterwards, and there is a test whose only job is to
+fail if that ever stops being true. And articles you've dismissed are included:
+waving something out of the river is not the same as saying you'll never look
+for it, and a search box that hides what you're asking for is not one you'd ask
+twice.
+
 ## v1.14.0 - The feed asks before it moves
 
 **2026-08-07**

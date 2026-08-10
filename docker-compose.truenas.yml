@@ -53,6 +53,15 @@ services:
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       # Console ping/tracert endpoints — keep false on an internet-facing deployment.
       CONSOLE_ENABLED: ${CONSOLE_ENABLED:-false}
+      # Model-training and AI-answer crawlers (GPTBot, ClaudeBot, CCBot, …).
+      # 'deny' is the default and what robots.txt will say; set to 'allow' to let
+      # them in. Denying is reversible and allowing is not, which is the only
+      # reason it is the default rather than a position on the question.
+      AI_CRAWLERS: ${AI_CRAWLERS:-deny}
+      # Where the server fetches the built index.html to wrap its server-rendered
+      # pages in — the client container, over the internal network. Only change it
+      # if the client service is renamed.
+      SHELL_ORIGIN: ${SHELL_ORIGIN:-http://client}
       PORT: 3001
       NODE_ENV: production
     # No host port — the server is reached only via the client's nginx (/api proxy).

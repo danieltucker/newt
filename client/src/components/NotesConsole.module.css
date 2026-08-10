@@ -1,6 +1,13 @@
+/* Stops at the top of the on-screen keyboard rather than behind it. A fixed
+   element is laid out against the layout viewport, which WebKit does not shrink
+   for the keyboard - so without this the console is still full height, the
+   editor's scroll area still ends at the bottom of the screen, and the line you
+   are typing is somewhere under the keys. --kb-inset is 0 whenever there is no
+   keyboard, so this is inert everywhere else. See hooks/useKeyboardInset. */
 .overlay {
   position: fixed;
   inset: 0;
+  bottom: var(--kb-inset, 0px);
   z-index: var(--z-top);
   display: flex;
   align-items: flex-end;
@@ -60,6 +67,10 @@
   border: 1px solid var(--paper-line);
   border-radius: 12px;
   overflow: hidden;
+  /* The whole console is a paper surface, not just the editor inside it, so the
+     note titles and the search field select in the paper accent too - see the
+     selection block in styles/tokens.css. */
+  --select-bg: color-mix(in oklab, var(--paper-accent) 30%, transparent);
 }
 
 /* ── Header ── */
@@ -97,6 +108,21 @@
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-2px); }
   to   { opacity: 0.85; transform: translateY(0); }
+}
+
+/* Louder than "Saved", because it is the one message here that reports
+   something the person at this keyboard did not do: notes written elsewhere
+   have just appeared in the tree. Sits in the same slot - it replaces "Saved"
+   rather than crowding in beside it, since it is a report on the same save. */
+.mergedBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--paper-accent) 14%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--paper-accent);
+  animation: fadeIn 0.15s ease;
 }
 
 .headerHints {
@@ -848,7 +874,10 @@
      cost of the margin the frame occupies and a line of clutter around every
      edge. The header's ✕ is what says this closes. */
   .overlay { padding: 0; }
-  .shell, .shellMaximized { height: 100%; min-height: 0; }
+  /* The height transition exists for the maximize toggle, which is hidden at
+     this size (.maxBtn below). What is left for it to animate is the keyboard
+     opening - a third of a second of the editor catching up with the keys. */
+  .shell, .shellMaximized { height: 100%; min-height: 0; transition: none; }
 
   .console {
     border: none;

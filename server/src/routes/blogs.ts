@@ -27,10 +27,19 @@ import {
   visiblePostWhere,
   isBlogVisibility,
   normalizeHeroImage,
+  normalizeTags,
+  MAX_POST_TAGS,
+  MAX_TAG_LENGTH,
   MAX_BLOG_BODY,
   MAX_BLOG_TEXT,
   MAX_BLOG_TITLE,
 } from '../lib/blog';
+import { normalizeTag, tagPostsWhere, TAG_PAGE_SIZE } from '../lib/tags';
+import { eligibleAuthorIds } from '../lib/recent';
+
+// What /recent hands the app. Larger than the crawlable document's thirty, since
+// the page scrolls and a second request for the next ten would be silly.
+const RECENT_API_LIMIT = 50;
 
 // Blog posts. Reads run under optionalAuth so a public post opens for a
 // logged-out visitor (the same way a shared /a/<id> thread link does); writes
@@ -59,14 +68,15 @@ const AUTHOR_SELECT = PUBLIC_USER_SELECT;
 
 // Everything the client needs to render a post, minus the body (list views).
 const SUMMARY_SELECT = {
-  id: true, title: true, slug: true, excerpt: true, heroImage: true, visibility: true,
+  id: true, title: true, slug: true, excerpt: true, heroImage: true, tags: true, visibility: true,
   commentsEnabled: true, url: true, publishedAt: true, updatedAt: true,
 } as const;
 
 const FULL_SELECT = { ...SUMMARY_SELECT, body: true, articleKey: true } as const;
 
 type PostRow = {
-  id: string; title: string; slug: string; excerpt: string; heroImage: string; visibility: string;
+  id: string; title: string; slug: string; excerpt: string; heroImage: string; tags: string[];
+  visibility: string;
   commentsEnabled: boolean; url: string; publishedAt: Date; updatedAt: Date;
   body?: string; articleKey?: string;
   user?: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
@@ -90,7 +100,7 @@ function validate(
   b: Record<string, unknown>,
   partial: boolean,
 ): string | null {
-  const { title, body, visibility, commentsEnabled, heroImage } = b;
+  const { title, body, visibility, commentsEnabled, heroImage, tags } = b;
 
   if (!partial || title !== undefined) {
     if (typeof title !== 'string' || !title.trim()) return 'A title is required';
@@ -113,6 +123,14 @@ function validate(
   }
   if (heroImage !== undefined && normalizeHeroImage(heroImage) === null) {
     return 'heroImage must be an uploaded image path, or empty';
+  }
+  // normalizeTags recovers case, spacing, '#' and duplicates on its own, so the
+  // only ways to land here are a shape that isn't a list of strings, a tag too
+  // long to be a label, or too many of them — say which of those it is.
+  if (tags !== undefined && normalizeTags(tags) === null) {
+    return Array.isArray(tags)
+      ? `Keep it to ${MAX_POST_TAGS} tags of ${MAX_TAG_LENGTH} characters or fewer`
+      : 'tags must be a list of words';
   }
   return null;
 }
@@ -165,7 +183,7 @@ router.post('/', requireAuth, blogWriteLimiter, async (req: AuthRequest, res: Re
   const problem = validate(req.body as Record<string, unknown>, false);
   if (problem) { res.status(400).json({ error: problem }); return; }
 
-  const { title, body, visibility, commentsEnabled, heroImage } = req.body as Record<string, unknown>;
+  const { title, body, visibility, commentsEnabled, heroImage, tags } = req.body as Record<string, unknown>;
 
   try {
     const user = await prisma.user.findUnique({
@@ -191,6 +209,7 @@ router.post('/', requireAuth, blogWriteLimiter, async (req: AuthRequest, res: Re
         body: clean,
         excerpt: excerptOf(clean),
         heroImage: normalizeHeroImage(heroImage) ?? '',
+        tags: normalizeTags(tags) ?? [],
         visibility: isBlogVisibility(visibility) ? visibility : 'private',
         commentsEnabled: commentsEnabled !== false,
         url,
@@ -237,7 +256,7 @@ router.patch('/post/:id', requireAuth, blogWriteLimiter, async (req: AuthRequest
   const problem = validate(req.body as Record<string, unknown>, true);
   if (problem) { res.status(400).json({ error: problem }); return; }
 
-  const { title, body, visibility, commentsEnabled, heroImage } = req.body as Record<string, unknown>;
+  const { title, body, visibility, commentsEnabled, heroImage, tags } = req.body as Record<string, unknown>;
 
   try {
     const existing = await prisma.blogPost.findFirst({
@@ -258,6 +277,9 @@ router.patch('/post/:id', requireAuth, blogWriteLimiter, async (req: AuthRequest
     // validate() has already rejected an unacceptable value, so a non-null
     // result here is the one to store — including '' , which clears the hero.
     if (heroImage !== undefined) data.heroImage = normalizeHeroImage(heroImage) ?? '';
+    // Same rule as heroImage: the empty list is a real value (the author removed
+    // the last tag), so an omitted field is the only thing that leaves tags be.
+    if (tags !== undefined) data.tags = normalizeTags(tags) ?? [];
 
     // publishedAt defaults to row creation, which for a draft is when the author
     // started writing, not when anyone could read it. Stamp it at the moment the
@@ -503,6 +525,69 @@ router.get('/:username/follow', requireAuth, async (req: AuthRequest, res: Respo
 
 // ── Public routes ────────────────────────────────────────────────────────────
 
+// GET /api/v1/blogs/recent — the global recent-posts list, for the /recent page.
+//
+// Above /:username for the same reason /tags is: "recent" is a registrable
+// username. See lib/recent.ts for who is eligible and why the bar is where it is.
+router.get('/recent', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const authorIds = await eligibleAuthorIds();
+    const rows = authorIds.length === 0 ? [] : await prisma.blogPost.findMany({
+      where: { visibility: 'public', userId: { in: authorIds } },
+      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+      take: RECENT_API_LIMIT,
+      select: { ...SUMMARY_SELECT, user: { select: AUTHOR_SELECT } },
+    });
+    res.json({ posts: rows.map(r => toJson(r as PostRow)) });
+  } catch (err) {
+    logger.error(err, 'List recent posts error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/blogs/tags/:tag/posts — every author's public posts under one tag.
+//
+// Mounted above the /:username routes deliberately: "tags" is a perfectly legal
+// username, and a route ordered after them would be shadowed the moment someone
+// registered it.
+//
+// Public posts only, and no viewer-specific widening — unlike a profile, this is
+// a shared surface and a friends-only post has no business appearing on one just
+// because the reader happens to be a friend. It is the same list the crawlable
+// /t/<tag> document renders, which is what keeps the page a visitor sees and the
+// page Google sees the same page.
+router.get('/tags/:tag/posts', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const tag = normalizeTag(req.params.tag);
+    if (!tag) { res.status(400).json({ error: 'Not a tag' }); return; }
+
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const where = tagPostsWhere(tag);
+
+    const [rows, total] = await Promise.all([
+      prisma.blogPost.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * TAG_PAGE_SIZE,
+        take: TAG_PAGE_SIZE,
+        select: { ...SUMMARY_SELECT, user: { select: AUTHOR_SELECT } },
+      }),
+      prisma.blogPost.count({ where }),
+    ]);
+
+    res.json({
+      tag,
+      total,
+      page,
+      hasMore: page * TAG_PAGE_SIZE < total,
+      posts: rows.map(r => toJson(r as PostRow)),
+    });
+  } catch (err) {
+    logger.error(err, 'List tag posts error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/v1/blogs/:username/posts — the posts on someone's profile that this
 // viewer is allowed to see.
 router.get('/:username/posts', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -515,10 +600,17 @@ router.get('/:username/posts', async (req: AuthRequest, res: Response): Promise<
 
     const friendIds = req.userId ? await friendIdsOf(req.userId) : new Set<string>();
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+    // One tag, not a set: this backs clicking a tag on a post, which is a
+    // question with one answer. Normalised through the same helper the write
+    // path uses, so a link carrying "#News" finds the posts stored as "news".
+    const tag = normalizeTags(
+      typeof req.query.tag === 'string' ? [req.query.tag] : [],
+    )?.[0];
 
     const rows = await prisma.blogPost.findMany({
       where: {
         userId: owner.id,
+        ...(tag ? { tags: { has: tag } } : {}),
         // Drafts are not on the profile, the author's own included. This is a
         // separate clause from visiblePostWhere on purpose: that answers "may
         // this viewer read it", and for a draft's own author the answer is yes.

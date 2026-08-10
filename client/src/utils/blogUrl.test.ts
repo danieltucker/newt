@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   blogPathFor, parseBlogPath, blogEditPathFor, parseBlogEditPath, blogAuthorOfUrl,
+  blogRefOfUrl,
 } from './blogUrl';
 import { parseProfilePath } from './profileUrl';
 
@@ -106,5 +107,44 @@ describe('blogAuthorOfUrl', () => {
   it('is null for a value that is not a URL', () => {
     expect(blogAuthorOfUrl('')).toBeNull();
     expect(blogAuthorOfUrl('::::')).toBeNull();
+  });
+});
+
+// What decides where a search result goes: a post hosted here opens its own page,
+// anything else opens the article reader. Same origin check as above — and here
+// getting it wrong would *route* to a local post for a foreign URL, not just
+// mislabel it.
+describe('blogRefOfUrl', () => {
+  const ORIGIN = window.location.origin;
+
+  it('returns author and slug for a post on this origin', () => {
+    expect(blogRefOfUrl(`${ORIGIN}/u/alice/hello-world`))
+      .toEqual({ username: 'alice', slug: 'hello-world' });
+  });
+
+  it('resolves a site-relative link against this origin', () => {
+    expect(blogRefOfUrl('/u/alice/hello-world'))
+      .toEqual({ username: 'alice', slug: 'hello-world' });
+  });
+
+  it('is null for a lookalike path on another origin', () => {
+    expect(blogRefOfUrl('https://evil.test/u/alice/hello-world')).toBeNull();
+    expect(blogRefOfUrl('http://localhost:9999/u/alice/hello-world')).toBeNull();
+  });
+
+  it('is null for a path on this origin that is not a post', () => {
+    expect(blogRefOfUrl(`${ORIGIN}/u/alice`)).toBeNull();
+    expect(blogRefOfUrl(`${ORIGIN}/a/aHR0cHM6Ly9leGFtcGxlLmNvbQ`)).toBeNull();
+  });
+
+  it('agrees with blogAuthorOfUrl, which is written in terms of it', () => {
+    for (const url of [
+      `${ORIGIN}/u/alice/hello-world`,
+      'https://evil.test/u/alice/hello-world',
+      `${ORIGIN}/u/alice`,
+      '::::',
+    ]) {
+      expect(blogRefOfUrl(url)?.username ?? null).toBe(blogAuthorOfUrl(url));
+    }
   });
 });

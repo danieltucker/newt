@@ -1,0 +1,61 @@
+/* The reading list's .tag, made shared. Same monospace pill in the accent
+   colour, so a tag on a post reads as the same kind of thing as a tag on a
+   saved article - because it is. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagBtn {
+  background: none;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.tagBtn:hover,
+.tagBtn:focus-visible {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+
+/* Filtering on this tag. Filled rather than merely darker: the pressed one has
+   to be findable in a row of eight without reading them. */
+.tagOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  /* #fff, as everywhere else that fills with --accent - both themes' accents
+     are dark enough to carry white. */
+  color: #fff;
+}
+
+.tagOn:hover,
+.tagOn:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Touch: the pills are 11px type in a 20px box, which is fine to read and too
+   small to hit. Only the tappable ones grow - a display-only row is text. */
+@media (hover: none) {
+  .tagBtn {
+    font-size: 12px;
+    padding: 6px 11px;
+  }
+}

@@ -1,0 +1,15 @@
+-- Tags on a blog post: the author's own labels, alongside the title.
+--
+-- A text array rather than a Tag table with a join, matching FeedItem.categories
+-- — a tag here is a word, not a record. Nothing hangs off one, the whole set is
+-- read and rewritten with the post, and a per-user tag list has no life of its
+-- own to keep consistent.
+--
+-- No index. The only query that filters on it is a single author's post list
+-- (`?tag=` on GET /blogs/:username/posts), which is already narrowed by userId
+-- to at most a couple of hundred rows; a GIN index over the array would cost
+-- more to maintain on every save than the scan it saves.
+--
+-- Existing posts get the empty array, which is what "untagged" means — there is
+-- no backfill to do and no null state to distinguish from it.
+ALTER TABLE "BlogPost" ADD COLUMN "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

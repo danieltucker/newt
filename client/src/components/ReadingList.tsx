@@ -985,9 +985,22 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
 
       {expanded && (
         <div className={styles.addForm}>
+          {/* A URL field, and it has to say so. As `type="text"` a phone
+              treated an address like prose: it capitalised the first letter,
+              autocorrected the host to the nearest English word, and offered a
+              space bar instead of a slash - so what arrived was rarely what was
+              pasted or typed. `type="url"` gets the URL keyboard; the three
+              attributes after it turn off the corrections, which iOS applies to
+              any field it is allowed to. There is no form around this, so the
+              type brings no validation with it - "verge.com/article" without a
+              scheme still submits (handleSave prefixes https://). */}
           <input
             className={styles.formInput}
-            type="text"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="URL (e.g. verge.com/article)"
             value={url}
             onChange={e => setUrl(e.target.value)}

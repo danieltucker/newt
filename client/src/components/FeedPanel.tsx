@@ -98,7 +98,6 @@ interface Props {
   readingFolders?: ReadingFolder[];
   /** Make a new shelf and resolve to its id, from that same menu. */
   onCreateFolder?: (name: string) => Promise<string>;
-  onArticlesLoaded?: (articles: FeedArticle[]) => void;
   refreshKey?: number;
   pageSize?: number;
   layout?: RssLayout;
@@ -245,8 +244,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, onArticlesLoaded, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
-  const seeded = useRef(false);
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
   const [total, setTotal]               = useState(0);
@@ -428,10 +426,28 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     }
   }, [loadedAt, activeFeedFolder]);
 
-  // The age of what's on screen. Re-armed by every load, which is what makes
-  // pressing the button put it away.
+  // ── The age of what's on screen ──
+  //
+  // Read off a timestamp, not counted down by a timer. A phone that goes to
+  // sleep suspends the page: timers stop, and depending on how long it was out
+  // and how much memory the browser wanted back, a pending setTimeout may fire
+  // late, fire immediately on resume, or never fire at all because the page was
+  // discarded and restored from the back/forward cache with its JS heap intact
+  // and its timers gone. That was the report - picking the phone up after a
+  // couple of hours and finding a feed with no refresh button on it, which is
+  // exactly the page that most needs one.
+  //
+  // A stored millisecond survives all of that: whatever happened while nobody
+  // was looking, the answer to "how old is this page" is the same subtraction.
+  // The timer is kept for the ordinary case - a page someone is looking at,
+  // which goes stale on the stroke of fifteen minutes rather than at the next
+  // three-minute tick. It is no longer the only thing that can raise the flag.
+  const drawnAtRef = useRef(0);
   useEffect(() => {
     if (!loadedAt) return;
+    // The client's own clock. `loadedAt` is the server's and is not comparable
+    // to Date.now(); this only ever measures an elapsed time against itself.
+    drawnAtRef.current = Date.now();
     setStale(false);
     const timer = setTimeout(() => setStale(true), PAGE_STALE_MS);
     return () => clearTimeout(timer);
@@ -444,17 +460,40 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
 
   useEffect(() => {
     if (!loadedAt) return;
-    const tick = () => { if (document.visibilityState === 'visible') checkRef.current(); };
-    const timer = setInterval(tick, NEW_CHECK_MS);
-    // Coming back to a tab that has been sitting open is the case this whole
-    // mechanism exists for - "I have to refresh to get updates when I've been
-    // gone for a bit" - so it asks straight away rather than waiting out the
-    // rest of an interval that was running while nobody was looking.
-    const onVisible = () => { if (document.visibilityState === 'visible') checkRef.current(); };
-    document.addEventListener('visibilitychange', onVisible);
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Only ever raised here, never lowered: a fresh load is what clears it,
+      // and that goes through the effect above.
+      if (Date.now() - drawnAtRef.current >= PAGE_STALE_MS) setStale(true);
+      checkRef.current();
+    };
+    const timer = setInterval(poll, NEW_CHECK_MS);
+    // Every way a page can come back after being away. Coming back to a tab
+    // that has been sitting open is the case this whole mechanism exists for -
+    // "I have to refresh to get updates when I've been gone for a bit" - so it
+    // asks straight away rather than waiting out the rest of an interval that
+    // was running while nobody was looking, or never ran at all.
+    //
+    // All three are needed and none of them is redundant: switching tabs fires
+    // only `visibilitychange`, a bfcache restore fires only `pageshow`, and
+    // returning to a phone that merely locked the screen can fire only `focus`.
+    // They also overlap - one return can fire two of them - so a wake is only
+    // acted on once. Coming back is one event however many the browser sends.
+    let lastWake = 0;
+    const wake = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastWake < 2000) return;
+      lastWake = Date.now();
+      poll();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('pageshow', wake);
+    window.addEventListener('focus', wake);
     return () => {
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('pageshow', wake);
+      window.removeEventListener('focus', wake);
     };
   }, [loadedAt]);
 
@@ -651,19 +690,6 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     obs.observe(el);
     return () => obs.disconnect();
   }, [hasMore, loading, loadingMore, articles, load]);
-
-  // Background load for search seeding - fires once per session, unscoped, so
-  // search reaches the whole feed rather than whichever category is on screen.
-  useEffect(() => {
-    if (!onArticlesLoaded || seeded.current) return;
-    seeded.current = true;
-    apiFetch('/api/v1/feeds/articles?includeAll=true&limit=200')
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { articles: FeedArticle[] } | null) => {
-        if (data?.articles?.length) onArticlesLoaded(data.articles);
-      })
-      .catch(() => {});
-  }, [onArticlesLoaded]);
 
   const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(
     useMemo(() => articles.map(a => a.link), [articles])

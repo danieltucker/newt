@@ -286,6 +286,16 @@
 }
 .titleInput::placeholder { color: color-mix(in oklab, var(--muted) 55%, transparent); }
 
+/* TagChipInput brings its own box; this only gives it room and hangs the
+   cap notice underneath. */
+.tagsBlock { margin: 10px 0 2px; }
+
+.tagsHint {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 .urlLine {
   font-size: 12px;
   color: var(--muted);

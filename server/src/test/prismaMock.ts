@@ -27,6 +27,11 @@ const METHODS = [
 type Model = Record<(typeof METHODS)[number], ReturnType<typeof vi.fn>>;
 export type PrismaMock = Record<(typeof MODELS)[number], Model> & {
   $transaction: ReturnType<typeof vi.fn>;
+  // Called as a tagged template, so the mock receives (strings, ...values) and a
+  // test can assert on the *values* — which is where the user scoping lives in a
+  // raw query. It can say nothing about the SQL text around them; see the note
+  // at the top about what this mock is and isn't for.
+  $queryRaw: ReturnType<typeof vi.fn>;
 };
 
 function makeModel(): Model {
@@ -37,6 +42,7 @@ function makeModel(): Model {
 
 export const prismaMock = {
   $transaction: vi.fn(),
+  $queryRaw: vi.fn(),
 } as PrismaMock;
 
 for (const name of MODELS) prismaMock[name] = makeModel();
@@ -61,6 +67,8 @@ export function resetPrismaMock(): void {
       }
     }
   }
+  prismaMock.$queryRaw.mockReset();
+  prismaMock.$queryRaw.mockResolvedValue([]);
   prismaMock.$transaction.mockReset();
   prismaMock.$transaction.mockImplementation(async (arg: unknown) =>
     typeof arg === 'function'

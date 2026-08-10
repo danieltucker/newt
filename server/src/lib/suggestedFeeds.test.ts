@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES, starterFeeds } from './suggestedFeeds';
+import { SUGGESTED_FEEDS, SUGGESTED_CATEGORIES } from './suggestedFeeds';
 import { canonicalFeedKey } from './feedUtils';
 
 // None of this reaches the network — whether a feed is *live* is checked by hand
@@ -34,23 +34,11 @@ describe('SUGGESTED_FEEDS', () => {
     const bad = SUGGESTED_FEEDS.filter(f => !f.url.startsWith('https://') || !f.blurb.trim() || !f.site.trim());
     expect(bad.map(f => f.name)).toEqual([]);
   });
-});
 
-describe('starterFeeds', () => {
-  it('is a real subset — the point is that it is shorter', () => {
-    expect(starterFeeds().length).toBeGreaterThan(0);
-    expect(starterFeeds().length).toBeLessThan(SUGGESTED_FEEDS.length);
-  });
-
-  // A category that lost its starter would vanish from the first-run screen
-  // rather than fall back, which is the failure this is here to prevent.
-  it('covers every category, flagged or not', () => {
-    const covered = new Set(starterFeeds().map(f => f.category));
-    expect(SUGGESTED_CATEGORIES.filter(c => !covered.has(c.name)).map(c => c.name)).toEqual([]);
-  });
-
-  it('keeps the order of the full list', () => {
-    const positions = starterFeeds().map(f => SUGGESTED_FEEDS.indexOf(f));
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  // The first-run picker groups on first appearance, so a category split across
+  // two places in the list would show up twice on that screen.
+  it('keeps each category contiguous, in the order the categories declare', () => {
+    const order = SUGGESTED_FEEDS.map(f => f.category).filter((c, i, a) => c !== a[i - 1]);
+    expect(order).toEqual(SUGGESTED_CATEGORIES.map(c => c.name));
   });
 });

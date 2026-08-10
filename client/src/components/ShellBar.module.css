@@ -336,24 +336,6 @@
   color: var(--muted);
 }
 
-.sheetClose {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--surface2);
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.sheetClose:hover { background: var(--border); color: var(--text); }
-
 .menuRail {
   width: min(272px, calc(100vw - 44px));
   max-height: 72vh;
@@ -459,55 +441,90 @@
   .menuRailLabel { font-size: 11.5px; }
 }
 
-/* ── Narrow: bookmarks are a sheet, not a dropdown ──
-   A 272px card hanging off the hamburger, capped at 72vh, is a keyhole view of
-   a folder list on a phone - and the rail carries a pin grid, so the width is
-   what it can least afford to give away. Below this it takes the whole screen
-   under the bar.
+/* ── Bookmarks on a phone: the same room as everything else ──
+   Rendered only below BOOKMARKS_SHEET (see ShellBar.tsx), and rendered by
+   BookmarksSheet rather than by Menu - the markup differs, not just the dress.
 
-   Fixed, but measured from the bar rather than the viewport: .bar carries a
-   backdrop-filter, and that makes it the containing block for anything fixed
-   inside it. `top: 100%` is therefore the bar's own bottom edge, and the height
-   is the rest of the viewport below it - --shellbar-h is the height ShellBar
-   measures and publishes for exactly this kind of sum. Leaving the bar showing
-   is deliberate: the hamburger stays where you left it, so the gesture that
-   opened this closes it, and the ✕ says the same thing for anyone who doesn't
-   make that connection. */
-@media (max-width: 640px) {
-  .menuSheet {
-    position: fixed;
-    top: 100%;
-    left: 0;
-    width: 100vw;
-    min-width: 0;
-    height: calc(100dvh - var(--shellbar-h, 56px));
-    display: flex;
-    flex-direction: column;
-    padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px));
-    border: none;
-    border-left: none;
-    border-right: none;
-    border-radius: 0;
-    box-shadow: none;
-    background: var(--surface);
-    animation: sheetIn 0.16s ease;
-  }
+   A 272px card hanging off the hamburger, capped at 72vh, is a keyhole view of a
+   folder list on a phone, and the rail carries a 3-up pin grid so width is what
+   it can least afford to give away. The previous answer took the screen *under*
+   the bar, which fixed the size but left bookmarks wearing a menu's chrome while
+   the reading list and the notes console opened as full modals with a backdrop
+   and a proper title. This is that same room: full bleed, safe areas, one
+   CloseButton, and the page behind it held still.
 
-  .menuSheet .menuRail {
-    flex: 1;
-    width: 100%;
-    max-height: none;
-  }
+   The bar is covered now rather than left showing. What that trades away is the
+   hamburger staying put under your thumb; what it buys is one answer to "how
+   does a thing open on a phone" instead of two. Backdrop tap, Escape and the ✕
+   all close, as they do in the others. */
+.sheetBackdrop {
+  position: fixed;
+  inset: 0;
+  /* Otherwise the bottom of a long folder list lays out behind the keyboard -
+     the rail's dialogs have text fields. See hooks/useKeyboardInset; the value
+     is 0 whenever there isn't a keyboard. */
+  bottom: var(--kb-inset, 0px);
+  z-index: var(--z-modal);
+  display: flex;
+  background: var(--overlay);
+  animation: sheetFade 0.18s ease;
+}
 
-  .menuRailHead { padding-bottom: 2px; }
-  .sheetClose { display: flex; }
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+  /* Full bleed means the title would sit under the notch and the last folder
+     under the home indicator. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: sheetIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-shrink: 0;
+  padding: 14px 16px 10px;
+}
+
+/* The reading list's .modalTitle at its phone size - this is the same kind of
+   heading on the same kind of surface, so it is the same type. */
+.sheetTitle {
+  margin: 0;
+  font-family: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.sheetBody {
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.sheetBody::-webkit-scrollbar { display: none; }
+
+@keyframes sheetFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes sheetIn {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .menuSheet { animation: none; }
+  .sheetBackdrop, .sheet { animation: none; }
 }

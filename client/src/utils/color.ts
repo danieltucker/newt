@@ -1,4 +1,6 @@
-const PALETTE = [
+// Also the swatches offered when naming a folder, so a folder picked by hand
+// and a tile coloured from its domain come out of the same set.
+export const PALETTE = [
   '#5E6AD2', '#FF4500', '#EA4C89', '#1DB954', '#F48024', '#A259FF',
   '#E0479E', '#00A8E8', '#FF6600', '#24A0ED', '#7C5CFC', '#0FB57B',
 ];

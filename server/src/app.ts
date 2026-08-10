@@ -24,6 +24,8 @@ import notificationRoutes from './routes/notifications';
 import blockRoutes from './routes/blocks';
 import reportRoutes from './routes/reports';
 import siteRoutes from './routes/sites';
+import htmlRoutes from './routes/html';
+import seoRoutes from './routes/seo';
 import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
@@ -94,6 +96,25 @@ app.use('/api/v1/reports', apiLimiter, reportRoutes);
 app.use('/api/v1/sites', apiLimiter, siteRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Server-rendered documents for the public pages (/u/, /a/, /t/, sitemap,
+// robots). Not under /api: these are the addresses a person shares and a crawler
+// fetches, and nginx proxies exactly those prefixes here — see client/nginx.conf.
+//
+// A separate, much larger limiter than the API's. A crawler working through a
+// sitemap is the intended traffic for these routes, and 429ing Googlebot does
+// not merely fail one request: it teaches it to crawl the site less. The
+// responses are public and identical for every caller, so nginx's proxy_cache
+// absorbs the repeat volume long before this ceiling matters.
+const htmlLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests',
+});
+app.use(htmlLimiter, seoRoutes);
+app.use(htmlLimiter, htmlRoutes);
 
 // Last, and after every route — an error handler mounted above them would never
 // see anything. Turns an unhandled throw into a logged, recorded 500 instead of

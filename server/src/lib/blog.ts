@@ -114,6 +114,41 @@ export function excerptOf(html: string, max = DEFAULT_EXCERPT): string {
 // lives outside the HTML.
 export const normalizeHeroImage = normalizeImagePath;
 
+// ── Tags ─────────────────────────────────────────────────────────────────────
+// The author's own labels on a post. Deliberately the same shape the reading
+// list's tags take on screen — lowercase words, no leading '#' — so a tag reads
+// the same wherever it turns up and searching "#thing" can mean one thing.
+
+// Low on purpose. Tags are for finding a post again, and a post wearing twenty
+// of them says nothing about what it is; the cap is what keeps them a label
+// rather than a second body.
+export const MAX_POST_TAGS = 8;
+export const MAX_TAG_LENGTH = 32;
+
+// Fold a submitted tag list into what gets stored, or null when the payload
+// isn't a tag list at all. Anything recoverable is recovered rather than
+// rejected: case, surrounding space, a typed '#', an accidental duplicate and an
+// empty entry are all the author meaning the same tag, and refusing the save
+// over one is a worse answer than storing the tag they meant.
+//
+// What is *not* recoverable is a tag too long to be a label or a list too long
+// to be a set of labels — silently truncating either would store something the
+// author didn't write.
+export function normalizeTags(input: unknown): string[] | null {
+  if (!Array.isArray(input)) return null;
+  const out: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== 'string') return null;
+    // The '#' is how a tag is *displayed*, never part of its identity - storing
+    // it would make "#news" and "news" two tags that look identical.
+    const tag = raw.trim().replace(/^#+/, '').trim().toLowerCase();
+    if (!tag) continue;
+    if (tag.length > MAX_TAG_LENGTH) return null;
+    if (!out.includes(tag)) out.push(tag);
+  }
+  return out.length > MAX_POST_TAGS ? null : out;
+}
+
 export interface VisiblePost {
   userId: string;
   visibility: string;

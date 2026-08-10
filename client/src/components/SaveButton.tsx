@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, Fragment, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import styles from './SaveButton.module.css';
 
 // The one "save this article" control, shared by the feed cards and the reading
@@ -82,28 +84,55 @@ export default function SaveButton({
   const caretRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * On a phone the menu is a sheet at the bottom of the screen, not a popover
+   * hanging off the button.
+   *
+   * As a popover it did neither of the things a menu has to do. It opens
+   * upward, because the button sits at the foot of a card - and the card lists
+   * it opens over scroll inside a box, so a card near the top of that box had
+   * its menu cropped by the box's own edge. What you saw instead was the view
+   * jumping: focusing the first item scrolled the list to bring the clipped
+   * menu into range, and the scroll handler below - which is there so a menu
+   * never floats over a list that has moved on - then closed the thing that had
+   * just caused the scroll. One tap, a lurch, and nothing open.
+   *
+   * A sheet is fixed to the viewport, so there is nothing to clip it and
+   * nothing to scroll it into view, and it puts a list of folders where a thumb
+   * can reach it rather than at the top of the reach.
+   */
+  const asSheet = useMediaQuery('(max-width: 640px)');
+
   const target = destinations.find(d => d.id === defaultId) ?? destinations[0];
 
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      // The sheet is portalled to <body>, so it is not inside wrapRef.
+      if (menuRef.current?.contains(t)) return;
+      if (wrapRef.current && !wrapRef.current.contains(t)) setOpen(false);
     }
-    // Cards move under you - a list that reflows or scrolls away with its menu
-    // still open is worse than one that closes.
+    // Cards move under you - a popover that stays put while the list it is
+    // anchored to scrolls away is worse than one that closes. A sheet is
+    // anchored to the screen instead, so this doesn't apply to it: closing on
+    // scroll there would mean the on-screen keyboard, which scrolls the page
+    // when the new-folder field takes focus, shutting the menu you opened it
+    // from.
     function onScroll() { setOpen(false); }
     document.addEventListener('mousedown', onOutside);
-    window.addEventListener('scroll', onScroll, true);
+    if (!asSheet) window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onOutside);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [open]);
+  }, [open, asSheet]);
 
   // The menu is opened deliberately, so the first choice should be one keystroke
-  // away rather than a tab away.
+  // away rather than a tab away. `preventScroll` because moving focus is not a
+  // request to move the page - see the note on `asSheet` for what that cost.
   useEffect(() => {
-    if (open) menuRef.current?.querySelector('button')?.focus();
+    if (open) menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
   }, [open]);
 
   // A closed menu forgets a half-typed folder name. Reopening to find one
@@ -145,6 +174,71 @@ export default function SaveButton({
 
   let lastGroup: string | undefined;
 
+  const menuBody = (
+    <>
+      {destinations.map(d => {
+        const heading = d.group && d.group !== lastGroup ? d.group : null;
+        lastGroup = d.group;
+        return (
+          <Fragment key={d.id}>
+            {heading && (
+              <div className={styles.heading} role="presentation">{heading}</div>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              className={`${styles.item} ${d.id === currentId ? styles.itemCurrent : ''}`}
+              onClick={() => choose(d.id)}
+            >
+              <span className={styles.itemLabel}>{d.label}</span>
+              {d.id === currentId ? <CheckIcon />
+                : d.hint ? <span className={styles.hint}>{d.hint}</span>
+                : null}
+            </button>
+          </Fragment>
+        );
+      })}
+
+      {onCreateDestination && (
+        <>
+          <div className={styles.sep} role="presentation" />
+          {newName === null ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={`${styles.item} ${styles.itemNew}`}
+              onClick={() => setNewName('')}
+            >
+              <span className={styles.plus} aria-hidden>+</span>
+              <span className={styles.itemLabel}>{createLabel}</span>
+            </button>
+          ) : (
+            <div className={styles.newRow}>
+              <input
+                className={styles.newInput}
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="Folder name"
+                aria-label={createLabel}
+                autoFocus
+                disabled={creating}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createAndSave(); } }}
+              />
+              <button
+                type="button"
+                className={styles.newGo}
+                onClick={() => void createAndSave()}
+                disabled={creating || !newName.trim()}
+              >
+                {creating ? '…' : 'Save'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className={`${styles.wrap} ${className}`} ref={wrapRef}>
       <div className={styles.group}>
@@ -171,69 +265,31 @@ export default function SaveButton({
         </button>
       </div>
 
-      {open && (
+      {open && !asSheet && (
         <div className={styles.menu} ref={menuRef} role="menu" onKeyDown={onMenuKeyDown}>
-          {destinations.map(d => {
-            const heading = d.group && d.group !== lastGroup ? d.group : null;
-            lastGroup = d.group;
-            return (
-              <Fragment key={d.id}>
-                {heading && (
-                  <div className={styles.heading} role="presentation">{heading}</div>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={`${styles.item} ${d.id === currentId ? styles.itemCurrent : ''}`}
-                  onClick={() => choose(d.id)}
-                >
-                  <span className={styles.itemLabel}>{d.label}</span>
-                  {d.id === currentId ? <CheckIcon />
-                    : d.hint ? <span className={styles.hint}>{d.hint}</span>
-                    : null}
-                </button>
-              </Fragment>
-            );
-          })}
-
-          {onCreateDestination && (
-            <>
-              <div className={styles.sep} role="presentation" />
-              {newName === null ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={`${styles.item} ${styles.itemNew}`}
-                  onClick={() => setNewName('')}
-                >
-                  <span className={styles.plus} aria-hidden>+</span>
-                  <span className={styles.itemLabel}>{createLabel}</span>
-                </button>
-              ) : (
-                <div className={styles.newRow}>
-                  <input
-                    className={styles.newInput}
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    placeholder="Folder name"
-                    aria-label={createLabel}
-                    autoFocus
-                    disabled={creating}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createAndSave(); } }}
-                  />
-                  <button
-                    type="button"
-                    className={styles.newGo}
-                    onClick={() => void createAndSave()}
-                    disabled={creating || !newName.trim()}
-                  >
-                    {creating ? '…' : 'Save'}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+          {menuBody}
         </div>
+      )}
+
+      {/* Portalled to <body> so no card, list or dialog can crop it, and so the
+          sheet is measured against the screen rather than against whatever the
+          button happens to be sitting inside. */}
+      {open && asSheet && createPortal(
+        <div className={styles.sheetScrim} onClick={() => setOpen(false)}>
+          <div
+            className={styles.sheet}
+            ref={menuRef}
+            role="menu"
+            aria-label={menuLabel}
+            onKeyDown={onMenuKeyDown}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={styles.sheetGrip} aria-hidden />
+            <div className={styles.sheetTitle}>{menuLabel}</div>
+            <div className={styles.sheetList}>{menuBody}</div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

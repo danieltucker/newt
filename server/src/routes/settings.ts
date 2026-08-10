@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { mergeNoteDocs, mergeNoteFolders, mergeNoteOrder } from '../lib/noteMerge';
 
 const router = Router();
 router.use(requireAuth);
@@ -15,6 +16,13 @@ export interface UserSettings {
   noteFolders: Array<{ id: string; name: string; color: string; collapsed?: boolean }>;
   noteTreeOrder: string[];
   noteSidebarWidth: number;
+  /**
+   * Bumped by the server on every write that touches the notes tree. A client
+   * sends back the one it last read; if it doesn't match, that client is
+   * working from an older copy and its write is merged rather than taken
+   * wholesale. See lib/noteMerge for why, and for what that costs.
+   */
+  notesRev: number;
   articleOpenMode: 'new-tab' | 'same-tab' | 'iframe';
   readingListOpenMode?: 'new-tab' | 'same-tab' | 'reader';
   bookmarkOpenMode?: 'same-tab' | 'new-tab';
@@ -51,6 +59,7 @@ const DEFAULTS: UserSettings = {
   noteFolders: [],
   noteTreeOrder: [],
   noteSidebarWidth: 210,
+  notesRev: 0,
   articleOpenMode: 'new-tab',
   readingListOpenMode: 'new-tab',
   bookmarkOpenMode: 'same-tab',
@@ -91,8 +100,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(mergeWithDefaults(user?.settings));
 });
 
+// The three keys that make up the notes tree. They are written together and
+// versioned together - an order that mentions a note the doc list doesn't have
+// is not a state worth being able to reach.
+const NOTE_KEYS = ['noteDocs', 'noteFolders', 'noteTreeOrder'] as const;
+
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'notesRev', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys
@@ -106,8 +120,40 @@ router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const current = mergeWithDefaults(user?.settings);
   const updated = { ...current, ...incoming } as UserSettings;
 
+  // ── Notes: never a blind replace by a client that hasn't caught up ──
+  const touchesNotes = NOTE_KEYS.some(k => k in incoming);
+  let notesMerged = false;
+  if (touchesNotes) {
+    const storedRev = current.notesRev ?? 0;
+    const base = incoming.notesRev;
+    // A write with no revision on it comes from a page loaded before this
+    // existed, which is precisely the tab most likely to be out of date. Treat
+    // the unknown base as a stale one.
+    const upToDate = typeof base === 'number' && base === storedRev;
+    if (!upToDate) {
+      notesMerged = true;
+      if ('noteDocs' in incoming) {
+        updated.noteDocs = mergeNoteDocs(current.noteDocs ?? [], updated.noteDocs ?? []);
+      }
+      if ('noteFolders' in incoming) {
+        updated.noteFolders = mergeNoteFolders(current.noteFolders ?? [], updated.noteFolders ?? []);
+      }
+      if ('noteTreeOrder' in incoming) {
+        updated.noteTreeOrder = mergeNoteOrder(current.noteTreeOrder ?? [], updated.noteTreeOrder ?? []);
+      }
+    }
+    // The revision is the server's to hand out - a client echoing one back is
+    // saying which copy it edited, not choosing the next number.
+    updated.notesRev = storedRev + 1;
+  } else {
+    updated.notesRev = current.notesRev ?? 0;
+  }
+
   await prisma.user.update({ where: { id: req.userId! }, data: { settings: updated as object } });
-  res.json(updated);
+  // `notesMerged` is about this one request, so it is reported and not stored:
+  // it tells the console that what came back is not what it sent, and that it
+  // should take the reply on board rather than carry on from its own copy.
+  res.json(notesMerged ? { ...updated, notesMerged: true } : updated);
 });
 
 export default router;

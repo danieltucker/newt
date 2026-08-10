@@ -200,6 +200,14 @@
   --ctl-h: 32px;
   --ctl-h-lg: 40px;
   --ctl-r: 9px;
+
+  /* How much of the window the on-screen keyboard is covering. Kept at zero
+     here so `var(--kb-inset)` always resolves; hooks/useKeyboardInset writes the
+     real number onto <html> while a keyboard is up, and adds `.kb-open`. Any
+     surface that fills the screen should subtract it from its bottom edge -
+     otherwise the half of it behind the keyboard is still laid out, and on a
+     writing surface that half is where the caret is. */
+  --kb-inset: 0px;
 }
 
 @media (hover: none) {
@@ -208,6 +216,27 @@
     --ctl-h: 40px;
     --ctl-h-lg: 48px;
   }
+}
+
+/* ── Selection ──
+   Dragging over text was the one surface in the app still painted in whatever
+   blue the OS picked. Derived from --accent rather than restated per theme, so
+   it follows a theme switch and can't drift from the rest of the chrome.
+
+   Background only, deliberately. A ::selection rule that also sets `color`
+   replaces the text's own colour, which flattens links, inline code and muted
+   labels into a single shade the moment you drag across them; leaving `color`
+   out keeps each of them and lets the translucent wash sit over the top.
+
+   Surfaces with their own palette override --select-bg locally rather than
+   restating the rule - see .editor in RichEditor, which selects in the paper
+   ramp's accent because it is not sitting on --bg. */
+:root {
+  --select-bg: color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+::selection {
+  background: var(--select-bg);
 }
 
 /* Base */
