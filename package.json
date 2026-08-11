@@ -11,7 +11,8 @@
     "test": "npm run test --workspace=client && npm run test --workspace=server",
     "csp:hash": "node scripts/csp-hash.mjs",
     "shots": "node scripts/shots.mjs",
-    "marketing:check": "node scripts/marketing-check.mjs"
+    "marketing:check": "node scripts/marketing-check.mjs",
+    "check:html": "node scripts/check-html.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

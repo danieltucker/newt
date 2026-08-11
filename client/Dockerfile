@@ -20,6 +20,11 @@ COPY server/package.json server/package.json
 RUN npm ci --workspace=client
 
 COPY client/ client/
+# The client's build script ends by verifying the HTML it just produced (see
+# scripts/check-html.mjs). It runs here, in the image build, on purpose: a
+# document that loads no application is not something to discover after the
+# container is serving it.
+COPY scripts/ scripts/
 RUN npm run build --workspace=client
 
 # ── Runtime stage (nginx) ─────────────────────────────────────────────────────

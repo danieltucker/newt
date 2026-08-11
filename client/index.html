@@ -11,19 +11,33 @@
     <title>Newt - a new tab worth opening</title>
     <!--SSR-HEAD-->
     <!-- The two SSR markers are where server/src/lib/htmlShell.ts injects a
-         page's own <head> and a crawlable copy of its content, for the public
-         routes nginx proxies to Express (/u/, /a/, /t/ - see nginx.conf).
-         Without them every URL the app serves carries the title above, which is
-         why a shared link used to unfurl as a blank card everywhere.
+         page's own head content and a crawlable copy of its body, for the
+         public routes nginx proxies to Express (/u/, /a/, /t/ - see
+         nginx.conf). Without them every URL the app serves carries the title
+         above, which is why a shared link used to unfurl as a blank card
+         everywhere.
 
          The title above is kept for the dev server and for every route that
          isn't injected; renderShell strips it whenever it writes a real one, so
          a document never ends up with two.
 
          Neither marker is load-bearing in the way the CSP-hashed script below
-         is: renderShell falls back to injecting before </head> and </body> if
-         they're missing. Moving them is fine. Renaming them is not - the
-         strings are matched literally. -->
+         is: renderShell falls back to injecting before the closing head and
+         body tags if they're missing. Moving them is fine. Renaming them is
+         not - the strings are matched literally.
+
+         ── Do not name the closing head or body tag anywhere in this file ──
+         Not in markup, and not in prose inside a comment like this one. Vite
+         injects the entry script and stylesheet immediately before the FIRST
+         regex match for the closing head tag in the source; it does not parse
+         the HTML first, so it cannot tell that a match is inside a comment.
+
+         This is not hypothetical. The paragraph above used to spell both tags
+         out, and v1.15.0 shipped with the app's own script and stylesheet
+         injected into the middle of this comment - so every route served a
+         document with an empty #root, no stylesheet and no application, while
+         the build stayed green and every test passed. scripts/check-html.mjs
+         is the guard that now fails the build instead. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/favicon/favicon-32.png" sizes="32x32">
     <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon-180.png">
