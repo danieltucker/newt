@@ -46,7 +46,56 @@ if (process.env.TRUST_PROXY) {
   app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
 }
 
-app.use(helmet());
+// ── Who sets a document's headers ──
+//
+// One `helmet()` over everything was right while everything Express served was
+// JSON. The public document routes below (/u/, /a/, /t/, /recent, robots.txt,
+// sitemap*.xml) changed that: nginx sends *those* their own headers from
+// client/security-headers.conf, because they are documents and the SPA they sit
+// beside is served straight off disk with the same set.
+//
+// A browser handed two Content-Security-Policy headers enforces both, and the
+// effective policy is their intersection - not the last one written. So the two
+// did not merge, they fought, and the stricter accident won:
+//
+//   script-src  nginx names the sha256 of the inline theme script in
+//               index.html; helmet's default `'self'` does not. Intersection:
+//               the script is blocked, and every SSR page loads in the wrong
+//               theme until React mounts.
+//   img-src     nginx allows https:; helmet's default is `'self' data:`.
+//               Intersection: every avatar, favicon and article image on a
+//               profile page is blocked.
+//   frame-src   nginx allows https:; helmet has no frame-src, so its
+//               `default-src 'self'` covers it. Intersection: the reader iframe
+//               is blocked.
+//
+// X-Frame-Options and Referrer-Policy were being sent twice with *different*
+// values too (DENY vs helmet's SAMEORIGIN, strict-origin-when-cross-origin vs
+// helmet's no-referrer), which is why this skips helmet on those routes rather
+// than only turning its CSP off: one owner per response, and for documents that
+// owner is nginx.
+//
+// Consistency, not a downgrade - the SPA's own index.html has always been
+// served by nginx with exactly these headers and no helmet. What was odd was
+// that six URLs got a second set because Express happened to render them.
+//
+// The trade this makes: these six routes are only hardened when something is
+// in front of them supplying client/security-headers.conf. That is true of
+// every deployment the compose files describe, and it was already true of the
+// SPA - but exposing this server directly to the internet would leave them
+// bare, so don't.
+//
+// Kept in step with the `location ~` regex in client/nginx.conf by hand: it is
+// two lines in two languages and a mismatch shows up as a missing header, so
+// server/src/app.test.ts asserts the two agree.
+const DOCUMENT_ROUTE = /^\/(u|a|t)\/|^\/(recent|robots\.txt|sitemap[a-z0-9-]*\.xml)$/;
+
+const apiHelmet = helmet();
+
+app.use((req, res, next) => {
+  if (DOCUMENT_ROUTE.test(req.path)) return next();
+  return apiHelmet(req, res, next);
+});
 
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
