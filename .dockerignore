@@ -29,3 +29,11 @@ docs/
 design_handoff_new_tab/
 newt-brand/
 scripts/
+
+# ...with one exception. check-html.mjs runs at the end of the client build and
+# fails it if the built index.html doesn't actually load the application - which
+# is a thing that has shipped (see the note in client/index.html). A guard that
+# only runs on a developer's machine would not have caught it, so it has to be
+# in the image build, so it has to be in the context. Docker applies the last
+# matching pattern, so this re-includes the one file without the rest.
+!scripts/check-html.mjs
