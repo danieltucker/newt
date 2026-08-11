@@ -9,7 +9,7 @@ import { resolveCredential, toPublicCredential } from '../lib/llm/credentials';
 import { completeChat, listRemoteModels, LlmError } from '../lib/llm/chat';
 import { PROOFREAD_SYSTEM, parseProofread } from '../lib/llm/prompts';
 import { PROOFREAD } from '../lib/llm/depth';
-import { htmlToText } from '../lib/llm/articleContext';
+import { htmlToText } from '../lib/llm/htmlText';
 
 const router = Router();
 router.use(requireAuth);

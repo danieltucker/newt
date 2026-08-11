@@ -210,8 +210,8 @@ interface Props {
   onLayoutChange?: (layout: ReadingListLayout) => void;
   commentPrefs: CommentPrefs;
   onViewProfile?: (username: string) => void;
-  /** Start a research thread about an article. Absent when no model is connected. */
-  onResearch?: (url: string, title: string) => void;
+  /** Start an Explore thread about an article. Absent when no model is connected. */
+  onExplore?: (url: string, title: string) => void;
   /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
   favoriteTags?: string[];
   /** Star/unstar one tag, from a tag chip. */
@@ -495,7 +495,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, commentPrefs, onViewProfile, onResearch, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, commentPrefs, onViewProfile, onExplore, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
   // The list is a room you go into now, not a drawer under the feed. See
   // ReadingListLauncher for why.
   const [open, setOpen] = useState(false);
@@ -1094,7 +1094,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
           onLegacyNoteMigrated={() => handleNoteMigrated(reading.id)}
           onClose={() => setReading(null)}
           onViewProfile={onViewProfile}
-          onResearch={onResearch}
+          onExplore={onExplore}
           actions={
             /* The same control the card carries, so filing works identically
                whether you decided before opening the article or after reading

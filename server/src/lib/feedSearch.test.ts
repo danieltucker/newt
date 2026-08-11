@@ -50,3 +50,40 @@ describe('toTsQuery', () => {
     expect(toTsQuery('!!! &&& ---')).toBeNull();
   });
 });
+
+// `any` is what the research planner searches with. AND against a vector of
+// headline plus teaser is close to unmatchable for a multi-word query, which is
+// the whole reason the mode exists.
+describe('toTsQuery in any mode', () => {
+  it('accepts any term rather than requiring all of them', () => {
+    expect(toTsQuery('apple battery life', 'any')).toBe('apple:* | battery:* | life:*');
+  });
+
+  it('prefixes every term, not just the last', () => {
+    // The stemming gap `:*` closes — closing vs closure — is not specific to the
+    // last word, and in OR mode a loose prefix costs a low-ranked row, not the
+    // whole result set.
+    expect(toTsQuery('closing schools', 'any')).toBe('closing:* | schools:*');
+  });
+
+  it('leaves very short terms exact', () => {
+    // `ai:*` would match aid, aim and air, and with no other term ANDed against
+    // it there is nothing to filter those back out.
+    expect(toTsQuery('ai chips', 'any')).toBe('ai | chips:*');
+  });
+
+  it('strips operators the same way as all mode', () => {
+    expect(toTsQuery('nvidia | !earnings', 'any')).toBe('nvidia:* | earnings:*');
+    expect(toTsQuery("x'); DROP TABLE \"FeedItem\"; --", 'any'))
+      .toBe('x | drop:* | table:* | feeditem:*');
+  });
+
+  it('returns null when nothing usable is left', () => {
+    expect(toTsQuery('', 'any')).toBeNull();
+    expect(toTsQuery('!!! &&& ---', 'any')).toBeNull();
+  });
+
+  it('defaults to all mode when no mode is given', () => {
+    expect(toTsQuery('two schools')).toBe(toTsQuery('two schools', 'all'));
+  });
+});

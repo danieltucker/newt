@@ -72,6 +72,7 @@
 }
 
 .threadRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -81,6 +82,19 @@
 
 .threadActive { background: var(--surface2); }
 .threadActive .threadTitle { color: var(--accent); }
+
+/* Which thread you are in, as a gradient spine down the left edge. */
+.threadActive::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--pile-3), var(--pile-2) 60%, var(--pile-1));
+}
+.threadActive .threadBtn { padding-left: 12px; }
 
 .threadBtn {
   flex: 1;
@@ -160,12 +174,30 @@
 }
 
 .head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding-bottom: 14px;
   margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
+}
+
+/* The rule under the title, painted in the brand gradient rather than the flat
+   border every other panel uses. Explore is the one screen that is a workshop
+   rather than a list, and this is the cheapest way to say so. */
+.head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    var(--pile-3),
+    var(--pile-2) 32%,
+    var(--pile-1) 58%,
+    transparent 92%);
+  opacity: 0.6;
 }
 
 .headText { flex: 1; min-width: 0; }
@@ -180,10 +212,15 @@
   text-overflow: ellipsis;
 }
 
+/* The breadcrumb under the title. Deliberately only the publisher: the article's
+   own name is already the thread title on a thread started from one, and the
+   card at the top of the transcript is where you go to actually open it. */
 .sourceLink {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   max-width: 100%;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
@@ -191,6 +228,14 @@
   text-overflow: ellipsis;
 }
 .sourceLink:hover { color: var(--accent); text-decoration: underline; }
+
+.sourceLinkIcon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  object-fit: contain;
+}
 
 .sidebarToggle {
   display: none;
@@ -221,6 +266,9 @@
 }
 
 .turnRole {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -228,6 +276,21 @@
   color: var(--muted);
 }
 .turnUser .turnRole { color: var(--accent); }
+
+/* Who is speaking, as a dot. The assistant's carries the brand gradient so a
+   long transcript has something to scan down other than two shades of grey. */
+.roleMark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.turnUser .roleMark { background: var(--accent); }
+.turnAssistant .roleMark {
+  background: linear-gradient(135deg, var(--pile-3), var(--pile-2) 55%, var(--pile-1));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--pile-3) 15%, transparent);
+}
 
 .turnBody {
   font-size: 14.5px;
@@ -309,12 +372,22 @@
 }
 
 .dots {
-  width: 7px;
-  height: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--pile-3);
   animation: pulse 1.1s ease-in-out infinite;
 }
+/* Staggered, and walking the same gradient the mark above uses — three dots
+   that pulse in unison read as a loading spinner, which this isn't. */
+.dot:nth-child(2) { background: var(--pile-2); animation-delay: 0.15s; }
+.dot:nth-child(3) { background: var(--pile-1); animation-delay: 0.3s; }
 
 @keyframes pulse {
   0%, 100% { opacity: 0.25; transform: scale(0.85); }
@@ -322,19 +395,64 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dots { animation: none; opacity: 0.7; }
+  .dot { animation: none; opacity: 0.7; }
 }
 
-/* ── Suggestions ─────────────────────────────────────────────────────────── */
+/* ── The dock: follow-ups and the composer ───────────────────────────────── */
+
+/* One sticky block rather than two elements.
+ *
+ * The follow-up chips used to sit in normal flow directly above a sticky
+ * composer, which put them at the very bottom of the document while the
+ * composer floated up to the viewport edge — so the chips spent most of their
+ * life below the fold, and appeared half-swallowed by the composer on the way
+ * to it. They belong to the composer (they fill it), so they travel with it. */
+.dock {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 12px;
+  /* The transcript scrolls under this, so it needs its own ground. */
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+/* A short fade above the dock so the answer dissolves into it instead of being
+   sliced off by the border. */
+.dock::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 22px;
+  background: linear-gradient(to top, var(--bg), transparent);
+  pointer-events: none;
+}
 
 .suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 12px;
+  align-items: center;
+  gap: 7px;
+}
+
+.suggestionsLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-right: 2px;
 }
 
 .suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -344,25 +462,36 @@
   padding: 7px 12px;
   border-radius: 999px;
   cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .suggestion:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--surface2);
+  transform: translateY(-1px);
+}
+
+/* The arrow leans in on hover — the one bit of motion on a row you are meant to
+   want to click. */
+.suggestionArrow {
+  flex: none;
+  color: var(--muted);
+  transition: transform 120ms ease, color 120ms ease;
+}
+.suggestion:hover .suggestionArrow { color: var(--accent); transform: translateX(2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestion, .suggestionArrow { transition: none; }
+  .suggestion:hover { transform: none; }
+  .suggestion:hover .suggestionArrow { transform: none; }
 }
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
 
 .composer {
-  position: sticky;
-  bottom: 0;
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 12px 0;
-  /* The transcript scrolls under this, so it needs its own ground. */
-  background: var(--bg);
-  border-top: 1px solid var(--border);
 }
 
 .input {
@@ -396,7 +525,12 @@
 
 .sendBtn, .primaryBtn {
   background: var(--accent);
-  color: #0B0C13;
+  /* Flips with the theme — a fixed value is dark-on-dark in one of them. */
+  color: var(--on-accent);
+}
+.sendBtn:hover:not(:disabled),
+.primaryBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 .sendBtn:disabled { opacity: 0.45; cursor: default; }
 .primaryBtn:disabled { opacity: 0.6; cursor: default; }
@@ -424,8 +558,35 @@
 /* ── Empty states ────────────────────────────────────────────────────────── */
 
 .blank {
-  padding: 40px 0;
-  max-width: 460px;
+  position: relative;
+  /* Own stacking context, so the wash below can sit at z-index -1 — behind this
+     block's text but still in front of the page, wherever the shell puts it. */
+  isolation: isolate;
+  padding: 44px 0 40px;
+  max-width: 520px;
+}
+
+/* A soft wash of the accent behind the opening question, so a page that is
+   otherwise a blank sheet has somewhere to look. */
+.blank::before {
+  content: '';
+  position: absolute;
+  left: -80px;
+  top: -40px;
+  width: 320px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in oklab, var(--pile-3) 18%, transparent), transparent 70%);
+  filter: blur(18px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.blankMark {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 14px;
+  display: block;
 }
 
 .blankLead {
@@ -440,6 +601,39 @@
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--muted);
+}
+
+/* Openers. The composer's placeholder can only hold one of these, and a blank
+   page with a single greyed example is a page most people close. */
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.starter {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.starter:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .starter { transition: none; }
+  .starter:hover { transform: none; }
 }
 
 .empty {
@@ -524,34 +718,233 @@
   color: var(--muted);
 }
 
-.sourceList {
-  display: flex;
-  flex-wrap: wrap;
+/* Cards rather than the one-line chips these used to be. They are articles from
+   your own subscriptions and the reader can open every one of them, so they are
+   sized to be picked from: two per row where there is width for it, one on a
+   phone. auto-fill with a min track means the count does the layout — three
+   sources do not stretch to fill a row meant for six. */
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 6px;
 }
 
-.sourceChip {
-  max-width: 100%;
-  font-size: 11.5px;
-  line-height: 1.3;
+.feedCard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
   color: var(--text);
   text-decoration: none;
-  border: 1px solid var(--border);
   background: var(--bg);
-  padding: 4px 9px;
-  border-radius: 999px;
-  /* One line each: this is a receipt, not a reading list. */
-  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.feedCard:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.feedCard:hover .feedCardTitle { color: var(--accent); }
+
+.feedCardKicker {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.feedCardFavicon {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.feedCardSource {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.sourceChip:hover { border-color: var(--accent); color: var(--accent); }
 
-.sourceFrom { color: var(--muted); }
+.feedCardTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  /* Two lines, then ellipsis. A headline needs more than one line to be
+     recognisable and rarely needs a third, and a fixed cap keeps the cards in a
+     row the same height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 0.15s ease;
+}
 
 .cost {
   margin: -8px 0 0;
   font-size: 11.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── The article this thread came from ───────────────────────────────────── */
+
+/* A thread started from an article used to link back with one grey line of
+   text under the title, which is the least the app knew about it: there is an
+   image, a standfirst, a publisher, a comment thread. So it gets the card it
+   would get anywhere else, pinned at the top of the transcript — the thing the
+   conversation is about, still openable six weeks later. */
+.card {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+/* A hairline of the brand gradient down the leading edge, tying the card to the
+   thread rather than letting it read as a feed card that wandered in. */
+.cardRail {
+  flex: none;
+  width: 3px;
+  background: linear-gradient(180deg, var(--pile-3), var(--pile-2) 55%, var(--pile-1));
+}
+
+.cardThumb {
+  /* Rendered as either a button or an anchor, depending on whether there is a
+     reader to open — so the display mode is stated rather than inherited. */
+  display: block;
+  flex: none;
+  width: 132px;
+  padding: 0;
+  border: none;
+  background: var(--surface2);
+  cursor: pointer;
+  overflow: hidden;
+}
+.cardThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+.cardThumb:hover img { transform: scale(1.04); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cardThumb img { transition: none; }
+  .cardThumb:hover img { transform: none; }
+}
+
+.cardBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.cardKicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.cardKickerLabel {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.cardFavicon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.cardSource {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardDot { opacity: 0.5; }
+
+.cardTitle {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  /* Two lines: this is a reference to the article, not the article. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cardTitle:hover { color: var(--accent); }
+
+.cardSnippet {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.cardAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cardAction:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 560px) {
+  .card { flex-wrap: wrap; }
+  .cardRail { width: 100%; height: 3px; }
+  .cardThumb { width: 100%; height: 132px; }
 }

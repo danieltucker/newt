@@ -2,6 +2,230 @@
 
 Notable changes to Newt, newest first.
 
+## v1.17.0 - Explore, and reading the actual article
+
+**2026-08-11**
+
+### Research is now Explore
+
+Same feature, honest name. You were never conducting research - you were asking
+for more about something you had just read, which is what exploring is. The page
+moved from `/research` to **/explore**, the button on an article says **Explore**,
+and the avatar menu row changed with them.
+
+Links to `/research` still work. A thread address is the kind of thing that gets
+pasted into a note, and renaming a feature is not a reason to break one, so the
+old path redirects to the new one instead of 404ing.
+
+Only the surface changed. The API routes and the tables kept their old names, so
+there is no migration and no risk to a thread you already have.
+
+### Explore reads the article
+
+The problem worth fixing in this release. Most RSS feeds publish a headline and
+two sentences of teaser, not the piece - and until now that teaser *was* the
+article as far as the model was concerned. It was handed a fragment, told to
+treat it as the subject, and asked what the wider context was. The hedging and
+the vagueness that came back were the only honest answer available to it.
+
+So Newt now fetches the article's own page when the stored copy is too thin to
+answer from, and reads the text off it. Where a publisher tags their page with
+JSON-LD, that is used directly - it is their own answer to which part of the page
+is the article. Otherwise the furniture is stripped and the block with the most
+actual prose in it wins, which is what keeps a navigation rail from beating the
+piece on raw character count.
+
+Three things worth knowing about it:
+
+- **The text is cached and shared.** A page is fetched once, not once per reader
+  and not once per follow-up question. A page that could not be read is
+  remembered too, for a day rather than a month, since most of those are
+  temporary.
+- **Every request goes through the same SSRF gate as every other user-supplied
+  URL**, redirects included - each hop is re-checked and pinned to the address
+  that passed, rather than trusting node-fetch to follow them. Anyone can add a
+  feed, so the URL is effectively attacker-chosen and is treated that way.
+- **When it doesn't work, the model is told.** A paywall, a consent wall or a
+  dead site means the answer falls back to the feed's summary - and the summary
+  is now labelled as a summary in the prompt, with instructions to say so rather
+  than describe an article it hasn't seen. Confident writing about a piece the
+  model never read was the actual failure mode, and this is the half of the fix
+  that survives the fetch failing.
+
+Settings → AI now says all of this under "What gets sent, and where", including
+that the fetch carries no cookies and nothing identifying you.
+
+### Explore shows you what you're exploring
+
+A thread started from an article linked back to it with one line of grey text
+under the title, which was strictly less than Newt already knew: there is a
+picture, a standfirst, a publisher, a date, and a comment thread of your own. So
+the article now sits at the top of the thread as the **card it deserves** -
+image, source, snippet and comment count - and opening it opens the reader over
+the conversation rather than navigating away from it. Six weeks later, "what was
+this about?" is answered by the picture faster than by the URL.
+
+Five fixes came with it:
+
+- **The follow-up chips were half off the bottom of the page**, and took two
+  clicks. They sat in normal flow underneath a composer that was stuck to the
+  viewport, so they spent most of their life below the fold and appeared sliced
+  in half on the way down to them; chips and composer are now one docked block.
+  Clicking one now **sends it** rather than typing it into the box for you to
+  confirm - they are already whole questions. Anything you had half-typed stays
+  where it was.
+- **Some chips were written the wrong way round.** Because clicking one now sends
+  it as your message, a suggestion phrased as an offer from Explore - "paste one
+  article's text and I'll dig in", "ask me a factual question instead" - was
+  nonsense the moment you clicked it. Chips are now written as things you would
+  say, and any that still come back in the assistant's voice are dropped rather
+  than shown.
+- **Explore stopped reporting its own plumbing.** Asked something its search of
+  your feed found nothing for, it would answer with the machinery - "no
+  from_your_feed block has come through" - and then ask you to paste your own
+  articles in. You never see those blocks, never asked for one, and can do
+  nothing about a missing one. A question with no matching articles is the
+  ordinary case, and now gets an ordinary answer.
+- **Ask and Condense into a post were dark text on a dark button in light
+  mode.** Text on an accent fill now flips with the theme (`--on-accent`): the
+  dark theme's accent is a pale lavender that only carries dark text, the light
+  theme's is a deep indigo that only carries white, and one hardcoded value was
+  always going to be wrong in one of them. The same fix lands on Settings → AI.
+- **The page got some colour.** The brand gradient shows up as the rule under the
+  title, the dot beside each turn, the spine on the open thread and the rail down
+  the source card; the thinking dots stagger instead of pulsing in unison; and an
+  empty thread offers a few openers instead of a blank sheet. All of it stands
+  down under `prefers-reduced-motion`.
+
+### Explore actually searches your feed now
+
+Explore has been able to search your own subscriptions since v1.16.0, and in
+practice it almost never found anything. The search it ran required *every* word
+to appear in the same article - which is right for the search box, where you type
+and watch the list narrow - but Explore gets one shot with no chance to loosen a
+query that came back empty. It was searching headlines and teasers, around forty
+words per article, for four words at once. The honest answer was nearly always
+"no articles", so you got answers written from memory while the piece that
+covered it sat in your river.
+
+Explore's search now takes **any** of the terms and ranks the results, so a
+partial match surfaces instead of being thrown away. Three things came with it:
+
+- **The terms are shorter and more specific.** One or two words, weighted towards
+  names - companies, products, people, places - because those are the words a
+  headline actually carries.
+- **Every phrasing counts.** It tries a few wordings of your question, and used to
+  fill up on whichever one ran first. Results from all of them are now pooled and
+  the best-matching articles win, wherever they came from.
+- **The search stops at a year old.** Relevance has no sense of time, and the
+  entire point of reading your feed is covering what the model is too old to
+  know, so a well-matched piece from four years ago no longer beats last week's.
+
+Explore also leans towards searching now rather than away from it. Skipping a
+search you needed costs you the only current source in the conversation and you
+would never know it happened; running one you didn't need costs a database query
+and a few paragraphs the answer ignores. Those are not the same mistake.
+
+### /ask works from inside Explore
+
+`/ask` in the search bar hands your question to Explore by putting it in the
+address. That works from anywhere in Newt except the one place you are most
+likely to use it: on Explore itself, where the page is already open. It read the
+address once when it loaded and never again, so a second question changed the
+URL and nothing else. Reloading appeared to fix it, because reloading was the
+only way to make the page read the address again.
+
+It now notices a new question rather than only a first one. Three things came
+out of the same fix:
+
+- **A question from `/ask` always starts a new thread.** Asked from inside a
+  thread it would otherwise have been filed as a follow-up to whatever was
+  already on screen, which is rarely what you meant by starting a new question.
+- **A new thread gets its own address immediately**, replacing the `?q=` that
+  started it. That address is now shareable and reloadable, and reloading no
+  longer starts a second identical thread - which is what it used to do.
+- **Opening a thread from the sidebar updates the address too.** Reloading now
+  returns you to the thread you were reading rather than the one before it.
+
+### The articles Explore read are yours to open
+
+When Explore searches your feed it has always said which articles it read, as a
+row of small chips linking out to the publisher. Both halves of that were wrong.
+These are articles from your own subscriptions - Newt already has the text and
+your comment thread - so the chips are now **cards that open the reader**, the
+same one the feed opens, over the conversation.
+
+They also **stay with the answer**. The list used to live only in the in-flight
+turn and vanished the moment the answer finished, so a thread you came back to
+had citations you could no longer see. It is saved with the message now. Re-running
+the search later would not have rebuilt it honestly anyway: the feed moves, and
+some of what was read has since aged out of it.
+
+Answers written before this update have no list to show - there was nothing kept
+to show.
+
+### Bookmarklets point at your domain
+
+The two bookmarklets in Settings → Integrations built their address from
+whatever origin the Settings page happened to be open on. That is right up until
+it isn't: open Settings through a port-forward, a LAN address or the dev server
+and you would drag a bookmark onto your bar that only resolves from the machine
+you made it on.
+
+They now use the server's configured public address (`PUBLIC_ORIGIN`, falling
+back to `CLIENT_ORIGIN`), and show you which address that is underneath. An
+instance with neither set still falls back to the current origin, which is better
+than no bookmarklet at all.
+
+### Pictures have a size
+
+An image dropped into a note was as wide as the column, always. That is the
+right answer for a photograph and a silly one for a screenshot of a single
+button, so an image is now something you can size.
+
+Click one and the bar above it becomes its size controls: **S**, **M**, **L** and
+**Full**, read as a fraction of the column rather than in pixels, because "half
+the width" is the question an author is actually answering. The two bottom
+corners of the selected picture drag, for the times the answer is "a bit smaller
+than that". Nothing is ever blown up past its own resolution - Full on a small
+image shows it whole rather than blurry - and the aspect ratio is held either
+way. One drag is one Ctrl+Z.
+
+The size is stored as the image's `width` and `height` attributes, which is what
+lets it survive a round trip through the server: a style attribute would not,
+and deliberately so.
+
+### Galleries
+
+A stack of photographs, dropped in as one thing. **/gallery** in the command
+menu (or the new button on the bar) takes as many files as you pick and lays
+them out as a fan of cards - one face on, two leaning out behind it - with a
+**+N** badge when there are more in the set than the fan draws.
+
+Hovering a card lifts it; hovering one of the ones underneath lifts it *over* the
+others, which is how you see a photo whose edge is all that is showing. Clicking
+opens the whole set full-screen, where the arrow keys, the arrow buttons and a
+strip of thumbnails page through it. That works wherever a gallery is read - in a
+note, in a post, in a trashed note you are only looking at.
+
+While you are writing, the stack's own bar opens it, adds more photos to it, or
+removes it. Throwing out a single photo happens in the full-screen view, because
+that is the only place you can actually see the one you have decided against.
+
+A gallery is stored the way a reference card is: plain markup carrying everything
+it draws, so a note written today still renders years from now off its own
+attributes. The server's allowlist was widened by exactly the classes and the one
+inert `data-gallery` count it needs, and every photograph in one is held to the
+same https-only rule as every other image in a body.
+
+### Selecting a line and pressing Backspace deletes the line
+
+On a to-do item it deleted the checkbox and left every word you had highlighted
+sitting there. The handler that turns a to-do back into a paragraph when you
+backspace at the start of it was reading the start of a *selection* as the start
+of a caret, cancelling the browser's own delete on the way. It now fires only
+when there is nothing selected, which is what it always meant.
+
 ## v1.16.0 - Bring your own model
 
 **2026-08-11**

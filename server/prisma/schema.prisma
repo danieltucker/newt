@@ -157,9 +157,42 @@ model ResearchMessage {
   // array of short strings. JSON rather than a table for the same reason
   // profileLinks is: a short ordered list, only ever read and written whole.
   suggestions Json         @default("[]")
+  // The articles from the reader's own feed that this answer was given — title,
+  // url, source, pubDate. Stored rather than recomputed because the search is
+  // not deterministic across time: the same question next month finds different
+  // articles, and the honest record of what an answer was based on is the list
+  // that was actually in front of the model when it wrote that answer.
+  //
+  // Not a relation to FeedItem. An item is deleted when it ages out of its
+  // feed, and the citation on a six-week-old answer must not vanish with it —
+  // the URL still works, and "we read this" stays true either way.
+  sources   Json           @default("[]")
   createdAt DateTime       @default(now())
 
   @@index([threadId, createdAt])
+}
+
+// The readable text of a page, fetched once and shared by everyone who asks
+// about it.
+//
+// Not per-user, deliberately: this is the published article, identical for every
+// reader, and one row per user per URL would mean re-fetching the same page for
+// each of them. Nothing user-specific is stored here — the comments and notes
+// that *are* user-specific are read live, per viewer, in articleContext.ts.
+//
+// An empty `text` is a real, cached answer: the page was tried and had nothing
+// readable in it (a paywall, a consent wall, a video). It is kept so a site that
+// cannot be read is not re-fetched on every follow-up question — see FAILED_TTL
+// in articleText.ts for how much sooner it is retried than a success.
+model ArticleText {
+  // The canonical article key, the same one comments thread on — so the text
+  // fetched from a URL with a tracking parameter is found again without it.
+  articleKey String   @id
+  url        String
+  text       String
+  fetchedAt  DateTime @default(now())
+
+  @@index([fetchedAt])
 }
 
 // One person's decision to have nothing more to do with another. The row is

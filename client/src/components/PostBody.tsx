@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import { applyCommentCounts, embeddedUrls, EMBED_CLASS } from '../utils/noteEmbed';
+import { GALLERY_CLASS, galleryAt, galleryImages, galleryIndexOf } from '../utils/noteGallery';
 import Lightbox, { LightboxImage } from './Lightbox';
 import styles from './PostBody.module.css';
 
@@ -49,14 +50,19 @@ export default function PostBody({ html, clamp, onExpand }: Props) {
   // no elements here to attach props to - and doing it this way means every post
   // already written gets this without being re-saved.
   const [zoomed, setZoomed] = useState<LightboxImage | null>(null);
+  // A gallery opens the same overlay on its whole set, at the card that was
+  // clicked - which is what the fan is an invitation to do.
+  const [gallery, setGallery] = useState<{ images: LightboxImage[]; index: number } | null>(null);
 
   // Which images this applies to. A reference card carries its own favicon,
   // cover and thumbnail, and the card is a link somewhere: clicking one means
   // "take me there", not "look closer". An image the author wrapped in a link
-  // keeps the link, for the same reason.
+  // keeps the link, for the same reason. A gallery card is excluded here and
+  // handled below instead: it opens the set it belongs to, not itself alone.
   const zoomable = (el: EventTarget | null): el is HTMLImageElement =>
     el instanceof HTMLImageElement
     && !el.closest(`.${EMBED_CLASS}`)
+    && !el.closest(`.${GALLERY_CLASS}`)
     && !el.closest('a');
 
   const openImage = useCallback((img: HTMLImageElement) => {
@@ -65,18 +71,39 @@ export default function PostBody({ html, clamp, onExpand }: Props) {
     setZoomed({ src: img.currentSrc || img.src, alt: img.alt });
   }, []);
 
-  // An <img> takes no focus of its own, so the ones that open have to be told to
-  // - otherwise this is a mouse-only feature. Re-run per body: the markup is
-  // replaced wholesale whenever `html` changes.
+  // Returns whether the event landed on a gallery, having opened it if so.
+  const openGalleryAt = useCallback((target: EventTarget | null) => {
+    const root = bodyRef.current;
+    if (!root || !(target instanceof Node)) return false;
+    const el = galleryAt(target, root);
+    if (!el) return false;
+    const images = galleryImages(el).map(img => ({ src: img.src, alt: img.alt }));
+    if (!images.length) return false;
+    setGallery({ images, index: galleryIndexOf(el, target) });
+    return true;
+  }, []);
+
+  // Neither an <img> nor a <span> takes focus of its own, so everything that
+  // opens has to be told to - otherwise this is a mouse-only feature. Re-run per
+  // body: the markup is replaced wholesale whenever `html` changes.
   useEffect(() => {
-    const imgs = bodyRef.current?.querySelectorAll('img') ?? [];
-    imgs.forEach(img => {
+    const root = bodyRef.current;
+    if (!root) return;
+    root.querySelectorAll('img').forEach(img => {
       if (!zoomable(img)) return;
       img.tabIndex = 0;
       img.setAttribute('role', 'button');
       if (!img.getAttribute('aria-label')) {
         img.setAttribute('aria-label', img.alt ? `View image: ${img.alt}` : 'View image full size');
       }
+    });
+    // The stack takes the focus, not the cards: it is one object, and tabbing
+    // through three quarter-visible edges of the same gallery is not navigation.
+    root.querySelectorAll(`.${GALLERY_CLASS}`).forEach(el => {
+      const n = el.querySelectorAll('img').length;
+      (el as HTMLElement).tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', `Open gallery, ${n} image${n === 1 ? '' : 's'}`);
     });
   }, [html]);
 
@@ -111,14 +138,16 @@ export default function PostBody({ html, clamp, onExpand }: Props) {
       // A post shorter than the cap is unaffected by it either way.
       className={`${styles.body} note-embed-read ${clamp ? styles.clamped : ''}`}
       onClick={e => {
+        if (openGalleryAt(e.target)) { e.preventDefault(); return; }
         if (!zoomable(e.target)) return;
         e.preventDefault();
         openImage(e.target);
       }}
       onKeyDown={e => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
-        if (!zoomable(e.target)) return;
         // Space would otherwise scroll the page out from under the image.
+        if (openGalleryAt(e.target)) { e.preventDefault(); return; }
+        if (!zoomable(e.target)) return;
         e.preventDefault();
         openImage(e.target);
       }}
@@ -126,7 +155,19 @@ export default function PostBody({ html, clamp, onExpand }: Props) {
     />
   );
 
-  const lightbox = <Lightbox image={zoomed} onClose={() => setZoomed(null)} />;
+  // Two overlays, but never two at once: opening either closes nothing because
+  // only one can have been clicked. A single one taking both shapes would have
+  // to be told which it is on every render for no gain.
+  const lightbox = (
+    <>
+      <Lightbox image={zoomed} onClose={() => setZoomed(null)} />
+      <Lightbox
+        images={gallery?.images ?? null}
+        index={gallery?.index ?? 0}
+        onClose={() => setGallery(null)}
+      />
+    </>
+  );
 
   if (!clamp) return <>{body}{lightbox}</>;
 

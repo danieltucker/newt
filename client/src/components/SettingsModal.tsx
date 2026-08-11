@@ -34,7 +34,7 @@ interface Props {
   initialSection?: Section;
   onProfileChange?: (profile: UserProfile) => void;
   // Passed in rather than hooked up here, so the shell and this screen read the
-  // same list: connecting a model has to make the Research button appear
+  // same list: connecting a model has to make the Explore button appear
   // immediately, and two independent copies of that state would disagree.
   llm?: LlmBinding;
 }
@@ -121,9 +121,12 @@ const SEARCH_INDEX: { anchor: string; section: Section; label: string; terms: st
   { anchor: 'page-size',      section: 'reading',      label: 'Articles per page',            terms: 'feed page size load more count' },
   // "api key" and the provider names are what people type looking for this —
   // "Claude", "ChatGPT" and "Ollama" more often than the word "model".
-  { anchor: 'ai-models',      section: 'ai',           label: 'Connected models',             terms: 'api key llm claude chatgpt openai anthropic ollama openwebui research proofread ai model' },
+  // "research" stays in the search terms after the rename: it is what the
+  // feature was called, and somebody looking for it by the old name should land
+  // on the new one rather than on nothing.
+  { anchor: 'ai-models',      section: 'ai',           label: 'Connected models',             terms: 'api key llm claude chatgpt openai anthropic ollama openwebui explore research proofread ai model' },
   { anchor: 'ai-depth',       section: 'ai',           label: 'Answer length and cost',        terms: 'cost price cheap expensive tokens spend budget length brief short verbose depth effort thinking' },
-  { anchor: 'ai-feed-search',  section: 'ai',           label: 'Search your feed when researching', terms: 'feed articles rss context grounding sources cite recent news' },
+  { anchor: 'ai-feed-search',  section: 'ai',           label: 'Search your feed when exploring', terms: 'feed articles rss context grounding sources cite recent news explore research' },
   { anchor: 'ai-privacy',     section: 'ai',           label: 'What gets sent to your model',  terms: 'privacy data context comments article sent provider' },
   { anchor: 'console',        section: 'advanced',     label: 'Console',                      terms: 'backtick commands power user notes' },
   { anchor: 'import',         section: 'advanced',     label: 'Import bookmarks',             terms: 'html json browser export migrate' },
@@ -147,6 +150,52 @@ function BookmarkletRow({ label, href }: { label: string; href: string }) {
       <button className={styles.copyBtn} onClick={handleCopy}>
         {copied ? 'Copied!' : 'Copy URL'}
       </button>
+    </div>
+  );
+}
+
+/**
+ * The two drag-to-your-toolbar links.
+ *
+ * The origin is asked of the server rather than read off `window.location`,
+ * because a bookmarklet outlives the page it was dragged from. Whoever is
+ * looking at Settings may be on the dev server, a LAN address or a forwarded
+ * port — all of which work perfectly right now and none of which resolve from
+ * the laptop where the bookmark will actually be clicked. PUBLIC_ORIGIN is the
+ * address that does.
+ *
+ * `window.location.origin` is still the fallback: an instance whose operator
+ * never set PUBLIC_ORIGIN or CLIENT_ORIGIN is better served by a bookmarklet
+ * that works from the current domain than by no bookmarklet at all.
+ */
+function BookmarkletsPanel() {
+  const [origin, setOrigin] = useState(() =>
+    typeof window !== 'undefined' ? window.location.origin : '');
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ origin: string }>('/api/v1/util/instance')
+      .then(d => { if (!cancelled && d.origin) setOrigin(d.origin.replace(/\/+$/, '')); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const open = (intent: string, height: number) =>
+    `javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);` +
+    `window.open('${origin}/?intent=${intent}&url='+u+'&title='+t,'_blank','width=500,height=${height},popup=1');})();`;
+
+  return (
+    <div className={styles.sectionBlock} data-setting="bookmarklets">
+      <div className={styles.blockTitle}>Browser bookmarklets</div>
+      <div className={styles.rowHint} style={{ marginBottom: 18 }}>
+        Drag these links to your bookmarks bar for one-click saving from any page.
+        Can't drag? Use "Copy URL" then create a bookmark manually and paste into the URL field.
+      </div>
+      <BookmarkletRow label="Save to Reading List" href={open('save-article', 480)} />
+      <BookmarkletRow label="Add Bookmark" href={open('add-bookmark', 500)} />
+      <div className={styles.rowHint} style={{ marginTop: 12 }}>
+        These open <code>{origin}</code>.
+      </div>
     </div>
   );
 }
@@ -1472,22 +1521,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
             {section === 'integrations' && <PersonalFeedPanel />}
 
-            {section === 'integrations' && (() => {
-              const origin = typeof window !== 'undefined' ? window.location.origin : '';
-              const saveHref = `javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);window.open('${origin}/?intent=save-article&url='+u+'&title='+t,'_blank','width=500,height=480,popup=1');})();`;
-              const bmHref = `javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);window.open('${origin}/?intent=add-bookmark&url='+u+'&title='+t,'_blank','width=500,height=500,popup=1');})();`;
-              return (
-                <div className={styles.sectionBlock} data-setting="bookmarklets">
-                  <div className={styles.blockTitle}>Browser bookmarklets</div>
-                  <div className={styles.rowHint} style={{ marginBottom: 18 }}>
-                    Drag these links to your bookmarks bar for one-click saving from any page.
-                    Can't drag? Use "Copy URL" then create a bookmark manually and paste into the URL field.
-                  </div>
-                  <BookmarkletRow label="Save to Reading List" href={saveHref} />
-                  <BookmarkletRow label="Add Bookmark" href={bmHref} />
-                </div>
-              );
-            })()}
+            {section === 'integrations' && <BookmarkletsPanel />}
 
           </div>
         </div>

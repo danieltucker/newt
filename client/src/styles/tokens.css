@@ -6,6 +6,11 @@
   --text: #ECEEF6;
   --muted: #828BA3;
   --accent: #8B8BFF;
+  /* Text on a solid --accent fill. It has to flip with the theme: the dark
+     accent is a pale lavender that only carries dark text, and the light one is
+     a deep indigo that only carries white. Hardcoding either one gives you a
+     button that is unreadable in the other theme. */
+  --on-accent: #0B0C13;
   /* Favorited tags. Deliberately not --accent: an unread card is already
      accent-outlined, and a favorite has to be legible on top of that. */
   --fav: #FFD470;
@@ -80,6 +85,8 @@
   --text: #14161E;
   --muted: #717A92;
   --accent: #5B5BE6;
+  /* See the dark block: white is the only thing that carries on this indigo. */
+  --on-accent: #FFFFFF;
   /* Lighter than it wants to be would fail on white - this is about as bright
      as the gold gets while the chip labels stay readable. */
   --fav: #C68A15;

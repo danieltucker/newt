@@ -53,6 +53,30 @@ const EMBED_DATA_ATTRS = [
   'data-description',
 ];
 
+// ── Galleries ─────────────────────────────────────────────────────────
+// Mirrors client/src/utils/noteGallery.ts, which is what produces this markup —
+// duplicated across the client/server boundary exactly as the embed classes
+// above are. A gallery is a span holding one <img> per photograph; the fan, the
+// stacking and the "+N" badge are all CSS over that.
+//
+// Why this is safe to allow:
+//  - Nothing new is reachable. The only thing here that loads anything is the
+//    <img src>, which stays under the https-only rule for images below — the
+//    same one every other image in a body already passes.
+//  - `data-gallery` is inert: it holds the number of photographs and is never
+//    rendered. It is allowed on spans generally (as the embed data-* are), and
+//    a span carrying a number grants nothing.
+//  - The classes are an explicit list, never a wildcard, so an author cannot
+//    reach note-todo or any other styling in the app from a span.
+//  - `contenteditable` is deliberately NOT allowed, for the reason it is not
+//    allowed on an embed: a rendered post has no use for it. The editor stamps
+//    it back on load (hydrateGalleries).
+const GALLERY_SPAN_CLASSES = [
+  'note-gallery', 'note-gallery-stack', 'note-gallery-more',
+];
+
+const GALLERY_IMG_CLASS = 'note-gallery-card';
+
 // Two independent caps on a comment body:
 //  - MAX_COMMENT_BODY bounds the raw HTML (markup + text) — a hard safety limit
 //    against oversized payloads.
@@ -98,7 +122,7 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
     img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'referrerpolicy', 'class'],
     div: ['class', 'data-checked'],
     table: ['class'],
-    span: ['class', ...EMBED_DATA_ATTRS],
+    span: ['class', ...EMBED_DATA_ATTRS, 'data-gallery'],
   },
   // Only real web links — blocks javascript:, data:, vbscript:
   allowedSchemes: ['http', 'https', 'mailto'],
@@ -131,13 +155,13 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
   allowedClasses: {
     div: [TODO_CLASS],
     table: [TABLE_CLASS],
-    span: EMBED_SPAN_CLASSES,
+    span: [...EMBED_SPAN_CLASSES, ...GALLERY_SPAN_CLASSES],
     // note-embed-comments is an anchor now, not a span: it links to the thread,
     // which for a pasted link is somewhere the card itself does not go. Its
     // href gets the same scheme check and rel/target transform as any other
     // link in a body, so it grants nothing a plain <a> wouldn't.
     a: ['note-embed-a', 'note-embed-comments'],
-    img: ['note-embed-thumb', 'note-embed-cover', 'note-embed-fav'],
+    img: ['note-embed-thumb', 'note-embed-cover', 'note-embed-fav', GALLERY_IMG_CLASS],
   },
   // Drop the contents of these outright rather than leaving bare text behind
   nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'iframe'],

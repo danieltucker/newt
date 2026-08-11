@@ -41,6 +41,29 @@ describe('splitSuggestions', () => {
     expect(body).toContain('as a fence');
     expect(suggestions).toEqual(['Ask why']);
   });
+
+  it('drops lines written as offers from the assistant', () => {
+    // These get sent verbatim as the reader's next message, so an offer only
+    // the assistant could make is nonsense on click.
+    const raw = `B.\n${SUGGESTION_MARKER}\n` +
+      `- Paste one article's text and I'll dig in\n` +
+      `- Ask me a factual question instead\n` +
+      `- I can compare the two approaches\n` +
+      `- What's the strongest case against this?`;
+    expect(splitSuggestions(raw).suggestions).toEqual(["What's the strongest case against this?"]);
+  });
+
+  it('keeps reader-voice imperatives that share those words', () => {
+    const raw = `B.\n${SUGGESTION_MARKER}\n` +
+      `- Tell me about the 1977 case\n` +
+      `- Compare this with the EU approach\n` +
+      `- Where would I see this in practice?`;
+    expect(splitSuggestions(raw).suggestions).toEqual([
+      'Tell me about the 1977 case',
+      'Compare this with the EU approach',
+      'Where would I see this in practice?',
+    ]);
+  });
 });
 
 describe('titleFromQuestion', () => {

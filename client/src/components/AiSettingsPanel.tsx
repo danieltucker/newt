@@ -158,7 +158,7 @@ export default function AiSettingsPanel({ llm, depth, feedSearch, showCost, onUp
       <div className={styles.block} data-setting="ai-models">
         <div className={styles.blockTitle}>Connected models</div>
         <div className={styles.hint}>
-          Newt’s AI features (research, proofreading, and asking questions about what
+          Newt’s AI features (Explore, proofreading, and asking questions about what
           you’re reading) run on your own provider account using your own API key.
           There is no shared key: nothing is sent anywhere until you connect one, and
           usage is billed to you by the provider.
@@ -422,7 +422,7 @@ export default function AiSettingsPanel({ llm, depth, feedSearch, showCost, onUp
       </div>
 
       <div className={styles.block} data-setting="ai-feed-search">
-        <div className={styles.blockTitle}>Search your feed when researching</div>
+        <div className={styles.blockTitle}>Search your feed when exploring</div>
         <label className={styles.checkRow}>
           <input
             type="checkbox"
@@ -430,7 +430,7 @@ export default function AiSettingsPanel({ llm, depth, feedSearch, showCost, onUp
             onChange={e => onUpdate({ aiFeedSearch: e.target.checked })}
           />
           <span>
-            <span className={styles.checkLabel}>Let research read your subscriptions</span>
+            <span className={styles.checkLabel}>Let Explore read your subscriptions</span>
             <span className={styles.subtle}>
               Your model has no way to browse and a training cutoff, so it is weakest on
               anything recent. With this on, Newt works out what your question is about,
@@ -451,18 +451,25 @@ export default function AiSettingsPanel({ llm, depth, feedSearch, showCost, onUp
             rather than editing the old.
           </li>
           <li>
-            When you research an article, its text and the comments <em>you can already
+            When you explore an article, its text and the comments <em>you can already
             see</em> are sent to your provider as context. Comments you can’t see are
             never included: private ones, friends-only ones from people you aren’t
             friends with, and anyone you’ve blocked.
           </li>
           <li>
-            Research threads are private to you and stay in Newt. They become public
+            Most feeds publish a teaser rather than the whole piece, so where the stored
+            copy is too short to answer from, Newt fetches the article’s own page and
+            reads the text off it. That request goes to the publisher, from this server,
+            with no cookies and nothing identifying you — and the result is cached and
+            shared, so a page is read once rather than once per reader.
+          </li>
+          <li>
+            Explore threads are private to you and stay in Newt. They become public
             only if you condense one into a post and then publish it.
           </li>
           <li>
-            What your provider does with what you send is between you and them. Newt
-            makes no other calls on your behalf.
+            What your provider does with what you send is between you and them. Apart
+            from the article fetch above, Newt makes no other calls on your behalf.
           </li>
         </ul>
       </div>

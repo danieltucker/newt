@@ -431,7 +431,7 @@ export default function SearchBar({
                   </span>
                   <span className={styles.resultSub}>
                     {item.text
-                      ? 'Opens in Research, with whatever you have open as context'
+                      ? 'Opens in Explore, with whatever you have open as context'
                       : 'Type your question…'}
                   </span>
                 </div>

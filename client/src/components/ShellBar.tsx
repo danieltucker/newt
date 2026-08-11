@@ -39,7 +39,7 @@ interface Props {
   username: string;
   avatar?: string | null;
   isAdmin?: boolean;
-  /** Adds the Research row to the avatar menu. See accountMenuItems. */
+  /** Adds the Explore row to the avatar menu. See accountMenuItems. */
   hasModel?: boolean;
   notifUnread: number;
 
@@ -243,7 +243,7 @@ export default function ShellBar({
       // The blog manager, not the profile's public Posts tab - this menu is
       // your own things, and drafts only exist in the manager.
       case 'myblog': navigate('/blog'); break;
-      case 'research': navigate('/research'); break;
+      case 'explore': navigate('/explore'); break;
       case 'settings': onOpenSettings(); break;
       case 'admin': onOpenAdmin(); break;
       case 'signout': onLogout(); break;

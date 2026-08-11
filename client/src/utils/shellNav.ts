@@ -22,7 +22,7 @@ export function accountMenuItems(opts: {
   isAdmin?: boolean;
   signedIn?: boolean;
   /**
-   * Whether the account has an AI model connected. Research only appears once
+   * Whether the account has an AI model connected. Explore only appears once
    * one is — a menu row that leads to "you need to set this up first" is an
    * advert, and this menu is for your own things, not for what you could buy.
    */
@@ -43,9 +43,9 @@ export function accountMenuItems(opts: {
     { id: 'profile', label: 'Profile' },
     { id: 'myblog', label: 'Posts' },
   ];
-  // Above Settings rather than below it: Research is somewhere you go, and
+  // Above Settings rather than below it: Explore is somewhere you go, and
   // Settings is the row people expect at the bottom of a list like this.
-  if (hasModel) items.push({ id: 'research', label: 'Research' });
+  if (hasModel) items.push({ id: 'explore', label: 'Explore' });
   items.push({ id: 'settings', label: 'Settings' });
   if (isAdmin) items.push({ id: 'admin', label: 'Admin' });
   items.push({ id: 'signout', label: 'Sign out', danger: true });

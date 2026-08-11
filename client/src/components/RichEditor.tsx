@@ -13,6 +13,11 @@ import {
   EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
   embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
 } from '../utils/noteEmbed';
+import {
+  GALLERY_CLASS, GalleryImage, MAX_GALLERY_IMAGES, createGallery, galleryAt, galleryImages,
+  galleryIndexOf, hydrateGalleries,
+} from '../utils/noteGallery';
+import Lightbox from './Lightbox';
 
 // A Confluence-style block editor. There is no separate "edit mode" - the
 // surface is always a contentEditable that renders its content live. Typing "/"
@@ -29,13 +34,13 @@ import {
 const TODO_CLASS = 'note-todo';
 const TABLE_CLASS = 'note-table';
 
-// 'image' and 'reference' are grouped with the blocks in the menu but are not
-// block transforms - they open a picker, so applyCmd intercepts them before
-// applyBlock.
+// 'image', 'gallery' and 'reference' are grouped with the blocks in the menu but
+// are not block transforms - they open a picker, so applyCmd intercepts them
+// before applyBlock.
 // 'emoji' sits with the inline marks for the same reason: it changes the run of
 // text you are writing rather than the shape of the block, but it opens a picker
 // instead of toggling anything, so applyCmd intercepts it too.
-type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image' | 'reference';
+type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image' | 'gallery' | 'reference';
 type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear' | 'emoji';
 
 interface Cmd {
@@ -62,6 +67,7 @@ const CMDS: Cmd[] = [
   { id: 'table', kind: 'block', label: 'Table',       badge: '⊞',  hint: '3×3 - Tab moves cell',  keys: ['table', 'grid', 'tbl', 'rows', 'columns', '|'] },
   { id: 'hr',    kind: 'block', label: 'Divider',     badge: '-',  hint: 'or type ---',           keys: ['hr', 'divider', 'rule', 'line', 'separator', '---'] },
   { id: 'image', kind: 'block', label: 'Image',       badge: '🖼', hint: 'or paste / drop a file', keys: ['image', 'img', 'picture', 'photo', 'screenshot', 'upload'] },
+  { id: 'gallery', kind: 'block', label: 'Gallery',   badge: '🗂', hint: 'A stack of photos',      keys: ['gallery', 'photos', 'images', 'album', 'stack', 'carousel', 'slideshow'] },
   { id: 'reference', kind: 'block', label: 'Reference', badge: '🔖', hint: 'Embed a saved article', keys: ['reference', 'ref', 'article', 'saved', 'reading', 'embed', 'cite', 'card'] },
 
   { id: 'bold',       kind: 'inline', label: 'Bold',          badge: 'B',  hint: 'Ctrl+B - **text**',  keys: ['bold', 'b', 'strong', '**'] },
@@ -307,6 +313,15 @@ const ImageIcon = () => icon(<>
 // A bookmark - what the saved articles /reference points at already look like
 // everywhere else in the app
 const ReferenceIcon = () => icon(<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />);
+
+// Two frames offset behind a third - the stack of photographs the gallery draws,
+// at button size. Deliberately not a second picture-frame glyph: the whole point
+// of this command is that it is more than one image.
+const GalleryIcon = () => icon(<>
+  <path d="M8 4h11a1 1 0 0 1 1 1v11" />
+  <path d="M6 7h11a1 1 0 0 1 1 1v11" />
+  <rect x="2" y="10" width="13" height="11" rx="1.5" />
+</>);
 
 // The three embed sizes, drawn as what they lay out: a line of text, a card
 // with its thumbnail beside the title, a card led by full-width artwork.
@@ -659,6 +674,14 @@ function placeCaret(node: Node, atStart = true) {
 function caretAtBlockStart(block: HTMLElement): boolean {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return false;
+  // A caret, not a selection. Selecting a whole line and pressing Backspace
+  // starts its range at the block start too, so without this the to-do handler
+  // read that as "backspace at the start of the line", cancelled the native
+  // delete and unwrapped the block - which showed up as the checkbox vanishing
+  // while every word the user had just highlighted stayed exactly where it was.
+  // A selection means "delete these characters" whatever block they sit in, and
+  // the browser's own handling is the right answer to it.
+  if (!sel.isCollapsed) return false;
   const r = sel.getRangeAt(0).cloneRange();
   r.selectNodeContents(block);
   r.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
@@ -727,6 +750,92 @@ function embedInSelection(root: HTMLElement): HTMLElement | null {
   return embedAt(bracketed ?? null, root) ?? embedAt(r.commonAncestorContainer, root);
 }
 
+// The node a selection brackets, if it brackets exactly one. Clicking a
+// replaced element (an image) or an atomic island selects it this way rather
+// than putting a caret inside it, which is what both lookups below key on.
+function bracketedNode(root: HTMLElement): Node | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const r = sel.getRangeAt(0);
+  if (r.startContainer !== r.endContainer || r.endOffset !== r.startOffset + 1) return null;
+  const node = r.startContainer.childNodes[r.startOffset] ?? null;
+  return node && root.contains(node) ? node : null;
+}
+
+/** The gallery a selection covers, by the same rule embeds are found by. */
+function galleryInSelection(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  return galleryAt(bracketedNode(root), root)
+    ?? galleryAt(sel.getRangeAt(0).commonAncestorContainer, root);
+}
+
+/**
+ * The plain image a selection is on - the one the resize frame belongs to.
+ *
+ * Only an image standing on its own: the pictures inside a reference card or a
+ * gallery are that object's business, and are sized by it rather than dragged
+ * about individually.
+ */
+function imageInSelection(root: HTMLElement): HTMLImageElement | null {
+  const node = bracketedNode(root);
+  if (!(node instanceof HTMLImageElement)) return null;
+  if (node.closest(`.${EMBED_CLASS}, .${GALLERY_CLASS}`)) return null;
+  return node;
+}
+
+// ── Image sizing ──────────────────────────────────────────────────────
+// A resized image stores its size as the `width`/`height` attributes it was
+// inserted with, not as inline CSS: a style attribute is refused by the server's
+// allowlist (it would be a way to smuggle CSS into a reader's page - see
+// RICH_HTML_OPTIONS), so it is the one vehicle that survives a round trip
+// through storage. They stay in proportion, which is what keeps them doing the
+// job they were added for - reserving the right space before the bytes land.
+//
+// Pixels rather than a percentage, because that is what the attribute means.
+// The stylesheet's max-width:100% is what stops a picture sized in a wide editor
+// from overflowing the narrower column it is read in.
+const MIN_IMG_W = 60;
+
+// What the presets on the image bar mean, as a fraction of the column.
+const IMG_SIZES: { id: string; label: string; hint: string; pct: number }[] = [
+  { id: 'sm',   label: 'S', hint: 'Small - a quarter of the column',   pct: 0.25 },
+  { id: 'md',   label: 'M', hint: 'Medium - half the column',          pct: 0.5 },
+  { id: 'lg',   label: 'L', hint: 'Large - three quarters',            pct: 0.75 },
+  { id: 'full', label: 'Full', hint: 'The full width of the column',   pct: 1 },
+];
+
+/** The aspect ratio to hold an image at while it is resized. */
+function aspectOf(img: HTMLImageElement): number {
+  if (img.naturalWidth && img.naturalHeight) return img.naturalHeight / img.naturalWidth;
+  const w = Number(img.getAttribute('width'));
+  const h = Number(img.getAttribute('height'));
+  return w && h ? h / w : (img.offsetWidth ? img.offsetHeight / img.offsetWidth : 1);
+}
+
+/** How wide the image is allowed to get: the text column it sits in. */
+function columnWidthFor(img: HTMLImageElement, editor: HTMLElement): number {
+  const host = img.parentElement && img.parentElement !== editor ? img.parentElement : editor;
+  // clientWidth excludes the border but not the padding, which the editor has a
+  // lot of - so take it off, or "full width" would reach under the margin.
+  const cs = getComputedStyle(host);
+  const pad = parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0');
+  return Math.max(MIN_IMG_W, Math.round(host.clientWidth - pad));
+}
+
+/**
+ * What the one hidden file input was opened for: a single image, a new gallery,
+ * or more photos for a gallery that already exists.
+ */
+type PickMode = 'image' | 'gallery' | 'add';
+
+/** Write a width onto an image, carrying the height with it. */
+function setImageWidth(img: HTMLImageElement, width: number) {
+  const w = Math.max(MIN_IMG_W, Math.round(width));
+  img.setAttribute('width', String(w));
+  img.setAttribute('height', String(Math.max(1, Math.round(w * aspectOf(img)))));
+}
+
 export default function RichEditor({
   initialHtml, onChange, readOnly = false, onUploadImage, references, commentCounts,
   onEmbedsChange, findable = false, autoFocus = false, onFetchPageMeta,
@@ -738,6 +847,10 @@ export default function RichEditor({
   // file moves focus out of the editor and collapses the selection, so without
   // this the image would land wherever focus happens to return to.
   const imageRange = useRef<Range | null>(null);
+  // What the picker was opened for, and - for 'add' - which gallery the files
+  // are going into. See pickImage.
+  const pickMode = useRef<PickMode>('image');
+  const pickTarget = useRef<HTMLElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState<LinkForm | null>(null);
@@ -751,6 +864,16 @@ export default function RichEditor({
   // The embed the selection is on, if any. It is what turns the floating bar
   // from a formatting bubble into the embed's own controls.
   const [embedEl, setEmbedEl] = useState<HTMLElement | null>(null);
+  // The same idea for the two other objects a selection can land on rather than
+  // a run of words: a picture, which has a size you can drag, and a gallery,
+  // which is an atomic island like an embed. Each gets its own bar.
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+  const [galleryEl, setGalleryEl] = useState<HTMLElement | null>(null);
+  // The gallery the reader is paging through, if any. Opening it from the
+  // editor is how an author checks a stack they cannot see all of in place.
+  const [galleryView, setGalleryView] = useState<{ images: GalleryImage[]; index: number } | null>(null);
+  // The stack that overlay belongs to - see openGallery for why it is a ref.
+  const viewedGallery = useRef<HTMLElement | null>(null);
   // The plain <a> the caret is sitting in. It gets the same floating bar an
   // embed does - a link is an object you can resize too, not just styled text.
   const [linkEl, setLinkEl] = useState<HTMLAnchorElement | null>(null);
@@ -869,6 +992,66 @@ export default function RichEditor({
       vv?.removeEventListener('resize', onMove);
     };
   }, [bubble]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── The object frame ──────────────────────────────────────────────────
+  // A ring round whatever the bar is currently about - the selected picture or
+  // gallery - carrying the handles that drag a picture's width.
+  //
+  // It is portalled to <body> and positioned like the bubble rather than being
+  // drawn inside the editor, and that is not a layout preference: every node in
+  // the editable surface is serialized straight back out through onChange and
+  // saved into the note. A handle placed there would be stored as part of the
+  // document, would land on the undo stack, and the caret would be free to walk
+  // into it. Nothing that is chrome may live inside the text.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const frameTarget: HTMLElement | null = imgEl ?? galleryEl;
+  // Live width during a drag, so the readout can say where it has got to.
+  const [dragW, setDragW] = useState<number | null>(null);
+
+  function placeFrame() {
+    const el = frameRef.current;
+    const target = frameTarget;
+    if (!el || !target || !target.isConnected) return;
+    const r = target.getBoundingClientRect();
+    el.style.left = `${r.left}px`;
+    el.style.top = `${r.top}px`;
+    el.style.width = `${r.width}px`;
+    el.style.height = `${r.height}px`;
+    // Scrolled past what it belongs to: hide rather than follow the picture off
+    // the end of the note - the rule the bubble already follows.
+    const box = scrollRef.current?.getBoundingClientRect();
+    const gone = !!box && (r.bottom < box.top || r.top > box.bottom);
+    el.style.visibility = gone ? 'hidden' : '';
+    el.style.pointerEvents = gone ? 'none' : '';
+  }
+
+  useLayoutEffect(placeFrame);
+
+  useEffect(() => {
+    if (!frameTarget) return;
+    let frame = 0;
+    function onMove() {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; placeFrame(); });
+    }
+    const vv = window.visualViewport;
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    vv?.addEventListener('scroll', onMove);
+    vv?.addEventListener('resize', onMove);
+    // An image that arrives after the frame does changes the size of what the
+    // frame is round, and nothing scrolls or resizes to say so.
+    const ro = new ResizeObserver(onMove);
+    ro.observe(frameTarget);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      ro.disconnect();
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+      vv?.removeEventListener('scroll', onMove);
+      vv?.removeEventListener('resize', onMove);
+    };
+  }, [frameTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Where the "/" was typed, so we can strip "/query" before applying a command
   const slashInfo = useRef<{ node: Node; offset: number } | null>(null);
@@ -1197,6 +1380,7 @@ export default function RichEditor({
     // Blog bodies come back from the server sanitizer stripped of the attribute
     // that makes an embed atomic, so put it back before the caret can wander in.
     hydrateEmbeds(el);
+    hydrateGalleries(el);
     el.classList.toggle('note-empty', isBlank(el));
     if (el.innerHTML !== beforeRepair && !readOnly) onChange(el.innerHTML);   // persist the repair
     // Caret to the end, not the start: an edit surface seeded with existing
@@ -1217,7 +1401,8 @@ export default function RichEditor({
   // Both pickers are only offered where the embedding surface can serve them:
   // no uploader, no image; nothing to reference, no /reference.
   const available = CMDS.filter(c =>
-    (c.id !== 'image' || !!onUploadImage) && (c.id !== 'reference' || !!references));
+    ((c.id !== 'image' && c.id !== 'gallery') || !!onUploadImage)
+    && (c.id !== 'reference' || !!references));
   const filtered = slashQuery ? available.filter(c => cmdMatches(c, slashQuery)) : available;
 
   function emit() {
@@ -1505,9 +1690,19 @@ export default function RichEditor({
   // ── Images ────────────────────────────────────────────────────────────
   // Three ways in - the toolbar/slash command, paste, and drop - all funnel
   // through insertImages so they behave identically.
-  function pickImage() {
+  //
+  // The same <input> serves all three things the picker can be opened for,
+  // because they differ only in what is done with the files that come back.
+  // Which one it was has to be remembered rather than passed along: choosing a
+  // file hands focus away and the answer comes back on a change event much
+  // later, by which time nothing about the click survives.
+  function pickImage(mode: PickMode) {
     const sel = window.getSelection();
     imageRange.current = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    pickMode.current = mode;
+    // The gallery being added to, for the same reason: the selection collapses
+    // the moment the picker takes focus, so the bar's target is gone by then.
+    pickTarget.current = mode === 'add' ? galleryEl : null;
     setUploadError(null);
     fileRef.current?.click();
   }
@@ -1574,6 +1769,8 @@ export default function RichEditor({
     const files = Array.from(e.target.files ?? []);
     // Reset first, so choosing the same file twice in a row still fires
     e.target.value = '';
+    if (pickMode.current === 'gallery') { void insertGallery(files); return; }
+    if (pickMode.current === 'add') { void addToGallery(files); return; }
     void insertImages(files);
   }
 
@@ -1618,6 +1815,7 @@ export default function RichEditor({
       // text-in-a-list shapes come from.
       normalizeLists(editor);
       hydrateEmbeds(editor);
+      hydrateGalleries(editor);
     }
     emit();
     return true;
@@ -1674,6 +1872,265 @@ export default function RichEditor({
     // cancelled. Take the position from the drop point instead.
     imageRange.current = rangeFromPoint(e.clientX, e.clientY);
     void insertImages(files);
+  }
+
+  // ── Resizing a picture ────────────────────────────────────────────────
+  // Two ways, because they answer different questions. The presets on the bar
+  // are for "make this a third of the column", which is a judgement about the
+  // page; the corner handles are for "a bit smaller than that", which is a
+  // judgement about the picture and is only ever going to be made by eye.
+
+  /**
+   * Drag a corner. `side` is which way the width follows the pointer: on the
+   * left edge the picture grows as the pointer moves away from it, which is the
+   * opposite of the right.
+   */
+  function startResize(e: React.PointerEvent<HTMLElement>, side: 1 | -1) {
+    const img = imgEl;
+    const editor = ref.current;
+    if (!img || !editor) return;
+    // Stop the browser starting a native drag of the image instead, and keep
+    // the selection - and so the frame - exactly where it is.
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startW = img.getBoundingClientRect().width;
+    const max = columnWidthFor(img, editor);
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+
+    // Before the first pixel moves, so the whole drag is one Ctrl+Z.
+    record('struct');
+    setDragW(Math.round(startW));
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const next = Math.min(max, Math.max(MIN_IMG_W, startW + (ev.clientX - startX) * side));
+      setImageWidth(img, next);
+      setDragW(Math.round(next));
+      // The frame is drawn round the picture, so it has to keep up within the
+      // same frame as the picture does rather than a render later.
+      placeFrame();
+    };
+    const onPointerUp = () => {
+      handle.removeEventListener('pointermove', onPointerMove);
+      handle.removeEventListener('pointerup', onPointerUp);
+      handle.removeEventListener('pointercancel', onPointerUp);
+      setDragW(null);
+      emit();
+    };
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
+    handle.addEventListener('pointercancel', onPointerUp);
+  }
+
+  /** One of the presets, as a fraction of the column the picture sits in. */
+  function resizeImage(pct: number) {
+    const img = imgEl;
+    const editor = ref.current;
+    if (!img || !editor) return;
+    record('struct');
+    // Never past the picture's own resolution: "full width" on a small image
+    // should show it whole, not blow it up into a blurry one. An image that has
+    // not loaded yet reports 0, in which case there is nothing to cap against.
+    const natural = img.naturalWidth || Infinity;
+    setImageWidth(img, Math.min(columnWidthFor(img, editor) * pct, natural));
+    emit();
+    selectNode(img);
+  }
+
+  function removeImage() {
+    const editor = ref.current;
+    const img = imgEl;
+    if (!editor || !img) return;
+    record('struct');
+    const block = img.parentElement;
+    const caret = document.createRange();
+    caret.setStartAfter(img);
+    caret.collapse(true);
+    img.remove();
+    if (block && block !== editor && !block.firstChild) block.appendChild(document.createElement('br'));
+    const sel = window.getSelection();
+    if (sel && editor.contains(caret.commonAncestorContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(caret);
+    }
+    setImgEl(null);
+    dropBubble();
+    editor.focus();
+    emit();
+  }
+
+  // ── Galleries ─────────────────────────────────────────────────────────
+  // A fan of photographs, stored as one atomic island (see utils/noteGallery).
+  // Everything here goes through createGallery rather than editing the stack in
+  // place: the cards *are* the storage, so rebuilding from the list they read
+  // back as is what keeps the "+N" badge and the fan honest after every change.
+
+  /** Upload a set of files in order, and report them as gallery images. */
+  async function uploadAll(files: File[]): Promise<GalleryImage[]> {
+    const picked = files.filter(f => f.type.startsWith('image/'));
+    if (!onUploadImage || picked.length === 0) return [];
+    const out: GalleryImage[] = [];
+    // Sequential rather than parallel, as insertImages is: uploads are
+    // rate-limited per user, and the order they come back in is the order they
+    // will be shown in.
+    for (const file of picked) {
+      const { url } = await onUploadImage(file);
+      out.push({ src: url, alt: '' });
+    }
+    return out;
+  }
+
+  async function insertGallery(files: File[]) {
+    if (!onUploadImage) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const picked = await uploadAll(files.slice(0, MAX_GALLERY_IMAGES));
+      if (picked.length === 0) return;
+      restoreImageRange();
+      record('struct');
+      writeGalleryAtSelection(picked);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  /**
+   * Drop a gallery where the selection is. The same shape as
+   * writeEmbedAtSelection, and for the same reasons - an atomic island cannot
+   * hold a caret, so one is left in a space after it or the stack would be
+   * impossible to type past.
+   */
+  function writeGalleryAtSelection(images: GalleryImage[]) {
+    const editor = ref.current;
+    const sel = window.getSelection();
+    const node = createGallery(images);
+    if (!editor || !sel || sel.rangeCount === 0 || !node) return;
+    repairBlankBlock(editor);
+
+    const r = sel.getRangeAt(0);
+    r.deleteContents();
+    r.insertNode(node);
+    const after = document.createTextNode(' ');   // a plain space would collapse away
+    node.after(after);
+    const trailing = after.nextSibling;
+    if (trailing && trailing.nodeName === 'BR' && !trailing.nextSibling) trailing.remove();
+
+    const caret = document.createRange();
+    caret.setStart(after, 1);
+    caret.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(caret);
+    emit();
+  }
+
+  async function addToGallery(files: File[]) {
+    const target = pickTarget.current;
+    if (!onUploadImage || !target?.isConnected) return;
+    const existing = galleryImages(target);
+    const room = MAX_GALLERY_IMAGES - existing.length;
+    if (room <= 0) {
+      setUploadError(`A gallery holds at most ${MAX_GALLERY_IMAGES} images`);
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const picked = await uploadAll(files.slice(0, room));
+      // The note may have been edited out from under the upload.
+      if (picked.length === 0 || !target.isConnected) return;
+      record('struct');
+      replaceGallery(target, [...existing, ...picked]);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  /**
+   * Swap a gallery for one built from `images`, keeping the bar on it. Returns
+   * the element that replaced it, which is not the one that went in - the fan
+   * is rebuilt from the list rather than edited in place.
+   */
+  function replaceGallery(target: HTMLElement, images: GalleryImage[]): HTMLElement | null {
+    const next = createGallery(images);
+    if (!next) { removeGalleryEl(target); return null; }
+    target.replaceWith(next);
+    setGalleryEl(next);
+    selectNode(next);
+    emit();
+    return next;
+  }
+
+  function removeGalleryEl(target: HTMLElement) {
+    const editor = ref.current;
+    if (!editor) return;
+    const block = target.parentElement;
+    const caret = document.createRange();
+    caret.setStartAfter(target);
+    caret.collapse(true);
+    target.remove();
+    // A block left holding nothing renders as a collapsed line the caret can't
+    // enter, so give it the usual filler.
+    if (block && block !== editor && !block.firstChild) block.appendChild(document.createElement('br'));
+    const sel = window.getSelection();
+    if (sel && editor.contains(caret.commonAncestorContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(caret);
+    }
+    setGalleryEl(null);
+    dropBubble();
+    editor.focus();
+    emit();
+  }
+
+  function removeGallery() {
+    if (!galleryEl) return;
+    record('struct');
+    removeGalleryEl(galleryEl);
+  }
+
+  /**
+   * Open the gallery over everything, at a given photo.
+   *
+   * The element is stashed rather than read back off `galleryEl` later: the
+   * overlay takes focus, which drops the editor's selection and with it the bar
+   * that was on the stack - and removing a photo from in here has to know which
+   * stack it came out of.
+   */
+  function openGallery(el: HTMLElement | null, index = 0) {
+    const images = galleryImages(el);
+    if (!images.length) return;
+    viewedGallery.current = el;
+    setGalleryView({ images, index });
+  }
+
+  /**
+   * Throw one photo out of the gallery being viewed.
+   *
+   * This is where per-image editing lives, rather than on the bar: the bar is
+   * on the *stack*, where two of the photos are a sliver of an edge and the
+   * rest are not drawn at all. You have to be looking at a picture to say you
+   * don't want it, and looking at them one at a time is what the overlay is for.
+   */
+  function removeGalleryImage(index: number) {
+    const el = viewedGallery.current;
+    if (!el?.isConnected || readOnly) return;
+    const next = galleryImages(el).filter((_, i) => i !== index);
+    record('struct');
+    if (next.length === 0) {
+      removeGalleryEl(el);
+      viewedGallery.current = null;
+      setGalleryView(null);
+      return;
+    }
+    viewedGallery.current = replaceGallery(el, next);
+    setGalleryView({ images: next, index: Math.min(index, next.length - 1) });
   }
 
   // ── References ────────────────────────────────────────────────────────
@@ -1790,6 +2247,15 @@ export default function RichEditor({
     setLinkTextDraft(null);
   }
 
+  // Everything the bar can be *about* rather than the words under it. Cleared
+  // together whenever the selection stops being on any of them.
+  function clearObjectBars() {
+    setEmbedEl(null);
+    setImgEl(null);
+    setGalleryEl(null);
+    closeLinkBar();
+  }
+
   /** Replace the anchor the bar is on with a card of the given size. */
   async function linkToCard(variant: EmbedVariant) {
     const a = linkEl;
@@ -1879,18 +2345,41 @@ export default function RichEditor({
       const el = ref.current;
       const sel = window.getSelection();
       if (readOnly) { dropBubble(); return; }
-      if (!el || !sel || sel.rangeCount === 0) { dropBubble(); setEmbedEl(null); closeLinkBar(); return; }
+      if (!el || !sel || sel.rangeCount === 0) { dropBubble(); clearObjectBars(); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
       refreshMarks();
       setInTable(!!cellAtCaret(el));
+      // A gallery is an atomic island like an embed, and is checked first
+      // because it *contains* images: the picture lookup below would otherwise
+      // claim a card out of the stack and offer to resize it on its own.
+      const gallery = galleryInSelection(el);
+      setGalleryEl(gallery);
+      if (gallery) {
+        setEmbedEl(null);
+        setImgEl(null);
+        closeLinkBar();
+        raiseBubble(elementAnchor(gallery));
+        return;
+      }
       // An embed takes the bar over: formatting means nothing inside an atomic
       // island, and its own controls are what the selection is asking for.
       const embed = embedInSelection(el);
       setEmbedEl(embed);
       if (embed) {
+        setImgEl(null);
         closeLinkBar();
         raiseBubble(elementAnchor(embed));
+        return;
+      }
+      // A picture on its own is the third kind of object: not text to format,
+      // and not an island to swap the size of, but something with a width you
+      // can drag. The bar becomes its size controls and a frame goes round it.
+      const picture = imageInSelection(el);
+      setImgEl(picture);
+      if (picture) {
+        closeLinkBar();
+        raiseBubble(elementAnchor(picture));
         return;
       }
       // A caret resting in a link raises that link's own bar. Only when nothing
@@ -2248,12 +2737,12 @@ export default function RichEditor({
     // Insert-image opens a file picker rather than transforming a block. The
     // "/image" text has to be cleared here, before the picker takes focus -
     // once it has, there is no selection left to strip.
-    if (cmd.id === 'image') {
+    if (cmd.id === 'image' || cmd.id === 'gallery') {
       ref.current?.focus();
       if (slashInfo.current) stripSlash();
       closeSlash();
       emit();
-      pickImage();
+      pickImage(cmd.id === 'gallery' ? 'gallery' : 'image');
       return;
     }
     // Same story for /reference: the picker's search field takes focus, so the
@@ -2610,11 +3099,21 @@ export default function RichEditor({
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if ((e.metaKey || e.ctrlKey) && openLinkAt(target)) { e.preventDefault(); return; }
+    // A gallery is an atomic island: a click brackets the whole stack, which is
+    // what raises its bar. Checked before the embed and the picture below,
+    // because a card in the fan is an <img> inside it and would otherwise be
+    // claimed by the picture branch and offered a resize handle of its own.
+    const gallery = galleryAt(target, ref.current!);
+    if (gallery) { e.preventDefault(); selectNode(gallery); return; }
     // An embed's anchor would otherwise navigate the whole app out from under
     // the note. A plain click selects it - the bar's Open (or Ctrl-click, just
     // handled) is how you follow it.
     const embed = embedAt(target, ref.current!);
     if (embed) { e.preventDefault(); selectNode(embed); return; }
+    // Clicking a picture selects the picture. Chrome would otherwise drop a
+    // caret beside it, which is a selection of nothing and leaves no way to
+    // reach the size controls with a mouse.
+    if (target instanceof HTMLImageElement) { e.preventDefault(); selectNode(target); return; }
     const todo = target.closest(`.${TODO_CLASS}`) as HTMLElement | null;
     if (!todo) return;
     const rect = todo.getBoundingClientRect();
@@ -2641,13 +3140,22 @@ export default function RichEditor({
     <>
       <TBtn title="Add link" onRun={applyLink}><LinkIcon /></TBtn>
       {onUploadImage && (
-        <TBtn
-          title={uploading ? 'Uploading…' : 'Insert image - or paste and drop one'}
-          onRun={pickImage}
-          disabled={uploading}
-        >
-          <ImageIcon />
-        </TBtn>
+        <>
+          <TBtn
+            title={uploading ? 'Uploading…' : 'Insert image - or paste and drop one'}
+            onRun={() => pickImage('image')}
+            disabled={uploading}
+          >
+            <ImageIcon />
+          </TBtn>
+          <TBtn
+            title={uploading ? 'Uploading…' : 'Gallery - a stack of photos'}
+            onRun={() => pickImage('gallery')}
+            disabled={uploading}
+          >
+            <GalleryIcon />
+          </TBtn>
+        </>
       )}
       {references && (
         <TBtn title="Reference a saved article" onRun={openPicker}><ReferenceIcon /></TBtn>
@@ -2681,11 +3189,57 @@ export default function RichEditor({
     </>
   );
 
+  // ── The gallery bar ──
+  // A stack is one object, so the bar is about the stack: look through it, add
+  // to it, or throw it away. Removing a single photo is not here - see
+  // removeGalleryImage for why it belongs in the overlay instead.
+  const galleryBtns = galleryEl && (
+    <>
+      <span className={styles.tbGroupLabel}>
+        {galleryImages(galleryEl).length === 1
+          ? '1 photo'
+          : `${galleryImages(galleryEl).length} photos`}
+      </span>
+      <WordBtn title="Look through the gallery" onRun={() => openGallery(galleryEl)}>Open</WordBtn>
+      {/* Gated on the uploader for the same reason the /gallery command is: a
+          surface with nowhere to put a file cannot be offered one. A note
+          written elsewhere can still *contain* a gallery, and it stays openable
+          and removable here - only adding to it is out of reach. */}
+      {onUploadImage && (
+        <WordBtn
+          title={uploading ? 'Uploading…' : 'Add more photos to this gallery'}
+          onRun={() => { if (!uploading) pickImage('add'); }}
+        >
+          Add photos
+        </WordBtn>
+      )}
+      <span className={styles.tbSep} />
+      <WordBtn title="Remove the whole gallery" onRun={removeGallery} danger>Remove</WordBtn>
+    </>
+  );
+
+  // ── The picture bar ──
+  // Four presets, read as a fraction of the column rather than in pixels: the
+  // question an author is actually answering is how much of the page this
+  // photograph should take, and the column is what the answer is relative to.
+  // The number beside them is the live width while a corner is being dragged.
+  const imageBtns = !galleryEl && !embedEl && imgEl && (
+    <>
+      <span className={styles.tbGroupLabel}>Size</span>
+      {IMG_SIZES.map(s => (
+        <TBtn key={s.id} title={s.hint} onRun={() => resizeImage(s.pct)}>{s.label}</TBtn>
+      ))}
+      {dragW !== null && <span className={styles.tbReadout}>{dragW}px</span>}
+      <span className={styles.tbSep} />
+      <WordBtn title="Remove this image" onRun={removeImage} danger>Remove</WordBtn>
+    </>
+  );
+
   // ── The link bar ──
   // The same shape as the embed bar above, because a link is the same kind of
   // object: something with a size and a label. Editing the label happens in
   // place - a dialog for one field is a lot of ceremony for renaming a link.
-  const linkBarBtns = !embedEl && linkEl && (
+  const linkBarBtns = !embedEl && !galleryEl && !imgEl && linkEl && (
     linkTextDraft !== null ? (
       <>
         <input
@@ -2734,6 +3288,17 @@ export default function RichEditor({
     )
   );
 
+  // The overlay is shared by both branches below: a gallery is worth looking
+  // through in a trashed note too, which is often exactly when you want to.
+  const galleryOverlay = galleryView && (
+    <Lightbox
+      images={galleryView.images}
+      index={galleryView.index}
+      onRemove={readOnly ? undefined : removeGalleryImage}
+      onClose={() => { setGalleryView(null); viewedGallery.current = null; }}
+    />
+  );
+
   // A trashed note is shown as it was written: no toolbars, no command menu,
   // and the surface itself isn't editable.
   if (readOnly) {
@@ -2745,8 +3310,15 @@ export default function RichEditor({
           // Links are live here (this surface isn't editable), so a plain click
           // opens them in a new tab rather than navigating the page out from
           // under the note.
-          onClick={e => { if (openLinkAt(e.target as HTMLElement)) e.preventDefault(); }}
+          onClick={e => {
+            // Nothing here is selectable-as-an-object, so a gallery does the
+            // thing it does everywhere it is read: opens on the card clicked.
+            const g = galleryAt(e.target as Node, e.currentTarget);
+            if (g) { e.preventDefault(); openGallery(g, galleryIndexOf(g, e.target as Node)); return; }
+            if (openLinkAt(e.target as HTMLElement)) e.preventDefault();
+          }}
         />
+        {galleryOverlay}
       </div>
     );
   }
@@ -2933,12 +3505,43 @@ export default function RichEditor({
         </div>
       )}
 
+      {/* ── The object frame ──
+          Drawn round the selected picture or gallery, outside the editable
+          surface so nothing about it can end up in the saved document. The
+          handles are on the two bottom corners only: those are the ones that
+          resize downwards into empty page rather than up through the text
+          above, and a picture's aspect ratio is held, so the four corners of a
+          box would all be doing the same job. */}
+      {frameTarget && createPortal(
+        <div
+          ref={frameRef}
+          className={`${styles.objFrame} ${dragW !== null ? styles.objFrameBusy : ''}`}
+          aria-hidden
+        >
+          {imgEl && (
+            <>
+              <span
+                className={`${styles.objHandle} ${styles.objHandleSW}`}
+                onPointerDown={e => startResize(e, -1)}
+              />
+              <span
+                className={`${styles.objHandle} ${styles.objHandleSE}`}
+                onPointerDown={e => startResize(e, 1)}
+              />
+            </>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {galleryOverlay}
+
       {/* ── Selection bubble ──
           One bar, two jobs: formatting for a run of text, and the embed's own
           controls when the selection is an atomic island instead. */}
       {bubble && createPortal(
         <div ref={bubbleRef} className={styles.bubble} style={{ left: bubble.left, top: bubble.top }}>
-          {embedBtns || linkBarBtns || (
+          {galleryBtns || imageBtns || embedBtns || linkBarBtns || (
             <>
               {inlineBtns}
               <span className={styles.tbSep} />
@@ -3012,6 +3615,15 @@ export default function RichEditor({
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
+        // A single click selects the stack (there has to be a way to reach its
+        // bar); a double click is the "open it" gesture every file browser has
+        // trained people in, and lands on the card that was double-clicked.
+        onDoubleClick={e => {
+          const g = galleryAt(e.target as Node, e.currentTarget);
+          if (!g) return;
+          e.preventDefault();
+          openGallery(g, galleryIndexOf(g, e.target as Node));
+        }}
         onAuxClick={e => { if (e.button === 1 && openLinkAt(e.target as HTMLElement)) e.preventDefault(); }}
         onPaste={handlePaste}
         onDrop={handleDrop}

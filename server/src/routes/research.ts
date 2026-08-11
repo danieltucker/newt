@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { perUserLimiter } from '../lib/rateLimit';
@@ -59,12 +60,46 @@ function toThreadJson(t: ThreadRow) {
   };
 }
 
-function toMessageJson(m: { id: string; role: string; body: string; suggestions: unknown; createdAt: Date }) {
+/** The shape the client renders a consulted article as. */
+interface SourceJson {
+  title: string;
+  url: string;
+  source: string;
+  pubDate: string | null;
+}
+
+/**
+ * Read the stored sources back defensively.
+ *
+ * The column is JSON, so nothing in the database guarantees its shape — and a
+ * row written before the column existed defaults to `[]`. Anything that isn't a
+ * recognisable source is dropped rather than passed through, since it reaches
+ * the client as a link the reader is invited to click.
+ */
+function toSourcesJson(raw: unknown): SourceJson[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap(item => {
+    if (typeof item !== 'object' || item === null) return [];
+    const s = item as Record<string, unknown>;
+    if (typeof s.url !== 'string' || !s.url) return [];
+    return [{
+      title: typeof s.title === 'string' ? s.title : '',
+      url: s.url,
+      source: typeof s.source === 'string' ? s.source : '',
+      pubDate: typeof s.pubDate === 'string' ? s.pubDate : null,
+    }];
+  });
+}
+
+function toMessageJson(
+  m: { id: string; role: string; body: string; suggestions: unknown; sources?: unknown; createdAt: Date },
+) {
   return {
     id: m.id,
     role: m.role,
     body: m.body,
     suggestions: Array.isArray(m.suggestions) ? m.suggestions.filter(s => typeof s === 'string') : [],
+    sources: toSourcesJson(m.sources),
     createdAt: m.createdAt.toISOString(),
   };
 }
@@ -108,6 +143,19 @@ async function aiPrefs(userId: string): Promise<AiPrefs> {
  * Every failure path returns an empty list. A feed search that goes wrong must
  * never take the question down with it: the answer is worse without the
  * articles, not impossible.
+ *
+ * Which is exactly why every step logs. Swallowing the failures is right, but
+ * swallowing them silently made "the planner declined", "the planner call
+ * threw" and "the search ran and matched nothing" indistinguishable from
+ * outside — three very different problems that all look like the feature being
+ * switched off. The log line is the only place the difference is visible, since
+ * none of this is ever shown to the reader.
+ *
+ * At `info` rather than `debug` because the logger runs at `info` in production
+ * (see lib/logger), and a diagnostic that only exists in development is no use
+ * for the thing it was written to diagnose. The volume is fine: one line per
+ * Explore turn, and every one of those turns is already paying for two model
+ * calls.
  */
 async function gatherFeedContext(
   userId: string,
@@ -134,9 +182,18 @@ async function gatherFeedContext(
     });
 
     const queries = parsePlan(raw);
-    if (queries.length === 0) return [];
-    return await searchFeed(userId, queries);
-  } catch {
+    if (queries.length === 0) {
+      // Covers both a deliberate {"search": false} and a reply that could not be
+      // parsed at all — worth telling apart, so the raw head goes in.
+      logger.info({ userId, plan: raw.slice(0, 200) }, 'Feed search: planner returned no queries');
+      return [];
+    }
+
+    const { hits, failed } = await searchFeed(userId, queries);
+    logger.info({ userId, queries, failed, hits: hits.length }, 'Feed search');
+    return hits;
+  } catch (err) {
+    logger.info({ err, userId }, 'Feed search failed');
     return [];
   }
 }
@@ -369,11 +426,18 @@ router.post('/threads/:id/messages', researchLimiter, async (req: AuthRequest, r
   const asked = typeof question === 'string' ? question : turns[turns.length - 1].content;
 
   const feedHits = await gatherFeedContext(req.userId!, cred, asked, prefs, addUsage);
+  // Saved with the answer further down, so the citations are still there on a
+  // thread opened weeks later. The search cannot be re-run to rebuild them: it
+  // ranks a river that has moved on, and some of what was read has aged out of
+  // the feed since.
+  const sources: SourceJson[] = feedHits.map(h => ({
+    title: h.title, url: h.url, source: h.source, pubDate: h.pubDate,
+  }));
   if (feedHits.length > 0) {
     // Told to the client as it happens: a pause before the answer starts is
     // otherwise unexplained, and knowing which of your own articles were
     // consulted is most of what makes this trustworthy.
-    sse.send('sources', { sources: feedHits.map(h => ({ title: h.title, url: h.url, source: h.source })) });
+    sse.send('sources', { sources });
     // Appended to the *last* turn rather than the first: this is material for
     // the question being asked now, and next turn's search will find different
     // articles. Putting it in the cached opening turn would freeze one
@@ -443,7 +507,16 @@ router.post('/threads/:id/messages', researchLimiter, async (req: AuthRequest, r
 
   try {
     const saved = await prisma.researchMessage.create({
-      data: { threadId: thread.id, role: 'assistant', body, suggestions },
+      data: {
+        threadId: thread.id,
+        role: 'assistant',
+        body,
+        suggestions,
+        // Prisma's InputJsonValue does not accept an array of named interfaces
+        // without an index signature, and widening SourceJson to get one would
+        // lose the typing everywhere else it is used. The value is plain data.
+        sources: sources as unknown as Prisma.InputJsonValue,
+      },
     });
     await prisma.researchThread.update({
       where: { id: thread.id },

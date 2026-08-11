@@ -9,7 +9,7 @@ import {
  *
  * `hasModel` is what every AI affordance in the app gates on. It starts false
  * and only becomes true once the list has actually loaded, which is why
- * `loaded` is separate: a Research button that flashes into existence and out
+ * `loaded` is separate: an Explore button that flashes into existence and out
  * again on every page load is worse than one that appears a beat late.
  *
  * Nothing here ever holds an API key. The server does not send them back, so

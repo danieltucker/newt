@@ -252,6 +252,55 @@ describe('sanitizeCommentHtml — reference embeds', () => {
   });
 });
 
+describe('sanitizeCommentHtml — galleries', () => {
+  // What client/src/utils/noteGallery.ts produces, minus the contenteditable the
+  // allowlist deliberately drops (the editor stamps it back on load)
+  const gallery =
+    '<p><span class="note-gallery" data-gallery="4" contenteditable="false">' +
+    '<span class="note-gallery-stack">' +
+    '<img class="note-gallery-card" src="/api/v1/images/img1" alt="one" loading="lazy">' +
+    '<img class="note-gallery-card" src="/api/v1/images/img2" alt="two" loading="lazy">' +
+    '<img class="note-gallery-card" src="https://cdn.example.com/three.jpg" alt="" loading="lazy">' +
+    '<img class="note-gallery-card" src="/api/v1/images/img4" alt="" loading="lazy">' +
+    '</span>' +
+    '<span class="note-gallery-more">+1</span>' +
+    '</span></p>';
+
+  it('survives with every photograph it was written with', () => {
+    const out = sanitizeCommentHtml(gallery);
+    expect(out).toContain('class="note-gallery"');
+    expect(out).toContain('data-gallery="4"');
+    expect(out).toContain('class="note-gallery-stack"');
+    expect(out).toContain('>+1<');
+    expect(out.match(/class="note-gallery-card"/g)).toHaveLength(4);
+    expect(out).toContain('src="/api/v1/images/img1"');
+    expect(out).toContain('src="https://cdn.example.com/three.jpg"');
+  });
+
+  it('drops contenteditable, exactly as it does on an embed', () => {
+    expect(sanitizeCommentHtml(gallery)).not.toContain('contenteditable');
+  });
+
+  it('holds every image in a gallery to the same https-only rule as any other', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-gallery" data-gallery="2"><span class="note-gallery-stack">' +
+      '<img class="note-gallery-card" src="javascript:alert(1)">' +
+      '<img class="note-gallery-card" src="http://insecure.example.com/a.png">' +
+      '</span></span>');
+    expect(out).not.toContain('javascript:');
+    expect(out).not.toContain('http://insecure.example.com');
+  });
+
+  it('does not let the gallery classes become a way to reach the rest of the app', () => {
+    const out = sanitizeCommentHtml(
+      '<span class="note-gallery sidebar-nav">x</span>' +
+      '<img class="note-gallery-card note-embed-cover heroImage" src="https://x.com/i.png">');
+    expect(out).toContain('note-gallery');
+    expect(out).not.toContain('sidebar-nav');
+    expect(out).not.toContain('heroImage');
+  });
+});
+
 describe('isBlankHtml', () => {
   it('treats an empty editor as blank', () => {
     expect(isBlankHtml('')).toBe(true);

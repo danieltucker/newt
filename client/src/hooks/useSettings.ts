@@ -74,7 +74,7 @@ export interface UserSettings {
   // How much answer to ask for, which is also the main control on what the AI
   // features cost. See server/src/lib/llm/depth.ts.
   aiDepth?: 'brief' | 'balanced' | 'thorough';
-  /** Whether research may search this user's own feed before answering. */
+  /** Whether Explore may search this user's own feed before answering. */
   aiFeedSearch?: boolean;
   /** Show the estimated price of each answer under it. */
   aiShowCost?: boolean;

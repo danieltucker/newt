@@ -49,21 +49,21 @@ describe('accountMenuItems', () => {
   });
 });
 
-describe('accountMenuItems — Research', () => {
+describe('accountMenuItems — Explore', () => {
   it('is absent until a model is connected', () => {
     // The row is a destination, not an advert: with no key it would lead
     // straight to "you need to set this up first".
-    expect(accountMenuItems({}).map(i => i.id)).not.toContain('research');
-    expect(accountMenuItems({ hasModel: false }).map(i => i.id)).not.toContain('research');
+    expect(accountMenuItems({}).map(i => i.id)).not.toContain('explore');
+    expect(accountMenuItems({ hasModel: false }).map(i => i.id)).not.toContain('explore');
   });
 
   it('appears once one is', () => {
-    expect(accountMenuItems({ hasModel: true }).map(i => i.id)).toContain('research');
+    expect(accountMenuItems({ hasModel: true }).map(i => i.id)).toContain('explore');
   });
 
   it('sits above Settings, which stays last before Sign out', () => {
     const ids = accountMenuItems({ hasModel: true }).map(i => i.id);
-    expect(ids.indexOf('research')).toBeLessThan(ids.indexOf('settings'));
+    expect(ids.indexOf('explore')).toBeLessThan(ids.indexOf('settings'));
     expect(ids[ids.length - 1]).toBe('signout');
   });
 

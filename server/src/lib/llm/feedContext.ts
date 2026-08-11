@@ -1,7 +1,7 @@
 import prisma from '../prisma';
 import { canonicalFeedKey } from '../feedUtils';
 import { toTsQuery } from '../feedSearch';
-import { htmlToText } from './articleContext';
+import { htmlToText } from './htmlText';
 
 /**
  * Searching the reader's own feed on their behalf, so an answer can be about
@@ -20,8 +20,32 @@ import { htmlToText } from './articleContext';
 
 /** More than this and the context is mostly feed, crowding out the conversation. */
 const MAX_ARTICLES = 8;
+/**
+ * Taken from each query before the merge.
+ *
+ * Deliberately larger than `MAX_ARTICLES / 4`: the queries are phrasings of one
+ * question, so they overlap heavily and most of what a second query returns is
+ * already in hand. Fetching a full slate from each and letting rank decide is
+ * what stops one lucky phrasing filling every slot.
+ */
+const PER_QUERY = 8;
 /** Per article. Enough to know whether it answers the question, not the whole piece. */
 const MAX_SNIPPET_CHARS = 700;
+/**
+ * How far back the search will reach.
+ *
+ * The point of this whole path is covering what the model cannot know — what
+ * happened after its cutoff — and `ts_rank` has no opinion about dates, so
+ * without a bound a well-matching piece from four years ago outranks last
+ * week's. A year rather than a few months because "recent" in a research
+ * conversation routinely means last autumn, and because a reader's archive only
+ * goes back as far as their subscription: for most accounts this bounds nothing
+ * and costs nothing, and it is there for the ones with a deep river.
+ *
+ * Undated items are kept. A feed that omits pubDate is a bad feed, not an old
+ * one, and dropping every article from it would be a silent hole in the search.
+ */
+const MAX_AGE_DAYS = 365;
 
 export interface FeedHit {
   title: string;
@@ -31,10 +55,18 @@ export interface FeedHit {
   snippet: string;
 }
 
+/** What the search did, for the caller to log. Never shown to the reader. */
+export interface FeedSearchResult {
+  hits: FeedHit[];
+  /** Queries whose tsquery was empty or whose SQL threw — a real fault, unlike a miss. */
+  failed: string[];
+}
+
 type SearchRow = {
   id: string;
   title: string;
   link: string;
+  linkKey: string;
   feedId: string;
   pubDate: Date | null;
   snippet: string | null;
@@ -89,60 +121,87 @@ export async function hasFeeds(userId: string): Promise<boolean> {
  * on `linkKey` rather than URL for the same reason the river dedupes on it: two
  * feeds carrying one article is ordinary, and quoting it to the model twice
  * would make it look like two sources agreeing.
+ *
+ * Every query is run in full and the results are merged by rank, rather than
+ * filling the slate from the first query and stopping. With `any` semantics the
+ * first query will happily return eight rows every time, so taking them in
+ * order would mean the second and third phrasings never contributed anything —
+ * the exact thing that asking for several phrasings was supposed to buy. Ranks
+ * from different tsqueries are not strictly comparable, but they come from one
+ * `ts_rank` over one weighted vector, which is close enough to sort by and far
+ * better than arrival order.
  */
-export async function searchFeed(userId: string, queries: string[]): Promise<FeedHit[]> {
+export async function searchFeed(userId: string, queries: string[]): Promise<FeedSearchResult> {
   const cleaned = queries.map(q => q.trim()).filter(Boolean).slice(0, 4);
-  if (cleaned.length === 0) return [];
+  if (cleaned.length === 0) return { hits: [], failed: [] };
 
   const { feedIds, nameById } = await subscribedFeeds(userId);
-  if (feedIds.length === 0) return [];
+  if (feedIds.length === 0) return { hits: [], failed: [] };
 
-  const seen = new Set<string>();
-  const hits: FeedHit[] = [];
+  const since = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+  const failed: string[] = [];
+  const byKey = new Map<string, SearchRow>();
 
   for (const query of cleaned) {
-    const tsq = toTsQuery(query);
-    if (!tsq) continue;
+    // `any` rather than the search box's `all`: see the mode note in
+    // lib/feedSearch. The planner gets one shot with no chance to loosen a
+    // query that found nothing, so recall has to come first here.
+    const tsq = toTsQuery(query, 'any');
+    if (!tsq) { failed.push(query); continue; }
 
     let rows: SearchRow[];
     try {
       rows = await prisma.$queryRaw<SearchRow[]>`
         SELECT * FROM (
           SELECT DISTINCT ON (i."linkKey")
-            i."id", i."title", i."link", i."feedId", i."pubDate", i."snippet", i."content",
+            i."id", i."title", i."link", i."linkKey", i."feedId", i."pubDate", i."snippet", i."content",
             ts_rank(i."searchVector", to_tsquery('english', ${tsq})) AS "rank"
           FROM "FeedItem" i
           WHERE i."feedId" = ANY(${feedIds}::text[])
             AND i."searchVector" @@ to_tsquery('english', ${tsq})
+            AND (i."pubDate" IS NULL OR i."pubDate" >= ${since})
           ORDER BY i."linkKey", "rank" DESC, i."pubDate" DESC NULLS LAST
         ) s
         ORDER BY s."rank" DESC, s."pubDate" DESC NULLS LAST
-        LIMIT ${MAX_ARTICLES}`;
+        LIMIT ${PER_QUERY}`;
     } catch {
       // A malformed tsquery is the only realistic failure and it is one
       // search's problem, not the turn's. The answer is still worth having
-      // without this term's results.
+      // without this term's results — but the caller is told, because a query
+      // that errored and a query that genuinely matched nothing want very
+      // different responses from whoever is reading the logs.
+      failed.push(query);
       continue;
     }
 
     for (const row of rows) {
-      if (hits.length >= MAX_ARTICLES) break;
-      if (seen.has(row.link)) continue;
-      seen.add(row.link);
+      // Keep whichever phrasing ranked it highest; a story found by two of them
+      // is not thereby two stories.
+      const held = byKey.get(row.linkKey);
+      if (!held || row.rank > held.rank) byKey.set(row.linkKey, row);
+    }
+  }
 
+  const hits = [...byKey.values()]
+    .sort((a, b) => b.rank - a.rank || dateValue(b.pubDate) - dateValue(a.pubDate))
+    .slice(0, MAX_ARTICLES)
+    .map(row => {
       const body = row.snippet || htmlToText(row.content || '');
-      hits.push({
+      return {
         title: row.title,
         url: row.link,
         source: nameById.get(row.feedId) || '',
         pubDate: row.pubDate ? row.pubDate.toISOString() : null,
         snippet: body.slice(0, MAX_SNIPPET_CHARS),
-      });
-    }
-    if (hits.length >= MAX_ARTICLES) break;
-  }
+      };
+    });
 
-  return hits;
+  return { hits, failed };
+}
+
+/** Undated sorts last, matching the NULLS LAST the queries themselves use. */
+function dateValue(d: Date | null): number {
+  return d ? d.getTime() : 0;
 }
 
 /**

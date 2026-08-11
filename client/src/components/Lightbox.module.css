@@ -1,7 +1,12 @@
+/* Above --z-top, which is where the app's own fullscreen surfaces live (the
+   notes console, the reader). A gallery opens from inside one of those, and an
+   image viewer that appeared *behind* the console it was opened from would look
+   like the click had done nothing at all. Nothing in the app is meant to cover
+   this: it is a photograph on its own, over everything else. */
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: calc(var(--z-top, 300) + 10);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -54,6 +59,16 @@
   overflow-wrap: anywhere;
 }
 
+/* Where you are in the set. Tabular figures so the number doesn't shuffle the
+   rest of the bar sideways as it ticks past 9. */
+.counter {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: rgb(255 255 255 / 0.6);
+  white-space: nowrap;
+}
+
 .dims {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -77,6 +92,19 @@
   background: rgb(255 255 255 / 0.08);
 }
 
+/* Sits beside "Open original" and shares its shape - it is the same class of
+   thing, one more action on the photo currently up. Only the colour differs, on
+   hover, where it says what it will do. */
+.removeBtn {
+  font-family: inherit;
+  cursor: pointer;
+}
+.removeBtn:hover {
+  color: #ffd9d9;
+  border-color: rgb(255 120 120 / 0.6);
+  background: rgb(255 90 90 / 0.14);
+}
+
 .closeBtn {
   position: fixed;
   top: 18px;
@@ -96,7 +124,81 @@
 }
 .closeBtn:hover { color: #fff; border-color: rgb(255 255 255 / 0.5); background: rgb(0 0 0 / 0.65); }
 
+/* ── Paging through a set ──
+   Pinned to the edges of the viewport rather than laid out beside the photo, so
+   the image keeps every pixel of width available to it. Same circular treatment
+   as the close button: these float over the picture rather than sitting in
+   chrome, and they size off the control scale like everything else. */
+.navBtn {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.4);
+  color: rgb(255 255 255 / 0.85);
+  cursor: pointer;
+}
+.navBtn:hover { color: #fff; border-color: rgb(255 255 255 / 0.5); background: rgb(0 0 0 / 0.65); }
+
+.navPrev { left: 20px; }
+.navNext { right: 20px; }
+
+/* ── The rail ──
+   Paging one at a time is fine for three photos and tedious for twenty, so the
+   whole set stays one click away. It scrolls sideways rather than wrapping: a
+   second row would start eating the height the photo above it needs. */
+.thumbs {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  padding: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.3) transparent;
+  cursor: default;
+}
+
+.thumb {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0d0d0f;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.12s, border-color 0.12s;
+}
+.thumb:hover { opacity: 0.85; border-color: rgb(255 255 255 / 0.45); }
+
+.thumbOn {
+  opacity: 1;
+  border-color: #fff;
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb { transition: none; }
+}
+
 @media (max-width: 620px) {
   .overlay { padding: 16px; }
   .closeBtn { top: 10px; right: 10px; }
+  .navPrev { left: 8px; }
+  .navNext { right: 8px; }
+  .thumb { width: 46px; height: 36px; }
 }

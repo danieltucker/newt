@@ -30,12 +30,15 @@ import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
 import SitePage from './SitePage';
 import BlogEditorPage from './BlogEditorPage';
-import ResearchPage from './ResearchPage';
+// Research was renamed Explore in v1.17.0. Only what a reader sees changed —
+// the file, the API routes and the tables kept the old name, so the rename
+// carried no migration. This is the seam between the two.
+import ExplorePage from './ResearchPage';
 import { parseArticlePath } from '../utils/articleUrl';
 import { blogPathFor, blogRefOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
-import { researchArticlePath, researchAskPath } from '../utils/researchUrl';
+import { exploreArticlePath, exploreAskPath } from '../utils/researchUrl';
 import { canonicalFeedUrl } from '../utils/feedKey';
 import { articleEmbed } from '../utils/noteEmbed';
 import { stashSeed } from '../utils/composerSeed';
@@ -75,10 +78,10 @@ export type ShellView =
   | { kind: 'site'; domain: string }
   | { kind: 'myblog' }
   | { kind: 'editor'; postId: string | null }
-  // Research is in the shell for the same reason the composer is: the notes
-  // console and the reading list are what you research *against*, and having to
-  // leave the conversation to check one would be the worse trade.
-  | { kind: 'research'; threadId: string | null; seedUrl?: string | null; seedTitle?: string | null; seedQuestion?: string | null };
+  // Explore is in the shell for the same reason the composer is: the notes
+  // console and the reading list are what you dig into an article *against*,
+  // and having to leave the conversation to check one would be the worse trade.
+  | { kind: 'explore'; threadId: string | null; seedUrl?: string | null; seedTitle?: string | null; seedQuestion?: string | null };
 
 interface Props {
   accessToken: string;
@@ -89,7 +92,7 @@ interface Props {
   onSetTheme: (t: ThemeSetting) => void;
   onLogout: () => void;
   onViewProfile?: (username: string) => void;
-  navigate: (to: string) => void;
+  navigate: (to: string, replace?: boolean) => void;
   view?: ShellView | null;
 }
 
@@ -103,7 +106,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile, navigate, view }: Props) {
   const { settings, update: updateSetting, refresh: refreshSettings, loaded: settingsLoaded } = useSettings(accessToken);
-  // Loaded once for the whole shell rather than per surface: the Research
+  // Loaded once for the whole shell rather than per surface: the Explore
   // button on an article, the proofreader in the composer and the search bar's
   // ask shortcut all gate on the same "is a model connected" answer, and three
   // copies of that request would be three chances to disagree.
@@ -322,18 +325,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // you scroll and can link to, not an overlay over the one you were on.
   const goSite = useCallback((domain: string) => navigate(sitePathFor(domain)), [navigate]);
 
-  // The Research button on an article. Undefined when no model is connected, so
+  // The Explore button on an article. Undefined when no model is connected, so
   // every surface that takes it (the reader, the feed, the reading list) hides
   // the button rather than offering one that opens a settings screen.
   //
   // The article travels in the URL rather than in state, so the thread that
   // comes back is a page you can reload, share with yourself, or reach with the
   // back button — the same treatment /a/<id> gets.
-  const goResearch = useCallback(
-    (url: string, title: string) => navigate(researchArticlePath(url, title)),
+  const goExplore = useCallback(
+    (url: string, title: string) => navigate(exploreArticlePath(url, title)),
     [navigate],
   );
-  const openResearch = llm.hasModel ? goResearch : undefined;
+  const openExplore = llm.hasModel ? goExplore : undefined;
 
   // Following from a site page goes through the shell's subscription list, so
   // the feed panel, the manager and the category filter all see the new feed
@@ -353,17 +356,17 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [articleUrl, setArticleUrl] = useState<string | null>(null);
 
   /**
-   * The search bar's /ask, which goes straight to Research.
+   * The search bar's /ask, which goes straight to Explore.
    *
-   * It used to open its own overlay with a "continue in Research" button
+   * It used to open its own overlay with a "continue in Explore" button
    * underneath, which was one surface too many: the overlay could not take a
    * follow-up, could not be returned to, and its only real affordance was
    * handing the question to the page that could do both. So it goes there in
    * the first place. Whichever reader is open rides along as context: the
    * comment thread if there is one, otherwise the iframe reader.
    */
-  const askInResearch = useCallback((question: string) => {
-    navigate(researchAskPath(question, thread?.url ?? articleUrl ?? undefined));
+  const askInExplore = useCallback((question: string) => {
+    navigate(exploreAskPath(question, thread?.url ?? articleUrl ?? undefined));
   }, [navigate, thread, articleUrl]);
   const [showConsole, setShowConsole] = useState(false);
   const [consoleFading, setConsoleFading] = useState(false);
@@ -832,7 +835,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       notes={(settings.noteDocs ?? []).filter(n => !n.deletedAt)}
       onOpenNote={openNoteFromSearch}
       onOpenArticle={openSearchResult}
-      onAsk={llm.hasModel ? askInResearch : undefined}
+      onAsk={llm.hasModel ? askInExplore : undefined}
     />
   );
 
@@ -992,22 +995,26 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 hasModel={llm.hasModel}
               />
             )}
-            {view.kind === 'research' && (
-              <ResearchPage
+            {view.kind === 'explore' && (
+              <ExplorePage
                 navigate={navigate}
                 threadId={view.threadId}
                 // Built here rather than in App so the phrasing of the opening
                 // question lives next to the page that sends it. A question the
-                // reader actually typed (?q=, from Continue in Research) always
+                // reader actually typed (?q=, from the search bar's /ask) always
                 // wins over the generated one — it is what they meant to ask.
                 seed={view.seedQuestion || view.seedUrl ? {
                   question: view.seedQuestion || (view.seedTitle
-                    ? `Research this further: “${view.seedTitle}”. What is the wider context, what is contested, and what should I read next?`
-                    : 'Research this article further: what is the wider context, what is contested, and what should I read next?'),
+                    ? `Go deeper on “${view.seedTitle}”. What is the wider context, what is contested, and what should I read next?`
+                    : 'Go deeper on this article: what is the wider context, what is contested, and what should I read next?'),
                   url: view.seedUrl ?? undefined,
                 } : null}
                 hasModel={llm.hasModel}
                 onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
+                // The source card at the top of a thread opens the same reader
+                // the feed does — the article's text and its comment thread,
+                // over the conversation rather than away from it.
+                onOpenArticle={openThread}
               />
             )}
           </div>
@@ -1031,7 +1038,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
             <div className={styles.bottomRow}>
               <ReadingList
                 items={readingList}
-                onResearch={openResearch}
+                onExplore={openExplore}
                 onSave={saveItem}
                 onUpdate={updateItem}
                 onAddToLibrary={setInLibrary}
@@ -1061,7 +1068,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 (which is the one that offers to fix it). */}
             {rssOn && (
               <FeedPanel
-                onResearch={openResearch}
+                onExplore={openExplore}
                 feedFolders={feedFolders}
                 subscriptionCount={subscriptions.length}
                 onManageFeeds={() => setShowFeedManager(true)}
@@ -1347,7 +1354,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           focusCommentId={thread.commentId}
           onClose={() => setThread(null)}
           onViewProfile={onViewProfile}
-          onResearch={openResearch}
+          onExplore={openExplore}
         />
       )}
 

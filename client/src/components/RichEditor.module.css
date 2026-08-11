@@ -611,6 +611,61 @@
    than putting a caret inside a replaced element that cannot hold one. */
 .editor img::selection { background: var(--select-bg); }
 
+/* ── The object frame ──
+   Drawn round the selected picture or gallery. It is portalled to <body> and
+   positioned from script (see placeFrame) rather than being an element beside
+   what it surrounds: everything inside the editable surface is serialized back
+   out through onChange and saved into the note, so chrome cannot live there.
+
+   pointer-events: none on the frame itself and back on for the handles - the
+   ring covers the picture, and a ring that swallowed clicks would make the
+   thing it is pointing at unclickable. */
+.objFrame {
+  position: fixed;
+  /* Portalled to <body>, so it is layered against the app's fullscreen surfaces
+     rather than against anything inside the editor: one above --z-top puts it
+     over the notes console it is drawn inside, and one below the bubble, which
+     hangs over the picture's top edge and must stay legible. */
+  z-index: calc(var(--z-top) + 1);
+  pointer-events: none;
+  border: 1.5px solid var(--paper-accent);
+  border-radius: 9px;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--paper-accent) 16%, transparent);
+}
+
+/* While a corner is being dragged the pointer belongs to the handle wherever it
+   goes, so the cursor has to be right over the whole page, not just the corner. */
+.objFrameBusy { cursor: nwse-resize; }
+
+.objHandle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: auto;
+  border: 1.5px solid var(--paper-accent);
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  touch-action: none;   /* the drag is ours; the browser must not scroll instead */
+}
+
+/* Bottom corners only. Those resize down into empty page rather than up through
+   the text above, and the aspect ratio is held either way - so a handle on each
+   of the four corners would be four ways to do one thing. */
+.objHandleSW { left: -8px;  bottom: -8px; cursor: nesw-resize; }
+.objHandleSE { right: -8px; bottom: -8px; cursor: nwse-resize; }
+
+/* The live width during a drag. Tabular figures so the bar doesn't twitch as
+   the number changes under the pointer. */
+.tbReadout {
+  padding: 0 4px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper-faint);
+  white-space: nowrap;
+}
+
 /* ── Image upload feedback ── */
 .uploadNote, .uploadError {
   margin: 0 32px 10px;
@@ -1121,6 +1176,152 @@
 :global(.note-embed:not([data-embed='article']):not([data-embed='post'])
   .note-embed-comments[data-comments]) {
   display: flex;
+}
+
+/* ── Galleries (global classes: embedded in saved note HTML) ──
+   A fan of photographs. Like the embeds above, the markup is inline-only (span
+   / img - see utils/noteGallery.ts for why a block tag here would not survive a
+   reload), so the whole shape is CSS: absolutely-positioned cards in a box the
+   stack sizes itself to.
+
+   These rules are written against the global class names rather than hashed
+   module ones because they are baked into every note, post and comment that has
+   ever contained a gallery. A build that changed the hash would orphan all of
+   them. They live in this file, not in styles/noteGallery.css, for the reason
+   the embed layout does: one definition reaches the editor and every surface a
+   gallery is read on, so the two can never drift.
+
+   Every image is in the markup - the overlay pages through all of them - and
+   the fan only ever draws the first three. */
+:global(.note-gallery) {
+  display: inline-block;
+  position: relative;
+  /* Room on all sides for the cards to lean out of the stack and to lift on
+     hover without being clipped by the line box. */
+  margin: 20px 26px 26px;
+  vertical-align: top;
+  user-select: none;      /* atomic: selected as a unit, never typed into */
+  cursor: pointer;
+}
+
+:global(.note-gallery .note-gallery-stack) {
+  display: block;
+  position: relative;
+  width: 300px;
+  height: 208px;
+  /* The widest a stack may get on a narrow column. The cards are absolute, so
+     the box is what has to be told; they follow it. */
+  max-width: 100%;
+}
+
+/* A photographic print: a white edge, a soft drop shadow, and a corner radius.
+   The border is what makes the cards read as separate objects where two photos
+   of a similar colour overlap. transform-origin low on the card is what makes
+   the fan pivot from the bottom, the way a hand of cards does. */
+:global(.note-gallery .note-gallery-card) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* The whole box, border included - everything in the app is border-box, so
+     the 4px print edge below eats into these rather than adding to them. */
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 4px solid #fff;
+  border-radius: 10px;
+  background: var(--paper-2);
+  object-fit: cover;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
+  transform-origin: 50% 85%;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 0.18s;
+}
+
+/* The fan. Written back to front so the card at the top of the markup is the
+   one at the front of the stack, which is the order the overlay pages in. */
+:global(.note-gallery .note-gallery-card:nth-child(1)) { z-index: 3; }
+
+:global(.note-gallery .note-gallery-card:nth-child(2)) {
+  z-index: 2;
+  transform: rotate(6deg) translate(15px, 2px);
+}
+
+:global(.note-gallery .note-gallery-card:nth-child(3)) {
+  z-index: 1;
+  transform: rotate(-7deg) translate(-16px, 4px);
+}
+
+/* Stored, not drawn. The set can run to MAX_GALLERY_IMAGES and a fan of twenty
+   would be a smear; the badge below says how many are behind these three. */
+:global(.note-gallery .note-gallery-card:nth-child(n + 4)) { display: none; }
+
+/* Hover lifts a card, and lifts it *over* the others - which is the only way
+   the two behind are ever seen whole, since the front card covers all but a
+   sliver of each. The lift is the same distance for all three so the fan reads
+   as one gesture; only the resting rotation differs. */
+:global(.note-gallery .note-gallery-card:hover) {
+  z-index: 6;
+  box-shadow: 0 18px 38px rgb(0 0 0 / 0.3);
+}
+
+:global(.note-gallery .note-gallery-card:nth-child(1):hover) {
+  transform: translateY(-10px) scale(1.02);
+}
+
+:global(.note-gallery .note-gallery-card:nth-child(2):hover) {
+  transform: rotate(6deg) translate(15px, -10px) scale(1.04);
+}
+
+:global(.note-gallery .note-gallery-card:nth-child(3):hover) {
+  transform: rotate(-7deg) translate(-16px, -10px) scale(1.04);
+}
+
+/* How many photographs are not on the fan. Written into the markup as text
+   rather than derived at render time - unlike an embed's comment count it is a
+   fact about the stored content, so it cannot go stale while that is unchanged
+   (see buildGalleryHtml). */
+:global(.note-gallery .note-gallery-more) {
+  position: absolute;
+  right: -12px;
+  bottom: -12px;
+  z-index: 7;
+  display: block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(22 22 28 / 0.88);
+  color: #fff;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+
+/* The selection wash an atomic island gets, matching the embeds. The frame the
+   editor draws round a selected gallery is the louder signal; this is what
+   makes a gallery caught in a run of selected text look selected too. */
+:global(.note-gallery)::selection,
+:global(.note-gallery *)::selection { background: var(--select-bg); }
+
+/* Where a gallery is read it takes the keyboard, as one object rather than
+   three quarter-hidden edges of the same one (see PostBody). The ring has to be
+   drawn here because the stack is a <span> - the img:focus-visible rule the
+   surrounding body carries has nothing to attach to. */
+:global(.note-gallery):focus-visible {
+  outline: 2px solid var(--accent, var(--paper-accent));
+  outline-offset: 6px;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.note-gallery .note-gallery-card) { transition: none; }
+}
+
+/* On a phone the stack has to give up its margins before it gives up the
+   photographs: 300px plus 26px either side does not fit a narrow column. */
+@media (max-width: 560px) {
+  :global(.note-gallery) { margin: 18px 20px 22px; }
+  :global(.note-gallery .note-gallery-stack) { width: 240px; height: 170px; }
 }
 
 /* ── Slash command menu ── */

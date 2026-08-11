@@ -42,6 +42,7 @@ export interface ResearchSource {
   title: string;
   url: string;
   source: string;
+  pubDate: string | null;
 }
 
 export interface Credential {
@@ -70,6 +71,11 @@ export interface ResearchMessage {
   role: 'user' | 'assistant';
   body: string;
   suggestions: string[];
+  /**
+   * The feed articles this answer was given, kept with it. Always empty on a
+   * user turn, and on any assistant turn written before v1.17.0.
+   */
+  sources: ResearchSource[];
   createdAt: string;
 }
 

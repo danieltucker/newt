@@ -36,7 +36,32 @@ export function terms(raw: string): string[] {
 }
 
 /**
- * `a & b & c:*` — every term required, the last one matched as a prefix.
+ * Below this a prefix is too blunt to widen anything: `ai:*` picks up aid, aim
+ * and air, and in `any` mode there is no second term to filter that back out.
+ */
+const MIN_PREFIX_LEN = 3;
+
+/**
+ * Which way the terms are joined.
+ *
+ * `all` — `a & b & c:*`. Every term required. This is the search box, where the
+ * reader is typing and watching the list narrow: they see each keystroke's
+ * effect and stop when it looks right, so precision is what they want and a
+ * query that is briefly too narrow costs nothing.
+ *
+ * `any` — `a:* | b:* | c:*`. Any term will do, ranking sorts the rest out. This
+ * is for a caller that gets one shot and no feedback — the feed search the
+ * research planner runs. AND is close to unusable there: `searchVector` is built
+ * from title and snippet only (see the 20260810160000 migration), so a document
+ * is around forty words, and the odds of a planner's three or four terms all
+ * landing inside forty words are slim enough that the honest answer is almost
+ * always "no articles". OR over the same terms, ordered by `ts_rank`, gets the
+ * right article to the top and lets the caller cut the tail off with a LIMIT.
+ */
+export type TsQueryMode = 'all' | 'any';
+
+/**
+ * Build a tsquery, joined per `mode`.
  *
  * The trailing `:*` is doing more work than autocomplete. Postgres stems before
  * it prefixes, and English stemming does not bring "closing" (→ `close`) and
@@ -45,17 +70,28 @@ export function terms(raw: string): string[] {
  * matches both, which is the behaviour a reader expects from a search box and
  * the reason the last term is never matched exactly.
  *
- * Only the last term gets it. Prefixing all of them would quietly turn a search
- * for "art" into one for "artifact" and "artillery" as well, and with AND
- * semantics across terms that noise compounds.
+ * In `all` mode only the last term gets it. Prefixing all of them would quietly
+ * turn a search for "art" into one for "artifact" and "artillery" as well, and
+ * with AND semantics across terms that noise compounds. In `any` mode there is
+ * nothing to compound — a loose term contributes a low-ranking row rather than
+ * dragging the whole query sideways — so every term long enough to mean
+ * something is prefixed, and the stemming gap above closes on all of them
+ * instead of just the last.
  *
  * Returns null when nothing survives — an empty tsquery matches every row in
  * some Postgres versions and no rows in others, and neither is an answer worth
  * serving.
  */
-export function toTsQuery(raw: string): string | null {
+export function toTsQuery(raw: string, mode: TsQueryMode = 'all'): string | null {
   const parts = terms(raw);
   if (parts.length === 0) return null;
+
+  if (mode === 'any') {
+    return parts
+      .map(t => (t.length >= MIN_PREFIX_LEN ? `${t}:*` : t))
+      .join(' | ');
+  }
+
   const last = parts.length - 1;
   return parts.map((t, i) => (i === last ? `${t}:*` : t)).join(' & ');
 }

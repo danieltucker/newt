@@ -16,7 +16,9 @@ import { parseSitePath } from './utils/siteUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
 import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
 import { parseTagPath, isRecentPath } from './utils/hubUrl';
-import { isResearchPath, parseResearchPath } from './utils/researchUrl';
+import {
+  isExplorePath, parseExplorePath, isLegacyResearchPath, explorePathFromLegacy,
+} from './utils/researchUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -83,17 +85,39 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
-  const navigate = useCallback((to: string) => {
+  /**
+   * `replace` swaps the current history entry instead of adding one.
+   *
+   * For an address that was an instruction rather than a place. `/explore?q=…`
+   * tells the page to start a thread; once it has, the thread has its own URL
+   * and the instruction is spent. Leaving it in history means Back re-issues it
+   * and starts the same thread a second time, which is a worse answer than Back
+   * simply going where the reader came from.
+   */
+  const navigate = useCallback((to: string, replace = false) => {
     const q = to.indexOf('?');
     const toPath = q === -1 ? to : to.slice(0, q);
     const toSearch = q === -1 ? '' : to.slice(q);
-    if (toPath !== window.location.pathname || toSearch !== window.location.search) {
+    if (replace) {
+      window.history.replaceState({}, '', to);
+    } else if (toPath !== window.location.pathname || toSearch !== window.location.search) {
       window.history.pushState({}, '', to);
     }
     setPath(toPath);
     setSearch(toSearch);
   }, []);
   const viewProfile = useCallback((name: string) => navigate(profilePathFor(name)), [navigate]);
+
+  // Research became Explore in v1.17.0. Thread links get pasted into notes and
+  // messages, so the old address redirects instead of 404ing. `replaceState`
+  // rather than a push: the reader never chose to visit /research, so it has no
+  // business sitting in their back history.
+  useEffect(() => {
+    if (!isLegacyResearchPath(path)) return;
+    const to = explorePathFromLegacy(path, search);
+    window.history.replaceState({}, '', to);
+    setPath(to.split('?')[0]);
+  }, [path, search]);
 
   useEffect(() => {
     const resolved = resolveTheme(themeSetting);
@@ -238,21 +262,21 @@ export default function App() {
   // page behind a sign-in wall.
   const editId = parseBlogEditPath(path);
   const siteDomain = parseSitePath(path);
-  // Research is signed-in only and has no public counterpart — a thread is one
-  // person's working notes. For a signed-out visitor /research falls through to
+  // Explore is signed-in only and has no public counterpart — a thread is one
+  // person's working notes. For a signed-out visitor /explore falls through to
   // the landing page above rather than a sign-in wall, the same way /s/ does.
   //
-  // ?url= and ?title= are how an article's Research button hands the article
+  // ?url= and ?title= are how an article's Explore button hands the article
   // over: the page starts a thread about it once, on mount.
-  const researchParams = new URLSearchParams(search);
+  const exploreParams = new URLSearchParams(search);
   const view: ShellView | null =
     editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
-    : isResearchPath(path) ? {
-        kind: 'research',
-        threadId: parseResearchPath(path),
-        seedUrl: researchParams.get('url'),
-        seedQuestion: researchParams.get('q'),
-        seedTitle: researchParams.get('title'),
+    : isExplorePath(path) ? {
+        kind: 'explore',
+        threadId: parseExplorePath(path),
+        seedUrl: exploreParams.get('url'),
+        seedQuestion: exploreParams.get('q'),
+        seedTitle: exploreParams.get('title'),
       }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab, tag: profileTag }

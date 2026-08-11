@@ -5,6 +5,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 import { isSafeUrl, makeSafeAgent } from '../lib/isSafeUrl';
+import { publicOrigin } from '../lib/blog';
 
 const execFileAsync = promisify(execFile);
 
@@ -90,6 +91,22 @@ router.get('/favicon', async (req: Request, res: Response): Promise<void> => {
   } catch {
     res.status(502).json({ error: 'Failed to fetch favicon' });
   }
+});
+
+/**
+ * The address this instance is reachable at, as its operator configured it.
+ *
+ * For anything the browser hands to something outside the browser — a
+ * bookmarklet dropped on the bookmarks bar, a URL copied into a chat — where
+ * `window.location.origin` is the wrong answer whenever the page is being
+ * viewed through a port-forward, a LAN address or the dev server. Those all
+ * work fine for the person looking at them and are dead links everywhere else.
+ *
+ * Public because it is public: PUBLIC_ORIGIN is the domain strangers type in.
+ */
+router.get('/instance', (_req: Request, res: Response): void => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({ origin: publicOrigin() });
 });
 
 router.get('/color', (req: Request, res: Response): void => {
