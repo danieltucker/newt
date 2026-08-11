@@ -49,6 +49,12 @@ interface Props {
    * Repost and above the comments, not in the toolbar.
    */
   actions?: ReactNode;
+  /**
+   * Opens a research thread about this article. Undefined when the account has
+   * no model connected, which is how the button stays absent rather than
+   * appearing and then failing.
+   */
+  onResearch?: (url: string, title: string) => void;
   onClose: () => void;
   onViewProfile?: (username: string) => void;
   // Logged-out reader: comments are read-only (view a public thread, can't post).
@@ -79,7 +85,7 @@ function longDate(iso: string | null | undefined): string {
 
 export default function ArticleDetailModal({
   url, title, source, imageUrl, categories, readTime, pubDate,
-  prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onClose, onViewProfile, readOnly,
+  prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onResearch, onClose, onViewProfile, readOnly,
   focusCommentId,
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
@@ -274,6 +280,24 @@ export default function ArticleDetailModal({
                     <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
                   </svg>
                   Repost
+                </button>
+              )}
+              {/* Sits beside Repost because it is the same kind of decision:
+                  something you do *after* reading, to take the article further.
+                  Absent entirely when no model is connected — an AI button that
+                  only ever opens a settings screen is an advert, not a feature. */}
+              {!readOnly && onResearch && (
+                <button
+                  type="button"
+                  className={styles.repostBtn}
+                  title="Research this article with your model"
+                  onClick={() => onResearch(url, displayTitle)}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+                  </svg>
+                  Research
                 </button>
               )}
             </div>

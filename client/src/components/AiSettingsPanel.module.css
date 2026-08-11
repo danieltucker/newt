@@ -1,0 +1,313 @@
+.block {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.block:last-child { border-bottom: none; }
+
+.blockTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.subtle {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 10px 0 16px;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.list li { margin-bottom: 8px; }
+.list li:last-child { margin-bottom: 0; }
+
+/* ── A connected model ───────────────────────────────────────────────────── */
+
+.credential {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.credHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.credName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+}
+
+.defaultTag {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.credKey {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.noKey { font-family: inherit; font-style: italic; }
+
+.credUrl {
+  font-size: 11.5px;
+  color: var(--muted);
+  word-break: break-all;
+  margin-bottom: 8px;
+}
+
+.credRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  flex-wrap: wrap;
+}
+
+.credActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
+
+.form {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.providerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.providerBtn {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.providerBtn:hover { color: var(--text); }
+
+.providerActive {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg);
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  outline: none;
+}
+.input:focus { border-color: var(--accent); }
+
+.docsLink {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.docsLink:hover { text-decoration: underline; }
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.primaryBtn {
+  border: none;
+  background: var(--accent);
+  color: #0B0C13;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 16px;
+  min-height: var(--ctl-h);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.primaryBtn:disabled { opacity: 0.55; cursor: default; }
+
+.smallBtn, .ghostBtn, .dangerBtn {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.smallBtn:hover { border-color: var(--accent); color: var(--accent); }
+.smallBtn:disabled { opacity: 0.55; cursor: default; }
+
+.ghostBtn { color: var(--muted); background: transparent; }
+.ghostBtn:hover { color: var(--text); }
+
+.dangerBtn { color: #E5484D; }
+.dangerBtn:hover { border-color: #E5484D; background: rgba(229, 72, 77, 0.1); }
+
+/* ── Results ─────────────────────────────────────────────────────────────── */
+
+.error {
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  background: rgba(229, 72, 77, 0.1);
+  color: #E5484D;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 9px;
+}
+
+.ok {
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid rgba(48, 164, 108, 0.4);
+  background: rgba(48, 164, 108, 0.1);
+  color: #30A46C;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 9px;
+}
+
+/* ── Depth ───────────────────────────────────────────────────────────────── */
+
+.depthRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.depthBtn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.depthBtn:hover { border-color: var(--accent); }
+
+.depthActive {
+  border-color: var(--accent);
+  background: var(--surface2);
+}
+
+.depthLabel { font-size: 13px; font-weight: 600; }
+
+.depthHint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ── Checkbox rows ───────────────────────────────────────────────────────── */
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.checkRow input { margin-top: 3px; flex: none; }
+
+.checkLabel {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+/* ── Model block on a saved credential ───────────────────────────────────── */
+
+.modelBlock { margin: 12px 0; }
+.modelBlock .fieldLabel { margin-bottom: 6px; }

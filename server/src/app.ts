@@ -26,6 +26,8 @@ import reportRoutes from './routes/reports';
 import siteRoutes from './routes/sites';
 import htmlRoutes from './routes/html';
 import seoRoutes from './routes/seo';
+import llmRoutes from './routes/llm';
+import researchRoutes from './routes/research';
 import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
@@ -143,6 +145,11 @@ app.use('/api/v1/notifications', apiLimiter, notificationRoutes);
 app.use('/api/v1/blocks', apiLimiter, blockRoutes);
 app.use('/api/v1/reports', apiLimiter, reportRoutes);
 app.use('/api/v1/sites', apiLimiter, siteRoutes);
+// The AI routes carry their own per-user limiters (see lib/rateLimit), sized to
+// the fact that every call spends the caller's own money at a third party. The
+// shared apiLimiter still applies on top as the per-IP backstop.
+app.use('/api/v1/llm', apiLimiter, llmRoutes);
+app.use('/api/v1/research', apiLimiter, researchRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

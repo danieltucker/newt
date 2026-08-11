@@ -16,6 +16,7 @@ import { parseSitePath } from './utils/siteUrl';
 import { parseBlogPath, parseBlogEditPath } from './utils/blogUrl';
 import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
 import { parseTagPath, isRecentPath } from './utils/hubUrl';
+import { isResearchPath, parseResearchPath } from './utils/researchUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -237,8 +238,22 @@ export default function App() {
   // page behind a sign-in wall.
   const editId = parseBlogEditPath(path);
   const siteDomain = parseSitePath(path);
+  // Research is signed-in only and has no public counterpart — a thread is one
+  // person's working notes. For a signed-out visitor /research falls through to
+  // the landing page above rather than a sign-in wall, the same way /s/ does.
+  //
+  // ?url= and ?title= are how an article's Research button hands the article
+  // over: the page starts a thread about it once, on mount.
+  const researchParams = new URLSearchParams(search);
   const view: ShellView | null =
     editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
+    : isResearchPath(path) ? {
+        kind: 'research',
+        threadId: parseResearchPath(path),
+        seedUrl: researchParams.get('url'),
+        seedQuestion: researchParams.get('q'),
+        seedTitle: researchParams.get('title'),
+      }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab, tag: profileTag }
     : siteDomain ? { kind: 'site', domain: siteDomain }

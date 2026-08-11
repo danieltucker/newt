@@ -21,8 +21,14 @@ export interface ShellMenuItem {
 export function accountMenuItems(opts: {
   isAdmin?: boolean;
   signedIn?: boolean;
+  /**
+   * Whether the account has an AI model connected. Research only appears once
+   * one is — a menu row that leads to "you need to set this up first" is an
+   * advert, and this menu is for your own things, not for what you could buy.
+   */
+  hasModel?: boolean;
 }): ShellMenuItem[] {
-  const { isAdmin = false, signedIn = true } = opts;
+  const { isAdmin = false, signedIn = true, hasModel = false } = opts;
 
   if (!signedIn) return [{ id: 'signin', label: 'Sign in' }];
 
@@ -36,8 +42,11 @@ export function accountMenuItems(opts: {
   const items: ShellMenuItem[] = [
     { id: 'profile', label: 'Profile' },
     { id: 'myblog', label: 'Posts' },
-    { id: 'settings', label: 'Settings' },
   ];
+  // Above Settings rather than below it: Research is somewhere you go, and
+  // Settings is the row people expect at the bottom of a list like this.
+  if (hasModel) items.push({ id: 'research', label: 'Research' });
+  items.push({ id: 'settings', label: 'Settings' });
   if (isAdmin) items.push({ id: 'admin', label: 'Admin' });
   items.push({ id: 'signout', label: 'Sign out', danger: true });
   return items;

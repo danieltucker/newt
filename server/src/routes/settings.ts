@@ -46,6 +46,15 @@ export interface UserSettings {
   // Set once the first-run feed picker has been shown - by following something
   // or by skipping it. Its absence is what triggers the picker.
   feedOnboarded?: boolean;
+  // ── AI ──
+  // How much answer to ask for, which is also the main control on what it
+  // costs: see lib/llm/depth.ts for what each level actually changes.
+  aiDepth?: 'brief' | 'balanced' | 'thorough';
+  // Whether research may search this user's own feed for relevant articles
+  // before answering. Costs one cheap extra call per question.
+  aiFeedSearch?: boolean;
+  // Show the estimated price of each answer underneath it.
+  aiShowCost?: boolean;
   rssFeedUrls: string[];
 }
 
@@ -79,6 +88,13 @@ const DEFAULTS: UserSettings = {
   commentsSort: 'newest',
   commentsAutoExpand: false,
   favoriteTags: [],
+  // 'balanced' rather than 'thorough': the first release shipped with the
+  // equivalent of thorough as the only option, which was startlingly
+  // expensive on a reasoning model. Depth is a choice now, and the default
+  // is the one that suits most questions.
+  aiDepth: 'balanced',
+  aiFeedSearch: true,
+  aiShowCost: true,
   rssFeedUrls: [],
 };
 
@@ -106,7 +122,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 const NOTE_KEYS = ['noteDocs', 'noteFolders', 'noteTreeOrder'] as const;
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'notesRev', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'notesRev', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded', 'aiDepth', 'aiFeedSearch', 'aiShowCost']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys

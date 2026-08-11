@@ -23,6 +23,8 @@ services:
       DATABASE_URL: postgresql://newtab:${POSTGRES_PASSWORD}@postgres:5432/newtab
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in .env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env}
+      # Encrypts the LLM API keys users connect in Settings → AI. See .env.example.
+      LLM_KEY_SECRET: ${LLM_KEY_SECRET:?Set LLM_KEY_SECRET in .env}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost}
       PORT: 3001
       NODE_ENV: production

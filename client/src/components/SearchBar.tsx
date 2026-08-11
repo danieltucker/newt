@@ -13,6 +13,10 @@ const HINTS = [
   '/g Google · /d DuckDuckGo · /b Bing · /br Brave',
   'Paste a URL to go straight there',
 ];
+
+// Shown in place of the /c line once the reader has connected their own model:
+// /ask answers here, in Newt, against what you are reading.
+const ASK_HINT = 'Ask your own model with /ask your question';
 const HINT_INTERVAL_MS = 6000;
 const HINT_FLIP_MS = 340;
 
@@ -70,6 +74,7 @@ interface NoteHint {
 }
 
 type Suggestion =
+  | { kind: 'ask';      text: string }
   | { kind: 'note';     id: string; title: string; snippet: string }
   | { kind: 'bookmark'; id: string; name: string; domain: string }
   | { kind: 'article';  id: string; title: string; source: string; url: string; matchedTag?: string }
@@ -93,6 +98,13 @@ interface Props {
    * in) can honestly do.
    */
   onOpenArticle?: (url: string) => void;
+  /**
+   * Hands a question to the reader's own model. Undefined when none is
+   * connected, in which case /ask isn't offered and /c still sends the question
+   * out to claude.ai — which is what it always did, and remains the right
+   * answer for someone with no key.
+   */
+  onAsk?: (question: string) => void;
 }
 
 export default function SearchBar({
@@ -103,6 +115,7 @@ export default function SearchBar({
   notes = [],
   onOpenNote,
   onOpenArticle,
+  onAsk,
 }: Props) {
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
@@ -134,6 +147,12 @@ export default function SearchBar({
   const suggestions = useMemo<Suggestion[]>(() => {
     const raw = value.trim();
     if (!raw) return [];
+
+    // /ask is checked before the table because it answers *here* rather than
+    // navigating, and because it must not be shadowed by any web-search prefix.
+    if (onAsk && (raw === '/ask' || raw.startsWith('/ask '))) {
+      return [{ kind: 'ask', text: raw.slice(4).trim() }];
+    }
 
     // Slash shortcut: recognized the moment the bare prefix is typed ("/c"),
     // then again with the query as it's entered ("/c how do…")
@@ -210,7 +229,7 @@ export default function SearchBar({
     }
 
     return results;
-  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, searchEngine]);
+  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, onAsk, searchEngine]);
 
   function navigate(url: string) {
     if (searchNewTab) {
@@ -224,7 +243,14 @@ export default function SearchBar({
   }
 
   function pick(item: Suggestion) {
-    if (item.kind === 'note') {
+    if (item.kind === 'ask') {
+      // A bare "/ask" with nothing after it has nothing to send yet.
+      if (!item.text) return;
+      onAsk?.(item.text);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
+    } else if (item.kind === 'note') {
       onOpenNote?.(item.id, value.trim());
       setValue('');
       setOpen(false);
@@ -258,6 +284,17 @@ export default function SearchBar({
     }
     const q = value.trim();
     if (!q) return;
+    // Same first check as the suggestion list, for the Enter that arrives with
+    // nothing selected — the case the dropdown never sees.
+    if (onAsk && (q === '/ask' || q.startsWith('/ask '))) {
+      const question = q.slice(4).trim();
+      if (!question) return;
+      onAsk(question);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
+      return;
+    }
     // Check slash shortcuts on submit too (e.g. Enter pressed without selecting a suggestion)
     if (SHORTCUTS.some(s => q === s.prefix)) return; // bare prefix - wait for a query
     const shortcut = SHORTCUTS.find(s => q.startsWith(s.prefix + ' '));
@@ -363,7 +400,10 @@ export default function SearchBar({
           />
           {!value && (
             <span className={styles.hint} aria-hidden="true">
-              {HINTS[hintIdx].split('').map((ch, i) => (
+              {/* The /c line becomes the /ask line once a model is connected:
+                  the same "ask a question" slot, pointing at the thing that now
+                  answers it in place rather than sending you to a website. */}
+              {(onAsk && hintIdx === 1 ? ASK_HINT : HINTS[hintIdx]).split('').map((ch, i) => (
                 <span
                   key={`${hintIdx}-${i}`}
                   className={hintPhase === 'in' ? styles.charIn : styles.charOut}
@@ -381,6 +421,23 @@ export default function SearchBar({
         <div className={styles.dropdown}>
           {suggestions.map((item, i) => {
             const sel = i === selectedIndex;
+            if (item.kind === 'ask') return (
+              <div key="ask" className={`${styles.result} ${sel ? styles.resultSel : ''}`}
+                onMouseDown={() => handleMouseDown(item)} onMouseEnter={() => setSelectedIndex(i)}>
+                <div className={styles.resultIconWrap}><IconSearch /></div>
+                <div className={styles.resultText}>
+                  <span className={styles.resultLabel}>
+                    {item.text ? <>Ask your model: <strong>{item.text}</strong></> : 'Ask your model'}
+                  </span>
+                  <span className={styles.resultSub}>
+                    {item.text
+                      ? 'Opens in Research, with whatever you have open as context'
+                      : 'Type your question…'}
+                  </span>
+                </div>
+                <span className={styles.badge}>Ask</span>
+              </div>
+            );
             if (item.kind === 'note') return (
               <div key={item.id} className={`${styles.result} ${sel ? styles.resultSel : ''}`}
                 onMouseDown={() => handleMouseDown(item)} onMouseEnter={() => setSelectedIndex(i)}>

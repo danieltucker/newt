@@ -11,6 +11,7 @@ import {
   type ProfileLink,
 } from '../utils/profileLinks';
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
+import AiSettingsPanel, { type LlmBinding } from './AiSettingsPanel';
 
 export interface UserProfile {
   username: string;
@@ -32,9 +33,13 @@ interface Props {
   onImport?: () => void;
   initialSection?: Section;
   onProfileChange?: (profile: UserProfile) => void;
+  // Passed in rather than hooked up here, so the shell and this screen read the
+  // same list: connecting a model has to make the Research button appear
+  // immediately, and two independent copies of that state would disagree.
+  llm?: LlmBinding;
 }
 
-export type Section = 'account' | 'search' | 'appearance' | 'reading' | 'advanced' | 'integrations';
+export type Section = 'account' | 'search' | 'appearance' | 'reading' | 'ai' | 'advanced' | 'integrations';
 
 // Downscale the chosen image to a small square data URL client-side -
 // keeps uploads tiny and avoids any server-side image processing.
@@ -80,6 +85,7 @@ const NAV: { id: Section; label: string; icon: ReactNode }[] = [
   { id: 'search',       label: 'Search',       icon: '⌕' },
   { id: 'appearance',   label: 'Appearance',   icon: '◑' },
   { id: 'reading',      label: 'Reading',      icon: <BookOpenIcon /> },
+  { id: 'ai',           label: 'AI',           icon: '✦' },
   { id: 'advanced',     label: 'Advanced',     icon: '⚙' },
   { id: 'integrations', label: 'Integrations', icon: '⇌' },
 ];
@@ -113,6 +119,12 @@ const SEARCH_INDEX: { anchor: string; section: Section; label: string; terms: st
   { anchor: 'reading-list-open', section: 'reading',   label: 'How the reading list opens articles', terms: 'reader overlay new tab same window' },
   { anchor: 'bookmark-open',  section: 'reading',      label: 'How bookmarks open',           terms: 'new tab same window links' },
   { anchor: 'page-size',      section: 'reading',      label: 'Articles per page',            terms: 'feed page size load more count' },
+  // "api key" and the provider names are what people type looking for this —
+  // "Claude", "ChatGPT" and "Ollama" more often than the word "model".
+  { anchor: 'ai-models',      section: 'ai',           label: 'Connected models',             terms: 'api key llm claude chatgpt openai anthropic ollama openwebui research proofread ai model' },
+  { anchor: 'ai-depth',       section: 'ai',           label: 'Answer length and cost',        terms: 'cost price cheap expensive tokens spend budget length brief short verbose depth effort thinking' },
+  { anchor: 'ai-feed-search',  section: 'ai',           label: 'Search your feed when researching', terms: 'feed articles rss context grounding sources cite recent news' },
+  { anchor: 'ai-privacy',     section: 'ai',           label: 'What gets sent to your model',  terms: 'privacy data context comments article sent provider' },
   { anchor: 'console',        section: 'advanced',     label: 'Console',                      terms: 'backtick commands power user notes' },
   { anchor: 'import',         section: 'advanced',     label: 'Import bookmarks',             terms: 'html json browser export migrate' },
   { anchor: 'personal-feed',  section: 'integrations', label: 'Your friends’ post feed',      terms: 'rss private token blog url rotate' },
@@ -296,7 +308,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-export default function SettingsModal({ settings, onUpdate, onClose, onImport, initialSection, onProfileChange }: Props) {
+export default function SettingsModal({ settings, onUpdate, onClose, onImport, initialSection, onProfileChange, llm }: Props) {
   // Below this width the two columns don't fit side by side, so the panel
   // becomes a drill-down: the section list, then one section at a time with a
   // back button. Driven from JS rather than CSS alone because the two modes are
@@ -1411,6 +1423,21 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                 )}
               </div>
               </>
+            )}
+
+            {section === 'ai' && (
+              llm
+                ? <AiSettingsPanel
+                    llm={llm}
+                    depth={settings.aiDepth ?? 'balanced'}
+                    feedSearch={settings.aiFeedSearch !== false}
+                    showCost={settings.aiShowCost !== false}
+                    onUpdate={onUpdate}
+                  />
+                // Only reachable if this modal is rendered outside the shell,
+                // which nothing does today — but the section is in the nav, so
+                // it needs an answer rather than a blank panel.
+                : <div className={styles.rowHint}>AI settings aren’t available here.</div>
             )}
 
             {section === 'advanced' && (

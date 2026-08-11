@@ -10,6 +10,7 @@ import { fetchPageMeta } from '../utils/pageMeta';
 import { articleEmbed, embeddedUrls } from '../utils/noteEmbed';
 import { takeSeed, clearSeed } from '../utils/composerSeed';
 import { relTime } from '../utils/notifications';
+import ProofreadPanel from '../components/ProofreadPanel';
 import { useReadingList } from '../hooks/useReadingList';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import useSlidingThumb from '../hooks/useSlidingThumb';
@@ -30,6 +31,12 @@ import styles from './BlogEditorPage.module.css';
 interface Props {
   postId: string | null;
   username: string;
+  /**
+   * Whether the account has an AI model connected. False hides the Proofread
+   * button entirely — the composer is not the place to advertise a feature that
+   * needs a trip to settings before it can do anything.
+   */
+  hasModel?: boolean;
   // Only so the reading list can be loaded for /reference - the editor is never
   // reached signed out (see App), so this is always present in practice.
   accessToken: string | null;
@@ -215,7 +222,7 @@ function SaveState({ busy, dirty, savedAt, autosaves, hasContent }: {
   return null;
 }
 
-export default function BlogEditorPage({ postId, username, accessToken, navigate }: Props) {
+export default function BlogEditorPage({ postId, username, accessToken, navigate, hasModel }: Props) {
   const isNew = postId === null;
 
   // A seed is a repost's reference card, or a note the author chose to publish -
@@ -668,6 +675,12 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
             <span className={`${styles.charCount} ${tooLong ? styles.charCountOver : ''}`}>
               {textLen.toLocaleString()} / {MAX_BLOG_TEXT.toLocaleString()}
             </span>
+          )}
+          {/* Before Publish, because it is the thing worth doing first — and
+              because the draft it reads is whatever is in the editor right now,
+              saved or not. */}
+          {hasModel && !bodyEmpty && (
+            <ProofreadPanel getDraft={() => ({ title, body: bodyRef.current })} />
           )}
           {post && visibility === 'private' && (
             <button className={styles.publishBtn} disabled={!valid} onClick={() => save('public')}>

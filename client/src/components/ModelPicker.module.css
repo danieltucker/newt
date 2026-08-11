@@ -1,0 +1,141 @@
+.wrap { display: block; }
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.input, .select {
+  flex: 1;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  outline: none;
+}
+.input:focus, .select:focus { border-color: var(--accent); }
+
+.fetchBtn {
+  flex: none;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.fetchBtn:hover { border-color: var(--accent); color: var(--accent); }
+.fetchBtn:disabled { opacity: 0.55; cursor: default; }
+
+/* ── The priced list ─────────────────────────────────────────────────────── */
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.option:hover { border-color: var(--accent); }
+
+.optionSelected {
+  border-color: var(--accent);
+  background: var(--surface2);
+}
+
+.optionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.optionName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tier {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* Green for the cheap one, amber for the middle, red for the one that will
+   show up on the bill. The colour is the fastest way to read this list. */
+.economy  { color: #30A46C; background: rgba(48, 164, 108, 0.12); }
+.balanced { color: var(--draft); background: rgba(232, 163, 61, 0.12); }
+.premium  { color: #E5484D; background: rgba(229, 72, 77, 0.12); }
+
+.price {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.relative { color: var(--draft); }
+
+.optionBlurb {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.link, .linkBtn {
+  color: var(--accent);
+  text-decoration: none;
+}
+.link:hover, .linkBtn:hover { text-decoration: underline; }
+
+.linkBtn {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.error {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  background: rgba(229, 72, 77, 0.1);
+  color: #E5484D;
+  font-size: 12px;
+  line-height: 1.45;
+  border-radius: 8px;
+}

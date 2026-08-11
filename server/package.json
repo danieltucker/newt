@@ -1,6 +1,6 @@
 {
   "name": "newtab-server",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "private": true,
   "scripts": {
     "postinstall": "prisma generate",
@@ -8,6 +8,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "make-admin": "ts-node --transpile-only scripts/makeAdmin.ts",

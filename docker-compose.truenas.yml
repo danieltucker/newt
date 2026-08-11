@@ -42,6 +42,8 @@ services:
       DATABASE_URL: postgresql://newtab:${POSTGRES_PASSWORD}@postgres:5432/newtab
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET}
+      # Encrypts the LLM API keys users connect in Settings → AI.
+      LLM_KEY_SECRET: ${LLM_KEY_SECRET:?Set LLM_KEY_SECRET}
       # Exact public URL users visit (scheme + host, no trailing slash). Must match for CORS.
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:?Set CLIENT_ORIGIN to your https URL}
       # Serving over HTTPS -> keep true so auth cookies get the Secure flag.

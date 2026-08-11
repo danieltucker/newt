@@ -2,6 +2,150 @@
 
 Notable changes to Newt, newest first.
 
+## v1.16.0 - Bring your own model
+
+**2026-08-11**
+
+Newt can now use an AI model, and the model is yours. There is no shared key and
+no Newt account with a provider behind it: you paste your own API key into
+Settings → AI, the provider bills you, and until you do, none of the features
+below exist in the interface at all. That last part is deliberate - a button
+that only ever opens a settings screen is an advert, not a feature.
+
+Three providers work: **Claude**, **ChatGPT**, and anything that speaks the
+OpenAI format at a URL you supply, which covers Ollama, OpenWebUI, LM Studio,
+vLLM, OpenRouter and the rest. One entry rather than six, because they are all
+the same wire format and six adapters would have been six copies of one file.
+
+**Self-hosted endpoints have to be reachable from the internet.** A LAN address
+- `192.168.1.50:11434`, `localhost` - is refused. This is the one constraint
+people will hit, and it is not an oversight: Newt accepts sign-ups, and a server
+that will fetch any URL an account gives it is a server that will map the
+network it is sitting in on that account's behalf. Publish the box through a
+tunnel or a reverse proxy with TLS and it works.
+
+### Research
+
+A new page, at **/research**. Ask a question, get an answer, keep asking. The
+thread is saved and stays in the sidebar, which is the difference between this
+and a chat window - research you cannot come back to next week is not research.
+
+Every answer ends with a few suggested directions to take it next. They come
+back inside the same reply rather than from a second request, and they fill the
+composer rather than sending straight off, so you can edit one before asking it.
+
+Any article or post has a **Research** button beside Repost. It opens a thread
+with the article's text and the comments you can already see as context - the
+ones you cannot see are not sent, which is worth saying plainly: a model must
+not be able to read a comment its reader can't.
+
+When the thread has got somewhere, **Condense into a post** turns it into a
+draft and drops you into the composer with it. Private, like every new post: a
+button that says condense does not publish.
+
+### Proofread
+
+The composer has a **Proofread** button. It reports and does not rewrite -
+spelling and grammar first, then clarity, consistency, and matters of taste
+last and lightly. Each finding is a quote from your draft, a reason, and a
+suggestion; you make the change. A button that silently swaps an author's
+sentences for a model's is ghostwriting, and it is very hard to undo after
+you've accepted twenty of them.
+
+### Asking from the search bar
+
+`/ask your question` opens it in Research rather than sending you to a website.
+With an article open, that article and its comments go up as context, which is
+the whole reason to ask here instead of in another tab.
+
+It briefly had its own overlay with a "continue in Research" button underneath.
+That was one surface too many: the overlay could not take a follow-up, could not
+be returned to, and its only real affordance was handing the question to the
+page that could do both. So the question goes there in the first place.
+
+The `/c` shortcut is unchanged for anyone with no model connected - it still
+opens claude.ai, which is the right answer when there is no key.
+
+### Research can read your own feed
+
+Your model cannot browse and has a training cutoff, which makes it weakest
+exactly where you are most curious: what happened recently. But you are already
+subscribed to publications covering it, and Newt has been storing those articles
+all along.
+
+So when you ask about something current, Newt works out what the question is
+about, searches the articles already in your feed, and hands the relevant ones
+over. Answers cite them as ordinary links, and the articles consulted are listed
+above the reply while it writes.
+
+The search terms come from one call to the *cheapest* model your provider
+offers, not the one answering - working out that a question about "iOS 27"
+should search for "iOS 27" is not a reasoning problem. That call is skipped
+entirely when you follow no feeds, when the question isn't the kind a news
+archive answers, and when you turn it off in Settings → AI.
+
+Nothing is fetched. This is a search over articles already in the database,
+scoped to your own subscriptions.
+
+### What it costs, and how to spend less
+
+The first cut of these features had one setting for everything: a very high
+token ceiling and whatever the model did by default, which on a reasoning model
+means thinking hard about everything. A few questions came to real money. None
+of that spend was chosen, because there was no dial.
+
+There are four now.
+
+**Answer length.** Brief, Balanced or Thorough, in Settings → AI. It sets how
+hard the model thinks as well as how much it writes, which matters because
+thinking is billed as output and output is the expensive half. Brief is not a
+crippled mode - for "what is this" and "summarise this article" it is the right
+answer. Balanced is the new default.
+
+**A model picker that leads with price.** The old field was free text with a
+list of suggestions, which is fine if you already know which one is cheap and
+useless otherwise. Every model now shows its tier, its approximate per-million
+rates, and what it costs relative to the cheapest option on that provider.
+Prices are indicative and link out to the provider's own page, which is
+authoritative. Free text is still there behind a link, so a model released the
+week after a Newt version is still reachable.
+
+**The cheap model does the mechanical work.** Proofreading and feed-search
+planning now run on the smallest model your provider offers - Haiku rather than
+Opus, mini rather than 4o - because they are mechanical jobs where the
+expensive model buys nothing. Research and condensing still use the one you
+picked.
+
+**Prompt caching.** A thread re-sends its system prompt and the article it
+started from on every follow-up. Those are now cached, which is the difference
+between paying for them once and paying for them on every question.
+
+And so you can see all of it: each answer says roughly what it cost, from the
+token counts your provider reports. Approximate, shown only for models with a
+known price, and switchable off.
+
+Self-hosted endpoints get no cost estimates at all, which is the honest answer -
+Newt has no price list for your own hardware.
+
+### Notes for anyone self-hosting
+
+There is one new required environment variable, **`LLM_KEY_SECRET`**. It
+encrypts the stored API keys, and the server refuses to start in production
+without it. Back it up alongside the JWT secrets: nothing is corrupted if it
+changes, but every stored key becomes undecryptable and everyone has to paste
+theirs in again.
+
+Stored keys are encrypted at rest with AES-256-GCM and are **never** sent back
+to the browser - not to the owner, not to an admin. The settings screen shows
+the last four characters and nothing else, which is why changing a key means
+pasting a new one rather than editing the old one.
+
+If you run your own reverse proxy in front of Newt, the AI routes stream and
+need buffering off and a generous read timeout. `client/nginx.conf` has both,
+with the reasoning next to them; anything in front of that - Nginx Proxy
+Manager, Cloudflare - needs the same, or answers arrive all at once at the end
+instead of a word at a time.
+
 ## v1.15.0 - Two devices, one phone, and the keyboard
 
 **2026-08-10**

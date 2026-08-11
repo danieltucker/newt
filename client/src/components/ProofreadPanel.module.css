@@ -1,0 +1,146 @@
+.trigger {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 0 14px;
+  min-height: var(--ctl-h);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.trigger:hover { border-color: var(--accent); color: var(--accent); }
+.trigger:disabled { opacity: 0.55; cursor: default; }
+
+.panel {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.close:hover { color: var(--text); background: var(--surface2); }
+
+.status, .summary, .readability, .clean {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.status { color: var(--muted); }
+.readability { color: var(--muted); font-size: 12.5px; }
+
+.readabilityLabel {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.clean { color: #30A46C; font-weight: 600; }
+
+.issues {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.issue {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.kind {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-bottom: 7px;
+}
+
+/* Errors read as errors; taste reads as taste. The colour is the fastest way to
+   tell a typo from an opinion without reading the label. */
+.spelling, .grammar {
+  color: #E5484D;
+  background: rgba(229, 72, 77, 0.12);
+}
+.clarity, .consistency {
+  color: var(--draft);
+  background: rgba(232, 163, 61, 0.12);
+}
+.style {
+  color: var(--muted);
+  background: var(--surface2);
+}
+
+.quote {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  /* Selectable so the author can copy it straight into the editor's find box. */
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+.suggestion {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.footnote {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.error {
+  padding: 8px 11px;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  background: rgba(229, 72, 77, 0.1);
+  color: #E5484D;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 9px;
+}

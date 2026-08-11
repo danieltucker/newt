@@ -108,6 +108,8 @@ interface Props {
   /** Marking everything read clears the rail's site badges too. */
   onAllMarkedRead?: () => void;
   onViewProfile?: (username: string) => void;
+  /** Start a research thread about an article. Absent when no model is connected. */
+  onResearch?: (url: string, title: string) => void;
   /** Open a publisher's page (/s/<domain>) from a card's byline. Absent means
    *  the byline stays a plain link out to the site, which is what it was. */
   onOpenSite?: (domain: string) => void;
@@ -244,7 +246,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onResearch, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
   const [total, setTotal]               = useState(0);
@@ -1069,6 +1071,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
           onCountChange={setCommentCount}
           onClose={() => setReading(null)}
           onViewProfile={onViewProfile}
+          onResearch={onResearch}
           actions={
             <>
               {/* The card's own control, unchanged: the reading list on the

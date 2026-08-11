@@ -61,6 +61,105 @@ model User {
   reportsFiled         Report[]      @relation("ReportReporter")
   reportsAgainst       Report[]      @relation("ReportSubject")
   reportsResolved      Report[]      @relation("ReportResolver")
+  llmCredentials       LlmCredential[]
+  researchThreads      ResearchThread[]
+}
+
+// One person's key for one LLM provider. Owned by the user who added it and
+// never shared: there is no instance-wide key, so nothing here can spend
+// somebody else's quota, and an account with no credential simply has the AI
+// features switched off rather than silently falling back to an operator's.
+//
+// The secret is encrypted at rest with AES-256-GCM (see lib/llm/secretBox) and
+// **is never returned by any route** — not to the owner, not to an admin. The
+// only thing that comes back out is `keyLast4`, which is enough to tell two
+// keys apart on the settings screen and useless to anyone who reads it. That is
+// why there is no "show key" affordance anywhere: the server genuinely cannot
+// serve one without decrypting, and no route does.
+model LlmCredential {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 'anthropic' | 'openai' | 'compatible' — validated against the registry in
+  // lib/llm/providers on every write, so an unknown value can't be stored.
+  provider  String
+  // What the owner calls it. "Work key", "Ollama box". Free text, may be empty —
+  // the provider name is the fallback label.
+  label     String   @default("")
+  // The three parts AES-256-GCM needs, all base64. Split into columns rather
+  // than one packed string so a decrypt failure is legible in the data.
+  keyCipher String
+  keyIv     String
+  keyTag    String
+  // The last four characters of the plaintext key, kept so the UI can say which
+  // key this is without the server ever handing back the key itself.
+  keyLast4  String   @default("")
+  // Only meaningful for 'compatible': the OpenAI-shaped base URL to call, e.g.
+  // https://ollama.example.com/v1. Empty for the first-party providers, whose
+  // endpoints are fixed in the registry and not caller-supplied.
+  baseUrl   String   @default("")
+  // The model id this credential talks to by default. Free text on purpose —
+  // a self-hosted endpoint's model list is whatever that box has pulled, and
+  // hard-coding an allowlist would make Newt wrong every time Ollama adds one.
+  model     String
+  // Exactly one credential per user may carry this. Enforced in the route
+  // rather than by a partial index, because clearing the old default and
+  // setting the new one happens in one transaction there anyway.
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  threads   ResearchThread[]
+
+  @@index([userId])
+}
+
+// One research conversation. Private to its owner, always — there is no
+// visibility column here and its absence is the guarantee, the same way
+// ReadingFolder has none. Research is working material; the way it becomes
+// public is by being condensed into a BlogPost, which has its own visibility
+// and starts private like every other post.
+model ResearchThread {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Taken from the opening question, trimmed. Renamable by the owner.
+  title        String
+  // Set when the thread was started from a "Research" button on an article or
+  // post rather than from a bare question. Kept so the thread can link back to
+  // what it came from, and so the reader knows which article a conclusion is
+  // about six weeks later.
+  sourceUrl    String   @default("")
+  sourceTitle  String   @default("")
+  // Which key answered. Nullable and SetNull rather than Cascade: removing a
+  // key from settings must not delete the research it produced.
+  credentialId String?
+  credential   LlmCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  messages     ResearchMessage[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+
+  @@index([userId, updatedAt])
+}
+
+model ResearchMessage {
+  id        String         @id @default(cuid())
+  threadId  String
+  thread    ResearchThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  // 'user' | 'assistant'. System framing is rebuilt per request from the
+  // thread's source rather than stored as a row, so a prompt improvement
+  // applies to every existing thread instead of only new ones.
+  role      String
+  // Markdown as the model wrote it. Rendered client-side by react-markdown,
+  // which is why this is not run through sanitizeHtml on write: it is not HTML
+  // and never reaches innerHTML.
+  body      String
+  // The follow-up directions offered at the end of an assistant turn — an
+  // array of short strings. JSON rather than a table for the same reason
+  // profileLinks is: a short ordered list, only ever read and written whole.
+  suggestions Json         @default("[]")
+  createdAt DateTime       @default(now())
+
+  @@index([threadId, createdAt])
 }
 
 // One person's decision to have nothing more to do with another. The row is
