@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment, ReactNode } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -182,6 +182,140 @@ const FEED_STATUS_LABELS: Record<FeedStatus, string> = {
   dormant: 'Dormant',
 };
 
+// ── The user list ─────────────────────────────────────────────────────────
+// Sorted and filtered in the browser, unlike the feed list: every account is
+// already loaded in one response, so there is nothing a round trip would reach
+// that the array doesn't already hold.
+type UserSort = 'username' | 'joined' | 'active' | 'bookmarks' | 'comments' | 'posts';
+type UserFilter = 'all' | 'admins' | 'banned' | 'totp' | 'noTotp' | 'idle';
+
+const USER_FILTER_LABELS: Record<UserFilter, string> = {
+  all: 'All',
+  admins: 'Admins',
+  banned: 'Banned',
+  totp: '2FA on',
+  noTotp: '2FA off',
+  idle: 'Never active',
+};
+
+function matchesUserFilter(u: AdminUser, f: UserFilter): boolean {
+  switch (f) {
+    case 'admins': return u.isAdmin;
+    case 'banned': return !!u.bannedAt;
+    case 'totp': return u.totpEnabled;
+    case 'noTotp': return !u.totpEnabled;
+    case 'idle': return !u.lastActiveAt;
+    default: return true;
+  }
+}
+
+// The audit log's one useful cut. Destructive is already the distinction the
+// entries carry (it is what colours the action red), and "what has been
+// removed around here lately" is the question the log is opened with.
+type AuditFilter = 'all' | 'destructive' | 'routine';
+
+const AUDIT_FILTER_LABELS: Record<AuditFilter, string> = {
+  all: 'All',
+  destructive: 'Destructive',
+  routine: 'Everything else',
+};
+
+function matchesAuditFilter(e: AuditEntry, f: AuditFilter): boolean {
+  if (f === 'destructive') return e.destructive;
+  if (f === 'routine') return !e.destructive;
+  return true;
+}
+
+// ── The comment and post lists ────────────────────────────────────────────
+// Both are moderation queues, so both filter on the two things a moderator
+// actually narrows by - who can see it, and whether it is still there.
+type CommentSort = 'posted' | 'author' | 'replies' | 'edits';
+type CommentFilter = 'all' | 'public' | 'friends' | 'private' | 'replies' | 'edited' | 'deleted';
+
+const COMMENT_FILTER_LABELS: Record<CommentFilter, string> = {
+  all: 'All',
+  public: 'Public',
+  friends: 'Friends',
+  private: 'Private',
+  replies: 'Replies',
+  edited: 'Edited',
+  deleted: 'Deleted',
+};
+
+function matchesCommentFilter(c: AdminComment, f: CommentFilter): boolean {
+  switch (f) {
+    case 'public': return c.visibility === 'public';
+    case 'friends': return c.visibility === 'friends';
+    case 'private': return c.visibility === 'private';
+    case 'replies': return c.isReply;
+    case 'edited': return c.edits > 0;
+    case 'deleted': return c.deleted;
+    default: return true;
+  }
+}
+
+function commentSortValue(c: AdminComment, key: CommentSort): string | number {
+  switch (key) {
+    case 'author': return c.author.toLowerCase();
+    case 'replies': return c.replies;
+    case 'edits': return c.edits;
+    case 'posted': return new Date(c.createdAt).getTime();
+  }
+}
+
+type PostSort = 'published' | 'updated' | 'author' | 'title' | 'comments';
+type PostFilter = 'all' | 'public' | 'friends' | 'drafts' | 'commentsOff';
+
+const POST_FILTER_LABELS: Record<PostFilter, string> = {
+  all: 'All',
+  public: 'Public',
+  friends: 'Friends',
+  drafts: 'Drafts',
+  commentsOff: 'Comments off',
+};
+
+function matchesPostFilter(p: AdminBlogPost, f: PostFilter): boolean {
+  switch (f) {
+    case 'public': return p.visibility === 'public';
+    case 'friends': return p.visibility === 'friends';
+    // A draft is a post with private visibility - the same thing the tab's own
+    // note says, so the filter is named after what an author would call it.
+    case 'drafts': return p.visibility === 'private';
+    case 'commentsOff': return !p.commentsEnabled;
+    default: return true;
+  }
+}
+
+function postSortValue(p: AdminBlogPost, key: PostSort): string | number {
+  switch (key) {
+    case 'author': return p.author.toLowerCase();
+    case 'title': return p.title.toLowerCase();
+    case 'comments': return p.comments;
+    case 'updated': return new Date(p.updatedAt).getTime();
+    // A draft has never been published. Sorted as the end of time rather than
+    // as zero, so "newest first" keeps the unpublished ones at the top where
+    // they are the thing most likely to need looking at.
+    case 'published': return p.visibility === 'private'
+      ? Number.MAX_SAFE_INTEGER
+      : new Date(p.publishedAt).getTime();
+  }
+}
+
+/** Sort keys to the field they read. Dates compare as epoch, absent last. */
+function userSortValue(u: AdminUser, key: UserSort): string | number {
+  switch (key) {
+    case 'username': return u.username.toLowerCase();
+    case 'joined': return new Date(u.createdAt).getTime();
+    // Never-active sorts as the beginning of time rather than as absent, so
+    // "least recently active" puts the accounts that never showed up first -
+    // which is the question that ordering is asked for.
+    case 'active': return u.lastActiveAt ? new Date(u.lastActiveAt).getTime() : 0;
+    case 'bookmarks': return u.bookmarks;
+    case 'comments': return u.comments;
+    case 'posts': return u.blogPosts;
+  }
+}
+
 // One refresh attempt. 'unchanged' is a 304 - the origin was reached and had
 // nothing new, which is most of what a healthy instance does and is why the log
 // is worth having: a feed with no entries at all is not being polled.
@@ -216,19 +350,25 @@ interface AuditEntry {
   createdAt: string;
 }
 
-// A column header that sorts the feed list. The arrow marks the active column
-// and its direction; inactive headers stay unmarked rather than showing a
+// A column header that sorts the table under it. The arrow marks the active
+// column and its direction; inactive headers stay unmarked rather than showing a
 // neutral glyph, so which column is in force is readable at a glance.
-function SortableTh({ label, sortKey, active, dir, onSort }: {
+//
+// Generic in the key so the feed list and the user list share it while each
+// keeps its own closed set of sortable columns - a header that can be handed
+// 'failures' on the users table is a header that type-checks nothing.
+function SortableTh<K extends string>({ label, sortKey, active, dir, onSort, className }: {
   label: string;
-  sortKey: FeedSort;
-  active: FeedSort;
+  sortKey: K;
+  active: K;
   dir: 'asc' | 'desc';
-  onSort: (key: FeedSort) => void;
+  onSort: (key: K) => void;
+  /** Column modifier - .num, to right-align a count and its header together. */
+  className?: string;
 }) {
   const isActive = active === sortKey;
   return (
-    <th>
+    <th className={className}>
       <button
         type="button"
         className={`${styles.sortHeader} ${isActive ? styles.sortHeaderActive : ''}`}
@@ -242,6 +382,159 @@ function SortableTh({ label, sortKey, active, dir, onSort }: {
       </button>
     </th>
   );
+}
+
+/* ── Rows that open ───────────────────────────────────────────────────────
+   Every list in this panel had the same shape and the same problem: ten or
+   eight or seven columns, a table wider than any window, and an Actions column
+   that fell off the right-hand end - so the buttons you opened the tab to press
+   were the ones you could not reach.
+
+   They all answer it the same way now. What stays in the row is what you scan
+   or sort by; everything else - the long text, the counts nobody scans, the
+   verbs - is in a panel one press away. The three pieces below are that answer
+   written once, so the tabs agree with each other and a change lands in all of
+   them at the same time. */
+
+/** The caret at the head of a row that opens. */
+function ExpandCell({ open, label }: { open: boolean; label: string }) {
+  return (
+    <td className={styles.expandCell}>
+      {/* The row itself is the hit target - a 13px caret is not one. This is
+          what says the row opens, and the way to open it from a keyboard. */}
+      <button
+        className={`${styles.expandBtn} ${open ? styles.expandBtnOpen : ''}`}
+        aria-expanded={open}
+        aria-label={`${open ? 'Hide' : 'Show'} details for ${label}`}
+        // The click still reaches the row, which is what does the toggling -
+        // stopping it here would mean handling it here as well.
+      >
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M4.5 2.5L8 6l-3.5 3.5" />
+        </svg>
+      </button>
+    </td>
+  );
+}
+
+interface Fact {
+  label: string;
+  value: ReactNode;
+  /** Reads in the warning colour - a ban date, a failure count. */
+  danger?: boolean;
+}
+
+/**
+ * The panel under an opened row: the facts that were columns, then the verbs.
+ *
+ * `children` is for the one thing a fact list can't hold - a stack trace, a
+ * comment thread - which goes underneath both.
+ */
+function DetailPanel({ facts, actions, children }: {
+  facts: Fact[];
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={styles.detailPanel}>
+      <div className={styles.detailTop}>
+        <dl className={styles.detailFacts}>
+          {facts.map(f => (
+            <div className={styles.fact} key={f.label}>
+              <dt>{f.label}</dt>
+              <dd className={f.danger ? styles.factDanger : undefined}>{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+        {actions && <div className={styles.detailActions}>{actions}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** The <tr> a DetailPanel sits in. colSpan is deliberately generous - a column
+ *  hidden by a narrow-screen rule must not leave the panel short of the edge. */
+function DetailRow({ children }: { children: ReactNode }) {
+  return (
+    <tr className={styles.detailRow}>
+      <td colSpan={12}>{children}</td>
+    </tr>
+  );
+}
+
+/* ── Narrowing a list ─────────────────────────────────────────────────────
+   Chips over a table, and a header row that orders it. Both are shared for the
+   same reason the rows are: four tabs ask the same two questions of their list,
+   and answering them four different ways is how a panel stops feeling like one
+   thing. Everything here works on a loaded array - only the feed list pages, and
+   that one is narrowed on the server. */
+
+/** A row of filter chips, one per key of `labels`, with optional counts. */
+function FilterChips<F extends string>({ labels, active, counts, onPick }: {
+  labels: Record<F, string>;
+  active: F;
+  /** Shown on each chip. Omitted where a count would be a lie - a paged list. */
+  counts?: Record<F, number>;
+  onPick: (f: F) => void;
+}) {
+  return (
+    <div className={styles.filterRow}>
+      {(Object.keys(labels) as F[]).map(f => (
+        <button
+          key={f}
+          className={`${styles.filterChip} ${active === f ? styles.filterChipActive : ''}`}
+          onClick={() => onPick(f)}
+          aria-pressed={active === f}
+        >
+          {labels[f]}
+          {counts && <span className={styles.errorCount}>{counts[f]}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Order a loaded list by one of its own keys.
+ *
+ * The tiebreak is not decoration: without it, sorting a hundred accounts by a
+ * count they mostly share leaves their order down to whatever the server sent,
+ * and the list appears to reshuffle itself every time it reloads.
+ */
+function sortedBy<T, K extends string>(
+  items: T[],
+  key: K,
+  dir: 'asc' | 'desc',
+  value: (item: T, k: K) => string | number,
+  tiebreak: (item: T) => string,
+): T[] {
+  const d = dir === 'asc' ? 1 : -1;
+  return [...items].sort((a, b) => {
+    const av = value(a, key);
+    const bv = value(b, key);
+    if (av === bv) return tiebreak(a).localeCompare(tiebreak(b));
+    return av > bv ? d : -d;
+  });
+}
+
+/**
+ * Counts for a row of chips.
+ *
+ * Measured against what search has already found rather than against the whole
+ * list, so with something typed in the box the chips describe the search - "3
+ * of these are admins" is the useful reading, not "there are 3 admins here
+ * somewhere".
+ */
+function countBy<T, F extends string>(
+  items: T[],
+  labels: Record<F, string>,
+  matches: (item: T, f: F) => boolean,
+): Record<F, number> {
+  return Object.fromEntries(
+    (Object.keys(labels) as F[]).map(f => [f, items.filter(i => matches(i, f)).length]),
+  ) as Record<F, number>;
 }
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -958,6 +1251,32 @@ export default function AdminModal({
   const [query, setQuery] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [userFilter, setUserFilter] = useState<UserFilter>('all');
+  const [userSort, setUserSort] = useState<UserSort>('joined');
+  const [userDir, setUserDir] = useState<'asc' | 'desc'>('desc');
+  const [commentFilter, setCommentFilter] = useState<CommentFilter>('all');
+  const [commentSort, setCommentSort] = useState<CommentSort>('posted');
+  const [commentDir, setCommentDir] = useState<'asc' | 'desc'>('desc');
+  const [auditFilter, setAuditFilter] = useState<AuditFilter>('all');
+  const [postFilter, setPostFilter] = useState<PostFilter>('all');
+  const [postSort, setPostSort] = useState<PostSort>('updated');
+  const [postDir, setPostDir] = useState<'asc' | 'desc'>('desc');
+  /**
+   * Which row is unrolled, per table. One at a time within a table: the panel
+   * is several lines tall, and the whole point of moving the long text, the
+   * counts nobody scans and the verbs down into it was to stop these tables
+   * being something you scroll.
+   *
+   * One piece of state each rather than one shared. The ids come from different
+   * tables and mean different things, and a single key would leave a row
+   * "already open" on a tab it was never opened on the moment two of them
+   * collided. Switching tabs clears all of them - see switchTab.
+   */
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
+  const [openCommentId, setOpenCommentId] = useState<string | null>(null);
+  const [openPostId, setOpenPostId] = useState<string | null>(null);
+  const [openFeedId, setOpenFeedId] = useState<string | null>(null);
+  const [openAuditId, setOpenAuditId] = useState<string | null>(null);
 
   async function copyToClipboard(text: string, key: string) {
     try {
@@ -967,15 +1286,42 @@ export default function AdminModal({
     } catch { /* clipboard unavailable (e.g. insecure context) - ignore */ }
   }
 
-  const filteredUsers = useMemo(() => {
+  // Each list is searched, then narrowed by its chips, then ordered. The search
+  // runs first so the chip counts can describe what searching found - see
+  // countBy - and so a filter can never hide a row the search matched without
+  // the chip saying how many it is hiding.
+
+  // Email is off the users table now but still searched: it is the thing you
+  // paste in from a support mail, and it was never something anyone scanned a
+  // column of.
+  const searchedUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return users;
     return users.filter(u =>
-      u.username.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
-    );
+      u.username.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q));
   }, [users, query]);
 
-  const filteredComments = useMemo(() => {
+  const filteredUsers = useMemo(() => sortedBy(
+    searchedUsers.filter(u => matchesUserFilter(u, userFilter)),
+    userSort, userDir, userSortValue, u => u.username,
+  ), [searchedUsers, userFilter, userSort, userDir]);
+
+  const userFilterCounts = useMemo(
+    () => countBy(searchedUsers, USER_FILTER_LABELS, matchesUserFilter),
+    [searchedUsers],
+  );
+
+  // Clicking a column sorts by it; clicking the one already sorted flips the
+  // direction. Each starts in the direction that answers the question it is
+  // there for - most bookmarks, newest join, most recently seen - except a name
+  // or a title, where anything but A-Z as a first click would be perverse.
+  function sortUsersBy(key: UserSort) {
+    if (userSort === key) { setUserDir(d => (d === 'desc' ? 'asc' : 'desc')); return; }
+    setUserSort(key);
+    setUserDir(key === 'username' ? 'asc' : 'desc');
+  }
+
+  const searchedComments = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return comments;
     return comments.filter(c =>
@@ -986,7 +1332,23 @@ export default function AdminModal({
     );
   }, [comments, query]);
 
-  const filteredAudit = useMemo(() => {
+  const filteredComments = useMemo(() => sortedBy(
+    searchedComments.filter(c => matchesCommentFilter(c, commentFilter)),
+    commentSort, commentDir, commentSortValue, c => c.author,
+  ), [searchedComments, commentFilter, commentSort, commentDir]);
+
+  const commentFilterCounts = useMemo(
+    () => countBy(searchedComments, COMMENT_FILTER_LABELS, matchesCommentFilter),
+    [searchedComments],
+  );
+
+  function sortCommentsBy(key: CommentSort) {
+    if (commentSort === key) { setCommentDir(d => (d === 'desc' ? 'asc' : 'desc')); return; }
+    setCommentSort(key);
+    setCommentDir(key === 'author' ? 'asc' : 'desc');
+  }
+
+  const searchedAudit = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return audit;
     return audit.filter(e =>
@@ -996,6 +1358,19 @@ export default function AdminModal({
       || e.targetLabel.toLowerCase().includes(q)
     );
   }, [audit, query]);
+
+  // Not sorted: the log is append-only and pages from the server newest-first,
+  // so its order is the record. Offering to reorder it would be offering to
+  // reorder a page of it, which is worse than not offering.
+  const filteredAudit = useMemo(
+    () => searchedAudit.filter(e => matchesAuditFilter(e, auditFilter)),
+    [searchedAudit, auditFilter],
+  );
+
+  const auditFilterCounts = useMemo(
+    () => countBy(searchedAudit, AUDIT_FILTER_LABELS, matchesAuditFilter),
+    [searchedAudit],
+  );
 
   const filteredReports = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1010,7 +1385,7 @@ export default function AdminModal({
     );
   }, [reports, query]);
 
-  const filteredPosts = useMemo(() => {
+  const searchedPosts = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return posts;
     return posts.filter(p =>
@@ -1019,6 +1394,22 @@ export default function AdminModal({
       || p.excerpt.toLowerCase().includes(q)
     );
   }, [posts, query]);
+
+  const filteredPosts = useMemo(() => sortedBy(
+    searchedPosts.filter(p => matchesPostFilter(p, postFilter)),
+    postSort, postDir, postSortValue, p => p.title,
+  ), [searchedPosts, postFilter, postSort, postDir]);
+
+  const postFilterCounts = useMemo(
+    () => countBy(searchedPosts, POST_FILTER_LABELS, matchesPostFilter),
+    [searchedPosts],
+  );
+
+  function sortPostsBy(key: PostSort) {
+    if (postSort === key) { setPostDir(d => (d === 'desc' ? 'asc' : 'desc')); return; }
+    setPostSort(key);
+    setPostDir(key === 'author' || key === 'title' ? 'asc' : 'desc');
+  }
 
   useEffect(() => {
     Promise.all([
@@ -1482,6 +1873,8 @@ export default function AdminModal({
     try {
       await apiDelete(`/api/v1/admin/users/${u.id}`);
       setUsers(prev => prev.filter(x => x.id !== u.id));
+      // The open panel belonged to the row that just stopped existing.
+      setOpenUserId(id => (id === u.id ? null : id));
       setStats(prev => prev ? {
         ...prev,
         totals: { ...prev.totals, users: prev.totals.users - 1 },
@@ -1519,6 +1912,10 @@ export default function AdminModal({
       setComments(prev => deleted
         ? prev.map(x => x.id === c.id ? { ...x, deleted: true, snippet: '', title: null } : x)
         : prev.filter(x => x.id !== c.id));
+      // A comment with replies leaves a tombstone worth staying open on - the
+      // thread under the panel is the point. One with none is gone, and so is
+      // the row its panel was attached to.
+      if (!deleted) setOpenCommentId(id => (id === c.id ? null : id));
       setStats(prev => prev ? {
         ...prev,
         totals: {
@@ -1559,6 +1956,15 @@ export default function AdminModal({
     // An expanded thread belongs to the row that opened it; leaving it open
     // would reopen under whatever row happens to share that id on the next tab.
     setThreadFor(null);
+    // The open rows go with the search that found them. Coming back to a tab to
+    // a panel unrolled halfway down a list you can no longer see the reason for
+    // is worse than coming back to the list.
+    setOpenUserId(null);
+    setOpenCommentId(null);
+    setOpenPostId(null);
+    setOpenFeedId(null);
+    setOpenAuditId(null);
+    setOpenTrace(null);
     // Same for the log narrowed to one feed - it belongs to the row that opened
     // it, and coming back to the tab should show the whole timeline again.
     if (next !== 'feeds') setFeedLogFor(null);
@@ -1764,124 +2170,204 @@ export default function AdminModal({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
               />
-              <table className={styles.table}>
+              <div className={styles.filterRow}>
+                {(Object.keys(USER_FILTER_LABELS) as UserFilter[]).map(f => (
+                  <button
+                    key={f}
+                    className={`${styles.filterChip} ${userFilter === f ? styles.filterChipActive : ''}`}
+                    onClick={() => setUserFilter(f)}
+                  >
+                    {USER_FILTER_LABELS[f]}
+                    <span className={styles.errorCount}>{userFilterCounts[f]}</span>
+                  </button>
+                ))}
+              </div>
+              {/* ── One line per account, and everything else a press away ───
+                  This was ten columns wide, which on any normal window meant a
+                  table that scrolled sideways with the Actions column off the
+                  end of it - so the two buttons you came here to press were the
+                  two things you could not see.
+
+                  What stayed up here is what you scan or sort by. Email went:
+                  nobody reads a column of addresses, and it is still searched
+                  and still one press away. 2FA and admin went from columns to
+                  marks on the name, which is where the eye already is, and to
+                  filters, which is the only way anyone actually asks about
+                  them. The buttons went into the panel because a row you have
+                  deliberately opened is a much better place to keep Delete than
+                  a row you are scrolling past. */}
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
-                    <th>Username</th>
-                    <th>Email</th>
-                    <th>Joined</th>
-                    <th>Last active</th>
-                    <th className={styles.num}>Bookmarks</th>
-                    <th className={styles.num}>Comments</th>
-                    <th className={styles.num}>Posts</th>
-                    <th>2FA</th>
-                    <th>Admin</th>
-                    <th>Actions</th>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
+                    <SortableTh label="Username" sortKey="username" active={userSort} dir={userDir} onSort={sortUsersBy} />
+                    <SortableTh label="Joined" sortKey="joined" active={userSort} dir={userDir} onSort={sortUsersBy} className={styles.dropNarrow} />
+                    <SortableTh label="Last active" sortKey="active" active={userSort} dir={userDir} onSort={sortUsersBy} />
+                    <SortableTh label="Bookmarks" sortKey="bookmarks" active={userSort} dir={userDir} onSort={sortUsersBy} className={`${styles.num} ${styles.dropNarrow}`} />
+                    <SortableTh label="Comments" sortKey="comments" active={userSort} dir={userDir} onSort={sortUsersBy} className={styles.num} />
+                    <SortableTh label="Posts" sortKey="posts" active={userSort} dir={userDir} onSort={sortUsersBy} className={styles.num} />
                   </tr>
                 </thead>
                 <tbody>
                   {filteredUsers.map(u => {
                     const isSelf = u.username === currentUsername;
                     const banned = !!u.bannedAt;
+                    const open = openUserId === u.id;
+                    const toggle = () => {
+                      setOpenUserId(id => (id === u.id ? null : u.id));
+                      // A half-confirmed delete belongs to the panel it was
+                      // started in. Left standing, closing and reopening the row
+                      // would show Confirm already armed under the pointer.
+                      setConfirmDeleteId(null);
+                    };
                     return (
-                      <tr key={u.id} className={banned ? styles.bannedRow : ''}>
-                        <td className={styles.userCell}>
-                          <span
-                            className={styles.copyable}
-                            title="Click to copy"
-                            onClick={() => copyToClipboard(u.username, `${u.id}-username`)}
-                          >
-                            {u.username}
-                          </span>
-                          {copiedKey === `${u.id}-username` && <span className={styles.copiedChip}>copied</span>}
-                          {isSelf && <span className={styles.youBadge}>you</span>}
-                          {banned && <span className={styles.bannedBadge}>banned</span>}
-                          {/* The name itself stays click-to-copy - that's what
-                              a moderator reaches for here. The profile gets its
-                              own affordance rather than stealing that click. */}
-                          {onViewProfile && (
-                            <button
-                              className={styles.profilePeek}
-                              onClick={() => onViewProfile(u.username)}
-                              title={`View @${u.username}'s profile`}
-                              aria-label={`View @${u.username}'s profile`}
+                      <Fragment key={u.id}>
+                        <tr
+                          className={`${banned ? styles.bannedRow : ''} ${open ? styles.rowOpen : ''}`}
+                          onClick={toggle}
+                        >
+                          <ExpandCell open={open} label={u.username} />
+                          <td className={styles.userCell}>
+                            {/* The name stays click-to-copy - that's what a
+                                moderator reaches for here - so it keeps the
+                                press to itself rather than opening the row. */}
+                            <span
+                              className={styles.copyable}
+                              title="Click to copy"
+                              onClick={e => { e.stopPropagation(); copyToClipboard(u.username, `${u.id}-username`); }}
                             >
-                              ↗
-                            </button>
-                          )}
-                        </td>
-                        <td className={styles.emailCell}>
-                          {u.email ? (
-                            <>
-                              <span
-                                className={styles.copyable}
-                                title="Click to copy"
-                                onClick={() => copyToClipboard(u.email!, `${u.id}-email`)}
-                              >
-                                {u.email}
-                              </span>
-                              {copiedKey === `${u.id}-email` && <span className={styles.copiedChip}>copied</span>}
-                            </>
-                          ) : '-'}
-                        </td>
-                        <td>{formatDate(u.createdAt)}</td>
-                        <td>{relativeDate(u.lastActiveAt)}</td>
-                        <td className={styles.num}>{u.bookmarks}</td>
-                        <td className={styles.num}>{u.comments}</td>
-                        <td className={styles.num}>{u.blogPosts}</td>
-                        <td>{u.totpEnabled ? <span className={styles.badgeOn}>on</span> : <span className={styles.badgeOff}>off</span>}</td>
-                        <td>
-                          <button
-                            className={`${styles.adminToggle} ${u.isAdmin ? styles.adminOn : ''}`}
-                            onClick={() => toggleAdmin(u)}
-                            disabled={isSelf || busyId === u.id}
-                            title={isSelf ? 'You cannot remove your own admin access' : u.isAdmin ? 'Revoke admin' : 'Make admin'}
-                          >
-                            {u.isAdmin ? 'Admin' : 'Grant'}
-                          </button>
-                        </td>
-                        <td>
-                          <div className={styles.actionCell}>
-                            <button
-                              className={`${styles.adminToggle} ${banned ? styles.unbanBtn : styles.banBtn}`}
-                              onClick={() => toggleBan(u)}
-                              disabled={isSelf || busyId === u.id}
-                              title={isSelf ? 'You cannot ban yourself' : banned ? `Banned ${formatDate(u.bannedAt)} - click to unban` : 'Ban: signs the user out and blocks sign-in'}
-                            >
-                              {banned ? 'Unban' : 'Ban'}
-                            </button>
-                            {confirmDeleteId === u.id ? (
-                              <>
-                                <button
-                                  className={`${styles.adminToggle} ${styles.deleteConfirmBtn}`}
-                                  onClick={() => deleteUser(u)}
-                                  disabled={busyId === u.id}
-                                >
-                                  Confirm
-                                </button>
-                                <button className={styles.adminToggle} onClick={() => setConfirmDeleteId(null)}>
-                                  ✕
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                className={`${styles.adminToggle} ${styles.banBtn}`}
-                                onClick={() => setConfirmDeleteId(u.id)}
-                                disabled={isSelf || busyId === u.id}
-                                title={isSelf ? 'You cannot delete your own account' : 'Permanently delete this account and all its data'}
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                              {u.username}
+                            </span>
+                            {copiedKey === `${u.id}-username` && <span className={styles.copiedChip}>copied</span>}
+                            {isSelf && <span className={styles.youBadge}>you</span>}
+                            {u.isAdmin && <span className={styles.adminBadge}>admin</span>}
+                            {/* Only when it is on. An absent mark reads as off
+                                once the column is gone, and a wall of grey OFF
+                                chips was most of what the old 2FA column drew. */}
+                            {u.totpEnabled && <span className={styles.totpBadge} title="Two-factor authentication is on">2FA</span>}
+                            {banned && <span className={styles.bannedBadge}>banned</span>}
+                          </td>
+                          <td className={styles.dropNarrow}>{formatDate(u.createdAt)}</td>
+                          <td>{relativeDate(u.lastActiveAt)}</td>
+                          <td className={`${styles.num} ${styles.dropNarrow}`}>{u.bookmarks}</td>
+                          <td className={styles.num}>{u.comments}</td>
+                          <td className={styles.num}>{u.blogPosts}</td>
+                        </tr>
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                {
+                                  label: 'Email',
+                                  value: u.email ? (
+                                    <>
+                                      <span
+                                        className={styles.copyable}
+                                        title="Click to copy"
+                                        onClick={() => copyToClipboard(u.email!, `${u.id}-email`)}
+                                      >
+                                        {u.email}
+                                      </span>
+                                      {copiedKey === `${u.id}-email` && <span className={styles.copiedChip}>copied</span>}
+                                    </>
+                                  ) : <span className={styles.mutedText}>none on file</span>,
+                                },
+                                {
+                                  label: 'Account',
+                                  value: (
+                                    <>
+                                      <span
+                                        className={`${styles.copyable} ${styles.monoValue}`}
+                                        title="Click to copy - this is the id the audit log records"
+                                        onClick={() => copyToClipboard(u.id, `${u.id}-id`)}
+                                      >
+                                        {u.id}
+                                      </span>
+                                      {copiedKey === `${u.id}-id` && <span className={styles.copiedChip}>copied</span>}
+                                    </>
+                                  ),
+                                },
+                                {
+                                  label: 'Two-factor',
+                                  value: u.totpEnabled
+                                    ? <span className={styles.badgeOn}>on</span>
+                                    : <span className={styles.badgeOff}>off</span>,
+                                },
+                                // The two counts the old table never had room for,
+                                // which is why they are worth the panel: how much
+                                // of the library this account has actually built.
+                                { label: 'Folders', value: u.folders },
+                                { label: 'Reading list', value: u.readingItems },
+                                ...(banned
+                                  ? [{ label: 'Banned', value: formatDate(u.bannedAt), danger: true }]
+                                  : []),
+                              ]}
+                              actions={
+                                <>
+                                  <button
+                                    className={`${styles.adminToggle} ${u.isAdmin ? styles.adminOn : ''}`}
+                                    onClick={() => toggleAdmin(u)}
+                                    disabled={isSelf || busyId === u.id}
+                                    title={isSelf ? 'You cannot remove your own admin access' : u.isAdmin ? 'Revoke admin' : 'Make admin'}
+                                  >
+                                    {u.isAdmin ? 'Revoke admin' : 'Grant admin'}
+                                  </button>
+                                  <button
+                                    className={`${styles.adminToggle} ${banned ? styles.unbanBtn : styles.banBtn}`}
+                                    onClick={() => toggleBan(u)}
+                                    disabled={isSelf || busyId === u.id}
+                                    title={isSelf ? 'You cannot ban yourself' : banned ? `Banned ${formatDate(u.bannedAt)} - click to unban` : 'Ban: signs the user out and blocks sign-in'}
+                                  >
+                                    {banned ? 'Unban' : 'Ban'}
+                                  </button>
+                                  {confirmDeleteId === u.id ? (
+                                    <>
+                                      <button
+                                        className={`${styles.adminToggle} ${styles.deleteConfirmBtn}`}
+                                        onClick={() => deleteUser(u)}
+                                        disabled={busyId === u.id}
+                                      >
+                                        Delete for good
+                                      </button>
+                                      <button className={styles.adminToggle} onClick={() => setConfirmDeleteId(null)}>
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      className={`${styles.adminToggle} ${styles.banBtn}`}
+                                      onClick={() => setConfirmDeleteId(u.id)}
+                                      disabled={isSelf || busyId === u.id}
+                                      title={isSelf ? 'You cannot delete your own account' : 'Permanently delete this account and all its data'}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                  {onViewProfile && (
+                                    <button
+                                      className={`${styles.adminToggle} ${styles.detailProfileBtn}`}
+                                      onClick={() => onViewProfile(u.username)}
+                                      title={`View @${u.username}'s profile`}
+                                    >
+                                      View profile ↗
+                                    </button>
+                                  )}
+                                </>
+                              }
+                            />
+                          </DetailRow>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
               </table>
               {filteredUsers.length === 0 && (
-                <div className={styles.emptyResult}>No users match "{query}"</div>
+                <div className={styles.emptyResult}>
+                  {query.trim()
+                    ? `No ${userFilter === 'all' ? '' : `${USER_FILTER_LABELS[userFilter].toLowerCase()} `}users match "${query}"`
+                    : `No users under ${USER_FILTER_LABELS[userFilter]}`}
+                </div>
               )}
             </div>
           )}
@@ -1989,108 +2475,152 @@ export default function AdminModal({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
               />
+              <FilterChips
+                labels={COMMENT_FILTER_LABELS}
+                active={commentFilter}
+                counts={commentFilterCounts}
+                onPick={setCommentFilter}
+              />
               <div className={styles.tableNote}>
                 Newest {comments.length} comments, every visibility. Deleting a comment
                 with replies leaves a “[deleted]” placeholder so the thread survives.
               </div>
-              <table className={styles.table}>
+              {/* Opening a row was already how you read the conversation a
+                  comment sits in; now it is also where the rest of the row went.
+                  Merging the two is the whole reason this tab got shorter - the
+                  thread was a second expansion behind a button in a column that
+                  had scrolled off the screen, so the panel and the thread are
+                  one thing you open rather than two. */}
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
-                    <th>Author</th>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
+                    <SortableTh label="Author" sortKey="author" active={commentSort} dir={commentDir} onSort={sortCommentsBy} />
                     <th>Comment</th>
-                    <th>On</th>
-                    <th>Visibility</th>
-                    <th className={styles.num}>Replies</th>
-                    <th className={styles.num}>Edits</th>
-                    <th>Posted</th>
-                    <th>Actions</th>
+                    <th className={styles.dropNarrow}>On</th>
+                    <SortableTh label="Replies" sortKey="replies" active={commentSort} dir={commentDir} onSort={sortCommentsBy} className={`${styles.num} ${styles.dropNarrow}`} />
+                    <SortableTh label="Posted" sortKey="posted" active={commentSort} dir={commentDir} onSort={sortCommentsBy} />
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredComments.map(c => (
-                    <Fragment key={c.id}>
-                    <tr className={c.deleted ? styles.bannedRow : ''}>
-                      <td className={styles.userCell}><Handle username={c.author} onView={onViewProfile} /></td>
-                      <td className={styles.snippetCell}>
-                        {c.deleted
-                          ? <span className={styles.mutedText}>[deleted]</span>
-                          : (
-                            <>
-                              {c.title && <span className={styles.snippetTitle}>{c.title}</span>}
-                              <span className={styles.snippetBody}>{c.snippet || '-'}</span>
-                            </>
-                          )}
-                        {c.isReply && <span className={styles.replyBadge}>reply</span>}
-                      </td>
-                      <td className={styles.emailCell}>
-                        <a className={styles.link} href={c.articleUrl} target="_blank" rel="noreferrer noopener">
-                          {c.articleTitle || c.articleUrl}
-                        </a>
-                      </td>
-                      <td><VisibilityChip visibility={c.visibility} /></td>
-                      <td className={styles.num}>{c.replies}</td>
-                      <td className={styles.num}>{c.edits}</td>
-                      <td>{relativeDate(c.createdAt)}</td>
-                      <td>
-                        <div className={styles.actionCell}>
-                          {/* Available even on a tombstone: what the removed
-                              comment was answering is often the whole question. */}
-                          <button
-                            className={styles.adminToggle}
-                            onClick={() => setThreadFor(t => (t === c.id ? null : c.id))}
-                            aria-expanded={threadFor === c.id}
-                            title="Read the whole conversation this comment sits in"
-                          >
-                            {threadFor === c.id ? 'Hide' : 'Thread'}
-                          </button>
-                          {c.deleted ? (
-                            <span className={styles.mutedText}>-</span>
-                          ) : confirmDeleteId === c.id ? (
-                            <>
-                              <button
-                                className={`${styles.adminToggle} ${styles.deleteConfirmBtn}`}
-                                onClick={() => deleteComment(c)}
-                                disabled={busyId === c.id}
-                              >
-                                Confirm
-                              </button>
-                              <button className={styles.adminToggle} onClick={() => setConfirmDeleteId(null)}>✕</button>
-                            </>
-                          ) : (
-                            <button
-                              className={`${styles.adminToggle} ${styles.banBtn}`}
-                              onClick={() => setConfirmDeleteId(c.id)}
-                              disabled={busyId === c.id}
-                              title={c.replies > 0
-                                ? 'Remove the content; the thread below it is kept'
-                                : 'Permanently delete this comment'}
+                  {filteredComments.map(c => {
+                    const open = openCommentId === c.id;
+                    const toggle = () => {
+                      setOpenCommentId(id => (id === c.id ? null : c.id));
+                      setConfirmDeleteId(null);
+                    };
+                    return (
+                      <Fragment key={c.id}>
+                        <tr
+                          className={`${c.deleted ? styles.bannedRow : ''} ${open ? styles.rowOpen : ''}`}
+                          onClick={toggle}
+                        >
+                          <ExpandCell open={open} label={`${c.author}'s comment`} />
+                          <td className={styles.userCell} onClick={e => e.stopPropagation()}>
+                            <Handle username={c.author} onView={onViewProfile} />
+                          </td>
+                          <td className={styles.snippetCell}>
+                            {c.deleted
+                              ? <span className={styles.mutedText}>[deleted]</span>
+                              : (
+                                <>
+                                  {c.title && <span className={styles.snippetTitle}>{c.title}</span>}
+                                  <span className={styles.snippetBody}>{c.snippet || '-'}</span>
+                                </>
+                              )}
+                            {/* The marks that were columns. Visibility is here
+                                rather than in the panel because it is the one
+                                thing on a moderation row you read before you
+                                read the text. */}
+                            {c.isReply && <span className={styles.replyBadge}>reply</span>}
+                            <VisibilityChip visibility={c.visibility} />
+                            {c.edits > 0 && (
+                              <span className={styles.editBadge} title={`Edited ${c.edits} ${c.edits === 1 ? 'time' : 'times'}`}>
+                                edited
+                              </span>
+                            )}
+                          </td>
+                          <td className={`${styles.emailCell} ${styles.dropNarrow}`} onClick={e => e.stopPropagation()}>
+                            <a className={styles.link} href={c.articleUrl} target="_blank" rel="noreferrer noopener">
+                              {c.articleTitle || c.articleUrl}
+                            </a>
+                          </td>
+                          <td className={`${styles.num} ${styles.dropNarrow}`}>{c.replies}</td>
+                          <td title={new Date(c.createdAt).toLocaleString()}>{relativeDate(c.createdAt)}</td>
+                        </tr>
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                {
+                                  label: 'On',
+                                  value: (
+                                    <a className={styles.link} href={c.articleUrl} target="_blank" rel="noreferrer noopener">
+                                      {c.articleTitle || c.articleUrl}
+                                    </a>
+                                  ),
+                                },
+                                { label: 'Visibility', value: <VisibilityChip visibility={c.visibility} /> },
+                                { label: 'Replies', value: c.replies },
+                                { label: 'Edits', value: c.edits },
+                                { label: 'Posted', value: new Date(c.createdAt).toLocaleString() },
+                                ...(c.updatedAt !== c.createdAt
+                                  ? [{ label: 'Last edited', value: new Date(c.updatedAt).toLocaleString() }]
+                                  : []),
+                              ]}
+                              actions={c.deleted ? (
+                                <span className={styles.mutedText}>Already removed</span>
+                              ) : confirmDeleteId === c.id ? (
+                                <>
+                                  <button
+                                    className={`${styles.adminToggle} ${styles.deleteConfirmBtn}`}
+                                    onClick={() => deleteComment(c)}
+                                    disabled={busyId === c.id}
+                                  >
+                                    {c.replies > 0 ? 'Remove the text' : 'Delete for good'}
+                                  </button>
+                                  <button className={styles.adminToggle} onClick={() => setConfirmDeleteId(null)}>
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  className={`${styles.adminToggle} ${styles.banBtn}`}
+                                  onClick={() => setConfirmDeleteId(c.id)}
+                                  disabled={busyId === c.id}
+                                  title={c.replies > 0
+                                    ? 'Remove the content; the thread below it is kept'
+                                    : 'Permanently delete this comment'}
+                                >
+                                  Delete
+                                </button>
+                              )}
                             >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {threadFor === c.id && (
-                      <tr className={styles.threadRow}>
-                        <td colSpan={8}>
-                          <CommentThread
-                            commentId={c.id}
-                            url={c.articleUrl}
-                            highlightId={c.id}
-                            onViewProfile={onViewProfile}
-                            onRemove={removeThreadComment}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
-                  ))}
+                              {/* Loaded with the panel, which is also why the
+                                  panel is worth opening on a tombstone: what the
+                                  removed comment was answering is often the whole
+                                  question. */}
+                              <CommentThread
+                                commentId={c.id}
+                                url={c.articleUrl}
+                                highlightId={c.id}
+                                onViewProfile={onViewProfile}
+                                onRemove={removeThreadComment}
+                              />
+                            </DetailPanel>
+                          </DetailRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
               {filteredComments.length === 0 && (
                 <div className={styles.emptyResult}>
-                  {query ? `No comments match "${query}"` : 'No comments yet'}
+                  {query.trim()
+                    ? `No comments match "${query}"`
+                    : commentFilter === 'all' ? 'No comments yet'
+                    : `No ${COMMENT_FILTER_LABELS[commentFilter].toLowerCase()} comments`}
                 </div>
               )}
             </div>
@@ -2105,60 +2635,120 @@ export default function AdminModal({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
               />
+              <FilterChips
+                labels={POST_FILTER_LABELS}
+                active={postFilter}
+                counts={postFilterCounts}
+                onPick={setPostFilter}
+              />
               <div className={styles.tableNote}>
                 Newest {posts.length} posts, drafts included - a draft is a post with
                 private visibility. Unpublishing sets it back to private; the author’s
                 content is left intact.
               </div>
-              <table className={styles.table}>
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
-                    <th>Author</th>
-                    <th>Post</th>
-                    <th>Visibility</th>
-                    <th className={styles.num}>Comments</th>
-                    <th>Published</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
+                    <SortableTh label="Author" sortKey="author" active={postSort} dir={postDir} onSort={sortPostsBy} />
+                    <SortableTh label="Post" sortKey="title" active={postSort} dir={postDir} onSort={sortPostsBy} />
+                    <SortableTh label="Comments" sortKey="comments" active={postSort} dir={postDir} onSort={sortPostsBy} className={`${styles.num} ${styles.dropNarrow}`} />
+                    <SortableTh label="Updated" sortKey="updated" active={postSort} dir={postDir} onSort={sortPostsBy} />
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPosts.map(p => (
-                    <tr key={p.id}>
-                      <td className={styles.userCell}><Handle username={p.author} onView={onViewProfile} /></td>
-                      <td className={styles.snippetCell}>
-                        <a className={`${styles.link} ${styles.snippetTitle}`} href={p.url} target="_blank" rel="noreferrer noopener">
-                          {p.title}
-                        </a>
-                        <span className={styles.snippetBody}>{p.excerpt || '-'}</span>
-                      </td>
-                      <td><VisibilityChip visibility={p.visibility} /></td>
-                      <td className={styles.num}>
-                        {p.commentsEnabled ? p.comments : <span className={styles.mutedText} title="Comments are turned off for this post">off</span>}
-                      </td>
-                      <td>{p.visibility === 'private' ? <span className={styles.mutedText}>draft</span> : formatDate(p.publishedAt)}</td>
-                      <td>{relativeDate(p.updatedAt)}</td>
-                      <td>
-                        <div className={styles.actionCell}>
-                          <button
-                            className={`${styles.adminToggle} ${styles.banBtn}`}
-                            onClick={() => unpublishPost(p)}
-                            disabled={p.visibility === 'private' || busyId === p.id}
-                            title={p.visibility === 'private'
-                              ? 'Already private'
-                              : 'Set back to private - removes it from public view without deleting it'}
-                          >
-                            Unpublish
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredPosts.map(p => {
+                    const open = openPostId === p.id;
+                    const draft = p.visibility === 'private';
+                    return (
+                      <Fragment key={p.id}>
+                        <tr
+                          className={open ? styles.rowOpen : ''}
+                          onClick={() => setOpenPostId(id => (id === p.id ? null : p.id))}
+                        >
+                          <ExpandCell open={open} label={p.title} />
+                          <td className={styles.userCell} onClick={e => e.stopPropagation()}>
+                            <Handle username={p.author} onView={onViewProfile} />
+                          </td>
+                          <td className={styles.snippetCell}>
+                            {/* The title is the link out to the post, so it
+                                keeps its own click; the rest of the row opens
+                                the panel. */}
+                            <a
+                              className={`${styles.link} ${styles.snippetTitle}`}
+                              href={p.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {p.title}
+                            </a>
+                            <span className={styles.snippetBody}>{p.excerpt || '-'}</span>
+                            <VisibilityChip visibility={p.visibility} />
+                            {!p.commentsEnabled && (
+                              <span className={styles.editBadge} title="Comments are turned off for this post">
+                                comments off
+                              </span>
+                            )}
+                          </td>
+                          <td className={`${styles.num} ${styles.dropNarrow}`}>
+                            {p.commentsEnabled ? p.comments : <span className={styles.mutedText}>-</span>}
+                          </td>
+                          <td title={new Date(p.updatedAt).toLocaleString()}>{relativeDate(p.updatedAt)}</td>
+                        </tr>
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                { label: 'Visibility', value: <VisibilityChip visibility={p.visibility} /> },
+                                {
+                                  label: 'Published',
+                                  value: draft
+                                    ? <span className={styles.mutedText}>never - still a draft</span>
+                                    : formatDate(p.publishedAt),
+                                },
+                                { label: 'Updated', value: new Date(p.updatedAt).toLocaleString() },
+                                {
+                                  label: 'Comments',
+                                  value: p.commentsEnabled
+                                    ? p.comments
+                                    : <span className={styles.mutedText}>turned off</span>,
+                                },
+                                {
+                                  label: 'Address',
+                                  value: (
+                                    <a className={`${styles.link} ${styles.monoValue}`} href={p.url} target="_blank" rel="noreferrer noopener">
+                                      /{p.slug}
+                                    </a>
+                                  ),
+                                },
+                              ]}
+                              actions={
+                                <button
+                                  className={`${styles.adminToggle} ${styles.banBtn}`}
+                                  onClick={() => unpublishPost(p)}
+                                  disabled={draft || busyId === p.id}
+                                  title={draft
+                                    ? 'Already private'
+                                    : 'Set back to private - removes it from public view without deleting it'}
+                                >
+                                  Unpublish
+                                </button>
+                              }
+                            />
+                          </DetailRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
               {filteredPosts.length === 0 && (
                 <div className={styles.emptyResult}>
-                  {query ? `No posts match "${query}"` : 'No posts yet'}
+                  {query.trim()
+                    ? `No posts match "${query}"`
+                    : postFilter === 'all' ? 'No posts yet'
+                    : `No ${POST_FILTER_LABELS[postFilter].toLowerCase()} posts`}
                 </div>
               )}
             </div>
@@ -2244,17 +2834,10 @@ export default function AdminModal({
                 value={feedSearch}
                 onChange={e => setFeedSearch(e.target.value)}
               />
-              <div className={styles.filterRow}>
-                {(Object.keys(FEED_STATUS_LABELS) as FeedStatus[]).map(f => (
-                  <button
-                    key={f}
-                    className={`${styles.filterChip} ${feedFilter === f ? styles.filterChipActive : ''}`}
-                    onClick={() => setFeedFilter(f)}
-                  >
-                    {FEED_STATUS_LABELS[f]}
-                  </button>
-                ))}
-              </div>
+              {/* No counts on these: the list is filtered and paged on the
+                  server, so this browser has never seen the whole of it and any
+                  number here would describe the page rather than the instance. */}
+              <FilterChips labels={FEED_STATUS_LABELS} active={feedFilter} onPick={setFeedFilter} />
               <div className={styles.tableNote}>
                 Feeds are shared: one fetch serves every subscriber, and two spellings
                 of the same address are one feed here. A dormant feed is one nobody has
@@ -2264,95 +2847,125 @@ export default function AdminModal({
                 off and stops being fetched; nothing is ever deleted automatically, so
                 switching one back on is all it takes to retry.
               </div>
-              <table className={styles.table}>
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
                     {/* Sorting happens on the server, so these order the whole
                         list rather than the loaded page. */}
                     <SortableTh label="Feed" sortKey="title" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
-                    <SortableTh label="Subscribers" sortKey="subscribers" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
-                    <SortableTh label="Articles" sortKey="articles" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
-                    <SortableTh label="Failures" sortKey="failures" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
+                    <SortableTh label="Subscribers" sortKey="subscribers" active={feedSort} dir={feedDir} onSort={sortFeedsBy} className={`${styles.num} ${styles.dropNarrow}`} />
+                    <SortableTh label="Articles" sortKey="articles" active={feedSort} dir={feedDir} onSort={sortFeedsBy} className={`${styles.num} ${styles.dropNarrow}`} />
                     <SortableTh label="Last checked" sortKey="checked" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
-                    <SortableTh label="Last success" sortKey="success" active={feedSort} dir={feedDir} onSort={sortFeedsBy} />
-                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {feedList.map(f => (
-                    <tr key={f.id} className={f.disabledAt ? styles.rowInactive : undefined}>
-                      <td className={styles.emailCell}>
-                        <a className={styles.errorLink} href={f.url} target="_blank" rel="noopener noreferrer">
-                          {f.title || f.url}
-                        </a>
-                        {f.title && <div className={styles.mutedText}>{f.url}</div>}
-                        {/* Why it is off, in the row rather than a tooltip: the
-                            three reasons need different responses, and "blocked"
-                            in particular is not a fault to go investigating. */}
-                        {f.disabledAt ? (
-                          <div className={styles.mutedText}>
-                            <span className={styles.auditDestructive}>
-                              {f.disabledReason === 'blocked' ? 'blocked'
-                                : f.disabledReason === 'manual' ? 'switched off'
-                                : 'switched off after repeated failures'}
-                            </span>
-                            {f.disabledReason !== 'blocked' && f.lastError && ` - ${f.lastError}`}
-                          </div>
-                        ) : f.consecutiveFailures > 0 && (
-                          <div className={styles.mutedText}>
-                            failing - {f.lastError || 'reason not recorded'}
-                          </div>
-                        )}
-                      </td>
-                      <td>{f.subscribers}</td>
-                      <td>{f.items}</td>
-                      <td>
-                        {f.consecutiveFailures > 0
-                          ? <span className={styles.auditAction}>{f.consecutiveFailures}</span>
-                          : <span className={styles.mutedText}>-</span>}
-                      </td>
-                      <td title={f.lastCheckedAt ? new Date(f.lastCheckedAt).toLocaleString() : undefined}>
-                        {relativeTime(f.lastCheckedAt)}
-                        {f.dormant && <div className={styles.mutedText}>dormant</div>}
-                      </td>
-                      <td title={f.lastSuccessAt ? new Date(f.lastSuccessAt).toLocaleString() : undefined}>
-                        {f.lastSuccessAt
-                          ? relativeTime(f.lastSuccessAt)
-                          : <span className={styles.mutedText}>never</span>}
-                      </td>
-                      <td className={styles.actionCell}>
-                        {/* Narrows the log below to this feed - the fastest way
-                            to tell a feed that is quiet from one that is stuck. */}
-                        <button className={styles.traceToggle} onClick={() => setFeedLogFor(f)}>
-                          History
-                        </button>
-                        {f.disabledAt ? (
-                          <button
-                            className={styles.traceToggle}
-                            disabled={feedBusy === f.id}
-                            onClick={() => feedAction(f, 'enable')}
-                          >
-                            Switch on
-                          </button>
-                        ) : (
-                          <button
-                            className={styles.traceToggle}
-                            disabled={feedBusy === f.id}
-                            onClick={() => feedAction(f, 'disable')}
-                          >
-                            Switch off
-                          </button>
-                        )}
-                        <button
-                          className={styles.dangerToggle}
-                          disabled={feedBusy === f.id}
-                          onClick={() => feedAction(f, 'delete')}
+                  {feedList.map(f => {
+                    const open = openFeedId === f.id;
+                    // Why it is off. The three reasons need different responses,
+                    // and "blocked" in particular is not a fault to investigate.
+                    const offReason = f.disabledAt
+                      ? (f.disabledReason === 'blocked' ? 'blocked'
+                        : f.disabledReason === 'manual' ? 'switched off'
+                        : 'off after repeated failures')
+                      : null;
+                    return (
+                      <Fragment key={f.id}>
+                        <tr
+                          className={`${f.disabledAt ? styles.rowInactive : ''} ${open ? styles.rowOpen : ''}`}
+                          onClick={() => setOpenFeedId(id => (id === f.id ? null : f.id))}
                         >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                          <ExpandCell open={open} label={f.title || f.url} />
+                          <td className={styles.snippetCell}>
+                            <a
+                              className={`${styles.errorLink} ${styles.snippetTitle}`}
+                              href={f.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {f.title || f.url}
+                            </a>
+                            {/* The state marks that were three columns. A
+                                healthy feed carries none of them, which is what
+                                makes the ones that do stand out. */}
+                            {offReason && <span className={styles.offBadge}>{offReason}</span>}
+                            {!f.disabledAt && f.consecutiveFailures > 0 && (
+                              <span className={styles.offBadge} title={f.lastError || undefined}>
+                                failing ×{f.consecutiveFailures}
+                              </span>
+                            )}
+                            {f.dormant && (
+                              <span className={styles.editBadge} title={`Nobody has opened this in ${dormantAfterDays} days, so it isn't being polled`}>
+                                dormant
+                              </span>
+                            )}
+                          </td>
+                          <td className={`${styles.num} ${styles.dropNarrow}`}>{f.subscribers}</td>
+                          <td className={`${styles.num} ${styles.dropNarrow}`}>{f.items}</td>
+                          <td title={f.lastCheckedAt ? new Date(f.lastCheckedAt).toLocaleString() : undefined}>
+                            {relativeTime(f.lastCheckedAt)}
+                          </td>
+                        </tr>
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                {
+                                  label: 'Address',
+                                  value: (
+                                    <a className={`${styles.errorLink} ${styles.monoValue}`} href={f.url} target="_blank" rel="noopener noreferrer">
+                                      {f.url}
+                                    </a>
+                                  ),
+                                },
+                                { label: 'Subscribers', value: f.subscribers },
+                                { label: 'Articles', value: f.items },
+                                {
+                                  label: 'Failures in a row',
+                                  value: f.consecutiveFailures || '0',
+                                  danger: f.consecutiveFailures > 0,
+                                },
+                                {
+                                  label: 'Last success',
+                                  value: f.lastSuccessAt
+                                    ? new Date(f.lastSuccessAt).toLocaleString()
+                                    : <span className={styles.mutedText}>never</span>,
+                                },
+                                ...(f.lastError && f.disabledReason !== 'blocked'
+                                  ? [{ label: 'Last error', value: f.lastError, danger: true }]
+                                  : []),
+                              ]}
+                              actions={
+                                <>
+                                  {/* Narrows the log below to this feed - the
+                                      fastest way to tell a feed that is quiet
+                                      from one that is stuck. */}
+                                  <button className={styles.adminToggle} onClick={() => setFeedLogFor(f)}>
+                                    History
+                                  </button>
+                                  <button
+                                    className={styles.adminToggle}
+                                    disabled={feedBusy === f.id}
+                                    onClick={() => feedAction(f, f.disabledAt ? 'enable' : 'disable')}
+                                  >
+                                    {f.disabledAt ? 'Switch on' : 'Switch off'}
+                                  </button>
+                                  <button
+                                    className={`${styles.adminToggle} ${styles.banBtn}`}
+                                    disabled={feedBusy === f.id}
+                                    onClick={() => feedAction(f, 'delete')}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              }
+                            />
+                          </DetailRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
               {feedList.length === 0 && (
@@ -2590,70 +3203,91 @@ export default function AdminModal({
                 Entries older than {retentionDays} days are removed automatically -
                 this is a diagnostic log, not a record like the audit trail.
                 Requests that failed because someone asked for something invalid
-                (a 4xx) aren't errors and aren't listed. "Show detail" on a feed
-                error carries the timing and whatever the origin actually sent back;
+                (a 4xx) aren't errors and aren't listed. Opening a row carries the
+                trace, the request and whatever the origin actually sent back;
                 which feeds are broken right now is in{' '}
                 <button className={styles.traceToggle} onClick={() => switchTab('feeds')}>
                   Feeds
                 </button>.
               </div>
-              <table className={styles.table}>
+              {/* "Show detail" used to be a link inside a cell, which meant one
+                  row had two different things to press and neither of them was
+                  the row. It opens like every other list in the panel now, and
+                  the trace comes with the rest of what the row knows rather than
+                  on its own. */}
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
                     <th>When</th>
                     <th>Source</th>
                     <th>What happened</th>
-                    <th>Where</th>
-                    <th>User</th>
+                    <th className={styles.dropNarrow}>Where</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {errors.map(e => (
-                    <Fragment key={e.id}>
-                      <tr>
-                        <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
-                        <td>
-                          {/* Feed rows carry a status now too, when the failure
-                              had one: a 404 and a timeout are different problems
-                              and used to read identically here. */}
-                          <span className={e.source === 'server' ? styles.auditDestructive : styles.auditAction}>
-                            {e.source === 'server' ? 'Server' : 'Feed'}{e.status ? ` ${e.status}` : ''}
-                          </span>
-                        </td>
-                        <td className={styles.emailCell}>
-                          {e.message}
-                          {/* A stack trace is the reason this table exists, but
-                              it's also twenty lines - so it unrolls under the
-                              row rather than living in a cell. */}
-                          {e.detail && (
-                            <button
-                              className={styles.traceToggle}
-                              onClick={() => setOpenTrace(openTrace === e.id ? null : e.id)}
-                            >
-                              {openTrace === e.id ? 'Hide detail' : 'Show detail'}
-                            </button>
-                          )}
-                        </td>
-                        <td className={styles.emailCell}>
-                          {e.source === 'feed'
-                            ? (e.feedUrl
-                                ? <a className={styles.errorLink} href={e.feedUrl} target="_blank" rel="noopener noreferrer">{e.feedUrl}</a>
-                                : <span className={styles.mutedText}>-</span>)
-                            : <span className={styles.mutedText}>{e.method} {e.path}</span>}
-                        </td>
-                        <td>
-                          {e.username
-                            ? <Handle username={e.username} exists onView={onViewProfile} />
-                            : <span className={styles.mutedText}>{e.source === 'feed' ? '-' : 'anonymous'}</span>}
-                        </td>
-                      </tr>
-                      {openTrace === e.id && e.detail && (
-                        <tr>
-                          <td colSpan={5}><pre className={styles.trace}>{e.detail}</pre></td>
+                  {errors.map(e => {
+                    const open = openTrace === e.id;
+                    return (
+                      <Fragment key={e.id}>
+                        <tr
+                          className={open ? styles.rowOpen : ''}
+                          onClick={() => setOpenTrace(id => (id === e.id ? null : e.id))}
+                        >
+                          <ExpandCell open={open} label={e.message} />
+                          <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
+                          <td>
+                            {/* Feed rows carry a status now too, when the failure
+                                had one: a 404 and a timeout are different problems
+                                and used to read identically here. */}
+                            <span className={e.source === 'server' ? styles.auditDestructive : styles.auditAction}>
+                              {e.source === 'server' ? 'Server' : 'Feed'}{e.status ? ` ${e.status}` : ''}
+                            </span>
+                          </td>
+                          <td className={styles.emailCell}>{e.message}</td>
+                          <td className={`${styles.emailCell} ${styles.dropNarrow}`} onClick={ev => ev.stopPropagation()}>
+                            {e.source === 'feed'
+                              ? (e.feedUrl
+                                  ? <a className={styles.errorLink} href={e.feedUrl} target="_blank" rel="noopener noreferrer">{e.feedUrl}</a>
+                                  : <span className={styles.mutedText}>-</span>)
+                              : <span className={styles.mutedText}>{e.method} {e.path}</span>}
+                          </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  ))}
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                { label: 'When', value: new Date(e.createdAt).toLocaleString() },
+                                {
+                                  label: e.source === 'feed' ? 'Feed' : 'Request',
+                                  value: e.source === 'feed'
+                                    ? (e.feedUrl
+                                        ? <a className={`${styles.errorLink} ${styles.monoValue}`} href={e.feedUrl} target="_blank" rel="noopener noreferrer">{e.feedUrl}</a>
+                                        : <span className={styles.mutedText}>not recorded</span>)
+                                    : <span className={styles.monoValue}>{e.method} {e.path}</span>,
+                                },
+                                {
+                                  label: 'User',
+                                  value: e.username
+                                    ? <Handle username={e.username} exists onView={onViewProfile} />
+                                    : <span className={styles.mutedText}>{e.source === 'feed' ? 'not applicable' : 'anonymous'}</span>,
+                                },
+                                ...(e.status ? [{ label: 'Status', value: e.status, danger: true }] : []),
+                              ]}
+                            >
+                              {/* The stack trace is the reason this table exists,
+                                  and it is also twenty lines - so it is the one
+                                  thing that goes below the facts rather than in
+                                  among them. */}
+                              {e.detail
+                                ? <pre className={styles.trace}>{e.detail}</pre>
+                                : <p className={styles.mutedText}>No further detail was recorded.</p>}
+                            </DetailPanel>
+                          </DetailRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
               {errors.length === 0 && (
@@ -2680,48 +3314,95 @@ export default function AdminModal({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
               />
+              <FilterChips
+                labels={AUDIT_FILTER_LABELS}
+                active={auditFilter}
+                counts={auditFilterCounts}
+                onPick={setAuditFilter}
+              />
               <div className={styles.tableNote}>
                 Every moderation action, newest first. This log is append-only - nothing
                 in the app writes to it except the actions themselves, and nothing edits
-                or removes an entry once written.
+                or removes an entry once written. Counts on the chips are of the entries
+                loaded so far, not of the whole log.
               </div>
-              <table className={styles.table}>
+              <table className={`${styles.table} ${styles.expandable}`}>
                 <thead>
                   <tr>
+                    <th className={styles.expandCol}><span className={styles.srOnly}>Details</span></th>
                     <th>When</th>
                     <th>Admin</th>
                     <th>Action</th>
                     <th>Target</th>
-                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAudit.map(e => (
-                    <tr key={e.id}>
-                      <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
-                      <td>
-                        <Handle username={e.actor} exists={e.actorExists} onView={onViewProfile} />
-                        {/* The account is gone; the name survives in the row */}
-                        {!e.actorExists && <span className={styles.mutedText}> (deleted)</span>}
-                      </td>
-                      <td>
-                        <span className={e.destructive ? styles.auditDestructive : styles.auditAction}>
-                          {e.label}
-                        </span>
-                      </td>
-                      <td className={styles.emailCell}>{e.targetLabel}</td>
-                      <td className={styles.emailCell}>
-                        {e.metadata
-                          ? <span className={styles.mutedText}>{summarizeMetadata(e.metadata)}</span>
-                          : <span className={styles.mutedText}>-</span>}
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredAudit.map(e => {
+                    const open = openAuditId === e.id;
+                    // The metadata summary is a sentence, not a cell - it was
+                    // the column that made this table too wide to read. It is
+                    // the reason the row opens at all, so a row with none says
+                    // so rather than opening on nothing.
+                    const detail = e.metadata ? summarizeMetadata(e.metadata) : '';
+                    return (
+                      <Fragment key={e.id}>
+                        <tr
+                          className={open ? styles.rowOpen : ''}
+                          onClick={() => setOpenAuditId(id => (id === e.id ? null : e.id))}
+                        >
+                          <ExpandCell open={open} label={`${e.label} ${e.targetLabel}`} />
+                          <td title={new Date(e.createdAt).toLocaleString()}>{relativeDate(e.createdAt)}</td>
+                          <td onClick={ev => ev.stopPropagation()}>
+                            <Handle username={e.actor} exists={e.actorExists} onView={onViewProfile} />
+                            {/* The account is gone; the name survives in the row */}
+                            {!e.actorExists && <span className={styles.mutedText}> (deleted)</span>}
+                          </td>
+                          <td>
+                            <span className={e.destructive ? styles.auditDestructive : styles.auditAction}>
+                              {e.label}
+                            </span>
+                          </td>
+                          <td className={styles.emailCell}>{e.targetLabel}</td>
+                        </tr>
+                        {open && (
+                          <DetailRow>
+                            <DetailPanel
+                              facts={[
+                                { label: 'When', value: new Date(e.createdAt).toLocaleString() },
+                                { label: 'Action', value: e.label, danger: e.destructive },
+                                { label: 'Target', value: e.targetLabel },
+                                { label: 'Kind', value: e.targetType },
+                                {
+                                  label: 'Record',
+                                  value: (
+                                    <span
+                                      className={`${styles.copyable} ${styles.monoValue}`}
+                                      title="Click to copy - the id this action was recorded against"
+                                      onClick={() => copyToClipboard(e.targetId, `${e.id}-target`)}
+                                    >
+                                      {e.targetId}
+                                    </span>
+                                  ),
+                                },
+                                {
+                                  label: 'Details',
+                                  value: detail || <span className={styles.mutedText}>none recorded</span>,
+                                },
+                              ]}
+                            />
+                          </DetailRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
               {filteredAudit.length === 0 && (
                 <div className={styles.emptyResult}>
-                  {query ? `No entries match "${query}"` : 'No moderation actions recorded yet'}
+                  {query.trim()
+                    ? `No entries match "${query}"`
+                    : auditFilter === 'all' ? 'No moderation actions recorded yet'
+                    : `No ${AUDIT_FILTER_LABELS[auditFilter].toLowerCase()} entries loaded`}
                 </div>
               )}
               {auditCursor && !query && (

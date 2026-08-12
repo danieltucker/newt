@@ -692,6 +692,33 @@
   .layoutOpen .sidebar { transform: translateX(0); }
 
   .main { min-height: calc(100vh - 180px); }
+
+  /* The dock is opaque and pinned to the bottom edge, but it was only ever as
+     wide as the body column. On a phone the column's gutters *are* the page
+     margin, so the bar stopped short of both screen edges and the transcript
+     went on scrolling through the two strips left over - which reads as a
+     composer sliced off at each end rather than as a bar with margins.
+     It bleeds to the edges here instead, and the gutters move inside it as
+     padding so the input keeps exactly the inset it had. The negative margins
+     are the shell's own side padding below 900px (see .content in
+     NewTabPage.module.css); written per side because the safe-area insets are
+     not symmetrical once the phone is turned. */
+  .dock {
+    margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+    margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    /* Clears the home indicator, which otherwise sits over the send button. */
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Touch: 16px is the threshold under which iOS Safari zooms the page to meet a
+   focused field, and it does not zoom back out. Every tap on the composer left
+   the viewport scaled up with the input running off both sides of the screen -
+   the same symptom as the dock above, arrived at from the other direction. */
+@media (hover: none) {
+  .input { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

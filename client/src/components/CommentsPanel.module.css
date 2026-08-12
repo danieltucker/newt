@@ -34,13 +34,18 @@
 
 .barLabel { white-space: nowrap; }
 
-/* The pill already spells out the count; this is the at-a-glance dot for
-   scanning a wall of cards */
-.barCount {
-  display: none;
+/* The noun in "3 comments". Dropped by a narrow card, which leaves the 3 - see
+   the collapse note in SplitMenuButton.module.css, where the same property does
+   the same job for the split version of this pill. */
+.barWord {
+  display: var(--pill-label-extra, inline);
 }
 
-/* Touch: a thumb, not a cursor. Matches SaveButton's .main exactly - the height
+/* The plain pill above is only what CommentBar falls back to when it has no
+   menu; with one it is a SplitMenuButton, and that file owns the geometry both
+   of these and the Save button beside them share.
+
+   Touch: a thumb, not a cursor. Matches SplitMenuButton's .main exactly - the height
    comes from the shared token, so only the padding and type are said twice. */
 @media (hover: none) {
   .bar {

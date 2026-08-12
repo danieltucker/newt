@@ -6,6 +6,8 @@ import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { articleEmbed } from '../utils/noteEmbed';
+import { startRepost } from '../utils/composerSeed';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
@@ -1039,6 +1041,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
             onOpenLink={() => markRead([a.id])}
             onViewProfile={onViewProfile}
             onOpenSite={onOpenSite}
+            onExplore={onExplore}
             favHits={favHits.get(a.id)}
             favoriteTags={favoriteTags}
             onToggleFavoriteTag={onToggleFavoriteTag}
@@ -1106,7 +1109,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   );
 }
 
-function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, onExplore, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   /** Set when this card is a placeholder for something already dealt with. */
   ghost?: Ghost;
@@ -1121,6 +1124,8 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   onOpenLink?: () => void;
   onViewProfile?: (username: string) => void;
   onOpenSite?: (domain: string) => void;
+  /** Opens an Explore thread. Undefined when the account has no model. */
+  onExplore?: (url: string, title: string) => void;
   /** Favorites this article matched, if any - the parent did the matching. */
   favHits?: string[];
   favoriteTags?: string[];
@@ -1317,7 +1322,27 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             it is a labelled pill down here now, matched to the comment bar
             beside it and to the identical control on a reading list card. */}
         <div className={styles.commentRow}>
-          <CommentBar count={commentCount} onClick={onOpenReader} />
+          {/* Explore and Repost hang off the comment pill's caret. Neither
+              needs the article open - you can tell from the card whether it is
+              one to quote or one to dig into - and the reader still carries
+              both at the foot of the text for the times you decide after
+              reading. Repost quotes what the card is showing, which is the same
+              metadata the reader would embed. */}
+          <CommentBar
+            count={commentCount}
+            onClick={onOpenReader}
+            onExplore={onExplore && (() => onExplore(article.link, article.title))}
+            onRepost={() => startRepost({
+              title: article.title,
+              embed: articleEmbed({
+                url: article.link,
+                title: article.title,
+                source: article.source || domain,
+                imageUrl: article.imageUrl,
+                readTime: article.readTime != null ? `${article.readTime} min read` : null,
+              }),
+            })}
+          />
           <SaveButton
             className={styles.rowSave}
             label="Save"

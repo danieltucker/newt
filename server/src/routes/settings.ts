@@ -60,7 +60,7 @@ export interface UserSettings {
 
 const DEFAULTS: UserSettings = {
   searchEngine: 'google',
-  searchNewTab: false,
+  searchNewTab: true,
   theme: 'dark',
   consoleEnabled: true,
   notes: '',
@@ -78,7 +78,9 @@ const DEFAULTS: UserSettings = {
   readingListLayout: 'magazine',
   siteLayout: 'list',
   rssEnabled: true,
-  saveArticleMode: 'dialog',
+  // Saving is one click by default: the dialog is there for the reader who
+  // wants to tag and retitle on the way in, not for the common case.
+  saveArticleMode: 'instant',
   markReadOnScroll: true,
   // Public by default would publish existing private thoughts the moment
   // someone starts commenting — opt in instead.

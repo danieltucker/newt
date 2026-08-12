@@ -6,6 +6,7 @@ import ReportModal from './ReportModal';
 import { uploadImage } from '../utils/imageUpload';
 import { fetchPageMeta } from '../utils/pageMeta';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
+import SplitMenuButton, { MenuItem } from './SplitMenuButton';
 import styles from './CommentsPanel.module.css';
 
 // The comment thread, always open. It lives at the foot of the article reader
@@ -89,19 +90,79 @@ function initialOf(name: string): string {
 // through the same friendship rules.
 
 // ── The compact strip that sits on a card ────────────────────────────────
-export function CommentBar({ count, onClick }: { count: number; onClick: () => void }) {
+//
+// A split pill, matching the Save button beside it: the label opens the reader,
+// and the caret carries the other two things you do with an article once you
+// have read it. Explore and Repost were only ever inside the reader, at the
+// foot of the text - which is the right place to *find* them and the wrong
+// place to reach them from a feed you are scanning. Neither is a decision that
+// needs the article open: you know from the card whether you want to quote it
+// or go deeper on it.
+//
+// It stays a plain pill when there is nothing behind the caret - a signed-out
+// reader, or an account with no model connected on a surface that offers no
+// repost either. A caret over an empty menu is worse than no caret.
+export function CommentBar({ count, onClick, onExplore, onRepost }: {
+  count: number;
+  onClick: () => void;
+  /** Opens an Explore thread on this article. Absent with no model connected. */
+  onExplore?: () => void;
+  /** Opens the composer on a post quoting this article. */
+  onRepost?: () => void;
+}) {
+  // Split in two so a narrow card can drop the noun and keep the number - the
+  // count is the only part of this label that is data. See the collapse note in
+  // SplitMenuButton.module.css.
+  const label = count > 0 ? String(count) : 'Comment';
+  const labelExtra = count > 0 ? `comment${count === 1 ? '' : 's'}` : undefined;
+  const title = count > 0
+    ? 'Read the article and its comments'
+    : 'Read the article and add a comment';
+
+  if (!onExplore && !onRepost) {
+    return (
+      <button
+        className={styles.bar}
+        onClick={onClick}
+        title={title}
+        aria-label={labelExtra ? `${label} ${labelExtra}` : label}
+      >
+        <CommentIcon />
+        <span className={styles.barLabel} aria-hidden>
+          {label}
+          {labelExtra && <span className={styles.barWord}> {labelExtra}</span>}
+        </span>
+      </button>
+    );
+  }
+
   return (
-    <button
-      className={styles.bar}
-      onClick={onClick}
-      title={count > 0 ? 'Read the article and its comments' : 'Read the article and add a comment'}
-    >
-      <CommentIcon />
-      <span className={styles.barLabel}>
-        {count > 0 ? `${count} comment${count === 1 ? '' : 's'}` : 'Comment'}
-      </span>
-      {count > 0 && <span className={styles.barCount}>{count}</span>}
-    </button>
+    <SplitMenuButton
+      label={label}
+      labelExtra={labelExtra}
+      icon={<CommentIcon />}
+      onPrimary={onClick}
+      primaryTitle={title}
+      menuLabel="Take it further"
+      menu={close => (
+        <>
+          {onExplore && (
+            <MenuItem
+              label="Explore"
+              icon={<ExploreIcon />}
+              onClick={() => { close(); onExplore(); }}
+            />
+          )}
+          {onRepost && (
+            <MenuItem
+              label="Repost"
+              icon={<RepostIcon />}
+              onClick={() => { close(); onRepost(); }}
+            />
+          )}
+        </>
+      )}
+    />
   );
 }
 
@@ -802,6 +863,28 @@ function CommentIcon() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  );
+}
+
+// The two rows behind the comment pill's caret. Same glyphs as the buttons at
+// the foot of the reader, so a reader who has met them there recognises them
+// here - they are the same two actions, reached earlier.
+function ExploreIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function RepostIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
     </svg>
   );
 }

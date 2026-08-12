@@ -1043,7 +1043,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                       { value: 'dialog',  label: 'Review before saving', hint: 'Opens a dialog to edit the title, tags, and read time first' },
                       { value: 'instant', label: 'Save instantly',       hint: 'Saves with the article’s own title and tags - you can edit later from the card' },
                     ] as const).map(opt => {
-                      const active = (settings.saveArticleMode ?? 'dialog') === opt.value;
+                      const active = (settings.saveArticleMode ?? 'instant') === opt.value;
                       return (
                         <button
                           key={opt.value}

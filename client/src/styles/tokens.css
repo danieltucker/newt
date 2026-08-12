@@ -140,12 +140,19 @@
 }
 
 /* Z-index scale - every overlay picks a band; never use raw numbers.
-   background(0) < page(1) < sticky < content-overlay < modal < top */
+   background(0) < page(1) < sticky < content-overlay < modal < top < detached */
 :root {
   --z-sticky: 40;           /* sticky search bar */
   --z-content-overlay: 50;  /* dropdown menus and panels inside page content */
   --z-modal: 200;           /* standard dialogs (settings, editors, admin) */
   --z-top: 300;             /* fullscreen overlays: console, reader, import */
+  /* A menu that has been lifted out to <body> to escape a scrolling box that
+     would otherwise crop it. It has to clear every band above, because the
+     button that opened it can be sitting on any of them - the save menu in the
+     article reader is exactly that case. Nothing but such a menu belongs here:
+     this band is above the dialogs, so anything parked in it permanently would
+     be unclosable. */
+  --z-detached-menu: 400;
 }
 
 /* ── Control sizes ──

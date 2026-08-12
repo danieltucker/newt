@@ -1104,7 +1104,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                     }
                     return;
                   }
-                  if ((settings.saveArticleMode ?? 'dialog') === 'instant') {
+                  if ((settings.saveArticleMode ?? 'instant') === 'instant') {
                     // Save with the article's own metadata - no dialog
                     card.markSaved();
                     try {

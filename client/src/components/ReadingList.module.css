@@ -707,32 +707,56 @@
    wrap, so a save pill that dropped to a second line stayed pinned to the right
    edge, one line below a left-aligned comment pill. A staircase - which is what
    a wrapped row looks like when only one of the two items knows it wrapped. */
+/* Two equal halves, not two pills that happen to sit next to each other - see
+   the note on the identical row in FeedPanel.module.css. Either both are on the
+   line or both are full-width rows; one pill orphaned under the other is the
+   shape this exists to make impossible. */
 .commentRow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   margin: 4px 16px 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
-/* ── When the two pills don't fit on one line ──
-   Each takes the line. Asked of the card rather than the window: a card in the
-   grid is between 200px and 400px wide whatever the window is doing, so a
-   viewport media query - which is what this was, at 380px - never saw the case
-   that actually breaks, a narrow card on a wide screen.
+/* ── Getting narrower, in two deliberate steps ──
+   First the noun in "3 comments" goes, leaving the count beside the icon; then
+   the halves become full-width rows, at which point the noun comes back because
+   there is nothing left to save it for. Step one is read by the pill itself -
+   see the collapse note in SplitMenuButton.module.css - so what lives here is
+   only where the thresholds are, which is a fact about this layout. Kept in
+   step with the identical block in FeedPanel.module.css, because the two cards
+   carry the same pair of controls and are often on screen together.
 
-   The widths are the pills' own: about 211px of pill and gap inside 32px of card
-   margin with a mouse, about 237 with a thumb, since both grow on touch. */
-@container (max-width: 250px) {
-  .commentRow > * { flex: 1 1 100%; }
+   Asked of the card rather than the window: a card in the grid is between 200px
+   and 400px wide whatever the window is doing, so a viewport media query -
+   which is what this was, at 380px - never saw the case that actually breaks, a
+   narrow card on a wide screen. */
+@container (max-width: 330px) {
+  .commentRow { --pill-label-extra: none; }
 }
 
+@container (max-width: 255px) {
+  .commentRow {
+    grid-template-columns: 1fr;
+    --pill-label-extra: inline;
+  }
+}
+
+/* A thumb gets bigger pills - more padding and a point of type - so both steps
+   arrive about 30px earlier. */
 @media (hover: none) {
-  @container (max-width: 275px) {
-    .commentRow > * { flex: 1 1 100%; }
+  @container (max-width: 360px) {
+    .commentRow { --pill-label-extra: none; }
+  }
+
+  @container (max-width: 290px) {
+    .commentRow {
+      grid-template-columns: 1fr;
+      --pill-label-extra: inline;
+    }
   }
 }
 

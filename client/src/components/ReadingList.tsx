@@ -5,6 +5,8 @@ import { parseDomain } from '../utils/color';
 import { sitePathFor, siteDomainOf } from '../utils/siteUrl';
 import { apiFetch } from '../services/api';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { articleEmbed } from '../utils/noteEmbed';
+import { startRepost } from '../utils/composerSeed';
 import { CommentBar } from './CommentsPanel';
 import ArticleDetailModal from './ArticleDetailModal';
 import TagChipInput from './TagChipInput';
@@ -292,9 +294,11 @@ interface CardProps {
   readingFolders?: ReadingFolder[];
   onCreateFolder?: (name: string) => Promise<string>;
   onOpenSite?: (domain: string) => void;
+  /** Opens an Explore thread. Undefined when the account has no model. */
+  onExplore?: (url: string, title: string) => void;
 }
 
-function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite, onExplore }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
 
@@ -450,7 +454,17 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
           shorten the card, and a placeholder that changes height defeats the
           point of leaving one behind. */}
       <div className={styles.commentRow}>
-        <CommentBar count={commentCount} onClick={onOpenReader} />
+        {/* Explore and Repost hang off the comment pill's caret - the same two
+            things the reader offers at the foot of the article, reachable from
+            the card for the times you already know which one you want. The
+            embed is built from the saved row, which is exactly the shape
+            articleEmbed asks for. */}
+        <CommentBar
+          count={commentCount}
+          onClick={onOpenReader}
+          onExplore={onExplore && (() => onExplore(item.url, item.title))}
+          onRepost={() => startRepost({ title: item.title, embed: articleEmbed(item) })}
+        />
         {/* Pressing the label files it under Unsorted straight away; the caret
             is there for the times you know which shelf. Either way the card
             leaves a "Saved to <shelf>" placeholder with an Undo, which is what
@@ -1066,6 +1080,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             readingFolders={readingFolders}
             onCreateFolder={onCreateFolder}
             onOpenSite={onOpenSite}
+            onExplore={onExplore}
           />
         ))}
       </div>

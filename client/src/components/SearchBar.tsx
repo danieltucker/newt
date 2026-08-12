@@ -109,7 +109,7 @@ interface Props {
 
 export default function SearchBar({
   searchEngine = 'google',
-  searchNewTab = false,
+  searchNewTab = true,
   bookmarks = [],
   readingItems = [],
   notes = [],

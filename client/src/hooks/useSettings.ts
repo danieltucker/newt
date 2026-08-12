@@ -84,7 +84,7 @@ export interface UserSettings {
 
 const DEFAULTS: UserSettings = {
   searchEngine: 'google',
-  searchNewTab: false,
+  searchNewTab: true,
   theme: 'dark',
   consoleEnabled: true,
   notes: '',
@@ -102,7 +102,7 @@ const DEFAULTS: UserSettings = {
   readingListLayout: 'magazine',
   siteLayout: 'list',
   rssEnabled: true,
-  saveArticleMode: 'dialog',
+  saveArticleMode: 'instant',
   markReadOnScroll: true,
   commentsShowPublic: true,
   commentsDefaultPublic: false,

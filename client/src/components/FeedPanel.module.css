@@ -53,32 +53,61 @@
    edge, one line below a left-aligned comment pill. A staircase - which is what
    a wrapped row looks like when only one of the two items knows it wrapped.
    Identical to the strip on a reading list card, which had the same fault. */
+/* Two equal halves, not two pills that happen to sit next to each other.
+   Whatever the pills measure, each gets exactly half the row - so they can
+   never be in the state that started this: one pill on the line and the other
+   pushed under it, which reads as a mistake because it is the shape a mistake
+   makes. Either both are on the line or both are full-width rows. */
 .commentRow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 
-/* ── When the two pills don't fit on one line ──
-   Each takes the line. Asked of the card rather than the window: a card in the
-   grid is between 200px and 400px wide whatever the window is doing, so a
-   viewport media query - which is what this was, at 380px - never saw the case
-   that actually breaks, a narrow card on a wide screen.
+/* ── Getting narrower, in two deliberate steps ──
+   Asked of the card rather than the window: a card in the grid is between 200px
+   and 400px wide whatever the window is doing, so a viewport media query -
+   which is what this was, at 380px - never saw the case that actually breaks, a
+   narrow card on a wide screen.
 
-   The widths are the pills' own: about 211px of pill and gap inside 32px of card
-   padding with a mouse, about 237 with a thumb, since both grow on touch. */
-@container (max-width: 250px) {
-  .commentRow > * { flex: 1 1 100%; }
+     1. The noun in "3 comments" goes, leaving "3" beside the speech bubble.
+        The count is the only part of that label that is data; the word is
+        restating an icon. This buys about 60px and is barely noticeable.
+     2. The halves become rows. Each control now has the full width of the card,
+        so the noun comes back - there is nothing to save it for.
+
+   Step 1 is read by the pill itself (see SplitMenuButton.module.css); what
+   lives here is where the thresholds are, which is a fact about this layout.
+   Both land a little before the text would actually collide, because a long
+   count - "128 comments" - is wider than the "3 comments" you would measure
+   against, and a step early is invisible where a step late is not. */
+@container (max-width: 330px) {
+  .commentRow { --pill-label-extra: none; }
 }
 
+@container (max-width: 255px) {
+  .commentRow {
+    grid-template-columns: 1fr;
+    --pill-label-extra: inline;
+  }
+}
+
+/* A thumb gets bigger pills - more padding and a point of type - so both steps
+   arrive about 30px earlier. */
 @media (hover: none) {
-  @container (max-width: 275px) {
-    .commentRow > * { flex: 1 1 100%; }
+  @container (max-width: 360px) {
+    .commentRow { --pill-label-extra: none; }
+  }
+
+  @container (max-width: 290px) {
+    .commentRow {
+      grid-template-columns: 1fr;
+      --pill-label-extra: inline;
+    }
   }
 }
 
