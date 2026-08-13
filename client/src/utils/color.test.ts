@@ -59,6 +59,26 @@ describe('parseLink (host + path)', () => {
     expect(parseLink('ab')).toBeNull();
     expect(parseLink('localhost/foo')).toBeNull(); // host has no dot
   });
+
+  // Regression: a LAN address saved scheme-less, and bookmarkHref reads that as
+  // https - so a router or NAS on plain http was unreachable, and typing the
+  // http:// back in did nothing because it was stripped on the way to the save.
+  it('keeps an explicit http:// scheme', () => {
+    expect(parseLink('http://192.168.1.15')).toBe('http://192.168.1.15');
+    expect(parseLink('http://192.168.1.15:8096/web')).toBe('http://192.168.1.15:8096/web');
+    expect(parseLink('HTTP://192.168.1.15')).toBe('http://192.168.1.15');
+  });
+
+  // https is what a scheme-less bookmark already means, so keeping it would only
+  // put "https://" in front of every tile's subtitle.
+  it('drops https://, which is the default', () => {
+    expect(parseLink('https://github.com')).toBe('github.com');
+  });
+
+  it('round-trips, so re-editing a saved link does not change it', () => {
+    expect(parseLink(parseLink('http://192.168.1.15')!)).toBe('http://192.168.1.15');
+    expect(parseLink(parseLink('github.com/danieltucker')!)).toBe('github.com/danieltucker');
+  });
 });
 
 describe('bookmarkHref', () => {
@@ -72,6 +92,8 @@ describe('bookmarkHref', () => {
   it('leaves an absolute URL alone', () => {
     expect(bookmarkHref('http://localhost:5173/u/ellis')).toBe('http://localhost:5173/u/ellis');
     expect(bookmarkHref('https://example.com/u/ellis')).toBe('https://example.com/u/ellis');
+    // The form parseLink now stores for a link typed with http://.
+    expect(bookmarkHref('http://192.168.1.15')).toBe('http://192.168.1.15');
   });
 });
 
@@ -93,6 +115,12 @@ describe('deriveName', () => {
     expect(deriveName('github.com')).toBe('Github');
     expect(deriveName('sub.example.com')).toBe('Sub');
     expect(deriveName('example.co.uk')).toBe('Example');
+  });
+
+  // "192" is not a name for anything.
+  it('names an address after itself', () => {
+    expect(deriveName('192.168.1.15')).toBe('192.168.1.15');
+    expect(deriveName('192.168.1.15:8096')).toBe('192.168.1.15:8096');
   });
 });
 

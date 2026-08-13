@@ -43,6 +43,14 @@
   font-family: 'Hanken Grotesk', sans-serif !important;
 }
 
+/* Sits directly above the footer so the reason a save didn't take is next to
+   the button that didn't take it. */
+.error {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
 .actionsRow {
   display: flex;
   align-items: center;

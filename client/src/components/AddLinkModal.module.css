@@ -243,6 +243,13 @@
   color: #ff6b6b;
 }
 
+/* Why the link didn't get added, immediately above the button that tried. */
+.saveError {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
 .newFolderActions {
   display: flex;
   justify-content: flex-end;

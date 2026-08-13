@@ -631,23 +631,27 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     domain: string; name: string; faviconUrl: string; color: string; folderId: string | null;
   }) {
     const updated = await updateBookmark(id, updates);
-    // Refresh sidebar preview cache
-    if (activeFolderId) {
-      const bm = bookmarks.find(b => b.id === id);
-      if (bm && bm.folderId !== updates.folderId) {
-        // moved to different folder - remove from current folder cache
-        setBookmarksByFolder(prev => ({
-          ...prev,
-          [activeFolderId]: prev[activeFolderId]?.filter(b => b.id !== id) ?? [],
-        }));
-      } else if (updated) {
-        // update in place in cache
-        setBookmarksByFolder(prev => ({
-          ...prev,
-          [activeFolderId]: prev[activeFolderId]?.map(b => b.id === id ? updated : b) ?? [],
-        }));
+    // Refresh the sidebar preview cache by where the bookmark actually lives.
+    //
+    // This used to touch only `bookmarksByFolder[activeFolderId]`, but the
+    // sidebar can edit any expanded folder - and an edit to a bookmark outside
+    // the open one patched nothing, so the panel kept showing the old name and
+    // URL and the save looked like it had failed. The cache is also written to
+    // localStorage, so the stale copy came back on the next tab.
+    setBookmarksByFolder(prev => {
+      const next: Record<string, Bookmark[]> = {};
+      for (const [fid, list] of Object.entries(prev)) {
+        next[fid] = fid === updated.folderId
+          ? list.map(b => b.id === id ? updated : b)
+          : list.filter(b => b.id !== id);
       }
-    }
+      // Moved into a folder the cache hasn't listed it under yet.
+      if (updated.folderId && !next[updated.folderId]?.some(b => b.id === id)) {
+        next[updated.folderId] = [...(next[updated.folderId] ?? []), updated];
+      }
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
     // Keep the pinned list in sync - the edited bookmark may be a pinned one
     // (edited from the sidebar). Only drop it if it's no longer pinned.
     if (updated) {

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './AddLinkModal.module.css';
 import { Folder } from '../types';
 import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl, PALETTE } from '../utils/color';
+import { apiErrorText } from '../services/api';
 import CloseButton from './CloseButton';
 
 interface Props {
@@ -21,6 +22,7 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
   const [selectedFolderId, setSelectedFolderId] = useState(defaultFolderId || folders[0]?.id || '');
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   // Inline folder creation, rather than a second modal on top of this one: the
   // link being typed stays on screen and the new folder is selected on the spot.
@@ -59,6 +61,7 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
   async function handleAdd() {
     if (!domain || !color || !selectedFolderId) return;
     setLoading(true);
+    setError('');
     try {
       await onAdd({
         folderId: selectedFolderId,
@@ -68,6 +71,10 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
         color,
       });
       onClose();
+    } catch (e) {
+      // The bookmark cap answers 409 with a sentence worth reading; without
+      // this the dialog just sat there as though nothing had been pressed.
+      setError(apiErrorText(e, "Couldn't add that link"));
     } finally {
       setLoading(false);
     }
@@ -260,6 +267,8 @@ export default function AddLinkModal({ folders, defaultFolderId, defaultUrl, onA
             </div>
           )}
         </div>
+
+        {error && <div className={styles.saveError} role="alert">{error}</div>}
 
         <div className={styles.actions}>
           <button className={styles.cancelBtn} onClick={onClose}>Cancel</button>

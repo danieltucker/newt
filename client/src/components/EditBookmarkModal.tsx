@@ -3,6 +3,7 @@ import styles from './AddLinkModal.module.css';
 import ownStyles from './EditBookmarkModal.module.css';
 import { Folder, Bookmark } from '../types';
 import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl } from '../utils/color';
+import { apiErrorText } from '../services/api';
 import CloseButton from './CloseButton';
 
 const PALETTE = [
@@ -28,6 +29,9 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // A rejected save used to leave the modal open with everything still typed
+  // into it and nothing said, which reads as "the button doesn't work".
+  const [error, setError] = useState('');
 
   // Track the domain that was current when the modal opened (or last auto-derived)
   const prevDomainRef = useRef(parseDomain(bookmark.domain) || bookmark.domain);
@@ -58,6 +62,7 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
   async function handleSave() {
     if (!domain) return;
     setLoading(true);
+    setError('');
     try {
       await onSave(bookmark.id, {
         domain,
@@ -67,6 +72,8 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
         folderId: selectedFolderId,
       });
       onClose();
+    } catch (e) {
+      setError(apiErrorText(e, "Couldn't save those changes"));
     } finally {
       setLoading(false);
     }
@@ -74,9 +81,12 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
 
   async function handleDelete() {
     setLoading(true);
+    setError('');
     try {
       await onDelete(bookmark.id);
       onClose();
+    } catch (e) {
+      setError(apiErrorText(e, "Couldn't delete that link"));
     } finally {
       setLoading(false);
     }
@@ -175,6 +185,8 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
             })}
           </div>
         </div>
+
+        {error && <div className={ownStyles.error} role="alert">{error}</div>}
 
         <div className={ownStyles.actionsRow}>
           {confirming ? (

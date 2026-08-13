@@ -25,16 +25,29 @@ export function parseDomain(input: string): string | null {
 // github.com/danieltucker, not only github.com. The host is lowercased (hosts
 // are case-insensitive) but the path is kept exactly as typed. Returns null when
 // there's no valid host.
+//
+// A typed `http://` survives; `https://` does not. Scheme-less is the normal
+// stored form and bookmarkHref reads it as https, so keeping the default would
+// only put "https://" in front of every tile's subtitle. But http is not the
+// default and cannot be inferred: a router or a NAS at 192.168.1.15 serves plain
+// http, and stripping the scheme the user typed sent them to an https port that
+// isn't listening - with no way to say otherwise.
 export function parseLink(input: string): string | null {
-  const stripped = input.trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  const trimmed = input.trim();
+  const insecure = /^http:\/\//i.test(trimmed);
+  const stripped = trimmed.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
   const cut = stripped.search(/[/?#]/);
   const host = (cut === -1 ? stripped : stripped.slice(0, cut)).toLowerCase();
   if (!host.includes('.') || host.length < 3) return null;
   const rest = (cut === -1 ? '' : stripped.slice(cut)).replace(/\/+$/, '');
-  return host + rest;
+  return (insecure ? 'http://' : '') + host + rest;
 }
 
 export function deriveName(domain: string): string {
+  // An address has no first label worth naming a tile after - a LAN bookmark
+  // for 192.168.1.15 was arriving called "192". The address itself is the only
+  // honest default; the user can rename it.
+  if (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(domain)) return domain;
   const label = domain.split('.')[0];
   return label.charAt(0).toUpperCase() + label.slice(1);
 }

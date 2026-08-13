@@ -36,13 +36,18 @@ export function useBookmarks(accessToken: string | null, folderId: string | null
     return bookmark;
   }, [folderId]);
 
+  // Reconciles against where the server says the bookmark now lives, not against
+  // the `updates` that were asked for - and handles the case the old branch had
+  // no answer for: a bookmark edited from the sidebar while a *different* folder
+  // is open. Moving one into the open folder used to map over a list it wasn't
+  // in yet, so the tile only appeared after a reload.
   const updateBookmark = useCallback(async (id: string, updates: Partial<Pick<Bookmark, 'domain' | 'name' | 'faviconUrl' | 'color' | 'folderId'>>) => {
     const updated = await apiPut<Bookmark>(`/api/v1/bookmarks/${id}`, updates);
-    if (updates.folderId && updates.folderId !== folderId) {
-      setBookmarks(prev => prev.filter(b => b.id !== id));
-    } else {
-      setBookmarks(prev => prev.map(b => b.id === id ? updated : b));
-    }
+    setBookmarks(prev => {
+      const present = prev.some(b => b.id === id);
+      if (updated.folderId !== folderId) return present ? prev.filter(b => b.id !== id) : prev;
+      return present ? prev.map(b => b.id === id ? updated : b) : [...prev, updated];
+    });
     return updated;
   }, [folderId]);
 

@@ -2,6 +2,39 @@
 
 Notable changes to Newt, newest first.
 
+## v1.18.1 - Links on your own network
+
+**2026-08-13**
+
+Bookmarks for things on your own network, and the reason editing any link looked
+like it did nothing.
+
+### A link on the LAN opens where it points
+
+A bookmark saved without a scheme is opened as `https://`, which is right for
+the open web and wrong for the thing on your desk. A NAS or a router at
+192.168.1.15 speaks plain http, so the tile led to a port nothing was listening
+on — and typing the `http://` back in did not help, because it was stripped on
+the way to the save. An explicit `http://` is now kept. `https://` is still
+dropped, since that is what a scheme-less bookmark already means, and keeping it
+would only put "https://" in front of every tile. An address also names its tile
+after itself rather than after its first number, so a new one arrives called
+192.168.1.15 instead of "192".
+
+### Edits from the sidebar that appeared not to save
+
+This is the reason the above looked like a broken Save button. Editing a link
+from the sidebar only refreshed the folder that happened to be open, so an edit
+to a link in any *other* folder was written to the server and then not shown —
+the panel kept the old name and address, and since that cache is also kept in
+local storage, so did the next tab. Moving a link into the folder you were
+looking at had the mirror-image problem: it did not appear until a reload. Both
+now update the folder the link is actually in.
+
+And a save that genuinely fails now says why, in the dialog, instead of leaving
+it open with everything still typed into it and nothing said. That applies to
+adding a link too, where hitting the 2000-bookmark ceiling had been silent.
+
 ## v1.18.0 - The editor stops stalling, and the server stops trusting addresses
 
 **2026-08-13**
