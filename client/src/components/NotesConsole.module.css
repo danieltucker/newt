@@ -125,6 +125,20 @@
   animation: fadeIn 0.15s ease;
 }
 
+/* The one badge here that reports a problem, so it wears --paper-danger rather
+   than the accent every other state in this header uses. Allowed to wrap: it
+   carries a reason, and a truncated reason is no better than none. */
+.errorBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper-danger-wash);
+  border: 1px solid var(--paper-danger-line);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--paper-danger-2);
+  animation: fadeIn 0.15s ease;
+}
+
 .headerHints {
   display: flex;
   align-items: center;

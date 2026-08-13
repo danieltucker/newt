@@ -526,39 +526,134 @@ function hostOf(url: string): string {
 // Resolves the subscriptions in scope for a request. `folder` narrows to one
 // category ('none' = Uncategorised); absent means everything, which is the
 // point of the unified feed.
+/**
+ * One page of the river: one row per story, newest first.
+ *
+ * ── One card per story ──
+ * Two feeds carrying the same article is ordinary, not exceptional: an
+ * aggregator links to a piece you also follow directly, or one publisher is
+ * reachable at two feed addresses (arstechnica.com/feed and
+ * feeds.arstechnica.com/arstechnica/index are different subscriptions dealing
+ * identical items). Each is its own FeedItem row — they have to be, since items
+ * are shared and read state hangs off them — so the river would deal the story
+ * once per feed.
+ *
+ * `linkKey` is the canonical article URL, the same key comments thread on, so it
+ * identifies the story rather than the route it arrived by. It is NOT NULL
+ * precisely so this cannot collapse the key-less rows together; see the column
+ * note in schema.prisma.
+ *
+ * ── Why this is raw SQL and not `distinct: ['linkKey']` ──
+ * Because Prisma's `distinct` is not a SQL DISTINCT. It emits the plain SELECT
+ * with an OFFSET and **no LIMIT**, reads the entire remainder of the table into
+ * the process, and dedupes and slices there. Measured on a 38-feed dev account:
+ * rendering ten cards shipped **4,198 rows and 11.7MB** out of Postgres, 7.3MB
+ * of which was the `content` column — full article HTML that this endpoint does
+ * not even return. Every feed load and every "load more" paid it, and it grows
+ * with the account.
+ *
+ * `DISTINCT ON` does it in the database and returns the ten rows asked for.
+ * Postgres requires the ORDER BY of a DISTINCT ON to lead with the distinct
+ * expression, which is why this is a subquery: the inner sort picks *which copy
+ * of each story survives*, the outer one orders the river.
+ *
+ * The inner order is the surviving copy rule, unchanged: the most recent time
+ * the story surfaced. Keeping the *earliest* copy would file a story that
+ * resurfaced this morning back at its original date, halfway down the feed.
+ * `firstSeenAt` is the tiebreak rather than `fetchedAt` because fetchedAt is
+ * rewritten on every poll (and en masse on a 304), which made the winner flip
+ * between refreshes — the card swapped its title and source, and a story you had
+ * read came back unread. `id` settles the rest, so the choice is total and
+ * stable.
+ *
+ * Only the columns the response actually uses are selected. `content` is the
+ * big one and is never returned here.
+ */
+interface StoryRow {
+  id: string;
+  feedId: string;
+  title: string;
+  link: string;
+  pubDate: Date | null;
+  fetchedAt: Date;
+  firstSeenAt: Date;
+  readTime: number | null;
+  snippet: string | null;
+  imageUrl: string | null;
+  categories: string[];
+}
+
+async function storyPage(
+  userId: string,
+  feedIds: string[],
+  includeDismissed: boolean,
+  offset: number,
+  limit: number,
+): Promise<StoryRow[]> {
+  if (feedIds.length === 0) return [];
+  return prisma.$queryRaw<StoryRow[]>`
+    SELECT s."id", s."feedId", s."title", s."link", s."pubDate", s."fetchedAt",
+           s."readTime", s."snippet", s."imageUrl", s."categories"
+    FROM (
+      SELECT DISTINCT ON (i."linkKey")
+             i."id", i."feedId", i."title", i."link", i."pubDate", i."fetchedAt",
+             i."firstSeenAt", i."readTime", i."snippet", i."imageUrl", i."categories"
+      FROM "FeedItem" i
+      WHERE i."feedId" = ANY(${feedIds}::text[])
+        AND (${includeDismissed}::boolean OR NOT EXISTS (
+          SELECT 1 FROM "DismissedFeedItem" d
+          WHERE d."userId" = ${userId} AND d."itemId" = i."id"))
+      ORDER BY i."linkKey", i."pubDate" DESC, i."firstSeenAt" DESC, i."id" ASC
+    ) s
+    -- firstSeenAt, never fetchedAt. fetchedAt is rewritten on every poll and en
+    -- masse on a 304, so ordering the river by it would reshuffle the cards
+    -- under the reader each time the scheduler ran. It is carried out of the
+    -- subquery for this sort alone; the response does not return it.
+    ORDER BY s."pubDate" DESC, s."firstSeenAt" DESC, s."id" ASC
+    OFFSET ${offset} LIMIT ${limit}
+  `;
+}
+
 // ── Counting stories rather than rows ────────────────────────────────────────
 //
-// The river shows one card per `linkKey` (see the `distinct` in /articles), so
-// its totals have to count keys, not FeedItem rows, or the counts describe a
-// feed nobody is looking at: "Load more · 40 remaining" for 31 articles, and an
-// Unread chip permanently ahead of the list beneath it.
+// The river shows one card per `linkKey` (see storyPage above), so its totals
+// have to count keys, not FeedItem rows, or the counts describe a feed nobody is
+// looking at: "Load more · 40 remaining" for 31 articles, and an Unread chip
+// permanently ahead of the list beneath it.
 //
 // `COUNT(DISTINCT …)` is the one thing Prisma cannot express - `count()` takes
 // no `distinct`, and doing it through `groupBy`/`findMany` means shipping one
-// row per story to the process to call `.length` on. These two scalars are the
-// only raw SQL in the server, and that is the reason for them.
+// row per story to the process to call `.length` on.
 //
 // Both counts assume read and dismissed state is uniform across the copies of a
 // story, which is what storyItemIds() below guarantees.
+// Both numbers in one pass. They were two calls differing only in whether the
+// read filter applied, which meant scanning every item in every one of the
+// user's feeds twice per request - and a third time for the page itself. An
+// aggregate FILTER answers the second from the same scan.
 async function countStories(
   userId: string,
   feedIds: string[],
   includeDismissed: boolean,
-  unreadOnly: boolean,
-): Promise<number> {
-  if (feedIds.length === 0) return 0;
-  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(DISTINCT i."linkKey") AS count
+): Promise<{ total: number; unread: number }> {
+  if (feedIds.length === 0) return { total: 0, unread: 0 };
+  const rows = await prisma.$queryRaw<{ total: bigint; unread: bigint }[]>`
+    SELECT COUNT(DISTINCT i."linkKey") AS total,
+           COUNT(DISTINCT i."linkKey") FILTER (
+             WHERE NOT EXISTS (
+               SELECT 1 FROM "ReadFeedItem" r
+               WHERE r."userId" = ${userId} AND r."itemId" = i."id")
+           ) AS unread
     FROM "FeedItem" i
     WHERE i."feedId" = ANY(${feedIds}::text[])
       AND (${includeDismissed}::boolean OR NOT EXISTS (
         SELECT 1 FROM "DismissedFeedItem" d
         WHERE d."userId" = ${userId} AND d."itemId" = i."id"))
-      AND (${!unreadOnly}::boolean OR NOT EXISTS (
-        SELECT 1 FROM "ReadFeedItem" r
-        WHERE r."userId" = ${userId} AND r."itemId" = i."id"))
   `;
-  return Number(rows[0]?.count ?? 0);
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    unread: Number(rows[0]?.unread ?? 0),
+  };
 }
 
 /**
@@ -820,49 +915,13 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
     const feedById = new Map(feeds.map(f => [f.id, f]));
 
     const feedIds = feeds.map(f => f.id);
-    const where = {
-      feedId: { in: feedIds },
-      ...(includeAll ? {} : { dismissals: { none: { userId: req.userId! } } }),
-    };
     // `unread` spans the whole river, not the page being returned. The client
     // shows it on the Unread filter chip, which sits next to site tiles whose
     // badges are counted the same way (see lib/unread.ts) — a chip counting only
     // the ten loaded articles would say "1" beside a tile saying "19".
-    const [items, total, unread] = await Promise.all([
-      prisma.feedItem.findMany({
-        where,
-        // ── One card per story ──
-        // Two feeds carrying the same article is ordinary, not exceptional: an
-        // aggregator links to a piece you also follow directly, or one publisher
-        // is reachable at two feed addresses (arstechnica.com/feed and
-        // feeds.arstechnica.com/arstechnica/index are different subscriptions
-        // dealing identical items). Each is its own FeedItem row — they have to
-        // be, since items are shared and read state hangs off them — so the
-        // river dealt the story once per feed.
-        //
-        // linkKey is the canonical article URL, the same key comments thread on,
-        // so it identifies the story rather than the route it arrived by. It is
-        // NOT NULL precisely so this can't collapse the key-less rows together;
-        // see the column note in schema.prisma.
-        distinct: ['linkKey'],
-        // The surviving copy is the first in this order: the most recent time
-        // the story surfaced. That isn't an arbitrary pick - in a
-        // reverse-chronological river it is the only coherent one. Keeping the
-        // *earliest* copy would file a story that resurfaced this morning back
-        // at its original date, halfway down the feed, where nobody would see it.
-        //
-        // firstSeenAt replaces fetchedAt as the tiebreak because fetchedAt is
-        // rewritten on every poll (and en masse on a 304), which made the winner
-        // between two same-dated copies change from one refresh to the next -
-        // the card would swap its title and source, and a story you had read
-        // would come back unread. firstSeenAt is written once. `id` settles the
-        // rest, so the choice is total and stable.
-        orderBy: [{ pubDate: 'desc' }, { firstSeenAt: 'desc' }, { id: 'asc' }],
-        skip: offset,
-        take: limit,
-      }),
-      countStories(req.userId!, feedIds, includeAll, false),
-      countStories(req.userId!, feedIds, includeAll, true),
+    const [items, { total, unread }] = await Promise.all([
+      storyPage(req.userId!, feedIds, includeAll, offset, limit),
+      countStories(req.userId!, feedIds, includeAll),
     ]);
 
     const reads = await prisma.readFeedItem.findMany({

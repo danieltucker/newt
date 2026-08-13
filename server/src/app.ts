@@ -103,6 +103,26 @@ app.use(cors({
   origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   credentials: true,
 }));
+// ── Body limits ───────────────────────────────────────────────────────────
+// Settings gets its own, and gets it first.
+//
+// The notes tree lives in the settings blob and is written *whole* on every
+// save (see routes/settings and the versioning note in NotesConsole), so the
+// request grows with everything the user has ever written. Against the 256kb
+// below that is a cliff: past it every save 413s, forever, and since the
+// console keeps retrying what it could not send, the notes silently stop being
+// saved at the moment there are enough of them to be worth saving. Nothing
+// warned, because nothing was checking.
+//
+// 2MB is roughly a third of a million words of note text. Images are not in
+// here - they upload separately to /api/v1/images and appear in the HTML as
+// URLs - so this only has to hold prose and markup.
+//
+// Mounted before the general parser rather than after: express.json marks a
+// request as parsed, and the first parser to run is the one whose limit
+// applies. Reversed, the 256kb one would reject the body before this was ever
+// consulted.
+app.use('/api/v1/settings', express.json({ limit: '2mb' }));
 app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 

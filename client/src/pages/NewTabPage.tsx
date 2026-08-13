@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, lazy, Suspense } from 'react';
 import styles from './NewTabPage.module.css';
 import ShellBar, { RAIL_NARROW } from '../components/ShellBar';
 import SiteFooter from '../components/SiteFooter';
@@ -17,23 +17,46 @@ import SettingsModal, { Section as SettingsSection, UserProfile } from '../compo
 import ImportBookmarksModal from '../components/ImportBookmarksModal';
 import ArticleModal from '../components/ArticleModal';
 import Console from '../components/Console';
-import NotesConsole from '../components/NotesConsole';
 import FeedPanel from '../components/FeedPanel';
 import FeedManagerModal from '../components/FeedManagerModal';
 import FeedOnboarding from '../components/FeedOnboarding';
 import SaveArticleModal from '../components/SaveArticleModal';
-import AdminModal from '../components/AdminModal';
 import NotificationsModal from '../components/NotificationsModal';
 import ArticleDetailModal from '../components/ArticleDetailModal';
 import ProfilePage from './ProfilePage';
 import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
 import SitePage from './SitePage';
-import BlogEditorPage from './BlogEditorPage';
+// ── Split out of the main bundle ──────────────────────────────────────────
+// Three of the heaviest things this shell can show, none of which an ordinary
+// new tab ever opens: the admin panel is ~3,400 lines that only an admin sees,
+// and the composer and Explore are both deliberate destinations you arrive at
+// by pressing something. Static imports put all three in the first chunk every
+// visitor downloads and parses before the page could paint.
+//
+// Each is already rendered behind a condition, so the boundary was free. They
+// are *not* wrapped in a spinner - see FEATURE_FALLBACK below for why.
+//
 // Research was renamed Explore in v1.17.0. Only what a reader sees changed —
 // the file, the API routes and the tables kept the old name, so the rename
 // carried no migration. This is the seam between the two.
-import ExplorePage from './ResearchPage';
+const AdminModal = lazy(() => import('../components/AdminModal'));
+const BlogEditorPage = lazy(() => import('./BlogEditorPage'));
+const ExplorePage = lazy(() => import('./ResearchPage'));
+// The notes console, for the same reason - it opens on a keypress, over a page
+// that is already there. It does *not* take RichEditor out of the main bundle
+// with it: CommentsPanel imports the editor too, and the feed and reading list
+// import `CommentBar` from CommentsPanel, so the whole module (editor included)
+// is on the first-paint path regardless. Getting the editor out means giving
+// CommentBar its own file first.
+const NotesConsole = lazy(() => import('../components/NotesConsole'));
+
+// Nothing, deliberately. Each of these opens over a page that is already
+// drawn, and the chunk arrives in a few tens of milliseconds on any connection
+// that just served the app - so a spinner would flash and leave, which reads as
+// a glitch. An empty fallback leaves what is on screen alone until the real
+// thing is ready to replace it.
+const FEATURE_FALLBACK = null;
 import { parseArticlePath } from '../utils/articleUrl';
 import { blogPathFor, blogRefOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
@@ -983,39 +1006,43 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
               />
             )}
             {view.kind === 'editor' && (
-              // Keyed on the post so switching between two of them remounts the
-              // composer: RichEditor reads its HTML on mount only, and the
-              // autosave timers belong to the draft that started them.
-              <BlogEditorPage
-                key={view.postId ?? 'new'}
-                postId={view.postId}
-                accessToken={accessToken}
-                username={username}
-                navigate={navigate}
-                hasModel={llm.hasModel}
-              />
+              <Suspense fallback={FEATURE_FALLBACK}>
+                {/* Keyed on the post so switching between two of them remounts
+                    the composer: RichEditor reads its HTML on mount only, and
+                    the autosave timers belong to the draft that started them. */}
+                <BlogEditorPage
+                  key={view.postId ?? 'new'}
+                  postId={view.postId}
+                  accessToken={accessToken}
+                  username={username}
+                  navigate={navigate}
+                  hasModel={llm.hasModel}
+                />
+              </Suspense>
             )}
             {view.kind === 'explore' && (
-              <ExplorePage
-                navigate={navigate}
-                threadId={view.threadId}
-                // Built here rather than in App so the phrasing of the opening
-                // question lives next to the page that sends it. A question the
-                // reader actually typed (?q=, from the search bar's /ask) always
-                // wins over the generated one — it is what they meant to ask.
-                seed={view.seedQuestion || view.seedUrl ? {
-                  question: view.seedQuestion || (view.seedTitle
-                    ? `Go deeper on “${view.seedTitle}”. What is the wider context, what is contested, and what should I read next?`
-                    : 'Go deeper on this article: what is the wider context, what is contested, and what should I read next?'),
-                  url: view.seedUrl ?? undefined,
-                } : null}
-                hasModel={llm.hasModel}
-                onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
-                // The source card at the top of a thread opens the same reader
-                // the feed does — the article's text and its comment thread,
-                // over the conversation rather than away from it.
-                onOpenArticle={openThread}
-              />
+              <Suspense fallback={FEATURE_FALLBACK}>
+                <ExplorePage
+                  navigate={navigate}
+                  threadId={view.threadId}
+                  // Built here rather than in App so the phrasing of the opening
+                  // question lives next to the page that sends it. A question the
+                  // reader actually typed (?q=, from the search bar's /ask) always
+                  // wins over the generated one — it is what they meant to ask.
+                  seed={view.seedQuestion || view.seedUrl ? {
+                    question: view.seedQuestion || (view.seedTitle
+                      ? `Go deeper on “${view.seedTitle}”. What is the wider context, what is contested, and what should I read next?`
+                      : 'Go deeper on this article: what is the wider context, what is contested, and what should I read next?'),
+                    url: view.seedUrl ?? undefined,
+                  } : null}
+                  hasModel={llm.hasModel}
+                  onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
+                  // The source card at the top of a thread opens the same reader
+                  // the feed does — the article's text and its comment thread,
+                  // over the conversation rather than away from it.
+                  onOpenArticle={openThread}
+                />
+              </Suspense>
             )}
           </div>
         ) : (
@@ -1317,16 +1344,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       )}
 
       {showAdmin && (
-        <AdminModal
-          currentUsername={username}
-          onClose={() => { setShowAdmin(false); setFocusReportId(null); }}
-          // Every @handle in the admin tables routes to that person's profile.
-          // The panel has to close first - the profile renders in the shell
-          // underneath it.
-          onViewProfile={name => { setShowAdmin(false); onViewProfile?.(name); }}
-          focusReportId={focusReportId}
-          onClearFocusReport={() => setFocusReportId(null)}
-        />
+        <Suspense fallback={FEATURE_FALLBACK}>
+          <AdminModal
+            currentUsername={username}
+            onClose={() => { setShowAdmin(false); setFocusReportId(null); }}
+            // Every @handle in the admin tables routes to that person's profile.
+            // The panel has to close first - the profile renders in the shell
+            // underneath it.
+            onViewProfile={name => { setShowAdmin(false); onViewProfile?.(name); }}
+            focusReportId={focusReportId}
+            onClearFocusReport={() => setFocusReportId(null)}
+          />
+        </Suspense>
       )}
 
       {showNotifications && (
@@ -1378,22 +1407,24 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           seed it with no notes and a blank one made to fill the gap - and then
           fold that blank note into the real tree when the settings arrived. */}
       {showNotes && settingsLoaded && (
-        <NotesConsole
-          docs={settings.noteDocs ?? []}
-          folders={settings.noteFolders ?? []}
-          order={settings.noteTreeOrder ?? []}
-          rev={settings.notesRev ?? 0}
-          sidebarWidth={settings.noteSidebarWidth ?? 210}
-          onSidebarWidth={noteSidebarWidth => updateSetting({ noteSidebarWidth })}
-          legacyNotes={settings.notes}
-          onSave={saveNotes}
-          initialNoteId={notesTarget?.id}
-          initialQuery={notesTarget?.query}
-          references={noteReferences}
-          onTurnIntoPost={handleTurnNoteIntoPost}
-          closing={notesFading}
-          onClose={closeNotes}
-        />
+        <Suspense fallback={FEATURE_FALLBACK}>
+          <NotesConsole
+            docs={settings.noteDocs ?? []}
+            folders={settings.noteFolders ?? []}
+            order={settings.noteTreeOrder ?? []}
+            rev={settings.notesRev ?? 0}
+            sidebarWidth={settings.noteSidebarWidth ?? 210}
+            onSidebarWidth={noteSidebarWidth => updateSetting({ noteSidebarWidth })}
+            legacyNotes={settings.notes}
+            onSave={saveNotes}
+            initialNoteId={notesTarget?.id}
+            initialQuery={notesTarget?.query}
+            references={noteReferences}
+            onTurnIntoPost={handleTurnNoteIntoPost}
+            closing={notesFading}
+            onClose={closeNotes}
+          />
+        </Suspense>
       )}
     </div>
     </>

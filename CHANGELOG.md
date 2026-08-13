@@ -51,6 +51,26 @@ reconciliation banner, all because of a slow connection and nothing else.
 Only one save is in the air at a time now. Anything typed while one is out goes
 in the next, which fires as soon as the reply lands.
 
+### Notes could grow until they silently stopped saving
+
+The notes tree is written whole into the settings blob on every save, so the
+request grows with everything you have ever written — and the general request
+body cap was 256kb. Past that, every save failed with a 413, for ever. Nothing
+said so: the text stays on screen either way, and the first anyone would know is
+a reload. The notes stopped being saved at exactly the point there were enough
+of them to be worth saving.
+
+Settings now has its own 2MB body limit, which is around a third of a million
+words of note text (images upload separately and appear in the note as URLs, so
+they do not count against it). And a save that does not land now says so in the
+console header, and keeps saying so until one does — with the specific advice
+for the case that is fixable by hand, which is to empty Recently Deleted.
+
+The retry that sits behind that badge backs off, doubling to a thirty-second
+ceiling. It briefly did not: an earlier fix in this release re-sent a failed save
+immediately, which for anything that fails *every* time would have been an
+unbroken loop of failing requests for as long as the console stayed open.
+
 ### Refresh tokens and 2FA secrets are no longer stored in the clear
 
 Two credentials were sitting in the database as plain text.
@@ -169,6 +189,42 @@ alongside the others is that fixing it would have been rewriting code nobody
 calls. Feed badges have been counted from stored read/dismissed state rather
 than from a fresh fetch for several releases; this was the fetch they used to
 come from.
+
+### The feed was reading the whole river to show you ten cards
+
+The worst thing found in this release, and it had been there a long time.
+
+Prisma's `distinct` is not a SQL `DISTINCT`. Asked for one deduplicated page of
+articles, it sent Postgres a plain SELECT with an OFFSET and **no LIMIT**, pulled
+the entire remainder of the table into the server, and did the deduplicating and
+the slicing there. Measured on a 38-feed account: rendering ten cards moved
+**4,198 rows and 11.7MB** out of the database, 7.3MB of which was the `content`
+column — full article HTML that this endpoint does not even return. Every feed
+load and every "load more" paid it, and it grew with the account.
+
+It is a `DISTINCT ON` now, which does the work in the database and returns the
+ten rows asked for. The two totals beside it — how many stories there are, and
+how many are unread — were two separate full scans differing only in one filter;
+an aggregate `FILTER` answers both from one pass. Together, the database work
+behind one page of the feed went from **166ms to 30ms**, and the 11.7MB is gone.
+
+Every page and both totals were checked against the old implementation across
+three accounts with real read and dismissed state, at six offsets each: identical
+ids, identical order, no duplicates.
+
+### A smaller first download
+
+Nothing was code-split: every visitor downloaded the admin panel, the composer,
+Explore, the notes console and all the marketing pages before the new tab could
+paint, whether or not they would ever open one of them. Those are all reached by
+pressing something or following a link, so each is now fetched when it is asked
+for. The first load is **290KB of JavaScript down to 162KB**, gzipped, and the
+stylesheet follows its component out of the main bundle too.
+
+The one thing still on the critical path that does not belong there is the rich
+text editor, which the feed drags in sideways: the comment pill on every card
+comes from the same module as the comment panel, and the panel imports the
+editor. Splitting the pill out would take another 44KB off, and is not done yet.
 
 ### Feed badges stop counting one query at a time
 

@@ -15,7 +15,8 @@
     "check:html": "node scripts/check-html.mjs"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "playwright": "^1.61.1"
   },
   "allowScripts": {
     "@prisma/client@7.8.0": true,
@@ -23,8 +24,5 @@
     "esbuild@0.21.5": true,
     "prisma@7.8.0": true,
     "@prisma/engines@7.8.0": true
-  },
-  "dependencies": {
-    "playwright": "^1.61.1"
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import AuthPage from './pages/AuthPage';
@@ -7,9 +7,26 @@ import NewTabPage, { ShellView } from './pages/NewTabPage';
 import ProfilePage from './pages/ProfilePage';
 import PublicArticlePage from './pages/PublicArticlePage';
 import BlogPostPage from './pages/BlogPostPage';
-import FeaturePage from './pages/FeaturePage';
-import HubPage from './pages/HubPage';
-import SelfHostPage from './pages/SelfHostPage';
+
+// ── Split out of the main bundle ──────────────────────────────────────────
+// The marketing pages and the cross-author hubs. Nobody reaches these by using
+// the app - they are arrived at from a link or a search result, one at a time -
+// so shipping all four to every visitor who opens a new tab was paying for
+// pages that particular visitor will almost certainly never see.
+//
+// LandingPage, AuthPage and NewTabPage stay eager on purpose: between them they
+// are the first thing every visitor sees, signed in or out, and putting a
+// network round trip in front of a first paint is the opposite of the point.
+const FeaturePage = lazy(() => import('./pages/FeaturePage'));
+const HubPage = lazy(() => import('./pages/HubPage'));
+const SelfHostPage = lazy(() => import('./pages/SelfHostPage'));
+
+// These render as the whole page rather than over one, so unlike the in-shell
+// splits there is nothing already on screen to leave alone. Still nothing
+// rather than a spinner: the document has a server-rendered shell behind it
+// (see lib/htmlShell), and a flash of chrome-less loader over that is worse
+// than a beat of the shell the visitor is already reading.
+const PAGE_FALLBACK = null;
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
 import { parseSitePath } from './utils/siteUrl';
@@ -166,10 +183,18 @@ export default function App() {
   const signedIn = Boolean(accessToken && username);
   const featureSection = parseFeaturePath(path);
   if (featureSection) {
-    return <FeaturePage section={featureSection} navigate={navigate} signedIn={signedIn} />;
+    return (
+      <Suspense fallback={PAGE_FALLBACK}>
+        <FeaturePage section={featureSection} navigate={navigate} signedIn={signedIn} />
+      </Suspense>
+    );
   }
   if (isSelfHostPath(path)) {
-    return <SelfHostPage navigate={navigate} signedIn={signedIn} />;
+    return (
+      <Suspense fallback={PAGE_FALLBACK}>
+        <SelfHostPage navigate={navigate} signedIn={signedIn} />
+      </Suspense>
+    );
   }
 
   // The cross-author hubs, matched here for the same reason the marketing pages
@@ -178,10 +203,18 @@ export default function App() {
   // reader to their new tab would break every link the crawlable copy emits.
   const hubTag = parseTagPath(path);
   if (hubTag) {
-    return <HubPage hub={{ kind: 'tag', tag: hubTag }} signedIn={signedIn} navigate={navigate} />;
+    return (
+      <Suspense fallback={PAGE_FALLBACK}>
+        <HubPage hub={{ kind: 'tag', tag: hubTag }} signedIn={signedIn} navigate={navigate} />
+      </Suspense>
+    );
   }
   if (isRecentPath(path)) {
-    return <HubPage hub={{ kind: 'recent' }} signedIn={signedIn} navigate={navigate} />;
+    return (
+      <Suspense fallback={PAGE_FALLBACK}>
+        <HubPage hub={{ kind: 'recent' }} signedIn={signedIn} navigate={navigate} />
+      </Suspense>
+    );
   }
 
   // Everything public, for a visitor who isn't signed in: a shared /u/<name>

@@ -11,6 +11,7 @@ import { CSS } from '@dnd-kit/utilities';
 import styles from './NotesConsole.module.css';
 import RichEditor from './RichEditor';
 import { NoteDoc, NoteFolder } from '../hooks/useSettings';
+import { apiErrorText } from '../services/api';
 import { searchNotes } from '../utils/noteText';
 import { markdownToHtml } from '../utils/noteMigrate';
 import { uploadImage } from '../utils/imageUpload';
@@ -512,6 +513,11 @@ export default function NotesConsole({
   // written on another device. Silence there would be worse than a badge: the
   // tree gains rows nobody in this window added.
   const [merged, setMerged] = useState(false);
+  // Why the last save did not land, if it did not. Notes are written to a ref
+  // and posted on a debounce, so without this a failing save is completely
+  // invisible: the text stays on screen, nothing says it is only on screen, and
+  // the first anyone knows is a reload. It stays up until a save succeeds.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [armEmpty, setArmEmpty] = useState(false);   // "Empty" asks once before it throws work away
   const [query, setQuery] = useState(initialQuery);
@@ -523,6 +529,8 @@ export default function NotesConsole({
   // A save is in the air. See flush - overlapping writes make the server
   // reconcile this console against itself.
   const savingRef = useRef(false);
+  // Consecutive failed saves, for the retry backoff in flush.
+  const failuresRef = useRef(0);
   // Which revision of the tree this console is editing. Sent with every save so
   // the server can tell an edit made against the current notes from one made
   // against whatever this tab loaded hours ago; replaced by whatever comes back.
@@ -571,6 +579,25 @@ export default function NotesConsole({
     // saving it back would merge again on the next reply and never settle.
   }, []);
 
+  /**
+   * What to put in the header when a save does not land.
+   *
+   * Short, because it sits in a status strip, and specific about the two causes
+   * a reader can actually do something about. "Too large" is the one worth
+   * naming outright: the tree is written whole on every save, so the fix is to
+   * empty Recently Deleted or move something out - and nothing else on screen
+   * would ever suggest that.
+   */
+  function saveErrorText(err: unknown): string {
+    const text = apiErrorText(err, '');
+    if (/too large|entity\.too\.large|413/i.test(text)) {
+      return 'these notes are too big to save. Try emptying Recently Deleted.';
+    }
+    if (/401|unauthor/i.test(text)) return 'you are signed out. Sign in again to save.';
+    if (!navigator.onLine) return 'you are offline. It will retry.';
+    return 'retrying…';
+  }
+
   const flush = useCallback(() => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     if (!dirtyRef.current) return;
@@ -594,16 +621,29 @@ export default function NotesConsole({
             setTimeout(() => setMerged(false), 3200);
           }
         }
+        savingRef.current = false;
+        failuresRef.current = 0;
+        setSaveError(null);
         setSaved(true);
         setTimeout(() => setSaved(false), 1400);
-      })
-      .catch(() => { dirtyRef.current = true; })   // unsent: keep it pending
-      .finally(() => {
-        savingRef.current = false;
         // Anything typed while that was out has to go now - it was skipped
         // above rather than queued, and there may be no further keystroke to
         // schedule another save.
         if (dirtyRef.current) flushRef.current();
+      })
+      .catch((err: unknown) => {
+        savingRef.current = false;
+        dirtyRef.current = true;   // still unsent
+        // Backed off, never immediate. This used to re-fire from a `finally`
+        // the moment it failed, which for anything that fails *every* time -
+        // a tree too big for the request body, an expired session - was an
+        // unbroken loop of failing requests for as long as the console stayed
+        // open. Doubling from 1s to a 30s ceiling retries a blip quickly and a
+        // brick wall twice a minute.
+        const wait = Math.min(30_000, 1000 * 2 ** failuresRef.current);
+        failuresRef.current += 1;
+        setSaveError(saveErrorText(err));
+        saveTimer.current = setTimeout(() => flushRef.current(), wait);
       });
   }, [onSave, adopt]);
   // flush re-enters itself through a ref: it is the value of the callback at
@@ -971,12 +1011,19 @@ export default function NotesConsole({
           <div className={styles.header}>
             <span className={styles.headerTitle}>NOTES</span>
             <span className={styles.headerRight}>
-              {merged && (
+              {/* Ahead of the other two, and it does not time out: "Saved"
+                  disappearing is fine, "not saved" disappearing is not. */}
+              {saveError && (
+                <span className={styles.errorBadge} role="status" title={saveError}>
+                  Not saved — {saveError}
+                </span>
+              )}
+              {merged && !saveError && (
                 <span className={styles.mergedBadge} title="Notes written on another device have been folded in">
                   Merged in newer notes
                 </span>
               )}
-              {saved && !merged && <span className={styles.savedBadge}>Saved</span>}
+              {saved && !merged && !saveError && <span className={styles.savedBadge}>Saved</span>}
               <span className={styles.headerHints}>
                 <kbd>/</kbd>commands
                 <span className={styles.dot}>·</span>
