@@ -23,7 +23,7 @@ address and Newt derives the name, the colour and the favicon; type `http://` in
 front and it keeps it, which is what makes a bookmark for a NAS or a router on
 your own network work.
 
-![Bookmark folders mid-drag, showing the drop gap open between two tiles](client/public/shots/bookmarks.png)
+![Bookmark folders in the light theme, a tile mid-drag with the drop gap open between two others](client/public/shots/bookmarks-light.png)
 
 ### Feeds
 
@@ -45,7 +45,7 @@ Save articles with tags, notes and an estimated read time. Finished pieces go to
 the Library, which is organised with shelves of your own. Folders contain, tags
 describe, and the two are deliberately separate systems.
 
-![The reading list in magazine layout, cover artwork and read times](client/public/shots/reading.png)
+![The reading list open over the page in the light theme: shelf chips across the top, then a grid of saved articles with cover artwork and read times](client/public/shots/reading-light.png)
 
 ### Explore, Proofread and /ask (bring your own model)
 
@@ -92,7 +92,7 @@ A notes console with folders, rich text, slash commands, references to your own
 saved articles, and a recently deleted shelf. The tree is versioned, so a tab
 you left open all morning cannot post its stale copy over a day of writing.
 
-![The notes console over the dimmed page, slash menu open on a note](client/public/shots/notes.png)
+![The notes console over the dimmed page, folders on the left and the slash menu open in a note](client/public/shots/notes-light.png)
 
 ### Posting and profiles
 
@@ -103,7 +103,10 @@ with nesting, and a public post list at `/u/<name>`.
 
 ![A published post: cover image, byline, an article reference card in the body, and the comment thread below](client/public/shots/blog.png)
 
-![A profile page seen by another user, with the Follow button and post list](client/public/shots/social.png)
+A profile is a public page. This one is live at
+[newt.page/u/samwichgamgee](https://newt.page/u/samwichgamgee):
+
+![A public profile: avatar, post and comment counts, and the Posts tab listing a post built around a saved article](client/public/shots/profile-light.png)
 
 ### The rest
 
@@ -121,7 +124,8 @@ with nesting, and a public post list at `/u/<name>`.
   There is no SMTP anywhere in this server.
 - **Admin panel.** Feed health, a searchable list of every feed on the instance,
   a refresh log, error log and user administration.
-- **Themes.** Dark, light and auto.
+- **Themes.** Dark, light and auto. The screenshots above mix the two, which is
+  the quickest way to see that neither is an afterthought.
 - **2FA.** TOTP with QR enrolment.
 - **Console.** Backtick (`` ` ``) toggles a command palette: `ip`, `dns`,
   `speedtest`, `theme`, `folder`, `add`, `version`, and `ping` / `tracert` for
@@ -255,13 +259,15 @@ hand-captured, from seeded fictional accounts:
 
 ```bash
 npm run seed-showcase --workspace=server   # build the accounts and their content
-npm run shots                              # capture all of them
+npm run shots                              # capture all of them, dark theme
+npm run shots -- --light                   # the same set in light, as <id>-light.png
 npm run shots -- feeds notes               # or just the ones you need
 npm run marketing:check                    # confirm the pages render them
 ```
 
-They land in `client/public/shots/`. See the README in that folder for the
-per-shot notes.
+They land in `client/public/shots/`. One of them, `profile`, is taken against
+the live site signed out, so it needs neither the dev server nor the database.
+See the README in that folder for the per-shot notes.
 
 ## Project Structure
 

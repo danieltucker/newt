@@ -1,8 +1,12 @@
 # Landing page screenshots
 
-Seven images, all taken. They are generated rather than hand-captured, from a
-seeded set of accounts and a Playwright script, so re-taking them after a UI
-change is two commands rather than an afternoon.
+Generated rather than hand-captured, from a seeded set of accounts and a
+Playwright script, so re-taking them after a UI change is two commands rather
+than an afternoon.
+
+Two sets: `<id>.png` is the dark theme, `<id>-light.png` the light one. The
+landing page uses the dark set; the repo README mixes them, which is the
+cheapest way to show that both themes are real.
 
 ## Re-taking them
 
@@ -11,9 +15,15 @@ With the dev servers running (`npm run dev` from the repo root):
 ```bash
 npm run seed-showcase --workspace=server   # build the accounts and their content
 npm run shots                              # capture all of them into this folder
+npm run shots -- --light                   # the same, into <id>-light.png
 npm run shots -- feeds notes               # or just the ones you need
 npm run marketing:check                    # confirm the pages render them
 ```
+
+`--light` switches the account's theme through the console's `theme` command
+before capturing. The theme is a stored *setting*, so every run sets it
+explicitly: without that, a dark run following a light one would quietly write
+a second set of light shots under the dark names.
 
 `marketing:check` walks the landing page, all six feature pages and
 /self-hosting **through the nav menu**, and fails on either of the two ways
@@ -48,6 +58,21 @@ between runs. Two levers, in `scripts/shots.mjs` and `seedShowcase.ts`:
 - the embed variant in `seedShowcase.ts` — `'small'` instead of `'large'` makes
   the card ~90px rather than ~330px and buys back the whole cover, at the cost
   of a less striking card.
+
+## `profile` is the odd one out
+
+Every other shot is the local dev server signed in as a seeded account.
+`profile` is **the live site, signed out**: `https://newt.page/u/samwichgamgee`.
+It needs neither the dev server nor the database, and it is in the set because a
+profile with two dozen real posts on it argues for the feature in a way the
+seeded cast cannot.
+
+Signed out there is no settings blob to read a theme from and the app's own
+default is an explicit dark, so this shot seeds `localStorage.theme` before the
+first paint rather than driving the console.
+
+It is the one shot whose content this repo does not control. If the framing
+drifts, the profile behind it changed.
 
 ## Two things worth knowing
 

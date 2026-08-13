@@ -4,11 +4,13 @@
 //
 //   node scripts/shots.mjs               # every shot
 //   node scripts/shots.mjs hero feeds    # just those
+//   node scripts/shots.mjs --light       # the light theme, into <id>-light.png
 //   node scripts/shots.mjs --debug feeds # also dump the page's structure
 //   node scripts/shots.mjs --headed      # watch it happen, leave the browser open
 //
 // Files land in client/public/shots/, which is where `src: '/shots/<id>.png'`
-// in marketing/sections.ts points.
+// in marketing/sections.ts points. A --light run writes a parallel set beside
+// them rather than over them; the README mixes the two.
 //
 // Re-seed immediately before capturing. The unread state the hero and feeds
 // shots depend on is perishable: the background feed scheduler keeps pulling in
@@ -21,6 +23,9 @@
 // for the Friends tab and an un-followed Follow button in one frame. ProfilePage
 // renders the first only when `profile.isSelf` and the second only when it
 // isn't. Both readings are captured — see the two entries at the end of SHOTS.
+//
+// `profile` is the ninth and the odd one out: live site, signed out, no seed.
+// It needs neither the dev server nor the database.
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -36,6 +41,12 @@ const args = process.argv.slice(2);
 // browser, and is the one that leaves it open at the end.
 const DEBUG = args.includes('--debug');
 const HEADED = args.includes('--headed');
+// --light captures the light theme instead, into `<id>-light.png`. The two sets
+// live side by side rather than one overwriting the other, because the README
+// and the feature pages mix them.
+const LIGHT = args.includes('--light');
+const SUFFIX = LIGHT ? '-light' : '';
+const THEME = LIGHT ? 'light' : 'dark';
 const only = args.filter(a => !a.startsWith('--'));
 
 // Size per the spec sheet in marketing/sections.ts.
@@ -48,6 +59,7 @@ const SIZES = {
   blog: [1200, 900],
   social: [1200, 800],
   'social-friends': [1200, 800],
+  profile: [1200, 900],
 };
 
 async function signIn(page, username) {
@@ -77,6 +89,32 @@ async function signIn(page, username) {
   await page.getByRole('button', { name: 'Open notes' })
     .waitFor({ state: 'visible', timeout: 45000 });
   await settle(page);
+  await setTheme(page);
+}
+
+/**
+ * Put the account on the theme this run is capturing.
+ *
+ * Set every run, not only the light one: the theme is a stored *setting*, so
+ * whichever value the last run left behind is the one the next one inherits.
+ * A dark run after a light one would otherwise silently produce a second set of
+ * light shots named as though they were dark.
+ *
+ * Driven through the console command rather than the settings screen because it
+ * is one line and it is the same code path a user takes. `colorScheme` on the
+ * context is not enough on its own: it only decides what `auto` resolves to, and
+ * the default setting is an explicit `dark`.
+ */
+async function setTheme(page) {
+  await page.keyboard.press('Backquote');
+  await page.waitForTimeout(500);
+  await page.keyboard.type(`theme ${THEME}`, { delay: 25 });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(700);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  const applied = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (applied !== THEME) throw new Error(`theme did not switch: wanted ${THEME}, got ${applied}`);
 }
 
 /**
@@ -173,10 +211,10 @@ async function audit(page) {
 
 async function shoot(page, id) {
   await calm(page);
-  const file = path.join(OUT, `${id}.png`);
+  const file = path.join(OUT, `${id}${SUFFIX}.png`);
   await page.screenshot({ path: file });
   const a = await audit(page);
-  console.log(`  ✓ ${id}.png`);
+  console.log(`  ✓ ${id}${SUFFIX}.png`);
   console.log(`      in frame: ${a.unreadCards} unread, ${a.favCards} favourited card(s), ` +
     `${a.favChips} gold chip(s)`);
   if (a.brokenImages.length) {
@@ -258,21 +296,19 @@ const SHOTS = {
     await page.mouse.up();
   } },
 
-  // The Reading folder's article list. Its unread items and the gold favourite
-  // chips are already in the seed; this only has to open the folder and put
-  // the list in frame.
+  // The river, with its unread outlines and the gold favourite chips that are
+  // already in the seed. This only has to put the panel in frame.
+  //
+  // It used to open the Reading folder and scroll to a "Feed Articles" heading
+  // inside it. That heading has not existed since v1.11.0, when feeds left the
+  // bookmark folders and became one account-wide river rendered on the new tab
+  // itself — the shot had been failing into a stale file ever since. The anchor
+  // is now the panel's own control bar, which is the top of the thing being
+  // photographed and is not going to move back inside a folder.
   feeds: { user: 'maren', async run(page) {
-    await page.getByText('Reading', { exact: true }).first().click();
-    await settle(page);
-
-    // FolderArticles labels itself "Feed Articles" — that heading is the top of
-    // the section this shot is about, and it sits below the folder's bookmark
-    // grid and the reading list.
-    // Not an exact match: once loaded the label carries an article count in a
-    // child span, so its text is "Feed Articles" followed by a number.
-    const heading = page.getByText(/^Feed Articles/).first();
-    await heading.waitFor({ state: 'attached', timeout: 20000 });
-    await scrollTo(page, heading, 110);
+    const bar = page.getByRole('button', { name: 'Manage feeds' }).first();
+    await bar.waitFor({ state: 'visible', timeout: 20000 });
+    await scrollTo(page, bar, 90);
 
     await describe(page, 'feeds');
     await shoot(page, 'feeds');
@@ -369,6 +405,19 @@ const SHOTS = {
     await describe(page, 'own profile, friends tab');
     await shoot(page, 'social-friends');
   } },
+
+  // The one shot taken against the live site rather than the seed, and the one
+  // taken signed out: a real profile with two years of posts on it argues for
+  // the feature in a way a seeded cast cannot. `public: true` routes it around
+  // sign-in entirely — see the runner.
+  //
+  // Signed out there is no settings blob to read a theme from, so the theme is
+  // seeded into localStorage before the first paint instead of set through the
+  // console.
+  profile: { public: true, url: 'https://newt.page/u/samwichgamgee', async run(page) {
+    await describe(page, 'public profile');
+    await shoot(page, 'profile');
+  } },
 };
 
 const requested = only.length ? only : Object.keys(SHOTS);
@@ -376,10 +425,13 @@ const unknown = requested.filter(id => !SHOTS[id]);
 unknown.forEach(id => console.log(`  ? no shot called "${id}"`));
 
 // Group by account, preserving the declaration order within each — which is
-// what keeps `notes` (the one shot that writes) last.
+// what keeps `notes` (the one shot that writes) last. Public shots have no
+// account and are taken first, in their own signed-out context.
 const byUser = new Map();
+const publicShots = [];
 for (const id of Object.keys(SHOTS)) {
   if (!requested.includes(id)) continue;
+  if (SHOTS[id].public) { publicShots.push(id); continue; }
   const user = SHOTS[id].user;
   if (!byUser.has(user)) byUser.set(user, []);
   byUser.get(user).push(id);
@@ -388,14 +440,40 @@ for (const id of Object.keys(SHOTS)) {
 const browser = await chromium.launch({ headless: !HEADED });
 let failures = 0;
 
+/** A context dressed the same way for every shot: 2x, and this run's theme. */
+const newContext = () => browser.newContext({
+  viewport: { width: 1600, height: 1000 },
+  deviceScaleFactor: 2,
+  colorScheme: THEME,
+});
+
+for (const id of publicShots) {
+  const [width, height] = SIZES[id];
+  console.log(`${id} (${width}×${height}, signed out)`);
+  const ctx = await newContext();
+  // Before the first paint: signed out there is no stored setting to read, and
+  // the app's own default is an explicit dark rather than "follow the system".
+  await ctx.addInitScript(t => localStorage.setItem('theme', t), THEME);
+  const page = await ctx.newPage();
+  page.on('pageerror', e => console.log(`  [page error] ${String(e).slice(0, 160)}`));
+  try {
+    await page.setViewportSize({ width, height });
+    await page.goto(SHOTS[id].url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await settle(page);
+    const applied = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (applied !== THEME) throw new Error(`theme is ${applied}, wanted ${THEME}`);
+    await SHOTS[id].run(page);
+  } catch (err) {
+    console.log(`  ✗ ${id}: ${err.message.split('\n')[0]}`);
+    failures++;
+  }
+  if (!HEADED) await ctx.close();
+}
+
 for (const [user, shotIds] of byUser) {
   // deviceScaleFactor is fixed for the life of a context, so one context per
   // account and the viewport resized per shot.
-  const ctx = await browser.newContext({
-    viewport: { width: 1600, height: 1000 },
-    deviceScaleFactor: 2,
-    colorScheme: 'dark',
-  });
+  const ctx = await newContext();
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log(`  [page error] ${String(e).slice(0, 160)}`));
   const auth = watchAuth(page);
