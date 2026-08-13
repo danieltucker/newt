@@ -1,7 +1,4 @@
-import nodeFetch from 'node-fetch';
 import sanitizeHtml from 'sanitize-html';
-
-type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
 
 // Feed bodies are third-party HTML rendered straight into the reader, so they
 // get a tighter allowlist than user comments: no forms, no media embeds, no
@@ -259,39 +256,9 @@ export function canonicalFeedKey(raw: string): string {
   }
 }
 
-// ── Feed checker ───────────────────────────────────────────────────────────
-
-export interface FeedCheckResult {
-  newCount: number;
-  latestAt: Date | null;
-}
-
-export async function checkFeed(feedUrl: string, since: Date | null): Promise<FeedCheckResult> {
-  const resp = await nodeFetch(feedUrl, {
-    timeout: 8000,
-    // The URL comes from a bookmark, so it is attacker-choosable. Bound the body
-    // by bytes as well as by time — the timeout is an idle-socket timer and never
-    // fires on an endless response that trickles steadily. See MAX_FEED_BYTES in
-    // feedRefresh for the same reasoning.
-    size: 2_000_000,
-    redirect: 'follow',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0; +Feed)' },
-  } as FetchOptions);
-  if (!resp.ok) throw new Error(`Feed returned ${resp.status}`);
-
-  const xml = await resp.text();
-  const items = parseFeed(xml, 100);
-
-  if (items.length === 0) return { newCount: 0, latestAt: null };
-
-  const dates = items.map(i => i.date).filter(Boolean) as Date[];
-  const latestAt = dates.length > 0
-    ? new Date(Math.max(...dates.map(d => d.getTime())))
-    : null;
-
-  // First check: establish baseline, no unread count yet
-  if (!since) return { newCount: 0, latestAt };
-
-  const newCount = dates.filter(d => d > since).length;
-  return { newCount, latestAt };
-}
+// The unread-count checker that used to live here is gone. Nothing had called
+// it since badges started being counted from ReadFeedItem/DismissedFeedItem
+// state (see lib/unread) rather than from a fresh fetch, and it was the last
+// thing in the server still fetching a user-supplied URL with `redirect:
+// 'follow'` and no address check - so it would have had to be rewritten onto
+// lib/safeFetch to survive, for a caller that does not exist.

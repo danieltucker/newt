@@ -4,6 +4,7 @@ import speakeasy from 'speakeasy';
 import prisma from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { clearTrustCache } from '../lib/trust';
+import { sealTotpSecret, openTotpSecret } from '../lib/totpSecret';
 import logger from '../lib/logger';
 
 const router = Router();
@@ -22,10 +23,11 @@ router.post('/enroll', async (req: AuthRequest, res: Response): Promise<void> =>
 
   const secret = speakeasy.generateSecret({ length: 20 });
 
-  // Store pending secret in DB — confirm will read from here, not from the client
+  // Store pending secret in DB — confirm will read from here, not from the
+  // client — encrypted at rest, like the confirmed one. See lib/totpSecret.
   await prisma.user.update({
     where: { id: req.userId! },
-    data: { totpPendingSecret: secret.base32 },
+    data: { totpPendingSecret: sealTotpSecret(secret.base32) },
   });
 
   const otpauthUrl =
@@ -50,15 +52,32 @@ router.post('/confirm', async (req: AuthRequest, res: Response): Promise<void> =
     res.status(400).json({ error: 'No pending TOTP enrollment — call /enroll first' }); return;
   }
 
+  const pending = openTotpSecret(user.totpPendingSecret);
+  if (!pending) {
+    // Only reachable if LLM_KEY_SECRET changed between enrolling and
+    // confirming. Starting over costs the user one QR scan and is the only
+    // honest answer - there is no way to check a code against a secret we can
+    // no longer read.
+    res.status(400).json({ error: 'That enrolment could not be read — start again from Settings' }); return;
+  }
+
   const valid = speakeasy.totp.verify({
-    secret: user.totpPendingSecret,
+    secret: pending,
     encoding: 'base32',
     token: String(code),
     window: 2,
   });
   if (!valid) {
-    const expected = speakeasy.totp({ secret: user.totpPendingSecret, encoding: 'base32' });
-    logger.warn({ received: code, expected, serverTime: new Date().toISOString() }, 'TOTP confirm: invalid code');
+    // Deliberately does not log the code that was expected, nor the one that was
+    // received. Computing the expected code and writing it to the log put a
+    // live second factor into the log stream - on a path any user can reach as
+    // often as they like, by mistyping during enrolment. Whoever can read logs
+    // could then pass the 2FA challenge for that account.
+    //
+    // What is actually diagnostic here is clock drift, which is the usual cause
+    // of a correct-looking code being refused, and the server's own time says
+    // that without disclosing anything.
+    logger.warn({ userId: req.userId, serverTime: new Date().toISOString() }, 'TOTP confirm: invalid code');
     res.status(422).json({ error: 'Invalid code — try again' }); return;
   }
 
@@ -84,7 +103,9 @@ router.post('/disable', async (req: AuthRequest, res: Response): Promise<void> =
     res.status(400).json({ error: 'TOTP not enabled' }); return;
   }
 
-  const valid = speakeasy.totp.verify({ secret: user.totpSecret, encoding: 'base32', token: String(code), window: 2 });
+  const secret = openTotpSecret(user.totpSecret);
+  const valid = !!secret
+    && speakeasy.totp.verify({ secret, encoding: 'base32', token: String(code), window: 2 });
   if (!valid) { res.status(401).json({ error: 'Invalid code' }); return; }
 
   await prisma.user.update({

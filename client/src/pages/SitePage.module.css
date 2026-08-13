@@ -84,7 +84,7 @@
   min-height: var(--ctl-h);
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-size: 12.5px;
   font-weight: 650;
@@ -115,7 +115,7 @@
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 .ghostBtn:disabled { opacity: 0.6; cursor: default; }
 
-.error { color: #e5484d; font-size: 12.5px; }
+.error { color: var(--danger); font-size: 12.5px; }
 
 /* ── Where this site already sits in the account ── */
 .badges {
@@ -147,7 +147,7 @@
    it has gone quiet, quiet enough that it isn't the first thing read. */
 .badgeWarn {
   font-weight: 600;
-  color: #e5484d;
+  color: var(--danger);
 }
 
 .stats {

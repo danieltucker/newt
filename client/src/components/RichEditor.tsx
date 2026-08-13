@@ -716,13 +716,35 @@ function currentLineEmpty(): boolean {
   return !child || (child as HTMLElement).nodeName === 'BR';
 }
 
+// Elements that make a block non-blank while holding no text of their own.
+const VISIBLE_EMPTY = new Set(
+  ['HR', 'IMG', 'PRE', 'BLOCKQUOTE', 'UL', 'OL', 'H1', 'H2', 'H3', 'TABLE']);
+
 // Whether the placeholder should show. Text alone isn't enough to decide:
 // to-dos, dividers, and empty code/quote frames render visibly while holding
 // no text, and the placeholder would sit on top of them.
+//
+// Walked with an early return rather than asked as `textContent.trim()` plus a
+// querySelector. Both of those read the whole document however long it is, and
+// this runs on every keystroke via emit() - so a full note paid to build (and
+// immediately throw away) a copy of its own text per character, to answer a
+// question the first word on the first line already settles. The walk stops at
+// the first thing that proves the editor non-blank, which for any note that has
+// anything in it at all is the first node it looks at.
 function isBlank(el: HTMLElement): boolean {
-  if ((el.textContent ?? '').trim()) return false;
-  return !el.querySelector(
-    `hr, img, pre, blockquote, ul, ol, h1, h2, h3, table, .${TODO_CLASS}, .${EMBED_CLASS}`);
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  let node = walk.nextNode();
+  while (node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if ((node.nodeValue ?? '').trim()) return false;
+    } else {
+      const tag = node.nodeName;
+      const cls = (node as HTMLElement).classList;
+      if (VISIBLE_EMPTY.has(tag) || cls.contains(TODO_CLASS) || cls.contains(EMBED_CLASS)) return false;
+    }
+    node = walk.nextNode();
+  }
+  return true;
 }
 
 // Select an atomic island (an embed) as a unit: the browser highlights it, and
@@ -1458,10 +1480,58 @@ export default function RichEditor({
   // the whole editor on every character even though the answer is the same
   // four booleans for paragraphs at a time.
   function refreshMarks() {
+    markHostRef.current = markHost();
     const next = readMarks();
     setMarks(prev => sameMarks(prev, next) ? prev : next);
     const editor = ref.current;
     setBlockTag(editor ? (getBlock(editor)?.nodeName ?? 'P') : 'P');
+  }
+
+  // The element the caret's formatting is decided by. Typing runs the offset
+  // along inside one text node without ever changing this, which is what makes
+  // the check below sound: bold/italic/underline/strike are properties of the
+  // ancestor chain, so while that chain is the same the answer is the same.
+  function markHost(): Node | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null;
+    const node = sel.anchorNode;
+    return node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+  }
+
+  // What refreshMarks last answered for, so a selection change that cannot have
+  // changed the answer can skip asking again.
+  const markHostRef = useRef<Node | null>(null);
+  const markCollapsedRef = useRef(true);
+
+  /**
+   * refreshMarks, minus the work when the answer cannot have moved.
+   *
+   * `document.queryCommandState` is the most expensive thing typing does - four
+   * calls, each of which resolves style against the selection - and it ran on
+   * every selection change, which is once per character. Profiled over 700
+   * characters of a 300-block note it cost more than twice the whole serialize
+   * -and-emit path put together.
+   *
+   * Nothing is skipped that could be wrong: the marks are re-read whenever the
+   * caret leaves the element it was in, and whenever it goes from a caret to a
+   * selection or back. Every command that changes formatting under a still
+   * caret (the toolbar, the bubble, the inline markdown rules) calls
+   * refreshMarks itself and is unaffected by this.
+   */
+  function refreshMarksIfMoved(collapsed: boolean) {
+    const host = markHost();
+    // Only a caret is safe to skip. A selection being dragged wider keeps both
+    // its anchor and its host while sweeping across runs that are formatted
+    // differently, and the bubble is showing that answer.
+    if (collapsed && markCollapsedRef.current && host === markHostRef.current) {
+      // Still worth keeping the block tag current - it is one cheap walk up to
+      // the editor root, and Enter makes a new block inside the same host.
+      const editor = ref.current;
+      setBlockTag(editor ? (getBlock(editor)?.nodeName ?? 'P') : 'P');
+      return;
+    }
+    markCollapsedRef.current = collapsed;
+    refreshMarks();
   }
 
   function execInline(command: string, value?: string) {
@@ -2348,7 +2418,7 @@ export default function RichEditor({
       if (!el || !sel || sel.rangeCount === 0) { dropBubble(); clearObjectBars(); return; }
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return; // selection elsewhere on the page
-      refreshMarks();
+      refreshMarksIfMoved(sel.isCollapsed);
       setInTable(!!cellAtCaret(el));
       // A gallery is an atomic island like an embed, and is checked first
       // because it *contains* images: the picture lookup below would otherwise

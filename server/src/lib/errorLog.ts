@@ -92,9 +92,4 @@ export async function recordError(rec: ErrorRecord): Promise<void> {
   }
 }
 
-/** recordError's fire-and-forget form, for callers with nothing to await it. */
-export function recordErrorAsync(rec: ErrorRecord): void {
-  void recordError(rec);
-}
-
 export { clamp as clampForLog, errorDetail };

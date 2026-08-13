@@ -42,7 +42,7 @@
   border-color: var(--accent);
   /* #fff, as everywhere else that fills with --accent - both themes' accents
      are dark enough to carry white. */
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .tagOn:hover,

@@ -123,7 +123,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   transition: opacity 0.15s;
 }

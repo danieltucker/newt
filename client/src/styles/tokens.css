@@ -11,6 +11,19 @@
      a deep indigo that only carries white. Hardcoding either one gives you a
      button that is unreadable in the other theme. */
   --on-accent: #0B0C13;
+  /* Destructive: delete, ban, revoke, dismiss, and error text.
+
+     Four different reds were doing this job in the modules - #E5484D (the most
+     common), #FF4500 (the admin panel and most confirm buttons), #FF6B6B and
+     #E44 - picked by whichever file was written when. Two of them read
+     `var(--danger, ...)` against a property nothing defined, so they took their
+     fallback for ever and no theme could reach them. This is that property, and
+     every one of those literals now points here.
+
+     #FF4500 is the one that changed appearance: it was orange-red, and this is
+     crimson. It was also the worst of the four for contrast - 3.44:1 on white,
+     against the 4.5:1 that body text needs. */
+  --danger: #E5484D;
   /* Favorited tags. Deliberately not --accent: an unread card is already
      accent-outlined, and a favorite has to be legible on top of that. */
   --fav: #FFD470;
@@ -87,6 +100,9 @@
   --accent: #5B5BE6;
   /* See the dark block: white is the only thing that carries on this indigo. */
   --on-accent: #FFFFFF;
+  /* Deepened until it carries as text on white - #E5484D is a shade too light
+     against --surface for body-sized text. See the dark block for the rest. */
+  --danger: #C93A3F;
   /* Lighter than it wants to be would fail on white - this is about as bright
      as the gold gets while the chip labels stay readable. */
   --fav: #C68A15;
@@ -284,9 +300,9 @@ html {
        - content sits too far right and runs off, for the same reason;
        - width-based media queries stop matching what the phone actually is, so
          the phone layouts (the 2-up card grid at 460px) never come on.
-     The panels are clamped at source too - see .panel in FeedFilterBar and
-     .filterPanel in FilterDropdown - but this is the backstop that keeps one
-     stray absolute box from rescaling the entire app.
+     The panels are clamped at source too - see .panel in FeedFilterBar - but
+     this is the backstop that keeps one stray absolute box from rescaling the
+     entire app.
 
      `clip`, not `hidden`: `hidden` here would make the viewport a scroll
      container and take the sticky shell bar with it. `clip` doesn't scroll, so

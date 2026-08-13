@@ -118,7 +118,7 @@
   justify-content: center;
   min-height: var(--ctl-h-lg);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: 1px solid transparent;
   border-radius: var(--ctl-r);
   padding: 0 18px;

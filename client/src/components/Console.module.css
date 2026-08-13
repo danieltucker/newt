@@ -127,17 +127,6 @@
 .line[data-kind="error"]  { color: #f85149; }
 .line[data-kind="info"]   { color: #3fb950; }
 
-/* ── Section heading inside output ── */
-.sectionHeading {
-  color: #58a6ff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  margin-top: 4px;
-  margin-bottom: 1px;
-  text-transform: uppercase;
-}
-
 /* ── Autocomplete suggestions ── */
 .suggestions {
   display: flex;

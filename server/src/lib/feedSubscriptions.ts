@@ -25,16 +25,6 @@ export const FEED_FOLDER_SELECT = {
   id: true, name: true, color: true, position: true,
 } as const;
 
-// Every feed URL this user subscribes to, in display order.
-export async function userFeedUrls(userId: string): Promise<string[]> {
-  const rows = await prisma.feedSubscription.findMany({
-    where: { userId },
-    orderBy: { position: 'asc' },
-    select: { url: true },
-  });
-  return rows.map(r => r.url);
-}
-
 /**
  * Subscribes a user to a feed unless they already have it or are at their cap.
  * Returns whether a row was created.

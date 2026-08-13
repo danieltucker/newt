@@ -307,7 +307,7 @@
   background: var(--accent);
   border: 1px solid transparent;
   border-radius: var(--ctl-r);
-  color: #fff;
+  color: var(--on-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   font-weight: 600;
@@ -321,8 +321,8 @@
 /* ── Error ── */
 .error {
   font-size: 13px;
-  color: #FF4500;
+  color: var(--danger);
   padding: 8px 12px;
-  background: rgba(255, 69, 0, 0.08);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-radius: 8px;
 }

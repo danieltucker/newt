@@ -353,12 +353,6 @@
   box-shadow: 0 0 0 3px rgba(91, 91, 230, 0.09);
 }
 
-.tbClear {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
 /* Row/column controls in the utility bar, shown only inside a table */
 .tbGroupLabel {
   font-size: 10px;

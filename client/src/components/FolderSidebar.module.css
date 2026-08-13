@@ -352,12 +352,6 @@
   color: var(--text);
 }
 
-.folderCount {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 1px;
-}
-
 .folderUnread {
   flex-shrink: 0;
   min-width: 16px;
@@ -365,7 +359,7 @@
   padding: 0 4px;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 9px;
   font-weight: 700;
   font-family: 'Hanken Grotesk', sans-serif;
@@ -447,11 +441,11 @@
 }
 
 .dropdownItemDanger {
-  color: #FF4500;
+  color: var(--danger);
 }
 
 .dropdownItemDanger:hover {
-  background: color-mix(in oklab, #FF4500 8%, var(--surface2));
+  background: color-mix(in oklab, var(--danger) 8%, var(--surface2));
 }
 
 .sidebarFooter {

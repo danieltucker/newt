@@ -161,10 +161,10 @@
 
 .error {
   font-size: 13px;
-  color: #FF4500;
+  color: var(--danger);
   margin-bottom: 14px;
   padding: 10px 12px;
-  background: rgba(255, 69, 0, 0.08);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-radius: 8px;
 }
 
@@ -172,7 +172,7 @@
   width: 100%;
   min-height: var(--ctl-h-lg);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: 1px solid transparent;
   border-radius: var(--ctl-r);
   font-family: 'Hanken Grotesk', sans-serif;

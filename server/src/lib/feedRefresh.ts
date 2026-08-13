@@ -9,10 +9,15 @@ import { recordError, errorMessage } from './errorLog';
 import { recordFeedFetch } from './feedLog';
 import { notifyAdminsOfFeedFailure, notifyAdminsOfFeedDisabled, shouldAlertForFeed } from './adminAlerts';
 import { blockedRuleFor } from './feedBlocklist';
+import { safeFetch } from './safeFetch';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number; size?: number };
 
 export const FEED_STALE_MS = 30 * 60 * 1000;        // 30 minutes
+// How stale `Feed.lastRequestedAt` may get before ensureFeeds rewrites it. Only
+// the scheduler reads it, against a 14-day window, so this is about how often
+// the shared row is written rather than about accuracy. See ensureFeeds.
+const DEMAND_STAMP_MS = 60 * 60 * 1000;             // 1 hour
 export const FEED_TTL_MS   = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Hard ceiling on a feed document. The timeout alone does not bound this: it is
@@ -346,10 +351,15 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
     if (feed.etag) headers['If-None-Match'] = feed.etag;
     if (feed.lastModified) headers['If-Modified-Since'] = feed.lastModified;
 
-    const resp = await nodeFetch(feed.fetchUrl, {
+    // safeFetch, not nodeFetch: a feed URL is supplied by whoever subscribed and
+    // is polled by the scheduler forever after, so it is the single most
+    // attacker-controlled outbound request this server makes. It used to go out
+    // with no address check at all and `redirect: 'follow'` - which reached any
+    // internal service the container could see, and stored whatever came back as
+    // articles. Every hop is now resolved, judged and pinned. See lib/safeFetch.
+    const resp = await safeFetch(feed.fetchUrl, {
       timeout: 8000,
       size: MAX_FEED_BYTES,
-      redirect: 'follow',
       headers,
     } as FetchOptions);
 
@@ -513,9 +523,25 @@ export async function ensureFeeds(feedUrls: string[]) {
 
   // Mark demand so the background scheduler keeps these feeds warm. Fire-and-
   // forget — the caller shouldn't wait on a bookkeeping write.
-  prisma.feed
-    .updateMany({ where: { id: { in: feeds.map(f => f.id) } }, data: { lastRequestedAt: new Date() } })
-    .catch(() => {});
+  //
+  // Only for the feeds whose stamp is actually old. This runs on every
+  // /articles request, including every "load more", and `Feed` rows are
+  // *shared* between everyone subscribed to the same feed - so on a popular
+  // feed every reader's every scroll was an UPDATE contending on one row, and
+  // leaving a dead tuple behind for autovacuum. The consumer is the scheduler's
+  // 14-day demand window (see DEMAND_WINDOW_MS), which cannot tell the
+  // difference: an hour of granularity is four hundred times finer than it
+  // needs, and turns a write per request into a write per feed per hour.
+  const now = new Date();
+  const staleStamp = new Date(now.getTime() - DEMAND_STAMP_MS);
+  const needsStamp = feeds
+    .filter(f => !f.lastRequestedAt || f.lastRequestedAt < staleStamp)
+    .map(f => f.id);
+  if (needsStamp.length > 0) {
+    prisma.feed
+      .updateMany({ where: { id: { in: needsStamp } }, data: { lastRequestedAt: now } })
+      .catch(() => {});
+  }
 
   return feeds;
 }

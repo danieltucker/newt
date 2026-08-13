@@ -146,7 +146,7 @@
 }
 
 .shelfDelete:hover {
-  color: var(--danger, #E5484D);
+  color: var(--danger);
 }
 
 /* The row that makes a new shelf, directly under the shelves themselves - so it
@@ -278,7 +278,7 @@
 .primaryBtn {
   background: var(--accent, #5E6AD2);
   border: 1px solid transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .primaryBtn:disabled {
@@ -300,8 +300,8 @@
 }
 
 .dangerBtn:hover {
-  color: var(--danger, #e5484d);
-  border-color: var(--danger, #e5484d);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* ── Articles ── */

@@ -135,8 +135,8 @@
   margin: 0 24px 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(255, 69, 0, 0.08);
-  color: #FF4500;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
   font-size: 13px;
 }
 
@@ -551,7 +551,7 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   overflow-wrap: anywhere;
 }
 
-.factDanger { color: #FF4500; }
+.factDanger { color: var(--danger); }
 
 /* The id is for pasting into a query or matching against the audit log, so it
    is monospaced and quieter than the things a person reads. */
@@ -659,8 +659,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 }
 
 .trendDown {
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 
 .trendFlat {
@@ -708,31 +708,31 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
   border-radius: 20px;
   padding: 1px 8px;
 }
 
 .banBtn:hover:not(:disabled) {
-  border-color: #FF4500;
-  color: #FF4500;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .unbanBtn {
-  background: color-mix(in oklab, #FF4500 12%, transparent);
-  border-color: color-mix(in oklab, #FF4500 40%, transparent);
-  color: #FF4500;
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 40%, transparent);
+  color: var(--danger);
 }
 
 .deleteConfirmBtn {
-  background: #FF4500;
-  border-color: #FF4500;
+  background: var(--danger);
+  border-color: var(--danger);
   color: #fff;
 }
 
 .deleteConfirmBtn:hover:not(:disabled) {
-  border-color: #FF4500;
+  border-color: var(--danger);
   color: #fff;
   filter: brightness(1.1);
 }
@@ -885,7 +885,7 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-weight: 700;
   text-align: center;
   color: #fff;
-  background: #FF4500;
+  background: var(--danger);
 }
 
 .filterRow {
@@ -924,7 +924,7 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-size: 10.5px;
   font-weight: 700;
   color: #fff;
-  background: #FF4500;
+  background: var(--danger);
 }
 
 .reportList {
@@ -972,8 +972,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
   border-radius: 20px;
   padding: 1px 8px;
 }
@@ -987,8 +987,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   padding: 1px 8px;
 }
 .reportUpheld {
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 .reportDismissed {
   color: var(--muted);
@@ -1129,8 +1129,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 /* The comment the report is actually about. Ringed rather than filled, so the
    body text stays as readable as every other comment around it. */
 .threadHighlight {
-  box-shadow: 0 0 0 2px #FF4500;
-  background: color-mix(in oklab, #FF4500 7%, var(--surface2));
+  box-shadow: 0 0 0 2px var(--danger);
+  background: color-mix(in oklab, var(--danger) 7%, var(--surface2));
 }
 
 .threadDeleted { opacity: 0.6; }
@@ -1158,8 +1158,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 14%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
   border-radius: 20px;
   padding: 1px 8px;
 }
@@ -1175,7 +1175,7 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   cursor: pointer;
   opacity: 0.75;
 }
-.threadRemove:hover:not(:disabled) { opacity: 1; color: #FF4500; }
+.threadRemove:hover:not(:disabled) { opacity: 1; color: var(--danger); }
 .threadRemove:disabled { opacity: 0.5; cursor: default; }
 
 .threadTitle {
@@ -1407,8 +1407,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 
 /* A feed that is failing or switched off - the row you came to act on. */
 .offBadge {
-  color: #FF4500;
-  background: color-mix(in oklab, #FF4500 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 
 .link {
@@ -1437,8 +1437,8 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 .auditDestructive {
   font-size: 12px;
   font-weight: 650;
-  color: #e5484d;
-  background: color-mix(in oklab, #e5484d 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
   border-radius: 999px;
   padding: 3px 9px;
   white-space: nowrap;

@@ -3,22 +3,52 @@ import net from 'net';
 import http from 'http';
 import https from 'https';
 
+/**
+ * Anything that is not a public, routable unicast address.
+ *
+ * Written as a deny-list of "not the public internet" rather than an allow-list
+ * because the caller's question is "may I fetch this", and the failure mode of
+ * missing a range is reaching something inside the network. Unknown input
+ * returns true (unsafe) for the same reason.
+ */
 function isPrivateIp(ip: string): boolean {
+  // An IPv4 address wearing an IPv6 hat. `::ffff:127.0.0.1` is a valid IPv6
+  // literal that every socket stack connects to 127.0.0.1, and it passed the
+  // IPv6 branch below untouched - so `http://[::ffff:127.0.0.1]/` reached
+  // loopback and `http://[::ffff:169.254.169.254]/` reached the cloud metadata
+  // service, through a guard whose whole job was to stop exactly that. Unwrap
+  // to the address it really is and judge that.
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip.trim());
+  if (mapped && net.isIPv4(mapped[1])) return isPrivateIp(mapped[1]);
+
   if (net.isIPv4(ip)) {
     const [a, b] = ip.split('.').map(Number);
     return (
-      a === 127 ||
-      a === 10 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254) ||
-      a === 0
+      a === 0 ||                              // "this network"
+      a === 10 ||                             // RFC1918
+      a === 127 ||                            // loopback
+      (a === 100 && b >= 64 && b <= 127) ||   // RFC6598 CGNAT - Tailscale lives here
+      (a === 169 && b === 254) ||             // link-local, incl. cloud metadata
+      (a === 172 && b >= 16 && b <= 31) ||    // RFC1918
+      (a === 192 && b === 0) ||               // IETF protocol assignments
+      (a === 192 && b === 168) ||             // RFC1918
+      (a === 198 && b >= 18 && b <= 19) ||    // benchmarking
+      a >= 224                                // multicast, reserved, broadcast
     );
   }
+
   if (net.isIPv6(ip)) {
     const n = ip.toLowerCase();
-    return n === '::1' || n.startsWith('fc') || n.startsWith('fd') || n.startsWith('fe80');
+    return (
+      n === '::' ||                           // unspecified - connects to local
+      n === '::1' ||                          // loopback
+      n.startsWith('fc') || n.startsWith('fd') ||   // unique local
+      n.startsWith('fe8') || n.startsWith('fe9') ||
+      n.startsWith('fea') || n.startsWith('feb') || // link-local fe80::/10
+      n.startsWith('ff')                      // multicast
+    );
   }
+
   return true;
 }
 

@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma';
-import { signAccess, signRefresh, verifyRefresh, signTotpPending, verifyTotpPending, REFRESH_TTL_MS } from '../lib/jwt';
+import { signAccess, signRefresh, verifyRefresh, signTotpPending, verifyTotpPending, refreshTokenKey, REFRESH_TTL_MS } from '../lib/jwt';
 import speakeasy from 'speakeasy';
+import { openTotpSecret, sealTotpSecret, isSealedTotpSecret } from '../lib/totpSecret';
 import logger from '../lib/logger';
 import { notifyAdminsOfSignup } from '../lib/adminAlerts';
 
@@ -59,7 +60,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const refreshToken = signRefresh(user.id);
     await prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        // The digest, never the token - see refreshTokenKey. The cookie below
+        // still carries the real thing; this row only has to recognise it.
+        token: refreshTokenKey(refreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
       },
@@ -107,7 +110,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const refreshToken = signRefresh(user.id);
     await prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        token: refreshTokenKey(refreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
       },
@@ -128,7 +131,7 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   }
   try {
     const payload = verifyRefresh(token);
-    const stored = await prisma.refreshToken.findUnique({ where: { token } });
+    const stored = await prisma.refreshToken.findUnique({ where: { token: refreshTokenKey(token) } });
     if (!stored || stored.userId !== payload.sub || stored.expiresAt < new Date()) {
       res.status(401).json({ error: 'Invalid refresh token' });
       return;
@@ -145,11 +148,11 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
     const msLeft = stored.expiresAt.getTime() - Date.now();
     if (msLeft < 24 * 60 * 60 * 1000) {
       await prisma.refreshToken.deleteMany({
-        where: { OR: [{ token }, { userId: payload.sub, expiresAt: { lt: new Date() } }] },
+        where: { OR: [{ token: refreshTokenKey(token) }, { userId: payload.sub, expiresAt: { lt: new Date() } }] },
       });
       const newRefresh = signRefresh(payload.sub);
       await prisma.refreshToken.create({
-        data: { token: newRefresh, userId: payload.sub, expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
+        data: { token: refreshTokenKey(newRefresh), userId: payload.sub, expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
       });
       res.cookie('refreshToken', newRefresh, COOKIE_OPTS);
     } else {
@@ -178,13 +181,27 @@ router.post('/totp-verify', async (req: Request, res: Response): Promise<void> =
     if (user.bannedAt) {
       res.status(403).json({ error: 'This account has been suspended. Contact an administrator.' }); return;
     }
-    if (!speakeasy.totp.verify({ secret: user.totpSecret, encoding: 'base32', token: String(code), window: 2 })) {
+    // Stored encrypted (see lib/totpSecret). A secret that cannot be opened
+    // fails the check rather than being skipped - "we couldn't read the second
+    // factor" must never mean "so let them in".
+    const totpSecret = openTotpSecret(user.totpSecret);
+    if (!totpSecret
+      || !speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token: String(code), window: 2 })) {
       res.status(401).json({ error: 'Invalid code' }); return;
+    }
+    // Enrolled before secrets were encrypted: seal it now that we have opened
+    // it and know it is right. Migrates every account that signs in, so no
+    // backfill has to run and no plaintext secret outlives its owner's next
+    // login. Deliberately not awaited into the response path.
+    if (!isSealedTotpSecret(user.totpSecret)) {
+      void prisma.user
+        .update({ where: { id: user.id }, data: { totpSecret: sealTotpSecret(totpSecret) } })
+        .catch(err => logger.error(err, 'TOTP secret re-seal failed'));
     }
     const accessToken = signAccess(user.id);
     const refreshToken = signRefresh(user.id);
     await prisma.refreshToken.create({
-      data: { token: refreshToken, userId: user.id, expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
+      data: { token: refreshTokenKey(refreshToken), userId: user.id, expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
     });
     res.cookie('refreshToken', refreshToken, COOKIE_OPTS);
     res.json({ accessToken, username: user.username, isAdmin: user.isAdmin });
@@ -196,7 +213,7 @@ router.post('/totp-verify', async (req: Request, res: Response): Promise<void> =
 router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   const token = req.cookies?.refreshToken;
   if (token) {
-    await prisma.refreshToken.deleteMany({ where: { token } }).catch(() => {});
+    await prisma.refreshToken.deleteMany({ where: { token: refreshTokenKey(token) } }).catch(() => {});
   }
   res.clearCookie('refreshToken', { path: '/api/v1/auth' });
   res.json({ ok: true });

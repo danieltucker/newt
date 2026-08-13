@@ -147,7 +147,7 @@
 }
 .threadRow:hover .threadDelete,
 .threadDelete:focus-visible { opacity: 1; }
-.threadDelete:hover { color: #E5484D; background: var(--surface); }
+.threadDelete:hover { color: var(--danger); background: var(--surface); }
 
 .renameInput {
   flex: 1;
@@ -540,7 +540,7 @@
   color: var(--text);
   border: 1px solid var(--border);
 }
-.stopBtn:hover { border-color: #E5484D; color: #E5484D; }
+.stopBtn:hover { border-color: var(--danger); color: var(--danger); }
 
 .dangerBtn, .ghostBtn {
   border: 1px solid var(--border);
@@ -552,7 +552,7 @@
   border-radius: 7px;
   cursor: pointer;
 }
-.dangerBtn { color: #E5484D; border-color: #E5484D; }
+.dangerBtn { color: var(--danger); border-color: var(--danger); }
 .ghostBtn { color: var(--muted); }
 
 /* ── Empty states ────────────────────────────────────────────────────────── */
@@ -659,9 +659,9 @@
 .error {
   margin: 10px 0;
   padding: 9px 12px;
-  border: 1px solid rgba(229, 72, 77, 0.4);
-  background: rgba(229, 72, 77, 0.1);
-  color: #E5484D;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
   font-size: 13px;
   border-radius: 9px;
 }

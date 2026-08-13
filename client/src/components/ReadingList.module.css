@@ -438,7 +438,7 @@
   background: var(--accent);
   border: 1px solid transparent;
   border-radius: var(--ctl-r);
-  color: #fff;
+  color: var(--on-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -678,7 +678,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   transition: filter 0.12s;
 }
@@ -807,11 +807,11 @@
 .actionBtn:hover {
   background: color-mix(in oklab, var(--accent) 85%, transparent);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .deleteBtn:hover {
-  background: #e5484d;
+  background: var(--danger);
 }
 
 /* Reserve top space on art-less card/magazine cards so the controls sit above

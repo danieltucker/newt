@@ -337,8 +337,8 @@
   background: var(--border);
 }
 
-.overflowDanger { color: #e5484d; }
-.overflowDanger:hover { background: color-mix(in oklab, #e5484d 12%, transparent); }
+.overflowDanger { color: var(--danger); }
+.overflowDanger:hover { background: color-mix(in oklab, var(--danger) 12%, transparent); }
 
 /* Large enough to be a portrait rather than a stamp - it is the one picture on
    the page that is of the person whose page it is. */
@@ -827,7 +827,7 @@
 .primaryBtn {
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 650;
 }
 .primaryBtn:hover { filter: brightness(1.08); }
@@ -841,7 +841,7 @@
 }
 .ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 
-.error { color: #e5484d; font-size: 12.5px; margin-top: 6px; }
+.error { color: var(--danger); font-size: 12.5px; margin-top: 6px; }
 
 /* ── Blocking ── */
 /* Inline confirmation, tinted as a warning. Sits under the identity row rather
@@ -854,8 +854,8 @@
   margin-top: 14px;
   padding: 11px 13px;
   border-radius: 12px;
-  border: 1px solid color-mix(in oklab, #e5484d 35%, transparent);
-  background: color-mix(in oklab, #e5484d 8%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
+  background: color-mix(in oklab, var(--danger) 8%, transparent);
 }
 
 .confirmText {
@@ -868,7 +868,7 @@
 
 .dangerBtn {
   border: 1px solid transparent;
-  background: #e5484d;
+  background: var(--danger);
   color: #fff;
   font-weight: 650;
 }

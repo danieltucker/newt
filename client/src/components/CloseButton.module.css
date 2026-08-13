@@ -18,8 +18,8 @@
 }
 
 .close:hover {
-  color: #e5484d;
-  border-color: color-mix(in oklab, #e5484d 45%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 45%, transparent);
 }
 
 .close:focus-visible {

@@ -136,53 +136,6 @@
   to { transform: rotate(360deg); }
 }
 
-.blocked {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 40px;
-  background: var(--bg);
-  text-align: center;
-}
-
-.blockedIcon {
-  font-size: 40px;
-  line-height: 1;
-}
-
-.blockedTitle {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.blockedSub {
-  font-size: 13px;
-  color: var(--muted);
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.blockedBtn {
-  display: inline-block;
-  padding: 8px 18px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  transition: opacity 0.12s;
-}
-
-.blockedBtn:hover {
-  opacity: 0.85;
-}
-
 /* ── Narrow: the reader is the screen ──
    94vw x 92vh leaves a sliver of backdrop on every side and takes a whole
    phone-width of margin off a page that is already being squeezed into an

@@ -198,7 +198,7 @@
   border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
   background: color-mix(in oklab, var(--accent) 88%, var(--surface));
   box-shadow: 0 8px 26px color-mix(in oklab, var(--shadow) 60%, transparent);
-  color: #fff;
+  color: var(--on-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 650;
@@ -323,14 +323,11 @@
   flex-shrink: 0;
 }
 
-/* ── Category filter chips ── */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
+/* ── Filter chips ──
+   Category, site and topic stopped being a row of chips in v1.11.0 - they are
+   one FeedFilterBar dropdown now, and the wrapper, the active state and the
+   count badge went with them. What is left is the chip itself, still worn by
+   the favourites filter below. */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -351,35 +348,6 @@
 .chip:hover {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.chipActive {
-  background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* The unread filter, first in the row: it's the one chip that narrows the feed
-   by state rather than by subject, which is what you reach for on a backlog. */
-.unreadChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.unreadChip:disabled {
-  opacity: 0.4;
-  cursor: default;
-  border-color: var(--border);
-  color: var(--muted);
-}
-
-.chipCount {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-  opacity: 0.75;
 }
 
 /* The favorites filter - a different axis from the topic chips beside it, so it
@@ -631,11 +599,11 @@
 .actionBtn:hover {
   background: color-mix(in oklab, var(--accent) 85%, transparent);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .dismissBtn:hover {
-  background: #e5484d;
+  background: var(--danger);
 }
 
 /* Reserve top space on art-less cards so the controls sit above the text
@@ -1066,7 +1034,7 @@
   border: none;
   border-radius: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-size: 13px;
   font-weight: 650;
@@ -1258,9 +1226,4 @@
   }
 
   .chip { font-size: 13.5px; padding: 0 14px; }
-}
-
-/* Filter dropdowns themselves live in FilterDropdown.module.css */
-.sourceFilter {
-  margin-left: auto;
 }

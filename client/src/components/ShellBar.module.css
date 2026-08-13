@@ -174,7 +174,7 @@
   padding: 0 3px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 9px;
   font-weight: 700;
   line-height: 14px;
@@ -309,7 +309,7 @@
 }
 
 .menuItemDanger { color: var(--muted); }
-.menuItemDanger:hover { color: #e5484d; background: color-mix(in oklab, #e5484d 10%, transparent); }
+.menuItemDanger:hover { color: var(--danger); background: color-mix(in oklab, var(--danger) 10%, transparent); }
 
 /* The bookmarks rail when it has moved into the hamburger (see RAIL_NARROW in
    ShellBar.tsx). It sets the menu's width - wider than a menu of labels needs

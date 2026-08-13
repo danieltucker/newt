@@ -233,7 +233,7 @@
   border: 1px solid transparent;
   border-radius: var(--ctl-r);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-size: 14px;
   font-weight: 650;

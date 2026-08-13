@@ -107,7 +107,7 @@
 
 .statusError {
   font-size: 12px;
-  color: #e5484d;
+  color: var(--danger);
 }
 
 /* Quiet placeholder while the thread loads - beats a bare "Loading…" string */
@@ -469,7 +469,7 @@
   place-items: center;
   font-size: 9px;
   line-height: 1;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }
@@ -501,7 +501,7 @@
 
 .actionBtn:hover:not(:disabled) { color: var(--accent); }
 .actionBtn:disabled { opacity: 0.5; cursor: default; }
-.deleteAction:hover:not(:disabled) { color: #e5484d; }
+.deleteAction:hover:not(:disabled) { color: var(--danger); }
 
 /* Report is available on every comment but wanted on almost none, so it stays
    quieter than Reply until hovered. Not red like the moderator's Remove - this
@@ -703,7 +703,7 @@
   margin-right: 2px;
 }
 
-.charCountOver { color: #e5484d; }
+.charCountOver { color: var(--danger); }
 
 /* Three-way visibility segmented control */
 .visSwitch {
@@ -801,7 +801,7 @@
 .postBtn {
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .postBtn:hover:not(:disabled) { opacity: 0.88; }
@@ -827,11 +827,11 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #e5484d;
+  color: var(--danger);
 }
 .modAction:hover {
-  color: #e5484d;
-  background: color-mix(in oklab, #e5484d 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 
 .modConfirm {
@@ -841,8 +841,8 @@
   flex-wrap: wrap;
   padding: 4px 4px 4px 10px;
   border-radius: 9px;
-  background: color-mix(in oklab, #e5484d 10%, transparent);
-  border: 1px solid color-mix(in oklab, #e5484d 35%, transparent);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
 }
 
 /* Says what will actually happen - a comment with replies is tombstoned, not
@@ -854,7 +854,7 @@
 
 .modConfirmBtn {
   border: none;
-  background: #e5484d;
+  background: var(--danger);
   color: #fff;
   font: inherit;
   font-size: 12px;

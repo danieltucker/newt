@@ -1,6 +1,7 @@
 import nodeFetch from 'node-fetch';
 import type { Readable } from 'stream';
 import { isSafeUrl } from './isSafeUrl';
+import { safeFetch } from './safeFetch';
 import { parseFeed, parseFeedTitle } from './feedUtils';
 import { platformFeed } from './feedSources';
 
@@ -35,7 +36,11 @@ export function findFeedInHtml(html: string, base: string): string | null {
 // timeout only fires on an idle socket, not a slow-but-steady one.
 export async function fetchXml(url: string, maxBytes = 150_000): Promise<string | null> {
   try {
-    const res = await nodeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)' } } as FetchOptions);
+    // safeFetch rather than a bare nodeFetch. The isSafeUrl call each caller
+    // makes first judges the address it was given; it cannot speak for where a
+    // redirect leads, nor for what the name resolves to a moment later when the
+    // connection is actually opened. Pinning and re-checking per hop covers both.
+    const res = await safeFetch(url, { timeout: 5000, size: maxBytes * 2, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Newt/1.0)' } } as FetchOptions);
     // node-fetch v2 hands back a Node Readable at runtime; the ambient DOM lib
     // types it as a web ReadableStream, which has no destroy().
     const body = res.body as unknown as Readable | null;

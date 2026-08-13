@@ -101,7 +101,7 @@
 .primary {
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .primary:hover:not(:disabled) {

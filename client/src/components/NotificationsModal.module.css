@@ -168,7 +168,7 @@
 .primaryBtn {
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 650;
 }
 .primaryBtn:hover { filter: brightness(1.08); }

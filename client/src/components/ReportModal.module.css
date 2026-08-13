@@ -141,8 +141,8 @@
   font-size: 12.5px;
   /* Same red the comment thread uses for a failed action - there is no danger
      token, and inventing one for a single message would be worse. */
-  color: #e5484d;
-  background: color-mix(in oklab, #e5484d 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 
 .foot {
@@ -170,7 +170,7 @@
   min-height: var(--ctl-h-lg);
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-size: 12.5px;
   font-weight: 650;

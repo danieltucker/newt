@@ -352,8 +352,6 @@
   gap: 12px;
 }
 
-.ctaCentre { justify-content: center; }
-
 /* ══ Type ═══════════════════════════════════════════════════════════════ */
 .kicker {
   display: inline-block;
@@ -393,21 +391,13 @@
   color: var(--muted);
 }
 
-.body code,
-.inlineCode {
+.body code {
   padding: 1px 6px;
   border-radius: 5px;
   background: var(--surface2);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.86em;
   color: var(--accent);
-}
-
-/* The domain, wherever it appears in running copy */
-.domain {
-  font-weight: 650;
-  color: var(--text);
-  white-space: nowrap;
 }
 
 .sectionHead { max-width: 640px; }

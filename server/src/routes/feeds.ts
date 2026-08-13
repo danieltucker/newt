@@ -5,6 +5,7 @@ import { ensureFeeds, refreshStaleFeeds } from '../lib/feedRefresh';
 import { syncBookmarkBadges } from '../lib/unread';
 import { canonicalFeedKey } from '../lib/feedUtils';
 import { resolveFeedUrl } from '../lib/feedDiscovery';
+import { isSafeUrl } from '../lib/isSafeUrl';
 import { blockedRuleFor, blockedMessage } from '../lib/feedBlocklist';
 import { perUserLimiter } from '../lib/rateLimit';
 import { toTsQuery, MIN_QUERY_LEN } from '../lib/feedSearch';
@@ -178,10 +179,15 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     let url: string;
     let discoveredTitle = '';
+    // Whether the address still has to be run past the SSRF gate. The discovery
+    // branch below does it inside resolveFeedUrl; the skipValidation branch has
+    // nothing that would.
+    let needsAddressCheck = false;
     if (body.skipValidation === true) {
       const normalized = normalizeFeedUrl(rawUrl);
       if (!normalized) { res.status(400).json({ error: 'A valid http(s) feed URL is required' }); return; }
       url = normalized;
+      needsAddressCheck = true;
     } else {
       const resolved = await resolveFeedUrl(rawUrl);
       if (!resolved.ok) { res.status(400).json({ error: resolved.error }); return; }
@@ -196,6 +202,20 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // real feeds, not for them being permitted ones.
     const blocked = await blockedRuleFor(url);
     if (blocked) { res.status(403).json({ error: blockedMessage(blocked) }); return; }
+
+    // skipValidation skips *discovery*, not the address check. Discovery is
+    // where resolveFeedUrl applies the SSRF gate, so taking that branch was a
+    // way to store "http://127.0.0.1:9200/" as a subscription and have the
+    // scheduler poll it from then on. The flag means "I already know the feed
+    // address, don't go looking"; it was never meant to mean "and don't check
+    // where it points".
+    //
+    // After the blocklist, not before: this one resolves DNS, and a blocked
+    // domain should be turned away on the rule rather than on whether it
+    // happens to be up.
+    if (needsAddressCheck && !(await isSafeUrl(url))) {
+      res.status(400).json({ error: "That address can't be reached" }); return;
+    }
 
     // The unique index is on the literal URL, but "the same feed spelled
     // differently" is still the same feed — and the whole point of resolving

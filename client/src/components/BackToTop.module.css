@@ -40,7 +40,7 @@
 .btn:hover {
   background: color-mix(in oklab, var(--accent) 88%, transparent);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn:focus-visible {

@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { createHash } from 'crypto';
 
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_ACCESS_SECRET)  throw new Error('JWT_ACCESS_SECRET must be set in production');
@@ -37,4 +38,28 @@ export function verifyTotpPending(token: string): { sub: string } {
   const payload = jwt.verify(token, TOTP_PENDING_SECRET) as { sub: string; type: string };
   if (payload.type !== 'totp-pending') throw new Error('Invalid token type');
   return payload;
+}
+
+/**
+ * What goes in the RefreshToken table in place of the token itself.
+ *
+ * A refresh token is a bearer credential good for seven days, and the table
+ * used to hold the whole thing in the clear - so a database dump, a backup or a
+ * `pg_dump` pasted into a support thread handed over every live session on the
+ * instance, ready to use. The same reasoning that put LLM keys behind
+ * lib/llm/secretBox applies here, and more sharply: these are credentials for
+ * this server rather than someone else's.
+ *
+ * Hashed rather than encrypted, because unlike an API key nothing ever needs to
+ * read it back. The server only asks "is the token in this cookie one I
+ * issued?", which a digest answers. There is no key to lose and nothing to
+ * decrypt if the column leaks.
+ *
+ * Plain SHA-256, not bcrypt: the input is a 200-plus-character signed JWT with
+ * full entropy, not a human-chosen password, so there is no dictionary to slow
+ * down - and this runs on every refresh, where a deliberately slow hash would
+ * only be a cost. The row is still worthless without the signing secret.
+ */
+export function refreshTokenKey(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }

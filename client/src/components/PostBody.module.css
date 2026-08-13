@@ -146,7 +146,7 @@
   place-items: center;
   font-size: 11px;
   line-height: 1;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }

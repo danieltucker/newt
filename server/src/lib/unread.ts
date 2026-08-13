@@ -20,6 +20,34 @@ export async function feedUnreadCount(userId: string, feedId: string): Promise<n
   return Math.min(n, UNREAD_CAP);
 }
 
+/**
+ * The same count, for many feeds at once.
+ *
+ * One grouped query rather than one COUNT per feed. syncBookmarkBadges below
+ * used to loop, and it is called on every read flush, dismiss and restore - so
+ * a reader with forty feed-bearing bookmarks spent forty sequential round trips
+ * on a badge refresh, every time they scrolled past a few articles.
+ *
+ * A feed with nothing unread produces no row (that is what GROUP BY does), so
+ * callers must read a missing entry as zero rather than as "unknown".
+ */
+export async function feedUnreadCounts(
+  userId: string,
+  feedIds: string[],
+): Promise<Map<string, number>> {
+  if (feedIds.length === 0) return new Map();
+  const rows = await prisma.feedItem.groupBy({
+    by: ['feedId'],
+    where: {
+      feedId: { in: feedIds },
+      reads: { none: { userId } },
+      dismissals: { none: { userId } },
+    },
+    _count: { _all: true },
+  });
+  return new Map(rows.map(r => [r.feedId, Math.min(r._count._all, UNREAD_CAP)]));
+}
+
 // Recomputes and persists the unread badge for every one of this user's
 // bookmarks whose feed is in `feedIds`. Returns only the bookmarks whose count
 // actually changed, so callers can hand the client a minimal badge update.
@@ -44,15 +72,33 @@ export async function syncBookmarkBadges(
   });
   const feedIdByKey = new Map(feeds.map(f => [f.canonicalKey, f.id]));
 
-  const changed: { id: string; unreadCount: number }[] = [];
+  // Which bookmarks this call is actually about, paired with the shared Feed
+  // row behind each. Worked out before any counting, so the counts can be asked
+  // for in one go rather than one per bookmark.
+  const targets: { id: string; feedId: string; unreadCount: number }[] = [];
   for (const b of bookmarks) {
     const fid = feedIdByKey.get(canonicalFeedKey(b.feedUrl!));
-    if (!fid || !feedIdSet.has(fid)) continue;
-    const next = await feedUnreadCount(userId, fid);
-    if (next !== b.unreadCount) {
-      await prisma.bookmark.update({ where: { id: b.id }, data: { unreadCount: next } });
-      changed.push({ id: b.id, unreadCount: next });
-    }
+    if (fid && feedIdSet.has(fid)) targets.push({ id: b.id, feedId: fid, unreadCount: b.unreadCount });
   }
+  if (targets.length === 0) return [];
+
+  const counts = await feedUnreadCounts(userId, [...new Set(targets.map(t => t.feedId))]);
+
+  const changed: { id: string; unreadCount: number }[] = [];
+  // Grouped by the value being written, so a flush that clears twenty badges to
+  // zero is one statement rather than twenty. Two bookmarks can point at the
+  // same feed, so this is keyed on the count, not on the feed.
+  const byCount = new Map<number, string[]>();
+  for (const t of targets) {
+    const next = counts.get(t.feedId) ?? 0;   // no row means nothing unread
+    if (next === t.unreadCount) continue;
+    changed.push({ id: t.id, unreadCount: next });
+    const ids = byCount.get(next);
+    if (ids) ids.push(t.id); else byCount.set(next, [t.id]);
+  }
+
+  await Promise.all([...byCount].map(([unreadCount, ids]) =>
+    prisma.bookmark.updateMany({ where: { id: { in: ids } }, data: { unreadCount } })));
+
   return changed;
 }

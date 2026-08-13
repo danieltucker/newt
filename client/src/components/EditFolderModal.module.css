@@ -1,24 +1,16 @@
-.wideCard {
-  width: 460px !important;
-  max-width: 95vw;
-  /* A folder's feed list grows without limit, so the card caps its height and
-     scrolls its middle rather than running off the top and bottom of the
-     screen - the title and the save/delete row stay put. */
-  max-height: min(720px, calc(100vh - 48px));
-  display: flex;
-  flex-direction: column;
-}
+/* Only the delete affordance and its confirm row live here.
 
-.body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* Pull the scrollbar into the card's padding so it doesn't crowd the inputs. */
-  margin-right: -10px;
-  padding-right: 10px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklab, var(--muted) 40%, transparent) transparent;
-}
+   The rest of this dialog - backdrop, card, title, name field, colour swatches,
+   save/cancel - is NewFolderModal's stylesheet, which EditFolderModal.tsx imports
+   alongside this one (as `styles`, with this file as `ownStyles`). Editing a
+   folder is creating one plus a way to delete it, so the shared half is shared
+   rather than copied.
+
+   This file used to be 335 lines. Feeds were edited here until v1.11.0, when
+   they moved out of bookmark folders into their own categories, and the whole
+   feed list, inline feed editor and suggestion picker went with them to
+   FeedManagerModal - but their CSS stayed. Twenty-four of thirty class names in
+   here matched nothing at all. */
 
 .actionsRow {
   display: flex;
@@ -39,9 +31,9 @@
   padding: 0 14px;
   min-height: var(--ctl-h-lg);
   background: transparent;
-  border: 1px solid color-mix(in oklab, #FF4500 40%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
   border-radius: var(--ctl-r);
-  color: #FF4500;
+  color: var(--danger);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   cursor: pointer;
@@ -50,7 +42,7 @@
 }
 
 .deleteBtn:hover {
-  background: color-mix(in oklab, #FF4500 10%, transparent);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
 }
 
 .confirmRow {
@@ -83,7 +75,7 @@
 }
 
 .confirmYes {
-  background: #FF4500;
+  background: var(--danger);
   border: 1px solid transparent;
   color: #fff;
   font-weight: 600;
@@ -96,240 +88,3 @@
   border: 1px solid var(--border);
   color: var(--text);
 }
-
-/* ── Feed list ────────────────────────── */
-.feedList {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.feedItem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
-  border: 1px solid color-mix(in oklab, var(--accent) 20%, transparent);
-  border-radius: 8px;
-  padding: 6px 8px 6px 12px;
-}
-
-.feedLabel {
-  font-size: 13px;
-  color: var(--text);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.feedHost {
-  font-size: 11px;
-  color: var(--muted);
-  opacity: 0.55;
-  white-space: nowrap;
-  flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.feedRemove,
-.feedEdit {
-  background: none;
-  border: none;
-  padding: 3px;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  transition: color 0.12s;
-  flex-shrink: 0;
-}
-
-.feedRemove:hover { color: #e44; }
-.feedEdit:hover { color: var(--accent); }
-.feedRemove:disabled, .feedEdit:disabled { opacity: 0.4; cursor: default; }
-
-/* ── Inline feed editor ─────────────────── */
-.feedNote {
-  font-size: 11px;
-  color: var(--muted);
-  opacity: 0.6;
-  margin: -4px 0 8px;
-}
-
-.feedEditor {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface2);
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  padding: 10px 12px 12px;
-}
-
-.feedFieldLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  opacity: 0.6;
-  margin: 8px 0 4px;
-}
-
-.feedFieldLabel:first-child { margin-top: 0; }
-
-.feedSelect {
-  min-height: var(--ctl-h-lg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--ctl-r);
-  padding: 0 12px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-
-.feedSelect:focus { border-color: var(--accent); }
-
-.feedError {
-  font-size: 12px;
-  color: #e44;
-  margin-top: 8px;
-}
-
-.feedEditorActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 12px;
-}
-
-.feedCancel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--ctl-h-lg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--ctl-r);
-  color: var(--text);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  padding: 0 14px;
-  cursor: pointer;
-}
-
-.feedCancel:disabled { opacity: 0.5; cursor: default; }
-
-/* ── Bookmark feed suggestions ─────────── */
-.suggestions {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 10px;
-}
-
-.sugLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  padding: 6px 12px 4px;
-  opacity: 0.6;
-}
-
-.sugItem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.sugItem:hover { background: var(--surface2); }
-.sugItem:disabled { opacity: 0.5; cursor: default; }
-.sugItem:disabled:hover { background: none; }
-
-.sugName {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  flex: 1;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sugDomain {
-  font-size: 11px;
-  color: var(--muted);
-  opacity: 0.55;
-  white-space: nowrap;
-}
-
-.sugAdd {
-  font-size: 16px;
-  font-weight: 300;
-  color: var(--accent);
-  width: 14px;
-  text-align: center;
-  line-height: 1;
-}
-
-/* ── Add feed form ─────────────────────── */
-.feedForm {
-  display: flex;
-  gap: 6px;
-}
-
-.feedInput {
-  flex: 1;
-  min-height: var(--ctl-h-lg);
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--ctl-r);
-  padding: 0 12px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  outline: none;
-  min-width: 0;
-  transition: border-color 0.15s;
-}
-
-.feedInput:focus { border-color: var(--accent); }
-.feedInput::placeholder { color: var(--muted); opacity: 0.45; }
-
-.feedAdd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--ctl-h-lg);
-  background: var(--accent);
-  border: 1px solid transparent;
-  border-radius: var(--ctl-r);
-  color: #fff;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 0 14px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  flex-shrink: 0;
-}
-
-.feedAdd:hover { opacity: 0.85; }
-.feedAdd:disabled { opacity: 0.35; cursor: default; }

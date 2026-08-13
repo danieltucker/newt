@@ -2,6 +2,190 @@
 
 Notable changes to Newt, newest first.
 
+## v1.18.0 - The editor stops stalling, and the server stops trusting addresses
+
+**2026-08-13**
+
+Mostly work you cannot see: a typing stall on phones, several things stored in
+the clear that should not have been, and a hole in the rule that decides which
+addresses this server is allowed to fetch.
+
+### Typing on a phone no longer stutters
+
+The editor was doing two pieces of work on every single keystroke that it did
+not need to do on any of them.
+
+The larger one was reading the formatting state - whether the caret sits in
+bold, italic, underline or strikethrough. That is four calls into the browser,
+each of which makes it resolve style against the selection, and it ran on every
+selection change, which is once per character. Profiled over 700 characters of a
+long note it cost more than twice the entire serialize-and-save path put
+together, and it was the single most expensive thing typing did.
+
+It is also almost always the same answer. Those four booleans are a property of
+the element the caret is in, and typing runs the caret along inside one text
+node without changing that - so the answer is now re-read when the caret
+actually moves somewhere new, or when a selection appears or disappears, and not
+otherwise. Dragging a selection wider still re-reads every time, because that is
+the case where the answer genuinely does change under a still anchor.
+
+The smaller one: deciding whether to show the "empty note" placeholder built a
+complete copy of the note's text, per character, to find out whether the first
+word was blank. It now stops at the first thing that proves the note is not
+empty, which for a note with anything in it is the first node it looks at.
+
+Measured on a 93KB note with the CPU throttled to roughly a mid-range phone: the
+worst frame during a typing burst went from 216ms to 60ms, and total main-thread
+blocking from 51ms to none. Unthrottled, the editor now holds a clean 60fps
+where it previously dropped frames.
+
+### Notes stop saving over themselves
+
+Note saves are debounced by 700ms. On a phone, a cellular round trip routinely
+takes longer than that - so a second save went out while the first was still in
+the air, still carrying the revision the first one was busy superseding. The
+server correctly judged the second write stale, reconciled it, and sent it back
+flagged as merged. The console then re-read the whole tree and raised a
+reconciliation banner, all because of a slow connection and nothing else.
+
+Only one save is in the air at a time now. Anything typed while one is out goes
+in the next, which fires as soon as the reply lands.
+
+### Refresh tokens and 2FA secrets are no longer stored in the clear
+
+Two credentials were sitting in the database as plain text.
+
+**Refresh tokens** were stored whole. Anyone reading that table - a dump, a
+backup, a `pg_dump` pasted into a support thread - held every live session on
+the instance, usable for up to seven days. Nothing ever needs to read one back;
+the only question asked of it is "did I issue this?", which a digest answers. So
+the column holds a SHA-256 now. Existing rows are converted in place by the
+migration, so nobody is signed out by the upgrade.
+
+**TOTP secrets** were stored as bare base32. That one is worse in kind: a TOTP
+secret is the second factor, so a leaked table defeats two-factor authentication
+for every enrolled user, permanently. Unlike a password it cannot be hashed -
+the server has to read it back to check a code - so it is encrypted, with the
+same AES-256-GCM box that has always protected stored LLM API keys. Accounts
+enrolled before this are migrated the next time they sign in; no backfill runs.
+
+One thing to know before rotating `LLM_KEY_SECRET`: it now also protects 2FA
+secrets, so rotating it locks enrolled users out until an admin clears their
+enrolment. It previously only invalidated stored API keys.
+
+**And the server no longer logs a working 2FA code.** When a code was rejected
+during enrolment, the code that *would* have been accepted was computed and
+written to the log beside it - on a path any user can reach as often as they
+like, by mistyping. Whoever could read logs could pass the 2FA challenge for
+that account. The log now records the server's clock, which is what actually
+diagnoses the usual cause, and nothing else.
+
+### The feed fetcher goes through the same address gate as everything else
+
+Newt refuses to fetch private and internal addresses on a user's say-so - that
+is what stops a feed anyone can add from being pointed at something inside the
+network. Three ways past it are now closed.
+
+- **The feed poller was not using the gate at all.** Article pages went through
+  it; the feed fetch itself, which is the older and far larger surface, went out
+  with no address check and followed redirects wherever they led. Since every
+  subscription on the instance is polled on a timer, that was the most
+  attacker-controlled request this server makes. Every hop is now resolved,
+  judged and pinned to the address that passed, the same way article fetches
+  already were.
+- **"Skip validation" skipped the address check too.** That flag means "I
+  already know the feed address, don't go looking for it" - it was never meant
+  to mean "and don't check where it points", but it did, so a subscription could
+  be created for a loopback address and polled from then on.
+- **An IPv4 address written as IPv6 walked straight through.**
+  `http://[::ffff:127.0.0.1]/` is a valid URL that every socket stack connects
+  to 127.0.0.1, and the guard was comparing string prefixes, so it read as
+  public. `[::ffff:169.254.169.254]` reached the cloud metadata service the same
+  way. Those forms are now unwrapped and judged as what they are, and the
+  address rules gained the ranges that were missing: carrier-grade NAT (where
+  Tailscale lives), benchmarking, multicast, reserved and broadcast.
+
+### Buttons you could barely read in the dark theme
+
+`tokens.css` has always carried a warning next to `--on-accent`: the text on a
+solid accent fill has to flip with the theme, because the dark accent is a pale
+lavender that only carries dark text and the light one is a deep indigo that
+only carries white - and hardcoding either gives you a button that is unreadable
+in the other theme.
+
+That is exactly what had happened, in 38 places across 31 files. Primary buttons
+almost everywhere - Save, Publish, Add, Follow, Post, Import, the notification
+badge, the unread badge on a site tile - were painting white text on the accent.
+In the light theme that is right. In the dark theme, which is the default, it
+came out at **2.90:1**, which fails even the 3:1 bar for large text. They all use
+the token now, which is 6.72:1 in the dark and unchanged in the light.
+
+The same fault, one layer down, in the reds: four different ones were being used
+for "destructive" (`#E5484D`, `#FF4500`, `#FF6B6B`, `#E44`), chosen by whichever
+file was written when, and two places were already asking for a `var(--danger)`
+that nothing defined - so they silently took their fallback and no theme could
+ever reach them. There is a real `--danger` now and all four point at it. It is
+the same colour in the dark theme and a deeper one in the light, where the old
+values came to 3.91:1 and 3.44:1 on white and both failed.
+
+Delete, ban, revoke, dismiss and error text are therefore one colour now instead
+of four. The visible change is in the admin panel and most confirm buttons,
+which wore `#FF4500` - orange-red, and the worst of the four for contrast. They
+are crimson now, like everything else that means the same thing.
+
+### Dead stylesheets
+
+About 350 lines of CSS that nothing referenced.
+
+The bulk of it was `EditFolderModal`, which was 335 lines of which 6 classes were
+live. Feeds were edited in that dialog until v1.11.0, when they moved out of
+bookmark folders into their own categories - the feed list, the inline editor and
+the suggestion picker all went to the feed manager, and their styles stayed
+behind. Twenty-four of its thirty class names matched nothing in the component.
+
+Smaller leftovers from the same era: the filter-chip wrapper, active state and
+count badge in the feed panel, which became a dropdown in v1.11.0; a blocked-
+content overlay in the article modal; and single orphans in the console, the
+sidebar, the editor toolbar and the marketing chrome.
+
+Every class in every module is now referenced by the component that imports it,
+with two exceptions that are built dynamically and were checked by hand.
+
+### Dead code
+
+`FilterDropdown` is gone - 200 lines of component and stylesheet that nothing
+had imported since the feed filters became one dropdown in v1.11.0 and the
+reading list's tag filter followed. Its own header comment still claimed both of
+them as users, and two other files pointed at its stylesheet, which is the
+trouble with a component that compiles perfectly and is never rendered.
+
+Five exported functions with no callers anywhere went with it: `getAccessToken`,
+`featurePathFor`, `recordErrorAsync`, `userFeedUrls`, and `checkFeed`.
+
+`checkFeed` is worth a line of its own. It fetched a user-supplied feed URL with
+`redirect: 'follow'` and no address check - the last thing in the server still
+doing that after this release's SSRF work, and the only reason it was not fixed
+alongside the others is that fixing it would have been rewriting code nobody
+calls. Feed badges have been counted from stored read/dismissed state rather
+than from a fresh fetch for several releases; this was the fetch they used to
+come from.
+
+### Feed badges stop counting one query at a time
+
+Recomputing the unread badges on a site tile issued one COUNT per bookmark, in
+sequence, and it runs on every read flush, dismiss and restore. A reader with
+forty feed-bearing bookmarks spent forty round trips on a badge refresh every
+time they scrolled past a few articles. It is one grouped query now, and the
+badges that change are written grouped by value, so a flush that clears twenty
+badges is one statement rather than twenty.
+
+Separately, every feed page load rewrote a "somebody wants this feed" timestamp
+on every feed row it touched - and those rows are shared between everyone
+subscribed to the same feed, so on a popular feed every reader's every scroll
+was an update contending on one row. The only thing that reads that timestamp is
+the scheduler's 14-day dormancy window, which cannot tell the difference, so it
+is written at most hourly now.
+
 ## v1.17.0 - Explore, and reading the actual article
 
 **2026-08-11**

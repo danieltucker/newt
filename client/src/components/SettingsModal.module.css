@@ -623,7 +623,7 @@
   background: var(--accent);
   border: none;
   border-radius: 8px;
-  color: #fff;
+  color: var(--on-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -637,10 +637,10 @@
 .dangerBtn {
   flex-shrink: 0;
   padding: 7px 14px;
-  background: color-mix(in oklab, #FF4500 12%, var(--surface2));
-  border: 1px solid color-mix(in oklab, #FF4500 40%, transparent);
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface2));
+  border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
   border-radius: 8px;
-  color: #FF4500;
+  color: var(--danger);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -787,9 +787,9 @@
 
 .totpError {
   font-size: 13px;
-  color: #FF4500;
+  color: var(--danger);
   padding: 8px 12px;
-  background: rgba(255, 69, 0, 0.08);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-radius: 8px;
 }
 
@@ -910,12 +910,15 @@
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.pageSizeBtn:hover { background: var(--surface3, var(--border)); color: var(--text); }
+/* --border rather than a --surface3 that never existed: this used to read
+   `var(--surface3, var(--border))`, and since nothing defines --surface3 it has
+   always been the fallback. Written plainly so it stops looking themeable. */
+.pageSizeBtn:hover { background: var(--border); color: var(--text); }
 
 .pageSizeBtnActive {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .openModeLabel {

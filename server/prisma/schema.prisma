@@ -331,6 +331,9 @@ model Notification {
 
 model RefreshToken {
   id        String   @id @default(cuid())
+  // The SHA-256 of the refresh token, hex-encoded - never the token itself.
+  // Nothing reads it back; the only question is whether a presented cookie
+  // matches one this server issued. See lib/jwt.ts refreshTokenKey.
   token     String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)

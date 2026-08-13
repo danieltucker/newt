@@ -6,12 +6,8 @@
 
 import { SECTION_BY_SLUG, type Section } from '../marketing/sections';
 
-export const SELF_HOST_PATH = '/self-hosting';
+const SELF_HOST_PATH = '/self-hosting';
 const FEATURES_PREFIX = '/features/';
-
-export function featurePathFor(slug: string): string {
-  return `${FEATURES_PREFIX}${slug}`;
-}
 
 // The section a /features/<slug> path names, or null - both for a path that
 // isn't a feature page at all and for a slug that names no section, so an old or

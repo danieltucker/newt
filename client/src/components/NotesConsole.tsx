@@ -520,6 +520,9 @@ export default function NotesConsole({
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  // A save is in the air. See flush - overlapping writes make the server
+  // reconcile this console against itself.
+  const savingRef = useRef(false);
   // Which revision of the tree this console is editing. Sent with every save so
   // the server can tell an edit made against the current notes from one made
   // against whatever this tab loaded hours ago; replaced by whatever comes back.
@@ -571,7 +574,16 @@ export default function NotesConsole({
   const flush = useCallback(() => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     if (!dirtyRef.current) return;
+    // One save at a time. Two in the air at once collide with each other on the
+    // server: the second still carries the revision the first is in the middle
+    // of superseding, so it is judged stale against a version this very console
+    // wrote, merged, and sent back with `notesMerged` - a reconciliation banner
+    // and a full re-read of the tree, caused by nothing but a slow connection.
+    // On a phone that is the ordinary case, not the edge one: the debounce is
+    // 700ms and a cellular round trip routinely outlasts it.
+    if (savingRef.current) return;   // the in-flight save re-fires for us below
     dirtyRef.current = false;
+    savingRef.current = true;
     Promise.resolve(onSave(docsRef.current, foldersRef.current, flatRef.current, revRef.current))
       .then(result => {
         if (result) {
@@ -584,8 +596,21 @@ export default function NotesConsole({
         }
         setSaved(true);
         setTimeout(() => setSaved(false), 1400);
-      }).catch(() => {});
+      })
+      .catch(() => { dirtyRef.current = true; })   // unsent: keep it pending
+      .finally(() => {
+        savingRef.current = false;
+        // Anything typed while that was out has to go now - it was skipped
+        // above rather than queued, and there may be no further keystroke to
+        // schedule another save.
+        if (dirtyRef.current) flushRef.current();
+      });
   }, [onSave, adopt]);
+  // flush re-enters itself through a ref: it is the value of the callback at
+  // the time the reply lands that should run, not the one captured when the
+  // request went out.
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
 
   const scheduleSave = useCallback(() => {
     dirtyRef.current = true;

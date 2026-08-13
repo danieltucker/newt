@@ -225,17 +225,17 @@
 .ghostBtn { color: var(--muted); background: transparent; }
 .ghostBtn:hover { color: var(--text); }
 
-.dangerBtn { color: #E5484D; }
-.dangerBtn:hover { border-color: #E5484D; background: rgba(229, 72, 77, 0.1); }
+.dangerBtn { color: var(--danger); }
+.dangerBtn:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* ── Results ─────────────────────────────────────────────────────────────── */
 
 .error {
   margin-top: 10px;
   padding: 8px 11px;
-  border: 1px solid rgba(229, 72, 77, 0.4);
-  background: rgba(229, 72, 77, 0.1);
-  color: #E5484D;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
   font-size: 12.5px;
   line-height: 1.5;
   border-radius: 9px;

@@ -272,7 +272,7 @@
 .newFolderCreate {
   background: var(--accent);
   border: none;
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -319,7 +319,7 @@
   background: var(--accent);
   border: none;
   border-radius: var(--ctl-r);
-  color: #fff;
+  color: var(--on-accent);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   font-weight: 600;
