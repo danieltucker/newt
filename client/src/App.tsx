@@ -35,6 +35,7 @@ import { isSelfHostPath, parseFeaturePath } from './utils/marketingUrl';
 import { parseTagPath, isRecentPath } from './utils/hubUrl';
 import {
   isExplorePath, parseExplorePath, isLegacyResearchPath, explorePathFromLegacy,
+  parseExploreRefs,
 } from './utils/researchUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
@@ -301,6 +302,10 @@ export default function App() {
   //
   // ?url= and ?title= are how an article's Explore button hands the article
   // over: the page starts a thread about it once, on mount.
+  //
+  // ?ref= is the quieter half of that — one or more articles attached to a
+  // question the reader has not typed yet (the search bar's /reference). It
+  // sends nothing on arrival; it fills the composer's attachment row and waits.
   const exploreParams = new URLSearchParams(search);
   const view: ShellView | null =
     editId ? { kind: 'editor', postId: editId === 'new' ? null : editId }
@@ -310,6 +315,7 @@ export default function App() {
         seedUrl: exploreParams.get('url'),
         seedQuestion: exploreParams.get('q'),
         seedTitle: exploreParams.get('title'),
+        seedRefs: parseExploreRefs(search),
       }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab, tag: profileTag }

@@ -406,8 +406,9 @@ export const SECTIONS: Section[] = [
       title: 'Type / and keep going',
       body:
         'A proper writing surface hiding behind your new tab: folders, headings, to-dos, tables, ' +
-        'code blocks, images you can paste straight in. Reference a saved article and it embeds ' +
-        'as a card. Delete something and it waits fifteen days before it means it.',
+        'code blocks, images you can paste straight in. Reference a saved article or one of your ' +
+        'own posts and it embeds as a card. Delete something and it waits fifteen days before it ' +
+        'means it.',
       points: ['Slash commands', 'Folders and search', 'To-dos, tables, code, images', 'Recently deleted'],
       flip: true,
     },

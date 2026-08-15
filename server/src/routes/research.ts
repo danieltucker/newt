@@ -28,6 +28,16 @@ router.use(requireAuth);
 
 const MAX_QUESTION = 8_000;
 const MAX_THREADS = 500;
+// How many articles one question may attach with /reference. Four is enough to
+// ask "how do these three accounts differ?" and few enough that a single turn
+// cannot quietly become the most expensive request the account has ever made:
+// each one is a whole article, and they are all re-sent on every follow-up.
+const MAX_REFS = 4;
+// And how many distinct referenced articles the whole thread will carry into a
+// replay. Without a ceiling a long conversation grows one article per question
+// forever, and the twentieth follow-up pays for nineteen pieces nobody is still
+// asking about.
+const MAX_CONTEXT_REFS = 8;
 // How much of a long conversation is replayed to the model. Older turns are
 // dropped from the middle rather than summarized: a research thread's opening
 // question frames everything, and the recent turns are what the next answer
@@ -102,6 +112,56 @@ function toMessageJson(
     sources: toSourcesJson(m.sources),
     createdAt: m.createdAt.toISOString(),
   };
+}
+
+/**
+ * The articles a reader attached to a question with /reference.
+ *
+ * Stored in the same `sources` column the feed search writes to, and in the same
+ * shape — a referenced article and a found one are the same kind of thing to
+ * everything downstream, and giving the reader's own picks a second column would
+ * have meant a migration and two code paths to render one list of articles.
+ *
+ * Resolved through articleContextFor rather than trusted from the body, which is
+ * what makes this safe to accept from a client: it is the same visibility check
+ * the reader's own comment panel applies, so a URL nobody here has any record of
+ * — or a friends-only post by someone who isn't a friend — resolves to nothing
+ * and is silently dropped rather than fetched on the caller's behalf.
+ */
+async function resolveReferences(userId: string, raw: unknown): Promise<SourceJson[]> {
+  if (!Array.isArray(raw)) return [];
+
+  const urls: string[] = [];
+  for (const candidate of raw) {
+    if (urls.length >= MAX_REFS) break;
+    if (typeof candidate !== 'string') continue;
+    if (!isHttpUrl(candidate) || !canonicalArticleKey(candidate)) continue;
+    if (!urls.includes(candidate)) urls.push(candidate);
+  }
+  if (urls.length === 0) return [];
+
+  // The publisher and the date are what make a chip readable six weeks later,
+  // and articleContextFor knows neither — it is built to answer "what does this
+  // say", not "what is it called". So the card metadata comes from the feed row
+  // alongside it, and its absence is not a reason to drop the reference: a
+  // hand-saved link has a title and no feed to have come from.
+  const resolved = await Promise.all(urls.map(async (url) => {
+    const ctx = await articleContextFor(url, userId).catch(() => null);
+    if (!ctx) return null;
+    const item = await prisma.feedItem.findFirst({
+      where: { linkKey: canonicalArticleKey(url) },
+      orderBy: { pubDate: 'desc' },
+      select: { pubDate: true, feed: { select: { title: true } } },
+    }).catch(() => null);
+    return {
+      title: ctx.title,
+      url: ctx.url,
+      source: item?.feed?.title ?? '',
+      pubDate: item?.pubDate ? item.pubDate.toISOString() : null,
+    };
+  }));
+
+  return resolved.filter((s): s is SourceJson => s !== null);
 }
 
 /** Confirms the thread is this user's before anything else touches it. */
@@ -230,7 +290,7 @@ router.get('/threads/:id', async (req: AuthRequest, res: Response): Promise<void
  * to tell whether a thread was created.
  */
 router.post('/threads', researchLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { question, url } = req.body as Record<string, unknown>;
+  const { question, url, refs } = req.body as Record<string, unknown>;
   if (typeof question !== 'string' || !question.trim()) {
     res.status(400).json({ error: 'What would you like to research?' });
     return;
@@ -256,6 +316,13 @@ router.post('/threads', researchLimiter, async (req: AuthRequest, res: Response)
     if (ctx) { sourceUrl = ctx.url; sourceTitle = ctx.title; }
   }
 
+  // Articles the reader attached before sending. The thread's own source is
+  // dropped from the list if it turns up there too — it is already the framing
+  // for every turn, and rendering it twice in the opening question would spend
+  // the article's whole length to say the same thing again.
+  const references = (await resolveReferences(req.userId!, refs))
+    .filter(r => r.url !== sourceUrl);
+
   try {
     const thread = await prisma.researchThread.create({
       data: {
@@ -264,7 +331,11 @@ router.post('/threads', researchLimiter, async (req: AuthRequest, res: Response)
         sourceUrl,
         sourceTitle,
         messages: {
-          create: [{ role: 'user', body: question.trim() }],
+          create: [{
+            role: 'user',
+            body: question.trim(),
+            sources: references as unknown as Prisma.InputJsonValue,
+          }],
         },
       },
     });
@@ -316,6 +387,11 @@ router.delete('/threads/:id', async (req: AuthRequest, res: Response): Promise<v
  * is included, and one that has since been deleted or hidden by a block is not.
  * Storing the rendered context as a row would have frozen a snapshot of other
  * people's words inside a private thread, which is not a thing to keep.
+ *
+ * The same applies to anything attached with /reference, with one addition:
+ * those are rendered against the turn that attached them, and only once each.
+ * A reader who references the same piece in three consecutive questions means
+ * "still this one", not "send it three times".
  */
 async function buildTurns(
   userId: string,
@@ -326,12 +402,44 @@ async function buildTurns(
     orderBy: { createdAt: 'asc' },
   });
 
-  let turns: ChatTurn[] = rows.map(r => ({
-    role: r.role === 'assistant' ? 'assistant' : 'user',
-    content: r.body,
-  }));
+  if (rows.length === 0) return [];
 
-  if (turns.length === 0) return turns;
+  /**
+   * Which referenced articles are worth a context lookup, walked newest-first.
+   *
+   * Newest-first because the ceiling has to fall on the articles the current
+   * question is least likely to be about, and in a long thread that is the ones
+   * attached longest ago. The thread's own source is excluded — it is rendered
+   * separately below and would otherwise be sent twice.
+   */
+  const budget = new Set<string>();
+  for (let i = rows.length - 1; i >= 0 && budget.size < MAX_CONTEXT_REFS; i--) {
+    if (rows[i].role === 'assistant') continue;
+    for (const ref of toSourcesJson(rows[i].sources)) {
+      if (budget.size >= MAX_CONTEXT_REFS) break;
+      if (ref.url === thread.sourceUrl) continue;
+      budget.add(ref.url);
+    }
+  }
+
+  const rendered = new Set<string>();
+  let turns: ChatTurn[] = [];
+  for (const row of rows) {
+    const role: ChatTurn['role'] = row.role === 'assistant' ? 'assistant' : 'user';
+    const blocks: string[] = [];
+    if (role === 'user') {
+      for (const ref of toSourcesJson(row.sources)) {
+        if (!budget.has(ref.url) || rendered.has(ref.url)) continue;
+        rendered.add(ref.url);
+        const ctx = await articleContextFor(ref.url, userId).catch(() => null);
+        if (ctx) blocks.push(renderContext(ctx));
+      }
+    }
+    turns.push({
+      role,
+      content: blocks.length > 0 ? `${blocks.join('\n\n')}\n\n${row.body}` : row.body,
+    });
+  }
 
   if (thread.sourceUrl) {
     const ctx = await articleContextFor(thread.sourceUrl, userId).catch(() => null);
@@ -343,6 +451,12 @@ async function buildTurns(
   if (turns.length > MAX_REPLAYED_TURNS) {
     // Keep the framing and the recent exchange, drop the middle, and say so —
     // silently omitting turns makes the model answer as if they never happened.
+    //
+    // A referenced article rendered into a dropped turn goes with it. That is
+    // the right way round: the budget above is filled newest-first, so what
+    // survives the trim is what the recent questions attached, and an article
+    // that was only ever mentioned forty turns ago is not what the next answer
+    // turns on.
     const head = turns.slice(0, 2);
     const tail = turns.slice(-(MAX_REPLAYED_TURNS - 3));
     turns = [
@@ -366,7 +480,7 @@ router.post('/threads/:id/messages', researchLimiter, async (req: AuthRequest, r
   const thread = await ownThread(req.userId!, req.params.id);
   if (!thread) { res.status(404).json({ error: 'Not found' }); return; }
 
-  const { question, credentialId } = req.body as Record<string, unknown>;
+  const { question, credentialId, refs } = req.body as Record<string, unknown>;
   if (question !== undefined && question !== null) {
     if (typeof question !== 'string' || !question.trim()) {
       res.status(400).json({ error: 'Type a question first' });
@@ -387,9 +501,20 @@ router.post('/threads/:id/messages', researchLimiter, async (req: AuthRequest, r
   }
 
   let userMessageId: string | null = null;
+  let references: SourceJson[] = [];
   if (typeof question === 'string') {
+    // Resolved and stored with the question, not with the answer: they are part
+    // of what was asked, and buildTurns below reads them straight back off the
+    // row it is about to replay.
+    references = (await resolveReferences(req.userId!, refs))
+      .filter(r => r.url !== thread.sourceUrl);
     const created = await prisma.researchMessage.create({
-      data: { threadId: thread.id, role: 'user', body: question.trim() },
+      data: {
+        threadId: thread.id,
+        role: 'user',
+        body: question.trim(),
+        sources: references as unknown as Prisma.InputJsonValue,
+      },
     });
     userMessageId = created.id;
   }
@@ -410,6 +535,11 @@ router.post('/threads/:id/messages', researchLimiter, async (req: AuthRequest, r
 
   sse.send('meta', {
     userMessageId, model: cred.model, provider: cred.provider.id, depth: prefs.depth,
+    // What was actually attached, which is not always what was asked for: a URL
+    // this account has no record of resolves to nothing and is dropped. The
+    // client draws its chips from this rather than from what it sent, so a
+    // reference that didn't take stops claiming to be part of the question.
+    references,
   });
 
   // Every call this turn makes, added up. The planner runs on the cheap model

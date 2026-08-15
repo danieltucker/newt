@@ -65,9 +65,37 @@ export function exploreArticlePath(url: string, title?: string): string {
  * the destination a real page rather than a state handoff that a reload would
  * lose. `url` is optional, since a question asked away from an article is still
  * a question worth keeping.
+ *
+ * `refs` are the articles a /reference attached to the question before it was
+ * sent - what the newt button's Ask field collects. They ride on the same `ref=`
+ * as exploreReferencePath below, and mean the same thing; the difference is only
+ * that here there is already a question to hang them on, so Explore sends rather
+ * than waits.
  */
-export function exploreAskPath(question: string, url?: string): string {
+export function exploreAskPath(question: string, url?: string, refs: string[] = []): string {
   const params = new URLSearchParams({ q: question });
   if (url) params.set('url', url);
+  for (const ref of refs) params.append('ref', ref);
   return `${EXPLORE_PATH}?${params.toString()}`;
+}
+
+/**
+ * Arriving at Explore with an article already attached and nothing asked yet —
+ * what the search bar's /reference does.
+ *
+ * Deliberately not `?url=`, which is the *thread's* source and starts a
+ * conversation about that one article on its own. A reference is material for a
+ * question the reader has not typed yet, and several of them can ride together:
+ * "/reference" three times over is a way of saying "compare these", which is
+ * exactly the question `?url=` cannot express.
+ */
+export function exploreReferencePath(urls: string | string[]): string {
+  const params = new URLSearchParams();
+  for (const url of Array.isArray(urls) ? urls : [urls]) params.append('ref', url);
+  return `${EXPLORE_PATH}?${params.toString()}`;
+}
+
+/** The attached articles in an Explore link, in the order they were added. */
+export function parseExploreRefs(search: string): string[] {
+  return new URLSearchParams(search).getAll('ref').filter(Boolean);
 }

@@ -2,10 +2,9 @@
   width: 100%;
 }
 
-/* Two columns: the thread list, and the conversation. The list collapses to an
-   overlay below the breakpoint rather than stacking above the transcript — a
-   sidebar you have to scroll past to reach what you were reading is worse than
-   one behind a button. */
+/* Two columns: the thread list, and the conversation. Below the breakpoint they
+   become two screens rather than one screen and a drawer — see .showList /
+   .showChat at the bottom of this file, and the note on `pane` in the page. */
 .layout {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
@@ -15,6 +14,10 @@
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
+/* Same frosted vocabulary as the bookmarks rail this sits beside (see .leftCol
+   in NewTabPage.module.css). A flat --surface panel was the one opaque slab on a
+   page whose background is a slow gradient, so it read as a card that had been
+   pasted on rather than a column of the app. */
 .sidebar {
   position: sticky;
   top: 12px;
@@ -23,9 +26,16 @@
   gap: 10px;
   max-height: calc(100vh - 120px);
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 18px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 74%, transparent),
+    color-mix(in oklab, var(--surface) 54%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 45%, transparent);
 }
 
 .sidebarHead {
@@ -36,23 +46,34 @@
 }
 
 .sidebarTitle {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* A labelled control in the --ctl-h tier, so: the house pill. */
 .newBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  min-height: var(--ctl-h);
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 0 12px;
   border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .newBtn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -237,18 +258,25 @@
   object-fit: contain;
 }
 
-.sidebarToggle {
+/* The way back to the conversation list. Only exists on the narrow layout,
+   where the list is a screen rather than a column — above that breakpoint the
+   list is already on screen and an arrow pointing at it would be a button that
+   does nothing. */
+.backBtn {
   display: none;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  padding: 6px 10px;
-  border-radius: 9px;
+  padding: 0;
+  border-radius: var(--ctl-r);
   cursor: pointer;
 }
+.backBtn:hover { border-color: var(--accent); color: var(--accent); }
 
 .transcript {
   flex: 1;
@@ -407,28 +435,77 @@
  * composer floated up to the viewport edge — so the chips spent most of their
  * life below the fold, and appeared half-swallowed by the composer on the way
  * to it. They belong to the composer (they fill it), so they travel with it. */
+/* The transcript scrolls under this, so it needs a ground of its own. It used
+   to be a flat --bg slab, which is where most of "the Explore page looks odd"
+   came from: the shell paints a slow gradient behind every page it hosts, and a
+   rectangle of the raw background colour sitting on top of that reads as a
+   panel someone forgot to style. Frosted instead — the same glass the shell bar
+   and the bookmarks rail are made of, so the composer belongs to the app's
+   chrome rather than interrupting it. */
 .dock {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 0 12px;
-  /* The transcript scrolls under this, so it needs its own ground. */
-  background: var(--bg);
-  border-top: 1px solid var(--border);
+  margin: 0 -10px;
+  padding: 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: 18px 18px 0 0;
+  border-bottom: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 78%, transparent),
+    color-mix(in oklab, var(--surface) 92%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 -8px 28px color-mix(in oklab, var(--shadow) 35%, transparent);
+}
+
+/* ── Room for the newt button ──
+   It floats in a bottom corner of the *window*; this dock runs the width of the
+   column and sticks to the bottom of the page. Where they meet is the send
+   button, which is the last thing in the composer row — so the button that asks
+   the follow-up ends up underneath the button that opens the newt menu, and
+   there is no way to press it.
+
+   So the corner is reserved. The slab itself still runs full width, and the
+   newt button floats over the empty end of it, which reads as deliberate rather
+   than as a control that has been shoved aside.
+
+   The number: the button sits 22px off the window edge and is 46px across (52
+   on touch), and wants ~10px of air. The dock's own right edge is already 6px
+   from the window edge on a phone (a 16px page gutter, less this rule's own
+   10px bleed), so 72px clears it there and over-reserves a little on a laptop,
+   which costs the field a few pixels it has to spare.
+
+   Above 1320px there is nothing to clear: the page is capped at 1200px and
+   centred, so the button is out past the column's edge and a gutter here would
+   just be a hole. See utils/newtDock, which publishes the side. */
+@media (max-width: 1320px) {
+  :global(html[data-newt-dock='right']) .dock { padding-right: 72px; }
+  :global(html[data-newt-dock='left']) .dock { padding-left: 72px; }
+}
+
+@media (max-width: 1320px) and (hover: none) {
+  :global(html[data-newt-dock='right']) .dock { padding-right: 78px; }
+  :global(html[data-newt-dock='left']) .dock { padding-left: 78px; }
 }
 
 /* A short fade above the dock so the answer dissolves into it instead of being
-   sliced off by the border. */
+   sliced off by its top edge. Transparent at both ends now the dock is glass —
+   fading to an opaque colour would have painted the very slab this is meant to
+   stop being visible. */
 .dock::before {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 22px;
-  background: linear-gradient(to top, var(--bg), transparent);
+  height: 24px;
+  background: linear-gradient(to top, color-mix(in oklab, var(--bg) 70%, transparent), transparent);
   pointer-events: none;
 }
 
@@ -494,22 +571,105 @@
   gap: 8px;
 }
 
-.input {
+/* The field and the paperclip are one control. Separately, the attach button
+   was a third pill on a row that already had two, and the eye had to work out
+   which of them the box belonged to.
+   --ctl-h-lg and --ctl-r are the text-input tier in tokens.css: a field is a
+   rect, because a pill here reads as a search box. */
+.inputWrap {
   flex: 1;
   min-width: 0;
-  resize: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-height: var(--ctl-h-lg);
   border: 1px solid var(--border);
   background: var(--surface);
-  color: var(--text);
+  border-radius: var(--ctl-r);
+  padding: 3px 3px 3px 0;
+}
+.inputWrap:focus-within { border-color: var(--accent); }
+
+/* The field grows to what you type, with no JavaScript and no measuring.
+ *
+ * It briefly did measure: an effect read scrollHeight and wrote the result back
+ * as an inline height. That is the usual recipe and it was wrong here, because
+ * the webfonts arrive with `display: swap` (see index.html). The measurement
+ * happened on mount against the fallback face, the real face swapped in a moment
+ * later with taller line boxes, and the height stayed locked to the old numbers
+ * - so a one-line question sat clipped inside a box that scrolled. Navigating
+ * straight into Explore is when that gap is widest, which is exactly what the
+ * search bar's /reference does.
+ *
+ * So nothing is measured. This wrapper's ::after holds the same string with the
+ * same metrics and is what actually sizes the grid row; the textarea is laid
+ * over it and stretches to match. The two cannot disagree about the height of a
+ * line of text, because they are both asking the same font the same question at
+ * the same moment - during layout, every time, font swaps and window resizes
+ * included. */
+.grow {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  /* Past this it scrolls rather than growing - by then the question is long
+     enough that eating the transcript above it is the worse trade. */
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* The sizer. The trailing space is load-bearing: without it a value ending in a
+   newline measures as though that line were not there, and the field shrinks
+   out from under the caret the moment you press Enter for a new paragraph. */
+.grow::after {
+  content: attr(data-value) ' ';
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Every property that decides where a line breaks and how tall it is has to be
+   identical on both, or the invisible copy sizes the box for a different string
+   than the visible one. */
+.input, .grow::after {
+  grid-area: 1 / 1;
+  min-width: 0;
   font: inherit;
   font-size: 14px;
   line-height: 1.5;
-  padding: 10px 12px;
-  border-radius: 12px;
-  outline: none;
+  padding: 7px 4px 7px 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* The wrapper above carries the frame; this is just the text. */
+  border: none;
+  background: none;
 }
-.input:focus { border-color: var(--accent); }
+
+.input {
+  resize: none;
+  color: var(--text);
+  outline: none;
+  /* The row is already exactly as tall as the text, so there is nothing to
+     scroll - and a scrollbar here would sit inside .grow's own. */
+  overflow: hidden;
+}
 .input:disabled { opacity: 0.6; }
+
+/* Icon-only, and nested inside the field: the --ctl-h-sm tier, with --ctl-r
+   corners like every other icon square in the app. */
+.attachBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  border: none;
+  background: none;
+  color: var(--muted);
+  border-radius: var(--ctl-r);
+  cursor: pointer;
+}
+.attachBtn:hover:not(:disabled) { color: var(--accent); background: var(--surface2); }
+.attachBtn:disabled { opacity: 0.4; cursor: default; }
 
 .sendBtn, .stopBtn, .primaryBtn {
   flex: none;
@@ -518,9 +678,23 @@
   font-size: 13px;
   font-weight: 600;
   padding: 0 16px;
+  cursor: pointer;
+}
+
+/* Two tiers, and the difference is deliberate (see the shape rule in
+   tokens.css). Ask and Stop commit the field beside them, so they take the
+   field's height and the field's corners — a pill next to a rect was the one
+   pairing that rule exists to prevent, and it is what this row used to be.
+   Condense and Connect a model are ordinary standalone controls, so they stay
+   the app's house pill. */
+.sendBtn, .stopBtn {
+  min-height: var(--ctl-h-lg);
+  border-radius: var(--ctl-r);
+}
+
+.primaryBtn {
   min-height: var(--ctl-h);
   border-radius: 999px;
-  cursor: pointer;
 }
 
 .sendBtn, .primaryBtn {
@@ -554,6 +728,151 @@
 }
 .dangerBtn { color: var(--danger); border-color: var(--danger); }
 .ghostBtn { color: var(--muted); }
+
+/* ── /reference: the picker, and what it attaches ────────────────────────── */
+
+/* Opens upward out of the composer, because that is where the command being
+   typed is. Capped and scrolling: this is a shortlist to choose from, not a
+   search results page, and a list that grows until it covers the answer you
+   were reading defeats the point of attaching anything to a question about it. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 45%, transparent);
+}
+
+.pickerLabel, .pickerEmpty {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pickerLabel {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pickerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.pickerRow:hover { background: var(--surface2); }
+.pickerRow:hover .pickerTitle { color: var(--accent); }
+
+.pickerFavicon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.pickerTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pickerSource {
+  flex: none;
+  max-width: 34%;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* What is attached: to the question above it in the transcript, or to the one
+   being typed below. Same chip either way — the only difference is whether it
+   carries an × — because they are the same claim at two moments. */
+.refRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.refRowLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.refChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 6px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.refChipFavicon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.refChipTitle {
+  min-width: 0;
+  max-width: 220px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.refChipTitle { cursor: pointer; }
+button.refChipTitle:hover { color: var(--accent); }
+
+.refChipRemove {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.refChipRemove:hover { color: var(--danger); background: var(--surface2); }
 
 /* ── Empty states ────────────────────────────────────────────────────────── */
 
@@ -636,6 +955,24 @@
   .starter:hover { transform: none; }
 }
 
+/* Where /reference gets taught. On the blank page rather than in the composer's
+   placeholder, which can only hold one sentence and is already spending it on
+   an example question. */
+.blankTip {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.blankTip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
 .empty {
   max-width: 460px;
   margin: 60px auto;
@@ -671,38 +1008,47 @@
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
 
-  .sidebarToggle { display: block; }
+  .backBtn { display: inline-flex; }
 
-  /* Off-canvas rather than hidden: the list is still reachable, it just stops
-     costing a third of the width on a phone. */
+  /* Two screens, one at a time.
+   *
+   * This was an off-canvas drawer behind a ☰ in the page header, which put a
+   * second hamburger directly under the shell bar's own — and gave the drawer
+   * no way out, since the button that opened it ended up behind the panel it
+   * opened. A list and a detail view that swap is what the rest of the app does
+   * on a phone, and the back arrow in the conversation header is the only
+   * control the arrangement needs.
+   *
+   * `display: none` rather than a transform: the hidden half is genuinely not
+   * on screen, so nothing in it can be tabbed into or read out, and the
+   * transcript no longer sits under a panel that is only pretending to be
+   * elsewhere. */
+  .showList .main,
+  .showChat .sidebar { display: none; }
+
+  /* Its own screen now, so it drops the pinned-column behaviour and simply
+     fills the width it has been given. */
   .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    z-index: 40;
-    width: 260px;
+    position: static;
     max-height: none;
-    border-radius: 0;
-    border-left: none;
-    transform: translateX(-100%);
-    transition: transform 180ms ease;
+    min-height: calc(100vh - 200px);
   }
 
-  .layoutOpen .sidebar { transform: translateX(0); }
+  .sidebarTitle { font-size: 12px; }
 
   .main { min-height: calc(100vh - 180px); }
 
-  /* The dock is opaque and pinned to the bottom edge, but it was only ever as
-     wide as the body column. On a phone the column's gutters *are* the page
-     margin, so the bar stopped short of both screen edges and the transcript
-     went on scrolling through the two strips left over - which reads as a
-     composer sliced off at each end rather than as a bar with margins.
+  /* The dock is pinned to the bottom edge, but it was only ever as wide as the
+     body column. On a phone the column's gutters *are* the page margin, so the
+     bar stopped short of both screen edges and the transcript went on scrolling
+     through the two strips left over - which reads as a composer sliced off at
+     each end rather than as a bar with margins.
      It bleeds to the edges here instead, and the gutters move inside it as
      padding so the input keeps exactly the inset it had. The negative margins
      are the shell's own side padding below 900px (see .content in
      NewTabPage.module.css); written per side because the safe-area insets are
-     not symmetrical once the phone is turned. */
+     not symmetrical once the phone is turned. Square across the top and no side
+     borders, since a rounded corner needs a gap beside it to be a corner. */
   .dock {
     margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
     margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
@@ -710,19 +1056,20 @@
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     /* Clears the home indicator, which otherwise sits over the send button. */
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
   }
 }
 
 /* Touch: 16px is the threshold under which iOS Safari zooms the page to meet a
    focused field, and it does not zoom back out. Every tap on the composer left
    the viewport scaled up with the input running off both sides of the screen -
-   the same symptom as the dock above, arrived at from the other direction. */
+   the same symptom as the dock above, arrived at from the other direction.
+   The invisible sizer takes the same size, or it would go on measuring the
+   field at 14px while the text in it is set at 16. */
 @media (hover: none) {
-  .input { font-size: 16px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar { transition: none; }
+  .input, .grow::after { font-size: 16px; }
 }
 
 /* ── Feed articles consulted for an answer ───────────────────────────────── */

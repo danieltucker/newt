@@ -47,6 +47,18 @@ export interface ModelOption {
    * working out what to search the feed for. See `utilityModelFor`.
    */
   utility?: boolean;
+  /**
+   * Whether the model accepts `output_config.effort`.
+   *
+   * Opt-in, and per model rather than per provider, because it is neither.
+   * Anthropic added the effort parameter partway through the Claude 4 line: the
+   * 5-series models take it, and Haiku 4.5 — which is the model *every* Claude
+   * user's proofread and feed-search calls run on, whatever they picked — does
+   * not, and rejects a request carrying it with a 400. Sending it is therefore
+   * not a safe default, and a model added here later has to say it supports the
+   * knob before Newt reaches for it. See `supportsEffort` and buildBody in chat.
+   */
+  effort?: boolean;
 }
 
 export interface Provider {
@@ -92,6 +104,7 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
         inputPer1M: 5,
         outputPer1M: 25,
         blurb: 'The deepest reasoning, and the most expensive by a wide margin. Worth it for hard research; wasted on a proofread.',
+        effort: true,
       },
       {
         id: 'claude-sonnet-5',
@@ -100,6 +113,7 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
         inputPer1M: 3,
         outputPer1M: 15,
         blurb: 'Close to Opus on most work at a lower price. A good default.',
+        effort: true,
       },
       {
         id: 'claude-haiku-4-5',
@@ -109,6 +123,8 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
         outputPer1M: 5,
         blurb: 'Fastest and cheapest. Fine for proofreading and short questions.',
         utility: true,
+        // No `effort`: Haiku 4.5 predates the parameter and 400s on it. This is
+        // the line the proofreader was breaking on.
       },
     ],
     defaultModel: 'claude-sonnet-5',
@@ -174,6 +190,18 @@ export function isProviderId(v: unknown): v is ProviderId {
 
 export function modelOption(provider: Provider, id: string): ModelOption | undefined {
   return provider.models.find(m => m.id === id);
+}
+
+/**
+ * Whether it is safe to send `output_config.effort` for this model.
+ *
+ * False for anything Newt does not have in its catalogue, which covers the
+ * self-hosted case and any model id typed in by hand: an endpoint that has
+ * never heard of the field is as likely to reject the request as ignore it, and
+ * a knob is not worth losing the answer over. See ModelOption.effort.
+ */
+export function supportsEffort(provider: Provider, model: string): boolean {
+  return modelOption(provider, model)?.effort === true;
 }
 
 /**

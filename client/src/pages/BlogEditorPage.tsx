@@ -3,11 +3,12 @@ import RichEditor from '../components/RichEditor';
 import TagChipInput from '../components/TagChipInput';
 import { POST_VIS_META, VIS_ORDER } from '../components/VisibilityMeta';
 import { BlogPost, CommentVisibility } from '../types';
-import { createPost, updatePost, loadOwnPost, deletePost } from '../hooks/useBlog';
+import { createPost, updatePost, loadOwnPost, deletePost, useMyPosts } from '../hooks/useBlog';
 import { blogPathFor } from '../utils/blogUrl';
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { fetchPageMeta } from '../utils/pageMeta';
 import { articleEmbed, embeddedUrls } from '../utils/noteEmbed';
+import { postReferences } from '../utils/postReferences';
 import { takeSeed, clearSeed } from '../utils/composerSeed';
 import { relTime } from '../utils/notifications';
 import ProofreadPanel from '../components/ProofreadPanel';
@@ -301,9 +302,15 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   const measureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // /reference offers the same saved articles a note does - one reading list,
-  // cited from wherever you happen to be writing.
+  // cited from wherever you happen to be writing - plus your own posts, so a
+  // follow-up can point back at the thing it follows without going to fetch its
+  // URL. The post being written is left out of its own picker.
   const { items: readingList } = useReadingList(accessToken);
-  const references = useMemo(() => readingList.map(articleEmbed), [readingList]);
+  const { posts: myPosts } = useMyPosts(accessToken);
+  const references = useMemo(
+    () => [...readingList.map(articleEmbed), ...postReferences(myPosts, postId ?? createdId ?? undefined)],
+    [readingList, myPosts, postId, createdId],
+  );
   // Live comment counts for the references already in the post, seeded from the
   // loaded body and topped up as more are added.
   const [embedUrls, setEmbedUrls] = useState<string[]>(() => embeddedUrls(bodyRef.current));

@@ -1,6 +1,6 @@
 import nodeFetch from 'node-fetch';
 import type { Readable } from 'stream';
-import { Provider, modelOption } from './providers';
+import { Provider, supportsEffort } from './providers';
 import { makeSafeAgent } from '../isSafeUrl';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
@@ -130,7 +130,13 @@ async function resolveTarget(req: ChatRequest): Promise<{ url: string; agent: No
   return { url, agent };
 }
 
-function buildBody(req: ChatRequest): { headers: Record<string, string>; body: string } {
+/**
+ * The headers and JSON body for one call, in whichever dialect the provider
+ * speaks. Exported for its test: what goes on the wire is exactly the thing
+ * that has been wrong here, and there is no way to assert on it from outside
+ * without standing up a fake provider.
+ */
+export function buildBody(req: ChatRequest): { headers: Record<string, string>; body: string } {
   if (req.provider.wire === 'anthropic') {
     // Caching is a *prefix* match, so the two breakpoints go at the two places
     // the prefix stops being stable: the end of the system prompt, and the end
@@ -162,11 +168,14 @@ function buildBody(req: ChatRequest): { headers: Record<string, string>; body: s
         stream: true,
         // Effort is the cost dial. Nested inside output_config, not top-level.
         //
-        // Sent only for a model Newt has in its catalogue. The field is free
-        // text, so someone can name an older Claude that predates the effort
-        // parameter and would reject the request outright — refusing to send
-        // the knob is better than refusing to answer.
-        ...(req.effort && modelOption(req.provider, req.model)
+        // Sent only for a model that is known to take it. Catalogue membership
+        // used to be the test, on the theory that the only models which would
+        // choke were ones Newt had never heard of — but that was wrong in the
+        // one case that mattered most: Haiku 4.5 is in the catalogue, predates
+        // the effort parameter, and 400s on it. It is also the utility model, so
+        // *every* Claude user's proofread ran into it however they had the rest
+        // of their account set up. See supportsEffort.
+        ...(req.effort && supportsEffort(req.provider, req.model)
           ? { output_config: { effort: req.effort } }
           : {}),
         // No `temperature` here on purpose: the current Claude models reject
@@ -291,7 +300,11 @@ function messageForStatus(status: number, providerLabel: string): string {
   if (status === 401 || status === 403) return `${providerLabel} rejected that API key. Check it in Settings → AI.`;
   if (status === 404) return `${providerLabel} doesn’t recognise that model id.`;
   if (status === 429) return `${providerLabel} is rate-limiting this key. Try again shortly.`;
-  if (status === 400) return `${providerLabel} rejected the request — usually an unknown model id for this key.`;
+  // Not "unknown model id" — that is the 404 above, and saying it here sends the
+  // reader off checking a setting that was never wrong. A 400 means the model
+  // would not take the request as sent: a parameter it doesn't support, or more
+  // text than its context holds.
+  if (status === 400) return `${providerLabel} refused the request. The model may not support something Newt sent, or the text may be longer than it can read.`;
   if (status >= 500) return `${providerLabel} is having trouble right now. Try again shortly.`;
   return `${providerLabel} returned an unexpected error (${status}).`;
 }

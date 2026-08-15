@@ -4,6 +4,7 @@ import { bookmarkHref, faviconUrl } from '../utils/color';
 import { noteText, noteSnippet } from '../utils/noteText';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { useFeedSearch } from '../hooks/useFeedSearch';
+import { referenceQuery } from '../utils/referenceCommand';
 
 // Rotating placeholder hints - cycled with a per-letter flip animation
 const HINTS = [
@@ -16,7 +17,7 @@ const HINTS = [
 
 // Shown in place of the /c line once the reader has connected their own model:
 // /ask answers here, in Newt, against what you are reading.
-const ASK_HINT = 'Ask your own model with /ask your question';
+const ASK_HINT = 'Ask your own model with /ask - or attach an article with /reference';
 const HINT_INTERVAL_MS = 6000;
 const HINT_FLIP_MS = 340;
 
@@ -36,6 +37,10 @@ const SHORTCUTS = [
   { prefix: '/b',  engine: 'Bing',       verb: 'Search', url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
   { prefix: '/c',  engine: 'Claude',     verb: 'Ask',    url: (q: string) => `https://claude.ai/new?q=${encodeURIComponent(q)}` },
 ];
+
+// /reference is deliberately not in SHORTCUTS above: every entry there resolves
+// to a URL to navigate to, and this one resolves to an article to attach. See
+// utils/referenceCommand, which Explore's composer parses with too.
 
 function isUrl(s: string): boolean {
   const trimmed = s.trim();
@@ -75,6 +80,7 @@ interface NoteHint {
 
 type Suggestion =
   | { kind: 'ask';      text: string }
+  | { kind: 'reference'; id: string; title: string; source: string; url: string }
   | { kind: 'note';     id: string; title: string; snippet: string }
   | { kind: 'bookmark'; id: string; name: string; domain: string }
   | { kind: 'article';  id: string; title: string; source: string; url: string; matchedTag?: string }
@@ -105,6 +111,12 @@ interface Props {
    * answer for someone with no key.
    */
   onAsk?: (question: string) => void;
+  /**
+   * Attaches an article to whatever gets asked next, in Explore. Undefined
+   * alongside onAsk — with no model connected there is nothing to attach it to,
+   * and /reference is not offered.
+   */
+  onReference?: (url: string) => void;
 }
 
 export default function SearchBar({
@@ -116,6 +128,7 @@ export default function SearchBar({
   onOpenNote,
   onOpenArticle,
   onAsk,
+  onReference,
 }: Props) {
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
@@ -127,7 +140,13 @@ export default function SearchBar({
   // every article from every subscription, going back as far as the database
   // does. So this one is searched where it lives. Ranked and already narrowed to
   // this user's subscriptions by the server - see routes/feeds.ts.
-  const feedHits = useFeedSearch(value);
+  // Null unless a /reference is being typed, in which case it is the part after
+  // the prefix. Computed out here because the feed search below has to be given
+  // the bare term: it refuses anything starting with a slash, on the grounds
+  // that a command is on its way somewhere else and has no business hitting the
+  // database - which is right for /g and exactly wrong for this one.
+  const referenceTerm = onReference ? referenceQuery(value.trim()) : null;
+  const feedHits = useFeedSearch(referenceTerm ?? value);
 
   // Rotating hint: flip the current one out, swap text, flip the next one in
   const [hintIdx, setHintIdx] = useState(0);
@@ -152,6 +171,37 @@ export default function SearchBar({
     // navigating, and because it must not be shadowed by any web-search prefix.
     if (onAsk && (raw === '/ask' || raw.startsWith('/ask '))) {
       return [{ kind: 'ask', text: raw.slice(4).trim() }];
+    }
+
+    // /reference: articles only, and nothing else in the list. The other
+    // corpora are deliberately absent - a bookmark is a site rather than
+    // something with text to reason about, and a note is already the reader's
+    // own words. Everything offered here is a thing Explore can actually read.
+    //
+    // Saved articles and the feed archive, both of which are already loaded
+    // wherever this bar appears. Explore's own composer has the fuller picker,
+    // which reaches your posts as well - this one is the shortcut that carries
+    // an article over, not the place the choosing is meant to happen.
+    if (referenceTerm !== null) {
+      const term = referenceTerm.toLowerCase();
+      // The bare prefix, with nothing typed after it yet. A row saying so beats
+      // an empty dropdown, which reads as "no such command".
+      if (!term) return [{ kind: 'reference', id: 'ref-empty', title: '', source: '', url: '' }];
+      const picks: Suggestion[] = [];
+      const seen = new Set<string>();
+      const add = (id: string, a: { url: string; title: string; source: string }) => {
+        if (seen.has(a.url)) return;
+        seen.add(a.url);
+        picks.push({ kind: 'reference', id, title: a.title, source: a.source, url: a.url });
+      };
+      // The reading list first: an article deliberately kept is a likelier
+      // answer to "which one did I mean?" than one that merely went past.
+      readingItems
+        .filter(a => a.title.toLowerCase().includes(term) || a.source.toLowerCase().includes(term))
+        .slice(0, 4)
+        .forEach(a => add(a.id, a));
+      feedHits.slice(0, 6).forEach(a => add(`feed-${a.id}`, a));
+      return picks.slice(0, 7);
     }
 
     // Slash shortcut: recognized the moment the bare prefix is typed ("/c"),
@@ -229,7 +279,7 @@ export default function SearchBar({
     }
 
     return results;
-  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, onAsk, searchEngine]);
+  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, onAsk, referenceTerm, searchEngine]);
 
   function navigate(url: string) {
     if (searchNewTab) {
@@ -247,6 +297,13 @@ export default function SearchBar({
       // A bare "/ask" with nothing after it has nothing to send yet.
       if (!item.text) return;
       onAsk?.(item.text);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
+    } else if (item.kind === 'reference') {
+      // The "type part of a headline" row - nothing to attach yet.
+      if (!item.url) return;
+      onReference?.(item.url);
       setValue('');
       setOpen(false);
       setSelectedIndex(-1);
@@ -295,6 +352,11 @@ export default function SearchBar({
       setSelectedIndex(-1);
       return;
     }
+    // /reference resolves to an article, and Enter with nothing highlighted has
+    // not chosen one. Returning here rather than falling through is the whole
+    // point: without it, "/reference climate" would be handed to Google as a
+    // web search, which is the one thing the reader definitely did not ask for.
+    if (referenceTerm !== null) return;
     // Check slash shortcuts on submit too (e.g. Enter pressed without selecting a suggestion)
     if (SHORTCUTS.some(s => q === s.prefix)) return; // bare prefix - wait for a query
     const shortcut = SHORTCUTS.find(s => q.startsWith(s.prefix + ' '));
@@ -436,6 +498,21 @@ export default function SearchBar({
                   </span>
                 </div>
                 <span className={styles.badge}>Ask</span>
+              </div>
+            );
+            if (item.kind === 'reference') return (
+              <div key={item.id} className={`${styles.result} ${sel ? styles.resultSel : ''}`}
+                onMouseDown={() => handleMouseDown(item)} onMouseEnter={() => setSelectedIndex(i)}>
+                <div className={styles.resultIconWrap}><IconDoc /></div>
+                <div className={styles.resultText}>
+                  <span className={styles.resultLabel}>
+                    {item.title || 'Reference an article'}
+                  </span>
+                  <span className={styles.resultSub}>
+                    {item.url ? item.source : 'Type part of a headline…'}
+                  </span>
+                </div>
+                <span className={styles.badge}>Reference</span>
               </div>
             );
             if (item.kind === 'note') return (

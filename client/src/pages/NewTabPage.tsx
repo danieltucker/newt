@@ -23,6 +23,7 @@ import FeedOnboarding from '../components/FeedOnboarding';
 import SaveArticleModal from '../components/SaveArticleModal';
 import NotificationsModal from '../components/NotificationsModal';
 import ArticleDetailModal from '../components/ArticleDetailModal';
+import NewtButton from '../components/NewtButton';
 import ProfilePage from './ProfilePage';
 import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
@@ -61,15 +62,17 @@ import { parseArticlePath } from '../utils/articleUrl';
 import { blogPathFor, blogRefOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
-import { exploreArticlePath, exploreAskPath } from '../utils/researchUrl';
+import { exploreArticlePath, exploreAskPath, exploreReferencePath } from '../utils/researchUrl';
 import { canonicalFeedUrl } from '../utils/feedKey';
 import { articleEmbed } from '../utils/noteEmbed';
+import { postReferences } from '../utils/postReferences';
 import { stashSeed } from '../utils/composerSeed';
 import { useFolders } from '../hooks/useFolders';
 import { useFeeds, useImportableFeeds, useSuggestedFeeds } from '../hooks/useFeeds';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBookmarks } from '../hooks/useBookmarks';
 import { useReadingList } from '../hooks/useReadingList';
+import { useMyPosts } from '../hooks/useBlog';
 import { useReadingFolders, nextShelfColor } from '../hooks/useReadingFolders';
 import { useSettings, NoteDoc, NoteFolder } from '../hooks/useSettings';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -104,7 +107,15 @@ export type ShellView =
   // Explore is in the shell for the same reason the composer is: the notes
   // console and the reading list are what you dig into an article *against*,
   // and having to leave the conversation to check one would be the worse trade.
-  | { kind: 'explore'; threadId: string | null; seedUrl?: string | null; seedTitle?: string | null; seedQuestion?: string | null };
+  | {
+      kind: 'explore';
+      threadId: string | null;
+      seedUrl?: string | null;
+      seedTitle?: string | null;
+      seedQuestion?: string | null;
+      /** Articles to attach to the next question without asking anything yet. */
+      seedRefs?: string[];
+    };
 
 interface Props {
   accessToken: string;
@@ -379,6 +390,32 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [articleUrl, setArticleUrl] = useState<string | null>(null);
 
   /**
+   * What "this page" means to a question asked from here.
+   *
+   * Whatever is open to be read, in the order it sits in front of the reader:
+   * the comment thread over everything, then the article reader, then a post
+   * being read in the shell. The label is what the newt button's Ask field
+   * shows, so the reader can see what the model is about to be handed before
+   * they type - "about this article" and a silent "about nothing in
+   * particular" should not look the same.
+   *
+   * A post travels as its absolute URL rather than the route: the server keys
+   * every piece of context on a canonical article URL, and a post written here
+   * is one it can look up without leaving the building (see articleContextFor).
+   */
+  const page = useMemo<{ url?: string; label: string | null }>(() => {
+    if (thread?.url) return { url: thread.url, label: 'this article' };
+    if (articleUrl) return { url: articleUrl, label: 'this article' };
+    if (view?.kind === 'post') {
+      return {
+        url: `${window.location.origin}${blogPathFor(view.username, view.slug)}`,
+        label: 'this post',
+      };
+    }
+    return { url: undefined, label: null };
+  }, [thread, articleUrl, view]);
+
+  /**
    * The search bar's /ask, which goes straight to Explore.
    *
    * It used to open its own overlay with a "continue in Explore" button
@@ -387,10 +424,28 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
    * handing the question to the page that could do both. So it goes there in
    * the first place. Whichever reader is open rides along as context: the
    * comment thread if there is one, otherwise the iframe reader.
+   *
+   * `refs` are articles a /reference pinned to the question before it was sent,
+   * which the newt button's Ask field collects and the search bar does not -
+   * there, /reference is a command of its own and lands in referenceInExplore
+   * below.
    */
-  const askInExplore = useCallback((question: string) => {
-    navigate(exploreAskPath(question, thread?.url ?? articleUrl ?? undefined));
-  }, [navigate, thread, articleUrl]);
+  const askInExplore = useCallback((question: string, refs: string[] = []) => {
+    navigate(exploreAskPath(question, page.url, refs));
+  }, [navigate, page]);
+
+  /**
+   * The search bar's /reference: carry an article to Explore and attach it to
+   * whatever gets asked next.
+   *
+   * Nothing is sent — that is the difference from /ask, and the reason both
+   * exist. /ask is a question that happens to have an article behind it;
+   * /reference is an article in search of a question, and the question is typed
+   * on the other side.
+   */
+  const referenceInExplore = useCallback((url: string) => {
+    navigate(exploreReferencePath(url));
+  }, [navigate]);
   const [showConsole, setShowConsole] = useState(false);
   const [consoleFading, setConsoleFading] = useState(false);
   const showConsoleRef = useRef(false);
@@ -416,12 +471,30 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // Set when notes are opened from a hit in the main search bar: which note to
   // land on, and the term that found it (seeded into the console's own filter).
   const [notesTarget, setNotesTarget] = useState<{ id: string; query: string } | null>(null);
+  // Set when the newt button's New note was what opened the console, so it
+  // starts on a blank note rather than on whatever was last being written.
+  const [notesNew, setNotesNew] = useState(false);
 
   function closeNotes() {
     if (notesFadingRef.current) return;
     setNotesFading(true);
-    setTimeout(() => { setShowNotes(false); setNotesFading(false); setNotesTarget(null); }, 320);
+    setTimeout(() => {
+      setShowNotes(false); setNotesFading(false); setNotesTarget(null); setNotesNew(false);
+    }, 320);
   }
+
+  // The two ways the newt button opens the console. Both clear the other's
+  // instruction: opening Notes after New note must not make a second blank one.
+  const openNotes = useCallback(() => {
+    setNotesNew(false);
+    setNotesTarget(null);
+    setShowNotes(true);
+  }, []);
+  const openNewNote = useCallback(() => {
+    setNotesTarget(null);
+    setNotesNew(true);
+    setShowNotes(true);
+  }, []);
 
   // Go and read the notes again whenever the console opens. Settings are
   // fetched once, at sign-in, so a tab that has been open since this morning is
@@ -469,10 +542,39 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     navigate('/blog/new');
   }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // What a note's /reference command can point at. Archived items stay on the
-  // list: having finished an article is a reason to write about it, not a
-  // reason to lose the ability to cite it.
-  const noteReferences = useMemo(() => readingList.map(articleEmbed), [readingList]);
+  // Your own posts, for the same picker. Fetched only once the notes console is
+  // actually open - passing a null token is how the other gated hooks here
+  // decline to fetch - because a new tab that never writes a note should not be
+  // paying for a list of blog posts on every load.
+  //
+  // Explore joins the gate for the same reason the console is on it: /reference
+  // works in its composer too, and a picker that silently omits your own posts
+  // on one screen and lists them on another is worse than either answer.
+  const { posts: myPosts } = useMyPosts(
+    showNotes || view?.kind === 'explore' ? accessToken : null,
+  );
+
+  // What a note's /reference command can point at: everything saved, and
+  // everything you have written. Archived items stay on the list - having
+  // finished an article is a reason to write about it, not a reason to lose the
+  // ability to cite it - and so do drafts, since a note is private too.
+  //
+  // Saved articles lead because that is what the command was for and what the
+  // longer of the two lists is; posts are few and are found by typing.
+  //
+  // Split in two because the newt button's Ask field gets only the first half.
+  // Your own posts are fetched on demand (the gate above), so a picker that
+  // offered them here would list them on a tab that had opened notes and omit
+  // them on one that hadn't - and the newt button is a shortcut in the same
+  // sense the search bar's /reference is, where saved articles and the feed
+  // archive have always been the whole corpus. The fuller pickers are in the
+  // note editor and Explore's composer, which is where the choosing is meant to
+  // happen.
+  const articleReferences = useMemo(() => readingList.map(articleEmbed), [readingList]);
+  const noteReferences = useMemo(
+    () => [...articleReferences, ...postReferences(myPosts)],
+    [articleReferences, myPosts],
+  );
 
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
@@ -484,7 +586,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   type Overlay = 'notes' | 'console' | 'addLink';
   const dismissOtherOverlays = useCallback((keep: Overlay) => {
     if (keep !== 'console') { setShowConsole(false); setConsoleFading(false); }
-    if (keep !== 'notes') { setShowNotes(false); setNotesFading(false); setNotesTarget(null); }
+    if (keep !== 'notes') { setShowNotes(false); setNotesFading(false); setNotesTarget(null); setNotesNew(false); }
     if (keep !== 'addLink') { setShowAddLink(false); setBookmarkletAddUrl(''); }
     setShowNewFolder(false);
     setShowSettings(false);
@@ -543,6 +645,9 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       if (isTypingTarget(e.target)) return;
       if (showNotesRef.current) return;
       e.preventDefault();
+      // The plain console, on whatever was last being written - the letter is
+      // the newt button's Notes row, not its New note one.
+      setNotesNew(false);
       setShowNotes(true);
     }
     document.addEventListener('keydown', onKey);
@@ -863,6 +968,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       onOpenNote={openNoteFromSearch}
       onOpenArticle={openSearchResult}
       onAsk={llm.hasModel ? askInExplore : undefined}
+      onReference={llm.hasModel ? referenceInExplore : undefined}
     />
   );
 
@@ -1039,6 +1145,11 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                       : 'Go deeper on this article: what is the wider context, what is contested, and what should I read next?'),
                     url: view.seedUrl ?? undefined,
                   } : null}
+                  seedRefs={view.seedRefs}
+                  // The same corpus a note's /reference points at, so the
+                  // command means one thing in both places. Explore searches
+                  // the feed archive alongside it, on the server.
+                  references={noteReferences}
                   hasModel={llm.hasModel}
                   onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
                   // The source card at the top of a thread opens the same reader
@@ -1127,9 +1238,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                   if (dest) {
                     card.markSaved();
                     try {
-                      const created = await saveItem(fields);
-                      if (dest.folderId) await moveToFolder(created.id, dest.folderId);
-                      else await setInLibrary(created.id, true);
+                      // One request, filed where it was sent: the create used to
+                      // be followed by a move, which is two round trips and a
+                      // window where the article sat in the reading list.
+                      await saveItem(fields, dest);
                     } catch {
                       card.restore();
                     }
@@ -1194,16 +1306,21 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         />
       )}
 
-      {/* Notes launcher - small round button, bottom-right */}
+      {/* The newt button - the round "n" in a bottom corner. Hidden while the
+          notes console is up, which covers the corner it sits in.
+
+          Ask is gated on a connected model in the same breath as every other AI
+          affordance: without one the field is replaced by the way to connect
+          one, rather than a box with nowhere to send. */}
       {!showNotes && (
-        <button
-          className={styles.notesLauncher}
-          onClick={() => setShowNotes(true)}
-          title="Notes"
-          aria-label="Open notes"
-        >
-          <span className={styles.notesLauncherLetter} aria-hidden>n</span>
-        </button>
+        <NewtButton
+          onOpenNotes={openNotes}
+          onNewNote={openNewNote}
+          onAsk={llm.hasModel ? askInExplore : undefined}
+          onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
+          contextLabel={page.label}
+          references={articleReferences}
+        />
       )}
 
       {showAddLink && (
@@ -1423,6 +1540,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
             onSave={saveNotes}
             initialNoteId={notesTarget?.id}
             initialQuery={notesTarget?.query}
+            newNote={notesNew}
             references={noteReferences}
             onTurnIntoPost={handleTurnNoteIntoPost}
             closing={notesFading}

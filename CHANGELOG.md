@@ -2,6 +2,174 @@
 
 Notable changes to Newt, newest first.
 
+## v1.19.0 - Saved once, and something to cite
+
+**2026-08-14**
+
+An article belongs in a place once, machines on your own network can be
+bookmarked by name, /reference can now point at what you have written as well as
+what you have read - and it works in Explore, where it decides what the model
+actually gets to see. The editor has colour and highlight, and a Clear
+formatting button that finally removes all of it.
+
+### The same article, saved twice
+
+Nothing stopped you saving an article you had already saved, and the feed makes
+that easy to do by accident: a publisher touches a piece and it comes round
+again, looking new. The reading list ended up holding two of it, and neither
+copy knew about the other.
+
+An article is now saved to a place once. Saving it again hands back the copy
+that is already there rather than making a second one - it is not an error, the
+article really is saved - and the add form in the reading list says so, and says
+where it is. A place means the reading list or one Library shelf, so the same
+article filed onto two different shelves is still two: that is a decision, not
+an accident.
+
+The match is the canonical URL rather than the raw string, so the copy that
+arrived from the river with a `?utm_source=` on the end is recognised as the one
+saved from the bookmarklet - the same rule that decides which comment thread
+those two share.
+
+Filing an article straight onto a shelf from the feed is now one request instead
+of a create followed by a move. That also fixes Undo after deleting something
+off a shelf: the article used to come back to the reading list, because the
+create had no way to say where it belonged.
+
+### A bookmark for the box in the corner of the room
+
+Half of this landed in 1.18.1 - an explicit `http://` survives being saved - but
+only for an address with a dot in it. A machine on your own network usually has
+neither: `http://nas`, `http://truenas:9000`. Those were rejected outright, and
+the way a dialog rejects an address is by leaving the Add button dead, with
+nothing said about why.
+
+The dot was doing a job worth keeping: without a scheme it is the only thing
+separating an address from a word, and "reading" should not become a bookmark.
+So the rule now depends on what you typed. No scheme, and a dot is still
+required. Type `http://` or `https://` and that is you saying this is an
+address, so a single-label host is taken at its word. An `https://` typed in
+front of one is kept for the same reason - dropping it stored something the edit
+dialog would then refuse to read back.
+
+Importing a bookmarks file keeps `http://` and any port too, so the things on
+your network survive the trip in.
+
+### /reference can point at your own posts
+
+The command searched your saved articles - all of them, wherever they are filed,
+including the Library and its shelves. It now searches your own posts as well,
+so a follow-up can point back at the thing it follows without leaving the editor
+to go and copy a URL out of the address bar. Drafts are listed, and say they are
+drafts: fine to cite in a note, which is private, and a dead link in a post,
+which is not.
+
+The post being written is left out of its own picker, and posts are marked as
+yours in the list - a post's byline is a person's name, which otherwise reads
+exactly like a publication.
+
+### /reference in Explore, and in the search bar
+
+In a note, /reference cites something. In Explore it does more than that: it
+decides what the model reads before it answers. A conversation could already be
+*about* one article - the one its Explore button started it from - but there was
+no way to say "and this one too", which is most of what a second question is.
+
+Type `/reference` in Explore's composer and the same picker opens, over the
+composer rather than in the middle of the screen. It searches what you have
+saved and what you have written, and the whole archive of your feeds alongside
+them - which is the half you are least likely to have filed anywhere. Pick up to
+four; they sit above the composer as chips until the question goes, and stay
+under it in the transcript afterwards, so a thread opened next month still says
+what its answers were given.
+
+The search bar takes `/reference` too, as the short way round: pick an article
+there and it goes to Explore already attached, waiting for the question. That is
+the difference from `/ask`, which sends a question that happens to have an
+article behind it. This is an article in search of a question.
+
+The articles are read at the moment you ask rather than stored, so a comment
+posted since is included and one deleted since is not - the same rule the thread
+source has always followed. An address Newt has no record of is dropped rather
+than fetched: /reference points at things you already have, and is not a way to
+ask this server to go and read the web on your behalf.
+
+### Colour, and a clear button that means it
+
+The editor can colour text and highlight it. Eight hues, in both kinds, from a
+button on the formatting bar and on the selection bubble - the bubble being
+where a selection is, and colour being a thing you do to a selection. `/colour`
+opens the same panel on the caret. Each swatch is the letter A shown in the
+colour it applies, or sitting on the wash it applies, so it is a sample rather
+than a dot to interpret.
+
+They are named colours from a fixed palette rather than a colour wheel, and that
+is what lets each one be picked twice - once to carry on dark paper, once on
+white. A word written in red at noon is still readable red at midnight. It is
+also the only shape that could survive being saved: a stored `#c9333a` would
+have to travel as a `style` attribute, and the sanitizer refuses those outright,
+because an author writing CSS onto a span is an author restyling a reader's
+page.
+
+Clear formatting used to be the browser's own `removeFormat`, which leaves
+links, code spans and - since a colour is a class - every colour standing. It is
+ours now, and it means what it says: every inline mark over the selected words
+goes, colours and highlights and code and links included, and the block the
+selection touches comes back to body text. Headings, quotes, code blocks,
+to-dos, list items and indentation all flatten to plain paragraphs.
+
+Two exceptions, both because flattening them would lose something no formatting
+button put there: a table keeps its rows and columns (its cells are still
+cleared), and a reference or a gallery is left standing.
+
+### Proofread works again on a Claude key
+
+Proofreading a draft came back as "Claude rejected the request". So did feed
+search behind Explore, though that one failed quietly and just stopped finding
+anything.
+
+Both run on the cheap utility model rather than the one you picked — a
+proofread is mechanical, and paying Opus rates to find a typo is money for
+nothing. For a Claude account that model is Haiku 4.5, which predates the
+`effort` dial Newt sends to control how hard a model thinks, and rejects any
+request carrying it. Whether the account was set to Opus, Sonnet or Haiku made
+no difference: the side tasks always landed on the model that could not take
+the parameter.
+
+Effort is now something a model has to be marked as supporting before Newt
+reaches for it, rather than something assumed of anything in the catalogue. A
+model added later that doesn't take the dial is quiet by default instead of
+broken by default.
+
+The error was also pointing the wrong way. A refusal like that said "usually an
+unknown model id", which sends you off to check a setting that was never wrong
+— an unknown model id is a different response entirely, and already had its own
+message.
+
+### Explore on a phone
+
+Explore is two columns, and on a narrow screen the thread list used to slide out
+from the left behind a ☰ - directly under the shell bar's own ☰, which made two
+hamburgers for one page. It also had no way out: the button that opened the
+drawer ended up behind the drawer it opened.
+
+The two columns are now two screens. Opening Explore shows your conversations
+with a New chat button; opening one shows the conversation with a back arrow to
+the list. Deleting the open thread from the list leaves you on the list, which
+is where you were.
+
+### Explore stops looking like a different app
+
+The composer bar was painted in the flat page background colour, sitting on top
+of the shell's gradient - so the one thing pinned to the bottom of the screen
+read as an unstyled panel. It is frosted now, like the shell bar above it and
+the bookmarks rail beside it, and the thread list with it.
+
+The field grows to what you type instead of being two rows tall whether you
+needed one or five, and the Ask button matches the field it commits rather than
+being a pill next to a rectangle - which is the pairing the app's own control
+rules exist to prevent.
+
 ## v1.18.1 - Links on your own network
 
 **2026-08-13**

@@ -401,8 +401,26 @@
   .brand { padding: 0 4px; margin-right: 0; }
   /* Create used to hide here and defer to a "Write a post" row in the
      hamburger. That row is gone, so the button stays at every width - by this
-     point it's already icon-only (see 820px above) and costs ~33px. */
-  .createBtn { padding: 0 8px; }
+     point it's already icon-only (see 820px above) and costs ~33px.
+
+     Icon-only, a filled pill sitting next to three transparent .iconBtns reads
+     as the odd one out rather than as emphasis, so down here it drops its
+     surface and becomes one of them: same square footprint, same muted-to-text
+     hover. The fill comes back with the label above 560px. */
+  .createBtn {
+    width: var(--ctl-h);
+    padding: 0;
+    justify-content: center;
+    border-color: transparent;
+    border-radius: var(--ctl-r);
+    background: none;
+    color: var(--muted);
+  }
+  .createBtn:hover {
+    background: var(--surface2);
+    border-color: var(--border);
+    color: var(--text);
+  }
 }
 
 /* ── Touch ──

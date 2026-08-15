@@ -1,0 +1,100 @@
+/* ── Text colours and highlights, as they look wherever they are read ──
+   Not a CSS module, for the reason styles/noteEmbed.css isn't one: these class
+   names are baked into saved note, post and comment HTML, so they are part of
+   the stored document format and must never be hashed. They are also loaded
+   from main.tsx rather than from the editor's stylesheet, because a rendered
+   post or comment has to paint them on a page that never loads the editor.
+
+   Colour is a class rather than an inline style on two counts. The server's
+   allowlist refuses `style` outright - it would be a way to smuggle CSS into
+   someone else's page - so a hex would not survive a round trip through
+   storage. And a fixed palette is the only way a colour can follow the theme:
+   the two sets below are the same eight hues picked twice, once to carry on
+   dark paper and once on white. A word written in red at noon is still
+   readable red at midnight, which a stored `#c9333a` could never be.
+
+   Both sets are picked to clear 4.5:1 against the surface they sit on - the
+   --paper ramp in the editor, --surface in a rendered post, which are within a
+   shade of each other in both themes. The highlights are the mirror image:
+   deep, desaturated washes in dark, pale tints in light, each one chosen so
+   that ordinary body text still carries on top of it. That is why a highlight
+   sets no text colour of its own - it doesn't need to, and overriding one
+   would break the two being used together. */
+
+[data-theme="dark"] {
+  --note-fg-grey:   #a6adbd;
+  --note-fg-red:    #ff8b8b;
+  --note-fg-orange: #ffb066;
+  --note-fg-yellow: #f2d06b;
+  --note-fg-green:  #6fd8a4;
+  --note-fg-blue:   #74c0fc;
+  --note-fg-purple: #b8a6ff;
+  --note-fg-pink:   #ff9ecb;
+
+  --note-bg-grey:   #333846;
+  --note-bg-red:    #57262b;
+  --note-bg-orange: #593a17;
+  --note-bg-yellow: #55471a;
+  --note-bg-green:  #1e4a38;
+  --note-bg-blue:   #1e3f5e;
+  --note-bg-purple: #3a2f66;
+  --note-bg-pink:   #582544;
+}
+
+[data-theme="light"] {
+  --note-fg-grey:   #646b7a;
+  --note-fg-red:    #c9333a;
+  --note-fg-orange: #a85a10;
+  --note-fg-yellow: #8a6d00;
+  --note-fg-green:  #0f7a52;
+  --note-fg-blue:   #1263a8;
+  --note-fg-purple: #6b3fd4;
+  --note-fg-pink:   #b0257a;
+
+  --note-bg-grey:   #e6e8ee;
+  --note-bg-red:    #ffdcdc;
+  --note-bg-orange: #ffe4c4;
+  --note-bg-yellow: #fff3bf;
+  --note-bg-green:  #d3f5e3;
+  --note-bg-blue:   #d7ebff;
+  --note-bg-purple: #e6ddff;
+  --note-bg-pink:   #ffdcee;
+}
+
+.note-fg-grey   { color: var(--note-fg-grey); }
+.note-fg-red    { color: var(--note-fg-red); }
+.note-fg-orange { color: var(--note-fg-orange); }
+.note-fg-yellow { color: var(--note-fg-yellow); }
+.note-fg-green  { color: var(--note-fg-green); }
+.note-fg-blue   { color: var(--note-fg-blue); }
+.note-fg-purple { color: var(--note-fg-purple); }
+.note-fg-pink   { color: var(--note-fg-pink); }
+
+/* A little air either side, and rounded ends, so a highlighted phrase reads as
+   one marked passage rather than as a coloured box butted against its
+   neighbours. `box-decoration-break` is what keeps that true when the phrase
+   wraps onto a second line - without it the rounding lands on the line ends
+   rather than on the phrase. */
+.note-bg-grey,
+.note-bg-red,
+.note-bg-orange,
+.note-bg-yellow,
+.note-bg-green,
+.note-bg-blue,
+.note-bg-purple,
+.note-bg-pink {
+  padding: 0.1em 0.15em;
+  margin: 0 -0.05em;
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.note-bg-grey   { background: var(--note-bg-grey); }
+.note-bg-red    { background: var(--note-bg-red); }
+.note-bg-orange { background: var(--note-bg-orange); }
+.note-bg-yellow { background: var(--note-bg-yellow); }
+.note-bg-green  { background: var(--note-bg-green); }
+.note-bg-blue   { background: var(--note-bg-blue); }
+.note-bg-purple { background: var(--note-bg-purple); }
+.note-bg-pink   { background: var(--note-bg-pink); }

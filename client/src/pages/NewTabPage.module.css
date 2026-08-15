@@ -104,65 +104,6 @@
   margin-top: 0;
 }
 
-/* ── Footer ── */
-/* ── Notes launcher ──
-   Small off-white round button pinned to the bottom-right; opens the notes
-   console (as does "/"). Sits below modal/console layers so it's covered when
-   an overlay is up. */
-/* The offsets clear the home indicator: on a phone this button used to sit
-   under the browser's own bottom toolbar. */
-.notesLauncher {
-  position: fixed;
-  right: max(22px, env(safe-area-inset-right, 0px));
-  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
-  z-index: var(--z-content-overlay);
-  width: 46px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 50%;
-  background: #f4f4f2;
-  border: 1px solid rgba(20, 22, 30, 0.10);
-  box-shadow: 0 3px 10px rgba(20, 22, 30, 0.16), 0 1px 3px rgba(20, 22, 30, 0.12);
-  cursor: pointer;
-  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.16s, background 0.16s;
-  animation: notesLauncherIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.notesLauncher:hover {
-  background: #fafaf9;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(20, 22, 30, 0.22), 0 1px 3px rgba(20, 22, 30, 0.12);
-}
-
-.notesLauncher:active {
-  transform: translateY(0) scale(0.96);
-}
-
-.notesLauncherLetter {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-  pointer-events: none;
-  user-select: none;
-  background: linear-gradient(135deg, #9B8CFF 0%, #5BC8E6 55%, #36D6A6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
-@keyframes notesLauncherIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.85); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .notesLauncher { animation: none; }
-}
 
 /* ── Ambient background ──
    Single-hue, luminance-based depth (tone-on-tone with the brand accent so
@@ -257,15 +198,4 @@
     grid-template-columns: 1fr;
     gap: 20px;
   }
-}
-
-/* Touch: the launcher is a thumb target, not a cursor one, and it never gets
-   the hover that would otherwise announce it. */
-@media (hover: none) {
-  .notesLauncher {
-    width: 52px;
-    height: 52px;
-  }
-
-  .notesLauncherLetter { font-size: 27px; }
 }

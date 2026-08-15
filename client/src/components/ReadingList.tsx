@@ -194,7 +194,9 @@ function ShelfPicker({ folders, initial, onCancel, onSave }: {
 
 interface Props {
   items: ReadingListItem[];
-  onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes'>) => Promise<unknown>;
+  /** Resolves to the saved row - which may be a copy that was already there,
+   *  flagged `duplicate`, since an article is only saved to a place once. */
+  onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes' | 'duplicate'>) => Promise<ReadingListItem>;
   onUpdate: (id: string, patch: Partial<Pick<ReadingListItem, 'title' | 'tag' | 'notes'>>) => Promise<void>;
   onDelete: (id: string) => void;
   /** Undo of onDelete. The row is already gone, so this re-creates it. */
@@ -615,6 +617,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   const [fetchedImage, setFetchedImage] = useState('');
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Said when a save turned out to be one you had already made. Not an error -
+  // the article is saved - so it reports where it is rather than refusing.
+  const [notice, setNotice] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -804,6 +809,14 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     return () => clearTimeout(timer);
   }, [url, titleEdited]);
 
+  // Where a copy that was already saved is sitting, in words - so "you have
+  // this already" can also say where to find it.
+  function placeOf(item: ReadingListItem): string {
+    if (!item.inLibrary) return 'in your reading list';
+    const shelf = item.folderId ? readingFolders.find(f => f.id === item.folderId) : null;
+    return shelf ? `on the “${shelf.name}” shelf` : 'in your Library';
+  }
+
   async function handleSave() {
     const trimUrl = url.trim();
     if (!trimUrl) return;
@@ -813,8 +826,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
       ? [...tags, tagInput.trim().toLowerCase()]
       : tags;
     setSaving(true);
+    setNotice('');
     try {
-      await onSave({
+      const saved = await onSave({
         url: trimUrl.startsWith('http') ? trimUrl : `https://${trimUrl}`,
         title: title.trim() || domain,
         source: domain,
@@ -822,6 +836,14 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         tag: finalTags.join(','),
         imageUrl: fetchedImage,
       });
+      // An article is only saved to a place once, so this may have found the
+      // copy already there. Say so and stay open: clearing the form and closing
+      // would look exactly like a save that worked, and the list would not have
+      // grown to say otherwise.
+      if (saved.duplicate) {
+        setNotice(`You already have this one — it's ${placeOf(saved)}.`);
+        return;
+      }
       setUrl(''); setTitle(''); setTags([]); setTagInput('');
       setTitleEdited(false);
       setFetchedImage('');
@@ -839,6 +861,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     setUrl(''); setTitle(''); setTags([]); setTagInput('');
     setTitleEdited(false);
     setFetchedImage('');
+    setNotice('');
   }, []);
 
   // Escape closes, and the page behind must not scroll while the list is up -
@@ -860,6 +883,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     setUrl(''); setTitle(''); setTags([]); setTagInput('');
     setTitleEdited(false);
     setFetchedImage('');
+    setNotice('');
   }
 
   const shelfLabel = shelfKey === PILE
@@ -1019,7 +1043,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             spellCheck={false}
             placeholder="URL (e.g. verge.com/article)"
             value={url}
-            onChange={e => setUrl(e.target.value)}
+            onChange={e => { setUrl(e.target.value); setNotice(''); }}
             autoFocus
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
           />
@@ -1043,6 +1067,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
           {/* The button that opens this form says Add, so the one that commits
               it does too - and a Save down here would be the third meaning the
               word carries on this screen. */}
+          {notice && <div className={styles.formNotice} role="status">{notice}</div>}
           <button className={styles.saveBtn} onClick={handleSave} disabled={!url.trim() || saving}>
             {saving ? 'Adding…' : 'Add'}
           </button>

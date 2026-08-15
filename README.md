@@ -71,6 +71,12 @@ in the interface at all.
   quote from your draft, a reason and a suggestion; you make the change.
 - **`/ask your question`** from the search bar opens it in Explore instead of
   sending you to a search engine.
+- **`/reference`** decides what the model reads. Type it in Explore's composer
+  to attach up to four pieces to your next question — from what you have saved,
+  what you have written, or the whole archive of your feeds — and they stay with
+  the question in the transcript. The search bar takes it too, as the short way
+  round: pick an article there and Explore opens with it already attached.
+  Nothing is fetched for this either; it points at what you already have.
 - **Condense into a post** turns a thread that got somewhere into a private
   draft.
 
@@ -89,7 +95,7 @@ box through a tunnel or a reverse proxy with TLS and it works.
 ### Notes
 
 A notes console with folders, rich text, slash commands, references to your own
-saved articles, and a recently deleted shelf. The tree is versioned, so a tab
+saved articles and posts, and a recently deleted shelf. The tree is versioned, so a tab
 you left open all morning cannot post its stale copy over a day of writing.
 
 ![The notes console over the dimmed page, folders on the left and the slash menu open in a note](client/public/shots/notes-light.png)

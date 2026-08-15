@@ -26,14 +26,24 @@ export function parseBookmarkHTML(html: string): ParsedBookmark[] {
 
     let domain: string;
     try {
-      domain = new URL(href).hostname.replace(/^www\./, '');
+      const u = new URL(href);
+      // Host, not hostname: a port is part of the address for anything not on
+      // 80/443, which on an exported bookmarks file means the things on your own
+      // network. And an http:// address keeps its scheme for the same reason the
+      // add-link dialog keeps it - scheme-less is read back as https, so
+      // dropping it imported a tile that pointed at a port nothing answers on.
+      domain = u.host.replace(/^www\./, '');
+      if (u.protocol === 'http:') domain = `http://${domain}`;
     } catch {
       continue;
     }
     if (!domain || seen.has(domain)) continue;
     seen.add(domain);
 
-    const name = a.textContent?.trim() || domain;
+    // The scheme is plumbing, not a name - a tile called "http://nas" would be
+    // the only one in the grid shouting its protocol.
+    const label = domain.replace(/^http:\/\//, '');
+    const name = a.textContent?.trim() || label;
     results.push({ name, domain, color: deriveColor(domain) });
   }
 

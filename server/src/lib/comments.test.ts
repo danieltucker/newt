@@ -301,6 +301,50 @@ describe('sanitizeCommentHtml — galleries', () => {
   });
 });
 
+describe('sanitizeCommentHtml — text colour and highlight', () => {
+  it('keeps a colour and a highlight from the palette', () => {
+    const out = sanitizeCommentHtml(
+      '<p><span class="note-fg-red">warning</span>: ' +
+      '<span class="note-bg-yellow">read this</span></p>');
+    expect(out).toContain('class="note-fg-red"');
+    expect(out).toContain('class="note-bg-yellow"');
+  });
+
+  it('keeps the two kinds nested, which is how both at once is written', () => {
+    const out = sanitizeCommentHtml(
+      '<p><span class="note-bg-blue"><span class="note-fg-pink">x</span></span></p>');
+    expect(out).toContain('class="note-bg-blue"');
+    expect(out).toContain('class="note-fg-pink"');
+  });
+
+  it('refuses a hue that is not in the palette', () => {
+    const out = sanitizeCommentHtml(
+      '<p><span class="note-fg-chartreuse">x</span>' +
+      '<span class="note-bg-">y</span></p>');
+    expect(out).not.toContain('chartreuse');
+    expect(out).not.toContain('note-bg-');
+  });
+
+  // The whole reason a colour is a class and not a style: an author writing
+  // their own CSS onto a span is an author restyling someone else's page.
+  it('still refuses the style attribute a colour could otherwise have been', () => {
+    const out = sanitizeCommentHtml(
+      '<p><span style="color:#f00;position:fixed;inset:0">x</span>' +
+      '<font color="#f00">y</font></p>');
+    expect(out).not.toContain('style');
+    expect(out).not.toContain('color');
+    expect(out).toContain('x');
+    expect(out).toContain('y');
+  });
+
+  it('does not let a colour class smuggle another class in beside it', () => {
+    const out = sanitizeCommentHtml('<span class="note-fg-red note-todo hero">x</span>');
+    expect(out).toContain('note-fg-red');
+    expect(out).not.toContain('note-todo');
+    expect(out).not.toContain('hero');
+  });
+});
+
 describe('isBlankHtml', () => {
   it('treats an empty editor as blank', () => {
     expect(isBlankHtml('')).toBe(true);

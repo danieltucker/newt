@@ -17,6 +17,7 @@ const MODELS = [
   'readingListItem', 'readingFolder', 'comment', 'blogPost', 'image', 'feed',
   'feedItem', 'feedSubscription', 'feedFolder', 'readFeedItem', 'dismissedFeedItem', 'refreshToken',
   'adminAction', 'commentRevision', 'errorLog', 'feedFetchLog', 'blockedDomain',
+  'researchThread', 'researchMessage',
 ] as const;
 
 const METHODS = [

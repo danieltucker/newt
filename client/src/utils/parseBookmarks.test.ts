@@ -38,4 +38,18 @@ describe('parseBookmarkHTML', () => {
     const result = parseBookmarkHTML('<a href="https://foo.com"></a>');
     expect(result[0].name).toBe('foo.com');
   });
+
+  // Same rule the add-link dialog follows: scheme-less means https, so a plain
+  // http address on the LAN has to keep its scheme or the tile leads nowhere.
+  it('keeps http:// and any port', () => {
+    const result = parseBookmarkHTML('<a href="http://192.168.1.15:8096/web">Jellyfin</a>');
+    expect(result[0].domain).toBe('http://192.168.1.15:8096');
+    expect(result[0].name).toBe('Jellyfin');
+  });
+
+  it('leaves the scheme out of a name it has to invent', () => {
+    const result = parseBookmarkHTML('<a href="http://nas:9000"></a>');
+    expect(result[0].domain).toBe('http://nas:9000');
+    expect(result[0].name).toBe('nas:9000');
+  });
 });

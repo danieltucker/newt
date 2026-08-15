@@ -387,6 +387,13 @@ interface Props {
   onSidebarWidth?: (w: number) => void;        // persist a resize
   initialNoteId?: string;   // opened from a search hit in the main search bar
   initialQuery?: string;    // …and the term that found it, seeded into the filter
+  /**
+   * Open on a blank note rather than on whatever was last being written - what
+   * the newt button's New note asks for. Read once, on mount: the console is
+   * mounted afresh every time it opens, and a second blank note is the last
+   * thing a re-render should be able to cause.
+   */
+  newNote?: boolean;
   references?: EmbedData[]; // what /reference can embed - the saved articles
 
   /**
@@ -423,7 +430,7 @@ function writeLastOpen(id: string | null) {
 export default function NotesConsole({
   docs, folders: foldersProp, order: orderProp, rev = 0, legacyNotes, onSave,
   sidebarWidth: sidebarWidthProp = 210, onSidebarWidth,
-  initialNoteId, initialQuery = '', references, onTurnIntoPost,
+  initialNoteId, initialQuery = '', newNote = false, references, onTurnIntoPost,
   closing = false, onClose,
 }: Props) {
   // Seed the working set once: existing docs → migrate legacy note → a blank
@@ -810,6 +817,14 @@ export default function NotesConsole({
     setQuery('');   // an empty new note would be hidden by an active filter
     commitFlat([doc.id, ...flatRef.current.filter(t => t !== doc.id)]);   // new loose note on top
   }
+
+  // Opened by New note: make the note the console was opened *for*. Deliberately
+  // not folded into the seed above - a blank note is only worth saving once
+  // somebody has asked for one, and the seed's job is to represent what is
+  // already stored.
+  useEffect(() => {
+    if (newNote) addNote();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Commit a new working set, keeping one live note around and moving off a
   // note that just stopped being viewable.

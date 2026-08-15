@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isExplorePath, parseExplorePath, explorePathFor, exploreArticlePath, exploreAskPath,
-  isLegacyResearchPath, explorePathFromLegacy,
+  isLegacyResearchPath, explorePathFromLegacy, exploreReferencePath, parseExploreRefs,
 } from './researchUrl';
 
 describe('isExplorePath', () => {
@@ -101,5 +101,46 @@ describe('exploreAskPath', () => {
     const params = new URLSearchParams(path.split('?')[1]);
     expect(params.get('q')).toBe('a=b & c?');
     expect([...params.keys()]).toEqual(['q']);
+  });
+
+  it('carries attached articles alongside the question', () => {
+    // The newt button's Ask field collects both at once: a question, and the
+    // articles a /reference pinned to it before it was sent.
+    const path = exploreAskPath('compare these', undefined, ['https://x.test/a', 'https://y.test/b']);
+    const search = path.split('?').slice(1).join('?');
+    expect(new URLSearchParams(search).get('q')).toBe('compare these');
+    expect(parseExploreRefs(search)).toEqual(['https://x.test/a', 'https://y.test/b']);
+  });
+
+  it('adds no ref= when nothing was attached', () => {
+    expect(exploreAskPath('what is a newt?')).not.toContain('ref=');
+  });
+});
+
+describe('exploreReference links', () => {
+  it('round-trips one article', () => {
+    const path = exploreReferencePath('https://x.test/a?b=c');
+    expect(parseExploreRefs(path.split('?').slice(1).join('?')))
+      .toEqual(['https://x.test/a?b=c']);
+  });
+
+  it('keeps several, in the order they were added', () => {
+    // Order is the reader's: "compare these two" is a different question from
+    // "compare those two", and the chips are drawn in this sequence.
+    const urls = ['https://x.test/a', 'https://y.test/b', 'https://z.test/c'];
+    const path = exploreReferencePath(urls);
+    expect(parseExploreRefs(path.split('?').slice(1).join('?'))).toEqual(urls);
+  });
+
+  it('does not collide with ?q= or ?url=', () => {
+    // The three seeds mean different things — ask this, be about this, and have
+    // this to hand — so a reference must never be read as either of the others.
+    const params = new URLSearchParams(exploreReferencePath('https://x.test/a').split('?')[1]);
+    expect([...params.keys()]).toEqual(['ref']);
+  });
+
+  it('finds nothing in a link that carries no references', () => {
+    expect(parseExploreRefs('?q=hello')).toEqual([]);
+    expect(parseExploreRefs('')).toEqual([]);
   });
 });

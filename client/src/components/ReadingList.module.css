@@ -431,6 +431,14 @@
   color: var(--muted);
 }
 
+/* "You already have this one." Not a failure - the article is saved - so it
+   reads as an aside rather than as an error. */
+.formNotice {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .saveBtn {
   align-self: flex-end;
   padding: 0 16px;

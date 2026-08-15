@@ -1,0 +1,568 @@
+/* The newt button, the two pills that spring out beside it, and the Ask card
+   that floats above them.
+
+   No menu panel: everything here is its own floating surface, hung off the
+   corner the button is docked in. The wrapper is what's pinned, so moving the
+   whole assembly to the other side is a matter of swapping two properties and
+   reversing one row. */
+.wrap {
+  position: fixed;
+  right: max(22px, env(safe-area-inset-right, 0px));
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  left: auto;
+  z-index: var(--z-content-overlay);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+
+  /* The button's paper, as its own pair of variables so the two themes differ
+     in one place rather than in five rules. Defaulted to the dark values here
+     so the button is painted even in the frame before the theme attribute
+     lands on <html>. */
+  --face: var(--surface2);
+  --face-hover: color-mix(in oklab, var(--surface2) 84%, var(--text) 16%);
+}
+
+/* Light mode keeps the warm off-white this button has always been - not pure
+   --surface, which next to a white card is no disc at all. */
+:global(html[data-theme='light']) .wrap {
+  --face: #f4f4f2;
+  --face-hover: #fbfbfa;
+}
+
+.wrapLeft {
+  right: auto;
+  left: max(22px, env(safe-area-inset-left, 0px));
+  align-items: flex-start;
+}
+
+/* Mid-drag: the wrapper follows the pointer, so left/top are set inline and the
+   button is centred under the finger. Everything else is closed while this is
+   on, so nothing has to cope with the corner having moved. */
+.wrapDragging {
+  transform: translate(-50%, -50%);
+  cursor: grabbing;
+}
+
+/* ── The button, and the pills beside it ── */
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* Docked left, the pills go to the button's right. The .pills group is one flex
+   item, so reversing this row swaps the two sides without reversing Notes and
+   New note within it. */
+.dockLeft {
+  flex-direction: row-reverse;
+}
+
+/* The button's own paper. It used to be a hardcoded off-white with a hardcoded
+   near-black shadow, which is the one thing on this page that never noticed the
+   theme: on a dark page it was a bright white disc with an invisible shadow
+   under it. These are the same tokens the pills and the card use, so the three
+   surfaces are one material - and --face carries the slight warmth the button
+   has always had in light mode, which is the part worth keeping.
+
+   Shadows are two layers on purpose: a wide soft one for the lift off the page
+   and a tight one for the contact edge. One alone reads as either a sticker or
+   a blur. */
+.button {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--face);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 8px 22px color-mix(in oklab, var(--shadow) 55%, transparent),
+    0 2px 6px color-mix(in oklab, var(--shadow) 40%, transparent);
+  cursor: pointer;
+  /* The button is dragged with pointer events, and on a touchscreen the browser
+     would otherwise claim the gesture as a scroll before the first move lands. */
+  touch-action: none;
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.16s, background 0.16s;
+  animation: launcherIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.button:hover {
+  background: var(--face-hover);
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 32px color-mix(in oklab, var(--shadow) 65%, transparent),
+    0 3px 8px color-mix(in oklab, var(--shadow) 45%, transparent);
+}
+
+.button:active {
+  transform: translateY(0) scale(0.96);
+}
+
+/* Last of the three, because it has to beat both of them: the pointer is
+   already down (:active) and usually over the button (:hover) for the whole
+   drag, and either transform would fight the one that makes it follow. The
+   shadow goes furthest here - the button is literally off the page. */
+.wrapDragging .button {
+  transition: none;
+  transform: scale(1.06);
+  box-shadow:
+    0 20px 44px color-mix(in oklab, var(--shadow) 75%, transparent),
+    0 4px 10px color-mix(in oklab, var(--shadow) 50%, transparent);
+}
+
+/* ── The mark, and the cross it becomes ──
+   One grid cell holding both glyphs, so they occupy the same space and can be
+   turned past each other. Sized in em off the button's own font-size, which is
+   the single number the touch breakpoint has to change. */
+.glyph {
+  display: grid;
+  place-items: center;
+  width: 1em;
+  height: 1em;
+  font-size: 24px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.glyph > * {
+  grid-area: 1 / 1;
+  /* Opacity leads slightly so the two never both read as solid mid-turn; the
+     transform overshoots a touch on the way in, which is what makes it land
+     rather than merely arrive. */
+  transition:
+    opacity 0.16s ease,
+    transform 0.28s cubic-bezier(0.34, 1.42, 0.5, 1);
+}
+
+.letter {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 1em;
+  font-weight: 700;
+  line-height: 1;
+  background: linear-gradient(135deg, #9B8CFF 0%, #5BC8E6 55%, #36D6A6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.cross {
+  width: 1em;
+  height: 1em;
+  opacity: 0;
+  /* Parked a quarter-turn back, so opening winds it forward into place. */
+  transform: rotate(-90deg) scale(0.5);
+}
+
+.glyphOpen .letter {
+  opacity: 0;
+  /* The opposite direction to the cross: the two counter-rotate, which is what
+     sells it as one mark turning rather than two glyphs swapping. */
+  transform: rotate(90deg) scale(0.5);
+}
+
+.glyphOpen .cross {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+@keyframes launcherIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.85); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 90%, transparent);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow:
+    0 8px 22px color-mix(in oklab, var(--shadow) 50%, transparent),
+    0 2px 5px color-mix(in oklab, var(--shadow) 35%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.12s;
+  /* Springs out from the button rather than fading in on the spot - the row is
+     one gesture, so the two pills are staggered along it. */
+  animation: pillIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Furthest from the button, so it arrives last. */
+.pills .pill:first-child { animation-delay: 0.05s; }
+
+.pill:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 28px color-mix(in oklab, var(--shadow) 60%, transparent),
+    0 3px 7px color-mix(in oklab, var(--shadow) 40%, transparent);
+}
+
+.pill svg { flex-shrink: 0; color: var(--muted); }
+.pill:hover svg { color: inherit; }
+
+.pillKey {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.5px;
+}
+
+@keyframes pillIn {
+  from { opacity: 0; transform: translateX(10px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+/* Mirrored: docked left, the pills spring out rightward. */
+.dockLeft .pill {
+  animation-name: pillInLeft;
+}
+
+@keyframes pillInLeft {
+  from { opacity: 0; transform: translateX(-10px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+/* ── Leaving ──
+   The row retracts into the button rather than blinking out, so the order is
+   the reverse of arriving: the far pill goes first and the near one follows it
+   in. These rules come after the entrance ones deliberately - they carry the
+   same specificity and win on document order alone.
+
+   The total here (0.03s + 0.12s) is CLOSE_MS in the component, which is the
+   timer that unmounts all of this once it has played. Change one, change both. */
+.pillsClosing .pill {
+  animation: pillOut 0.12s ease-in both;
+  animation-delay: 0.03s;
+  pointer-events: none;
+}
+
+.pillsClosing .pill:first-child { animation-delay: 0s; }
+
+.dockLeft .pillsClosing .pill { animation-name: pillOutLeft; }
+
+@keyframes pillOut {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(12px) scale(0.92); }
+}
+
+@keyframes pillOutLeft {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(-12px) scale(0.92); }
+}
+
+/* ── The Ask card ── */
+.ask {
+  width: min(340px, calc(100vw - 44px));
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  /* The tallest thing here, so it gets the deepest lift - three layers: the
+     long cast that separates it from the page, the mid one that gives it a
+     body, and a hairline at the contact edge. */
+  box-shadow:
+    0 24px 56px color-mix(in oklab, var(--shadow) 70%, transparent),
+    0 8px 20px color-mix(in oklab, var(--shadow) 45%, transparent),
+    0 1px 2px color-mix(in oklab, var(--shadow) 40%, transparent);
+  color: var(--text);
+  /* Grows out of the corner it is anchored to, rather than up from nowhere. */
+  transform-origin: bottom right;
+  animation: askIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.wrapLeft .ask { transform-origin: bottom left; }
+
+@keyframes askIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Back down into the corner, a touch quicker than it came out - see CLOSE_MS. */
+.askClosing {
+  animation: askOut 0.15s ease-in both;
+  pointer-events: none;
+}
+
+@keyframes askOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.96); }
+}
+
+.askContext {
+  overflow: hidden;
+  margin: 0 2px 7px;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.field {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 6px 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  transition: border-color 0.12s;
+}
+
+.field:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+}
+
+.input::placeholder { color: var(--muted); }
+
+.send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.send:disabled {
+  background: color-mix(in oklab, var(--muted) 30%, transparent);
+  color: var(--muted);
+  cursor: default;
+}
+
+.askEmpty {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.askEmpty:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* ── Attached articles ── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 5px 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface2);
+  font-size: 11.5px;
+}
+
+.chipIcon {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.chipText {
+  overflow: hidden;
+  max-width: 170px;
+  color: var(--text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chipX {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chipX:hover {
+  background: color-mix(in oklab, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+/* ── /reference picker ── */
+.picker {
+  overflow-y: auto;
+  max-height: 210px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.pickerNote {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pickerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.pickerRow:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+
+.pickerRow + .pickerRow { border-top: 1px solid var(--border); }
+
+.pickerText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pickerTitle {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pickerSource {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Touch: the button is a thumb target, not a cursor one, and it never gets the
+   hover that would otherwise announce it. The pills grow with it. */
+@media (hover: none) {
+  .button {
+    width: 52px;
+    height: 52px;
+  }
+
+  /* On .glyph, not .letter: both glyphs are sized in em off it. */
+  .glyph { font-size: 27px; }
+
+  .pill { height: 40px; padding: 0 15px; font-size: 13.5px; }
+}
+
+/* Two pills and a 52px thumb target don't fit across a narrow phone on one row,
+   and the answer is not to shrink them: the row becomes a column, pills above
+   the button, still flush with whichever edge it's docked to. row-reverse is
+   dropped here rather than adapted - it flips the main axis, which in a column
+   would send the pills below the button instead of beside it. */
+@media (max-width: 420px) {
+  .dock {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .dockLeft {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pills { order: -1; }
+}
+
+/* No springing, no retracting - but the exit still has to finish, because the
+   component waits CLOSE_MS before unmounting either way. `both` on a zeroed
+   animation keeps the surface invisible for that beat instead of leaving it
+   sitting there fully painted until the timer fires. */
+@media (prefers-reduced-motion: reduce) {
+  .button, .pill, .ask { animation: none; }
+
+  /* The mark still becomes a cross - that is information, not decoration - it
+     just stops spinning to get there. */
+  .glyph > * { transition: opacity 0.12s ease; transform: none; }
+  .glyphOpen .letter { transform: none; }
+  .glyphOpen .cross { transform: none; }
+
+  .askClosing, .pillsClosing .pill {
+    animation: fadeOut 0.1s linear both;
+  }
+
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+}

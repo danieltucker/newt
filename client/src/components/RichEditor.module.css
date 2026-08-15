@@ -330,6 +330,110 @@
   .emojiSearchInput { height: var(--ctl-h-sm); font-size: 16px; }
 }
 
+/* ── Colour picker ──
+   Two rows of eight, text colour above highlight. Fixed and portalled for the
+   same reason the emoji panel is; it never scrolls, so it has no inner list.
+
+   The swatches themselves are painted from the --note-fg-* / --note-bg-*
+   custom properties in styles/noteColor.css - the same values the classes
+   written into the document resolve to - so nothing here restates a colour. */
+.colorPanel {
+  position: fixed;
+  z-index: calc(var(--z-top) + 3);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 212px;
+  padding: 9px;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 42%, transparent);
+}
+
+.colorGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.colorHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 5px;
+}
+
+.colorLabel {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--paper-faint);
+}
+
+/* The way back to no colour. A word, not a ninth swatch: "nothing" has no
+   colour to show, and every crossed-out-square version of it reads as one more
+   option rather than as the absence of them. */
+.colorClear {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--paper-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.colorClear:hover { background: var(--paper-2); color: var(--paper-text-2); }
+
+.colorGrid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+
+/* Every swatch is the letter A: set in the colour for a text swatch, sitting on
+   it for a highlight. A sample of the result rather than a dot to interpret. */
+.colorSwatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 21px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  /* The default for a highlight swatch, where the wash is what changes. A text
+     swatch overrides it inline with the colour it stands for. */
+  color: var(--paper-text);
+  cursor: pointer;
+  transition: border-color 0.1s, transform 0.1s;
+}
+
+.colorSwatch:hover { transform: scale(1.12); }
+
+/* The one in use. A ring rather than a fill, so the swatch keeps showing its
+   own colour underneath - which is the whole point of it. */
+.colorSwatchOn {
+  border-color: var(--paper-accent);
+  box-shadow: 0 0 0 1px var(--paper-accent);
+}
+
+@media (hover: none) {
+  .colorPanel { width: 244px; }
+  .colorSwatch { height: 26px; font-size: 13px; }
+  .colorSwatch:hover { transform: none; }
+}
+
 /* Renaming a link happens on the bar itself, so the field has to sit in a row
    sized for 26px buttons. Wide enough for a real label, capped so the bar never
    outgrows the note. */

@@ -10,13 +10,16 @@ import { PageMeta, EMPTY_PAGE_META, pageEmbed, isBareUrl } from '../utils/pageMe
 import { markdownToHtml, looksLikeMarkdown } from '../utils/markdown';
 import { Emoji, EMOJI_GROUPS, searchEmoji } from '../utils/emoji';
 import {
-  EMBED_CLASS, EmbedData, EmbedVariant, applyCommentCounts, createEmbed, embedAt, embedMatches,
-  embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
+  EMBED_CLASS, EmbedData, EmbedKind, EmbedVariant, applyCommentCounts, createEmbed, embedAt,
+  embedMatches, embedUrlsIn, hydrateEmbeds, readEmbed, variantOf,
 } from '../utils/noteEmbed';
 import {
   GALLERY_CLASS, GalleryImage, MAX_GALLERY_IMAGES, createGallery, galleryAt, galleryImages,
   galleryIndexOf, hydrateGalleries,
 } from '../utils/noteGallery';
+import {
+  ColorKind, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt,
+} from '../utils/noteFormat';
 import Lightbox from './Lightbox';
 
 // A Confluence-style block editor. There is no separate "edit mode" - the
@@ -37,11 +40,12 @@ const TABLE_CLASS = 'note-table';
 // 'image', 'gallery' and 'reference' are grouped with the blocks in the menu but
 // are not block transforms - they open a picker, so applyCmd intercepts them
 // before applyBlock.
-// 'emoji' sits with the inline marks for the same reason: it changes the run of
-// text you are writing rather than the shape of the block, but it opens a picker
-// instead of toggling anything, so applyCmd intercepts it too.
+// 'emoji' and 'color' sit with the inline marks for the same reason: they
+// change the run of text you are writing rather than the shape of the block,
+// but they open a picker instead of toggling anything, so applyCmd intercepts
+// them too.
 type BlockId  = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'todo' | 'quote' | 'code' | 'hr' | 'table' | 'image' | 'gallery' | 'reference';
-type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear' | 'emoji';
+type InlineId = 'bold' | 'italic' | 'underline' | 'strike' | 'inlinecode' | 'link' | 'clear' | 'emoji' | 'color';
 
 interface Cmd {
   id: BlockId | InlineId;
@@ -68,7 +72,7 @@ const CMDS: Cmd[] = [
   { id: 'hr',    kind: 'block', label: 'Divider',     badge: '-',  hint: 'or type ---',           keys: ['hr', 'divider', 'rule', 'line', 'separator', '---'] },
   { id: 'image', kind: 'block', label: 'Image',       badge: '🖼', hint: 'or paste / drop a file', keys: ['image', 'img', 'picture', 'photo', 'screenshot', 'upload'] },
   { id: 'gallery', kind: 'block', label: 'Gallery',   badge: '🗂', hint: 'A stack of photos',      keys: ['gallery', 'photos', 'images', 'album', 'stack', 'carousel', 'slideshow'] },
-  { id: 'reference', kind: 'block', label: 'Reference', badge: '🔖', hint: 'Embed a saved article', keys: ['reference', 'ref', 'article', 'saved', 'reading', 'embed', 'cite', 'card'] },
+  { id: 'reference', kind: 'block', label: 'Reference', badge: '🔖', hint: 'A saved article or your post', keys: ['reference', 'ref', 'article', 'saved', 'reading', 'post', 'blog', 'embed', 'cite', 'card'] },
 
   { id: 'bold',       kind: 'inline', label: 'Bold',          badge: 'B',  hint: 'Ctrl+B - **text**',  keys: ['bold', 'b', 'strong', '**'] },
   { id: 'italic',     kind: 'inline', label: 'Italic',        badge: 'I',  hint: 'Ctrl+I - *text*',    keys: ['italic', 'i', 'em', 'emphasis', '*', '_'] },
@@ -76,13 +80,20 @@ const CMDS: Cmd[] = [
   { id: 'strike',     kind: 'inline', label: 'Strikethrough', badge: 'S',  hint: '~~text~~',           keys: ['strike', 'strikethrough', 's', 'del', 'cross', '~~'] },
   { id: 'inlinecode', kind: 'inline', label: 'Inline code',   badge: '`',  hint: 'Monospace `text`',   keys: ['inlinecode', 'mono', 'monospace', 'codespan', '`'] },
   { id: 'link',       kind: 'inline', label: 'Link',          badge: '🔗', hint: 'Add a hyperlink',    keys: ['link', 'url', 'href', 'anchor', 'a', '[]()'] },
-  { id: 'clear',      kind: 'inline', label: 'Clear format',  badge: 'Tx', hint: 'Strip formatting',   keys: ['clear', 'remove', 'unformat', 'reset', 'strip', 'plain'] },
+  { id: 'color',      kind: 'inline', label: 'Colour',        badge: 'A',  hint: 'Text colour or highlight', keys: ['color', 'colour', 'text', 'highlight', 'marker', 'pen', 'red', 'green', 'blue', 'yellow'] },
+  { id: 'clear',      kind: 'inline', label: 'Clear format',  badge: 'Tx', hint: 'Back to plain text', keys: ['clear', 'remove', 'unformat', 'reset', 'strip', 'plain'] },
   { id: 'emoji',      kind: 'inline', label: 'Emoji',         badge: '🙂', hint: 'Pick a character',   keys: ['emoji', 'emoticon', 'smiley', 'face', 'reaction', 'symbol', ':)'] },
 ];
 
 // Enough to place the panel before it exists; the CSS caps it at the same size.
 const EMOJI_PANEL_W = 268;
 const EMOJI_PANEL_H = 282;
+
+// The same, for the colour panel: two labelled rows of eight swatches, each
+// with a way back to no colour at all. Taken from the coarse-pointer sizes,
+// which are the taller of the two.
+const COLOR_PANEL_W = 212;
+const COLOR_PANEL_H = 128;
 
 // Markdown typed at the start of a block turns it into that block, the way the
 // slash menu's aliases have always promised. The trailing space is part of the
@@ -292,6 +303,18 @@ const TableIcon = () => icon(<>
   <rect x="3" y="4" width="18" height="16" rx="2" />
   <path d="M3 10h18" /><path d="M9 10v10" /><path d="M15 10v10" />
 </>);
+
+// An "A" over a thick bar - the universal mark for "this changes the colour of
+// text". Drawn rather than set as a letter so it keeps the stroke weight of
+// every other glyph in the row.
+const ColorIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 16 12 4l7 12" />
+    <path d="M7.7 12h8.6" />
+    <path d="M4 21h16" strokeWidth="3" />
+  </svg>
+);
 
 const TrashIcon = () => icon(<>
   <path d="M3 6h18" /><path d="M8 6V4h8v2" />
@@ -936,6 +959,18 @@ export default function RichEditor({
   // focus to be typed in, which collapses the selection - so the picker stashes
   // it on the way up, the way the image and reference pickers do.
   const emojiRange = useRef<Range | null>(null);
+
+  // Colour picker. Portalled and fixed for the same reasons the emoji panel is,
+  // and opened from either bar - unlike emoji, which is only on the utility bar
+  // (it inserts a character, so it has nothing to say to a selection), colour is
+  // *about* the selection, so the bubble is where it is mostly wanted.
+  //
+  // `on` is what the caret is already standing in, read once when the panel
+  // opens. Doing it on every selection change would put an ancestor walk on the
+  // per-keystroke path to answer a question nothing renders until it is up.
+  const [colorAt, setColorAt] = useState<{ left: number; top: number } | null>(null);
+  const [colorOn, setColorOn] = useState<{ fg: string | null; bg: string | null }>({ fg: null, bg: null });
+  const colorRef = useRef<HTMLDivElement>(null);
 
   // Where the bubble is pinned. Kept in a ref rather than in state because it
   // is read by scroll handlers that must not cause a render to run.
@@ -1652,6 +1687,113 @@ export default function RichEditor({
       emojiInputRef.current?.focus();
     }
   }, [emojiAt]);
+
+  // ── Colour ────────────────────────────────────────────────────────────
+  // The panel has no field to type in, so - unlike the emoji picker - nothing
+  // in it ever takes focus: every button suppresses mousedown, which leaves the
+  // caret (and the selection the colour is *for*) exactly where it was. There
+  // is therefore no stashed range here, and no restore.
+  function openColorAt(rect: DOMRect | undefined) {
+    const editor = ref.current;
+    if (!rect || !editor) return;
+    const sel = window.getSelection();
+    setColorOn(colorsAt(sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null, editor));
+    const vp = viewportBox();
+    const left = Math.max(vp.left + 8, Math.min(rect.left, vp.right - COLOR_PANEL_W - 8));
+    const roomBelow = vp.bottom - rect.bottom > COLOR_PANEL_H + 12;
+    setColorAt({
+      left,
+      top: roomBelow ? rect.bottom + 6 : Math.max(vp.top + 8, rect.top - COLOR_PANEL_H - 6),
+    });
+  }
+
+  function closeColors() {
+    setColorAt(null);
+  }
+
+  /**
+   * Paint one kind of colour over the selection - or, with nothing selected,
+   * open a run to type in it. `id` of null takes the colour back off.
+   *
+   * The words stay selected afterwards, so the bubble is still up and a second
+   * colour can be tried without re-selecting anything. The panel stays open for
+   * the same reason: picking a colour is usually picking two or three until one
+   * of them looks right.
+   */
+  function applyPaletteColor(kind: ColorKind, id: string | null) {
+    const editor = ref.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    record('struct');
+    const next = range.collapsed
+      ? colorCaret(range, editor, kind, id)
+      : applyColor(range, editor, kind, id);
+    if (next) {
+      sel.removeAllRanges();
+      sel.addRange(next);
+    }
+    setColorOn(on => ({ ...on, [kind]: id }));
+    emit();
+  }
+
+  useEffect(() => {
+    if (!colorAt) return;
+    function onDown(e: MouseEvent) {
+      const target = e.target as Element | null;
+      if (colorRef.current?.contains(target)) return;
+      if (target?.closest?.('[data-color-btn]')) return;   // let the button toggle
+      closeColors();
+    }
+    // Capture, so Escape puts the panel away without also closing the console
+    // it is sitting in - the rule the emoji picker follows.
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); closeColors(); }
+    }
+    // Fixed panel over a page that scrolls: closing is the honest answer, and
+    // nothing is lost by it.
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', closeColors, true);
+    window.addEventListener('resize', closeColors);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', closeColors, true);
+      window.removeEventListener('resize', closeColors);
+    };
+  }, [colorAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Clear formatting ──────────────────────────────────────────────────
+  // Not execCommand('removeFormat'): that leaves links, code spans and every
+  // colour standing, which is precisely the formatting this button is pressed
+  // to be rid of. See utils/noteFormat.
+  function clearFormat() {
+    const editor = ref.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    record('struct');
+    const next = clearFormatting(range, editor);
+    // Flattening a list can leave its neighbours needing a tidy - two lists that
+    // were separated by the one just dissolved are now adjacent.
+    normalizeLists(editor);
+    if (next) {
+      sel.removeAllRanges();
+      sel.addRange(next);
+    }
+    closeColors();
+    refreshMarks();
+    emit();
+  }
 
   // ── Link dialog ───────────────────────────────────────────────────────
   // Links are composed in the console itself (text + URL), not in a browser
@@ -2825,9 +2967,9 @@ export default function RichEditor({
       openPicker();
       return;
     }
-    // And /emoji: the panel opens on the caret, so the "/emoji" text has to be
-    // gone before its rectangle is measured.
-    if (cmd.id === 'emoji') {
+    // And /emoji and /colour: both panels open on the caret, so the "/emoji" or
+    // "/colour" text has to be gone before its rectangle is measured.
+    if (cmd.id === 'emoji' || cmd.id === 'color') {
       ref.current?.focus();
       if (slashInfo.current) stripSlash();
       closeSlash();
@@ -2835,9 +2977,11 @@ export default function RichEditor({
       const sel = window.getSelection();
       const caretRect = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : undefined;
       // A collapsed range can measure zero-by-zero; the button is a fine fallback.
-      openEmojiAt(caretRect && caretRect.height > 0
+      const rect = caretRect && caretRect.height > 0
         ? caretRect
-        : emojiBtnRef.current?.getBoundingClientRect());
+        : emojiBtnRef.current?.getBoundingClientRect();
+      if (cmd.id === 'emoji') openEmojiAt(rect);
+      else openColorAt(rect);
       return;
     }
     if (cmd.kind === 'inline') applyInline(cmd.id as InlineId);
@@ -2849,7 +2993,9 @@ export default function RichEditor({
   function applyInline(id: InlineId) {
     const editor = ref.current!;
     editor.focus();
-    if (id !== 'link') record('struct');   // the link dialog records on submit
+    // The link dialog records on submit, and clearFormat records its own - both
+    // would otherwise cost two undos to step back over one action.
+    if (id !== 'link' && id !== 'clear') record('struct');
     if (slashInfo.current) stripSlash();
     repairBlankBlock(editor);
     switch (id) {
@@ -2858,7 +3004,7 @@ export default function RichEditor({
       case 'underline':  document.execCommand('underline'); break;
       case 'strike':     document.execCommand('strikeThrough'); break;
       case 'inlinecode': toggleInlineCode(); break;
-      case 'clear':      document.execCommand('removeFormat'); break;
+      case 'clear':      closeSlash(); clearFormat(); return;
       case 'link':       closeSlash(); applyLink(); return;
     }
     closeSlash();
@@ -3201,6 +3347,9 @@ export default function RichEditor({
       <TBtn title="Italic (Ctrl+I)"    active={marks.italic}    onRun={() => execInline('italic')}><i>I</i></TBtn>
       <TBtn title="Underline (Ctrl+U)" active={marks.underline} onRun={() => execInline('underline')}><u>U</u></TBtn>
       <TBtn title="Strikethrough"      active={marks.strike}    onRun={() => execInline('strikeThrough')}><s>S</s></TBtn>
+      {/* On both bars, unlike the emoji button: colour is about the words you
+          have selected, and the bubble is where a selection is. */}
+      <ColorBtn open={!!colorAt} onOpen={openColorAt} onClose={closeColors} />
     </>
   );
 
@@ -3231,7 +3380,7 @@ export default function RichEditor({
         <TBtn title="Reference a saved article" onRun={openPicker}><ReferenceIcon /></TBtn>
       )}
       <TBtn title="Divider" onRun={() => applyBlock('hr')}><DividerIcon /></TBtn>
-      <TBtn title="Clear formatting" onRun={() => execInline('removeFormat')}><ClearIcon /></TBtn>
+      <TBtn title="Clear formatting - back to plain text" onRun={clearFormat}><ClearIcon /></TBtn>
     </>
   );
 
@@ -3630,6 +3779,36 @@ export default function RichEditor({
         document.body
       )}
 
+      {/* ── Colour picker ──
+          Text colour and highlight in one panel, because they are one decision:
+          you are here to make a phrase stand out, and which of the two does it
+          is the choice, not a separate errand. */}
+      {colorAt && createPortal(
+        <div
+          ref={colorRef}
+          className={styles.colorPanel}
+          style={{ left: colorAt.left, top: colorAt.top }}
+          role="dialog"
+          aria-label="Text colour and highlight"
+        >
+          <ColorRow
+            label="Text"
+            kind="fg"
+            current={colorOn.fg}
+            clearLabel="Default"
+            onPick={id => applyPaletteColor('fg', id)}
+          />
+          <ColorRow
+            label="Highlight"
+            kind="bg"
+            current={colorOn.bg}
+            clearLabel="None"
+            onPick={id => applyPaletteColor('bg', id)}
+          />
+        </div>,
+        document.body
+      )}
+
       {/* ── Emoji picker ── */}
       {emojiAt && createPortal(
         <div
@@ -3788,10 +3967,19 @@ export default function RichEditor({
 }
 
 // ── Reference picker ────────────────────────────────────────────────────
-// Search the saved articles and choose one. The size chosen here is only the
+// Search what there is to cite and choose one. The size chosen here is only the
 // starting point - selecting the embed afterwards switches between the three
 // without losing anything, so this defaults to the middle one and gets out of
 // the way. Escape is swallowed so it dismisses the picker, not the console.
+//
+// The list is whatever the surface handed over, already in embed shape: today
+// that is the reading list and the author's own posts, and the picker is none
+// the wiser about either.
+
+// What a row calls itself, where the two kinds would otherwise look alike - a
+// post's provenance is a person's name, which reads exactly like a publication.
+const REF_KIND_HINT: Partial<Record<EmbedKind, string>> = { post: 'Your post' };
+
 function ReferencePicker({ items, onPick, onCancel }: {
   items: EmbedData[];
   onPick: (data: EmbedData, variant: EmbedVariant) => void;
@@ -3825,7 +4013,7 @@ function ReferencePicker({ items, onPick, onCancel }: {
 
   return (
     <div className={styles.linkOverlay} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className={styles.refDialog} onKeyDown={onKeyDown} role="dialog" aria-label="Reference a saved article">
+      <div className={styles.refDialog} onKeyDown={onKeyDown} role="dialog" aria-label="Reference an article or a post">
         <div className={styles.linkTitle}>Reference</div>
 
         <input
@@ -3833,18 +4021,18 @@ function ReferencePicker({ items, onPick, onCancel }: {
           className={styles.linkInput}
           value={query}
           onChange={e => { setQuery(e.target.value); setIdx(0); }}
-          placeholder="Search saved articles"
+          placeholder="Search saved articles and your posts"
           spellCheck={false}
           autoComplete="off"
-          aria-label="Search saved articles"
+          aria-label="Search saved articles and your posts"
         />
 
         <div className={styles.refList} ref={listRef}>
           {results.length === 0 && (
             <div className={styles.refEmpty}>
               {items.length === 0
-                ? 'Nothing saved to reference yet - add an article to your reading list first.'
-                : `No saved article matches “${query.trim()}”`}
+                ? 'Nothing to reference yet - save an article to your reading list, or write a post.'
+                : `Nothing matches “${query.trim()}”`}
             </div>
           )}
           {results.map((d, i) => (
@@ -3861,7 +4049,7 @@ function ReferencePicker({ items, onPick, onCancel }: {
               <span className={styles.refText}>
                 <span className={styles.refTitle}>{d.title}</span>
                 <span className={styles.refMeta}>
-                  {[d.source, d.meta].filter(Boolean).join(' · ')}
+                  {[REF_KIND_HINT[d.kind], d.source, d.meta].filter(Boolean).join(' · ')}
                 </span>
               </span>
             </button>
@@ -4088,6 +4276,87 @@ function HeadingPicker({ current, open, onToggle, onPick }: {
         </span>
       )}
     </span>
+  );
+}
+
+// The colour button, which appears on both bars. It carries its own anchor ref
+// rather than borrowing one from the editor: there are two of these on screen at
+// once when the bubble is up, and the panel belongs under whichever was pressed.
+function ColorBtn({ open, onOpen, onClose }: {
+  open: boolean;
+  onOpen: (rect: DOMRect | undefined) => void;
+  onClose: () => void;
+}) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  return (
+    // Marked rather than tracked by ref: there are two of these on screen when
+    // the bubble is up, and the "did the click land outside?" test has to
+    // recognise either of them. Without it, pressing the button that opened the
+    // panel would close it on mousedown and reopen it on click.
+    <span className={styles.tbAnchor} ref={anchor} data-color-btn="">
+      <TBtn
+        title="Text colour and highlight"
+        active={open}
+        onRun={() => (open ? onClose() : onOpen(anchor.current?.getBoundingClientRect()))}
+      >
+        <ColorIcon />
+      </TBtn>
+    </span>
+  );
+}
+
+// One half of the colour panel: eight swatches and the way back out of them.
+//
+// A text swatch is the letter set in its own colour, and a highlight swatch is
+// that letter *on* its wash - so each one is a sample of what pressing it does,
+// rather than a dot you have to imagine applied. The current choice wears a
+// ring, which is also the only affordance saying a colour can be turned off
+// again by pressing the row's Default/None.
+function ColorRow({ label, kind, current, clearLabel, onPick }: {
+  label: string;
+  kind: ColorKind;
+  current: string | null;
+  clearLabel: string;
+  onPick: (id: string | null) => void;
+}) {
+  return (
+    <div className={styles.colorGroup}>
+      <div className={styles.colorHead}>
+        <span className={styles.colorLabel}>{label}</span>
+        <button
+          type="button"
+          className={styles.colorClear}
+          title={`${label}: back to the default`}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => onPick(null)}
+        >
+          {clearLabel}
+        </button>
+      </div>
+      <div className={styles.colorGrid} role="group" aria-label={label}>
+        {PALETTE.map(c => (
+          <button
+            key={c.id}
+            type="button"
+            className={`${styles.colorSwatch} ${current === c.id ? styles.colorSwatchOn : ''}`}
+            // Painted from the very token the class it writes resolves to - the
+            // class and the custom property share a name on purpose (see
+            // styles/noteColor.css), so the panel cannot drift from what lands
+            // in the document, or from the theme.
+            style={kind === 'fg'
+              ? { color: `var(--${colorClass(kind, c.id)})` }
+              : { background: `var(--${colorClass(kind, c.id)})` }}
+            title={c.label}
+            aria-label={`${label}: ${c.label}`}
+            aria-pressed={current === c.id}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => onPick(c.id)}
+          >
+            A
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

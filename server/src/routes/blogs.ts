@@ -169,9 +169,13 @@ router.get('/mine', requireAuth, async (req: AuthRequest, res: Response): Promis
       where: { userId: req.userId! },
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
       take: 200,
-      select: SUMMARY_SELECT,
+      // The author is yourself, which the manage list has no use for - but a
+      // post cited from the editor is drawn as a card, and a card names who
+      // wrote it and links to the post's own page, which is built from the
+      // username. Without this the /reference picker had a byline-shaped gap.
+      select: { ...SUMMARY_SELECT, user: { select: AUTHOR_SELECT } },
     });
-    res.json({ posts });
+    res.json({ posts: posts.map(toJson) });
   } catch (err) {
     logger.error(err, 'List own blog posts error');
     res.status(500).json({ error: 'Server error' });

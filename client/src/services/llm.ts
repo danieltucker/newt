@@ -126,9 +126,9 @@ export const listThreads = () => apiGet<{ threads: ResearchThread[] }>('/api/v1/
 export const getThread = (id: string) =>
   apiGet<{ thread: ResearchThread; messages: ResearchMessage[] }>(`/api/v1/research/threads/${id}`);
 
-export const startThread = (question: string, url?: string) =>
+export const startThread = (question: string, url?: string, refs: string[] = []) =>
   apiPost<{ thread: ResearchThread; messages: ResearchMessage[] }>(
-    '/api/v1/research/threads', { question, url },
+    '/api/v1/research/threads', { question, url, refs },
   );
 
 export const renameThread = (id: string, title: string) =>
@@ -161,6 +161,12 @@ export const proofread = (title: string, body: string) =>
 export interface StreamHandlers {
   /** Called with each fragment of text as it arrives. */
   onDelta: (text: string) => void;
+  /**
+   * The articles the question itself attached with /reference, as the server
+   * actually resolved them — a URL this account has no record of is dropped, so
+   * this is the list to draw chips from rather than the one that was sent.
+   */
+  onReferences?: (references: ResearchSource[]) => void;
   /** Articles from the reader's own feed that were pulled in for this answer. */
   onSources?: (sources: ResearchSource[]) => void;
   /** The stream finished cleanly. `costUsd` is null when the model has no known price. */
@@ -235,6 +241,7 @@ export function streamPost(path: string, body: unknown, handlers: StreamHandlers
           try { payload = JSON.parse(data) as Record<string, unknown>; } catch { continue; }
 
           if (event === 'delta' && typeof payload.text === 'string') handlers.onDelta(payload.text);
+          else if (event === 'meta' && Array.isArray(payload.references)) handlers.onReferences?.(payload.references as ResearchSource[]);
           else if (event === 'sources' && Array.isArray(payload.sources)) handlers.onSources?.(payload.sources as ResearchSource[]);
           else if (event === 'error') handlers.onError(typeof payload.error === 'string' ? payload.error : 'Something went wrong.');
           else if (event === 'done') handlers.onDone?.(payload as { message?: ResearchMessage; costUsd?: number | null });
@@ -253,7 +260,8 @@ export function streamPost(path: string, body: unknown, handlers: StreamHandlers
 export const streamResearchReply = (
   threadId: string,
   question: string | undefined,
+  refs: string[],
   handlers: StreamHandlers,
-) => streamPost(`/api/v1/research/threads/${threadId}/messages`, { question }, handlers);
+) => streamPost(`/api/v1/research/threads/${threadId}/messages`, { question, refs }, handlers);
 
 export { apiErrorText };

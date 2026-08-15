@@ -64,3 +64,17 @@
     height: 44px;
   }
 }
+
+/* The newt button can be dragged to the left corner (see utils/newtDock, which
+   publishes the side here). This one stays on the right - it has always been a
+   right-hand control and the drag was about the other button - but with nothing
+   below it any more it drops into the corner it was stacked above. */
+:global(html[data-newt-dock='left']) .btn {
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 640px) {
+  :global(html[data-newt-dock='left']) .btn {
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  }
+}

@@ -23,7 +23,16 @@ describe('parseDomain (host only)', () => {
   it('rejects things that are not a host', () => {
     expect(parseDomain('')).toBeNull();
     expect(parseDomain('ab')).toBeNull();       // too short / no dot
-    expect(parseDomain('localhost')).toBeNull(); // no dot
+    expect(parseDomain('localhost')).toBeNull(); // no dot, and no scheme to say otherwise
+  });
+
+  // A typed scheme is someone saying "this is an address", which is the only
+  // thing a machine on your own network has to go on - it has a name and no
+  // domain, so the dot rule would throw it out.
+  it('accepts a single-label host when a scheme says so', () => {
+    expect(parseDomain('http://nas')).toBe('nas');
+    expect(parseDomain('http://truenas:9000/ui')).toBe('truenas:9000');
+    expect(parseDomain('https://localhost:5173')).toBe('localhost:5173');
   });
 });
 
@@ -75,9 +84,33 @@ describe('parseLink (host + path)', () => {
     expect(parseLink('https://github.com')).toBe('github.com');
   });
 
+  // A machine on the LAN has a name and no domain, so the dot rule rejected it
+  // outright: the dialog's Add button just stayed dead. An explicit scheme is
+  // the reader saying this is an address, and is taken at its word.
+  it('accepts a single-label host when a scheme says so', () => {
+    expect(parseLink('http://nas')).toBe('http://nas');
+    expect(parseLink('http://truenas:9000/ui/dashboard')).toBe('http://truenas:9000/ui/dashboard');
+    expect(parseLink('http://localhost:3000')).toBe('http://localhost:3000');
+  });
+
+  // https is only dropped when what's left still reads as an address. A
+  // single-label host has nothing but the scheme to say it is one, so keeping
+  // it is what lets the value be read back by the edit dialog.
+  it('keeps https:// on a host that needs it', () => {
+    expect(parseLink('https://nas:9000')).toBe('https://nas:9000');
+    expect(parseLink('https://github.com')).toBe('github.com');
+  });
+
+  it('still rejects a bare word with no scheme', () => {
+    expect(parseLink('nas')).toBeNull();
+    expect(parseLink('reading')).toBeNull();
+  });
+
   it('round-trips, so re-editing a saved link does not change it', () => {
     expect(parseLink(parseLink('http://192.168.1.15')!)).toBe('http://192.168.1.15');
     expect(parseLink(parseLink('github.com/danieltucker')!)).toBe('github.com/danieltucker');
+    expect(parseLink(parseLink('http://truenas:9000/ui')!)).toBe('http://truenas:9000/ui');
+    expect(parseLink(parseLink('https://nas:9000')!)).toBe('https://nas:9000');
   });
 });
 
@@ -121,6 +154,13 @@ describe('deriveName', () => {
   it('names an address after itself', () => {
     expect(deriveName('192.168.1.15')).toBe('192.168.1.15');
     expect(deriveName('192.168.1.15:8096')).toBe('192.168.1.15:8096');
+  });
+
+  // A machine on the network is named after the machine, not the port it
+  // happens to answer on.
+  it('leaves a port out of a name', () => {
+    expect(deriveName('nas:9000')).toBe('Nas');
+    expect(deriveName('truenas')).toBe('Truenas');
   });
 });
 

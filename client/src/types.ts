@@ -105,6 +105,13 @@ export interface ReadingListItem {
   /** Which Library shelf. Null means Unsorted, not "unknown". */
   folderId: string | null;
   savedAt: string;
+  /**
+   * Set by the server on a save that found this article already saved in the
+   * place it was headed, and handed back the copy that was there instead of
+   * making a second one. Never stored, and absent on everything read back from
+   * the list - it describes what one request did, not what the row is.
+   */
+  duplicate?: boolean;
 }
 
 /** A shelf in the Library. Self-only - never rendered on a public profile. */

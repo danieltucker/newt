@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { PROVIDERS, publicProviders, isProviderId, utilityModelFor, modelOption } from './providers';
+import {
+  PROVIDERS, publicProviders, isProviderId, utilityModelFor, modelOption, supportsEffort,
+} from './providers';
 
 describe('the registry', () => {
   it('gives every hosted provider a default that is in its own catalogue', () => {
@@ -69,6 +71,26 @@ describe('utilityModelFor', () => {
 
   it('keeps an unrecognised model rather than substituting one', () => {
     expect(utilityModelFor(PROVIDERS.anthropic, 'claude-future-9')).toBe('claude-haiku-4-5');
+  });
+});
+
+describe('supportsEffort', () => {
+  it('sends the knob only to models that take it', () => {
+    expect(supportsEffort(PROVIDERS.anthropic, 'claude-opus-5')).toBe(true);
+    expect(supportsEffort(PROVIDERS.anthropic, 'claude-sonnet-5')).toBe(true);
+  });
+
+  // The regression this exists for: Haiku 4.5 predates output_config.effort and
+  // rejects a request carrying it. It is also the utility model, so a stray
+  // `true` here breaks proofreading and feed search for every Claude account,
+  // whichever model they actually chose.
+  it('does not send it to Haiku 4.5, which 400s on it', () => {
+    expect(supportsEffort(PROVIDERS.anthropic, 'claude-haiku-4-5')).toBe(false);
+  });
+
+  it('never sends it to a model it has never heard of', () => {
+    expect(supportsEffort(PROVIDERS.anthropic, 'claude-future-9')).toBe(false);
+    expect(supportsEffort(PROVIDERS.compatible, 'llama3.1')).toBe(false);
   });
 });
 

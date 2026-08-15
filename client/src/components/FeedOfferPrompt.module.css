@@ -22,6 +22,14 @@
   animation: rise 0.2s ease-out;
 }
 
+/* Unless the newt button has been dragged into this corner, in which case the
+   prompt sits above it rather than on it. Up rather than across: the card is
+   380px wide and the left edge is where it reads from, so pushing it sideways
+   would cost the sentence more than the height costs anything. */
+:global(html[data-newt-dock='left']) .card {
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }

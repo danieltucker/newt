@@ -77,6 +77,22 @@ const GALLERY_SPAN_CLASSES = [
 
 const GALLERY_IMG_CLASS = 'note-gallery-card';
 
+// ── Text colour and highlight ─────────────────────────────────────────
+// Mirrors client/src/utils/noteFormat.ts, which produces this markup, and
+// client/src/styles/noteColor.css, which paints it — a third copy of the same
+// duplication the embed and gallery classes above already carry across the
+// client/server boundary.
+//
+// The editor writes a colour as a class and never as a `style` attribute,
+// because `style` is refused outright below: letting an author put arbitrary
+// CSS on a span is letting them restyle a reader's page. An explicit list of
+// eight named hues, in two kinds, grants none of that — a class here can only
+// ever select one of sixteen declarations in a stylesheet we wrote. It is also
+// what makes a colour theme-aware, which a stored hex could not be.
+const COLOR_IDS = ['grey', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
+
+const COLOR_CLASSES = COLOR_IDS.flatMap(id => [`note-fg-${id}`, `note-bg-${id}`]);
+
 // Two independent caps on a comment body:
 //  - MAX_COMMENT_BODY bounds the raw HTML (markup + text) — a hard safety limit
 //    against oversized payloads.
@@ -155,7 +171,7 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
   allowedClasses: {
     div: [TODO_CLASS],
     table: [TABLE_CLASS],
-    span: [...EMBED_SPAN_CLASSES, ...GALLERY_SPAN_CLASSES],
+    span: [...EMBED_SPAN_CLASSES, ...GALLERY_SPAN_CLASSES, ...COLOR_CLASSES],
     // note-embed-comments is an anchor now, not a span: it links to the thread,
     // which for a pasted link is somewhere the card itself does not go. Its
     // href gets the same scheme check and rel/target transform as any other
