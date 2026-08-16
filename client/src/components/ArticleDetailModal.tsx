@@ -6,6 +6,7 @@ import { articlePathFor } from '../utils/articleUrl';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import CommentsPanel from './CommentsPanel';
+import ExploredPaths from './ExploredPaths';
 import CloseButton from './CloseButton';
 import styles from './ArticleDetailModal.module.css';
 
@@ -302,6 +303,12 @@ export default function ArticleDetailModal({
               )}
             </div>
           )}
+
+          {/* Between the article and the conversation about it, which is where
+              it belongs: these are things somebody made *from* the piece, so
+              they follow the piece - and they are not comments, so they do not
+              belong inside the thread. Draws nothing when there are none. */}
+          <ExploredPaths articleUrl={url} />
 
           <div className={styles.commentsWrap}>
             <CommentsPanel

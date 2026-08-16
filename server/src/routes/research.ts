@@ -55,8 +55,17 @@ interface ThreadRow {
   title: string;
   sourceUrl: string;
   sourceTitle: string;
+  visibility: string;
+  sharedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** The tiers a thread can be on — the same three as comments and posts. */
+const THREAD_VISIBILITIES = ['public', 'friends', 'private'] as const;
+
+function isThreadVisibility(v: unknown): v is typeof THREAD_VISIBILITIES[number] {
+  return typeof v === 'string' && (THREAD_VISIBILITIES as readonly string[]).includes(v);
 }
 
 function toThreadJson(t: ThreadRow) {
@@ -65,6 +74,8 @@ function toThreadJson(t: ThreadRow) {
     title: t.title,
     sourceUrl: t.sourceUrl,
     sourceTitle: t.sourceTitle,
+    visibility: t.visibility,
+    sharedAt: t.sharedAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -330,6 +341,11 @@ router.post('/threads', researchLimiter, async (req: AuthRequest, res: Response)
         title: sourceTitle || titleFromQuestion(question),
         sourceUrl,
         sourceTitle,
+        // Stored now so "every explore about this article" is an indexed
+        // lookup rather than a scan over sourceUrl. Empty for a thread started
+        // from a bare question, which is exactly the set that never appears on
+        // an article page.
+        sourceKey: sourceUrl ? canonicalArticleKey(sourceUrl) : '',
         messages: {
           create: [{
             role: 'user',
@@ -354,9 +370,45 @@ router.patch('/threads/:id', async (req: AuthRequest, res: Response): Promise<vo
   const thread = await ownThread(req.userId!, req.params.id);
   if (!thread) { res.status(404).json({ error: 'Not found' }); return; }
 
-  const { title } = req.body as Record<string, unknown>;
-  if (typeof title !== 'string' || !title.trim()) {
-    res.status(400).json({ error: 'Give it a title' });
+  const { title, visibility } = req.body as Record<string, unknown>;
+
+  // Both fields are optional, but a request that changes nothing is a mistake
+  // worth reporting rather than a no-op to answer 200 to.
+  const data: Prisma.ResearchThreadUpdateInput = {};
+
+  if (title !== undefined) {
+    if (typeof title !== 'string' || !title.trim()) {
+      res.status(400).json({ error: 'Give it a title' });
+      return;
+    }
+    data.title = title.trim().slice(0, 200);
+  }
+
+  if (visibility !== undefined) {
+    if (!isThreadVisibility(visibility)) {
+      res.status(400).json({ error: 'Not a visibility' });
+      return;
+    }
+    // A thread with nothing in it has nothing to share, and an empty
+    // conversation on an article page is worse than no entry at all.
+    if (visibility !== 'private') {
+      const answered = await prisma.researchMessage.count({
+        where: { threadId: thread.id, role: 'assistant' },
+      });
+      if (answered === 0) {
+        res.status(400).json({ error: 'Ask something first — there’s nothing to share yet.' });
+        return;
+      }
+    }
+    data.visibility = visibility;
+    // Stamped the first time it leaves private and never moved again: this
+    // orders the explored-paths list, and re-sharing a thread you briefly made
+    // private should not jump it back to the top.
+    if (visibility !== 'private' && !thread.sharedAt) data.sharedAt = new Date();
+  }
+
+  if (Object.keys(data).length === 0) {
+    res.status(400).json({ error: 'No fields to update' });
     return;
   }
 
@@ -364,7 +416,7 @@ router.patch('/threads/:id', async (req: AuthRequest, res: Response): Promise<vo
     where: { id: thread.id },
     // Renaming is not new activity, so updatedAt is left alone deliberately —
     // otherwise tidying up titles would reshuffle the whole sidebar.
-    data: { title: title.trim().slice(0, 200) },
+    data,
   });
   res.json(toThreadJson(updated));
 });

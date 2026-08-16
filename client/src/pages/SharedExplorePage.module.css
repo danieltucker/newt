@@ -1,0 +1,216 @@
+/* A shared explore, standing on its own. Reading width and nothing else on the
+   page: whoever follows this link came for one conversation. */
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 16px 64px;
+}
+
+.header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.tier {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface2);
+  letter-spacing: 0.03em;
+}
+
+.title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+.byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.author {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.author:hover { color: var(--accent); }
+
+.dot { opacity: 0.5; }
+
+.source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.source:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: var(--surface2);
+}
+
+.sourceIcon { width: 18px; height: 18px; border-radius: 4px; flex: none; }
+
+.sourceText { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+
+.sourceLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sourceTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* The question is the quieter half. It is short, it is the reader's own words,
+   and the answer under it is what the page is for - so the question is set as a
+   heading for the block rather than as a bubble competing with it. */
+.user .who { color: var(--accent); }
+
+.who {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.user .body {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.assistant .body {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.body :global(p) { margin: 0 0 12px; }
+.body :global(p:last-child) { margin-bottom: 0; }
+.body :global(h1),
+.body :global(h2),
+.body :global(h3) {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 17px;
+  margin: 20px 0 8px;
+}
+.body :global(ul), .body :global(ol) { margin: 0 0 12px; padding-left: 22px; }
+.body :global(li) { margin-bottom: 5px; }
+.body :global(a) { color: var(--accent); }
+.body :global(code) {
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface2);
+}
+.body :global(pre) {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface2);
+  overflow-x: auto;
+}
+.body :global(pre code) { padding: 0; background: none; }
+.body :global(blockquote) {
+  margin: 0 0 12px;
+  padding-left: 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.foot {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 80px 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.big {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.muted { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ctl-h-lg);
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--ctl-r);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ghostBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }

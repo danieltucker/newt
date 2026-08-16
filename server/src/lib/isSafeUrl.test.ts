@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSafeUrl, makeSafeAgent } from './isSafeUrl';
+import { isSafeUrl, makeSafeAgent, resolveSafeAgent } from './isSafeUrl';
 
 // IP-literal hosts are resolved by dns.lookup without a network round-trip, so
 // these assertions are deterministic and offline.
@@ -55,6 +55,63 @@ describe('isSafeUrl (SSRF guard)', () => {
     expect(await isSafeUrl('http://198.20.0.1')).toBe(true);
     expect(await isSafeUrl('http://192.1.0.1')).toBe(true);
     expect(await isSafeUrl('http://223.255.255.255')).toBe(true);
+  });
+
+  // The reserved parts of 192.0 are two /24s, not the whole /16. The guard used
+  // to block `192.0.*` outright, which took 192.0.64.0/18 with it - Automattic's
+  // range, where WordPress.com and every WordPress VIP site is served from. The
+  // visible symptom was TechCrunch (192.0.66.220) failing every poll with
+  // "Address is not allowed" while being an entirely public feed.
+  it('blocks only the reserved /24s inside 192.0, not the whole /16', async () => {
+    expect(await isSafeUrl('http://192.0.0.1')).toBe(false);   // 192.0.0.0/24, IETF assignments
+    expect(await isSafeUrl('http://192.0.0.255')).toBe(false);
+    expect(await isSafeUrl('http://192.0.2.1')).toBe(false);   // 192.0.2.0/24, TEST-NET-1
+
+    expect(await isSafeUrl('http://192.0.1.1')).toBe(true);    // between the two, and routable
+    expect(await isSafeUrl('http://192.0.3.1')).toBe(true);
+    expect(await isSafeUrl('http://192.0.66.220')).toBe(true); // techcrunch.com
+    expect(await isSafeUrl('http://192.0.78.1')).toBe(true);   // WordPress VIP
+  });
+});
+
+// Why a fetch was refused, not just that it was. These four faults used to be
+// indistinguishable at the call site, so every one of them reached the admin
+// panel as the same sentence.
+describe('resolveSafeAgent reasons', () => {
+  it('separates an unparseable URL from a scheme it will not fetch', async () => {
+    const bad = await resolveSafeAgent('not a url');
+    expect(bad.agent).toBeNull();
+    expect(bad.reason).toMatch(/could not be parsed/);
+
+    const ftp = await resolveSafeAgent('ftp://8.8.8.8');
+    expect(ftp.agent).toBeNull();
+    expect(ftp.reason).toMatch(/scheme "ftp:" is not allowed/);
+  });
+
+  // The address is named, because "which one" is the first question an admin
+  // asks and the hostname alone doesn't answer it.
+  it('names the resolved address when it lands in a blocked range', async () => {
+    const res = await resolveSafeAgent('http://169.254.169.254/latest/meta-data/');
+    expect(res.agent).toBeNull();
+    expect(res.reason).toContain('169.254.169.254');
+    expect(res.reason).toMatch(/not allowed/);
+  });
+
+  it('reports a name that does not resolve as a DNS failure, not a blocked address', async () => {
+    const res = await resolveSafeAgent('https://nx.invalid/feed.xml');
+    expect(res.agent).toBeNull();
+    expect(res.reason).toMatch(/DNS lookup/);
+    // The distinction that matters: this is not the instance refusing an
+    // address, and telling an admin it was would send them looking in the
+    // wrong place entirely.
+    expect(res.reason).not.toMatch(/reserved address/);
+  });
+
+  it('hands back the agent and the address it pinned when the URL is fine', async () => {
+    const res = await resolveSafeAgent('https://8.8.8.8/x');
+    expect(res.agent).not.toBeNull();
+    expect(res.address).toBe('8.8.8.8');
+    expect(res.reason).toBeUndefined();
   });
 
   it('allows a public IP', async () => {

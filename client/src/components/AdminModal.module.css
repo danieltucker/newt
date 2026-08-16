@@ -698,6 +698,20 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   text-overflow: ellipsis;
 }
 
+/* A feed's last error, in full. Given a wider column than .emailCell and
+   allowed to wrap onto several lines: these messages name a hostname, a
+   resolved address and a reason, and truncating them to one line threw away
+   everything except the word "Address". Long unbroken URLs still have to be
+   able to break, or one of them widens the whole table.
+
+   Element in the selector so it outranks `.table td`'s blanket nowrap - the
+   same reason .expandCell below is written that way. */
+.table td.errorCell {
+  max-width: 340px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .bannedRow td {
   opacity: 0.55;
 }

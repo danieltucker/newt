@@ -405,6 +405,14 @@
   .cardFeature .cardTitle { font-size: 18px; }
 }
 
+/* Sits above the button and says where you are in the list. Centred on the
+   same axis so the two read as one block rather than a stray line of text. */
+.moreMeta {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .moreBtn {
   align-self: center;
   display: inline-flex;

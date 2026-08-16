@@ -27,6 +27,9 @@ const SelfHostPage = lazy(() => import('./pages/SelfHostPage'));
 // (see lib/htmlShell), and a flash of chrome-less loader over that is worse
 // than a beat of the shell the visitor is already reading.
 const PAGE_FALLBACK = null;
+// A shared explore. Split out for the same reason the hubs are: it is reached
+// from a link somebody sent, one at a time, and never by using the app.
+const SharedExplorePage = lazy(() => import('./pages/SharedExplorePage'));
 import { parseProfilePath, profilePathFor } from './utils/profileUrl';
 import { parseArticlePath } from './utils/articleUrl';
 import { parseSitePath } from './utils/siteUrl';
@@ -37,6 +40,7 @@ import {
   isExplorePath, parseExplorePath, isLegacyResearchPath, explorePathFromLegacy,
   parseExploreRefs,
 } from './utils/researchUrl';
+import { parseSharedExplorePath } from './utils/exploreShareUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -214,6 +218,21 @@ export default function App() {
     return (
       <Suspense fallback={PAGE_FALLBACK}>
         <HubPage hub={{ kind: 'recent' }} signedIn={signedIn} navigate={navigate} />
+      </Suspense>
+    );
+  }
+
+  // A shared explore, matched here rather than in either branch below because
+  // it reads the same signed in or out: it is one person's conversation, sent
+  // to somebody, and the recipient's own account has nothing to add to it.
+  //
+  // Note this is /e/<id>, not /explore/<id>. The second is the owner's
+  // workspace and stays signed-in only, further down.
+  const sharedExploreId = parseSharedExplorePath(path);
+  if (sharedExploreId) {
+    return (
+      <Suspense fallback={PAGE_FALLBACK}>
+        <SharedExplorePage threadId={sharedExploreId} navigate={navigate} />
       </Suspense>
     );
   }

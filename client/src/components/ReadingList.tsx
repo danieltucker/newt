@@ -466,6 +466,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
           onClick={onOpenReader}
           onExplore={onExplore && (() => onExplore(item.url, item.title))}
           onRepost={() => startRepost({ title: item.title, embed: articleEmbed(item) })}
+          shareUrl={item.url}
         />
         {/* Pressing the label files it under Unsorted straight away; the caret
             is there for the times you know which shelf. Either way the card

@@ -709,6 +709,35 @@
 .sendBtn:disabled { opacity: 0.45; cursor: default; }
 .primaryBtn:disabled { opacity: 0.6; cursor: default; }
 
+/* The share control in the thread header. Sits beside "Condense into a post"
+   and matches its height, but stays outlined rather than filled - publishing a
+   conversation is a deliberate step, not the obvious next thing to do. */
+.shareBtn, .sharedBtn {
+  min-height: var(--ctl-h);
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.shareBtn { color: var(--muted); }
+.shareBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); }
+
+/* Already shared. Tinted rather than merely labelled, because "is this
+   conversation visible to other people" is worth being able to see at a
+   glance from across the page. */
+.sharedBtn {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.sharedBtn:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); }
+
 .stopBtn {
   background: var(--surface2);
   color: var(--text);

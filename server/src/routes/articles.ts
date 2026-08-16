@@ -3,6 +3,7 @@ import prisma from '../lib/prisma';
 import { optionalAuth, AuthRequest } from '../middleware/auth';
 import logger from '../lib/logger';
 import { canonicalArticleKey, isHttpUrl } from '../lib/comments';
+import { exploredPathsFor } from '../lib/exploredPaths';
 
 const router = Router();
 // Feed items are shared across all users with nothing user-scoped to authorise,
@@ -50,6 +51,28 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     });
   } catch (err) {
     logger.error(err, 'Article detail error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/v1/articles/paths?url= — what has been shared about this article.
+//
+// Explore threads whose authors chose to share them, and posts written about
+// it, in one list. Optional auth like the reader itself: a logged-out visitor
+// following a shared /a/ link sees the public ones, and a signed-in reader also
+// sees their friends' and their own.
+//
+// Its own request rather than part of the article payload above: this is the
+// slower half (two indexed lookups plus the friend and block sets) and the
+// article should paint without waiting on it.
+router.get('/paths', async (req: AuthRequest, res: Response): Promise<void> => {
+  const url = req.query.url;
+  if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
+
+  try {
+    res.json({ paths: await exploredPathsFor(url, req.userId) });
+  } catch (err) {
+    logger.error(err, 'Explored paths error');
     res.status(500).json({ error: 'Server error' });
   }
 });

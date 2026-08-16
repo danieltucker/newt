@@ -1,4 +1,5 @@
 import { apiFetch, apiGet, apiPost, apiPatch, apiDelete, apiErrorText } from './api';
+import { CommentVisibility } from '../types';
 
 /**
  * The client half of the AI features: types, plain calls, and the one thing
@@ -62,6 +63,15 @@ export interface ResearchThread {
   title: string;
   sourceUrl: string;
   sourceTitle: string;
+  /**
+   * 'private' | 'friends' | 'public' - the same three tiers as comments and
+   * posts. Private is the default and where every thread starts; a thread only
+   * leaves it when its author deliberately shares it, having been shown what
+   * the transcript contains.
+   */
+  visibility: CommentVisibility;
+  /** When it first left private, or null. */
+  sharedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -133,6 +143,60 @@ export const startThread = (question: string, url?: string, refs: string[] = [])
 
 export const renameThread = (id: string, title: string) =>
   apiPatch<ResearchThread>(`/api/v1/research/threads/${id}`, { title });
+
+/**
+ * Move a thread between the three tiers. Widening one publishes the whole
+ * transcript, which can quote the reader's own private notes back at them - so
+ * the caller is expected to have shown them what is in it first.
+ */
+export const setThreadVisibility = (id: string, visibility: CommentVisibility) =>
+  apiPatch<ResearchThread>(`/api/v1/research/threads/${id}`, { visibility });
+
+/** One shared thread, read through the public endpoint. */
+export const getSharedExplore = (id: string) =>
+  apiGet<{ thread: SharedExplore; messages: SharedExploreMessage[] }>(`/api/v1/explores/${id}`);
+
+export interface SharedExplore {
+  id: string;
+  title: string;
+  sourceUrl: string;
+  sourceTitle: string;
+  visibility: CommentVisibility;
+  sharedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; username: string; displayName: string; avatar: string | null } | null;
+  own: boolean;
+}
+
+export interface SharedExploreMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * What has been shared about an article: explores whose authors published them,
+ * and posts written about it. One list, because to a reader they are the same
+ * thing - somebody took this further and left a record of it.
+ */
+export interface ExploredPath {
+  kind: 'explore' | 'post';
+  id: string;
+  title: string;
+  href: string;
+  snippet: string;
+  visibility: CommentVisibility;
+  author: { id: string; username: string; displayName: string; avatar: string | null } | null;
+  own: boolean;
+  /** Exchanges in the conversation. Explores only; null for a post. */
+  turns: number | null;
+  at: string | null;
+}
+
+export const getExploredPaths = (url: string) =>
+  apiGet<{ paths: ExploredPath[] }>(`/api/v1/articles/paths?url=${encodeURIComponent(url)}`);
 
 export const deleteThread = (id: string) =>
   apiDelete<{ ok: true }>(`/api/v1/research/threads/${id}`);

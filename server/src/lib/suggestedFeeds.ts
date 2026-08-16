@@ -13,7 +13,8 @@
 // one carries `access` (see FeedAccess), which the picker prints on the card.
 //
 // **Every entry was fetched and confirmed to return items before being added**
-// (last swept 2026-08-07). Feeds that didn't survive that check and should not
+// (last swept 2026-08-07; Architecture, Interiors and the Culture/Design
+// additions 2026-08-16). Feeds that didn't survive that check and should not
 // be re-added without re-testing:
 //   - Nature — blocks our fetcher outright
 //   - AP News — /index.rss answers 401 "Invalid client credentials"; their
@@ -21,6 +22,19 @@
 //   - New Scientist — 406 to a non-browser user agent
 //   - Sports Illustrated, NIH news releases — 404, feeds retired
 //   - Washington Post — resolves, but returns 4 items, too thin to be useful
+//   - Metropolis — 200, but nothing parseable comes back
+//   - Dwell, Wallpaper*/feed, itsnicethat.com/rss, AIGA Eye on Design,
+//     World-Architects, Frame, The Art Newspaper, The Spruce — 404
+//   - Places Journal — 403 to our user agent
+//   - Brand New — parses, but the newest item is from 2020
+//   - Typewolf — returns items, none of which carry a date, so they sort to
+//     the bottom of the river and stay there
+//   - BLDGBLOG, Failed Architecture, Juxtapoz — real, but months between posts
+//   - MoCo Loco — times out
+//
+// Two addresses here are FeedBurner (ArchDaily's own /rss/ is used instead;
+// It's Nice That has no working direct feed). FeedBurner is the weakest link on
+// this list — if either goes quiet, check for a direct address first.
 //
 // ── One list ──
 // Everything here is offered in both places it can be: the first-run picker and
@@ -62,6 +76,10 @@ export const SUGGESTED_CATEGORIES: SuggestedCategory[] = [
   { name: 'Culture',     color: '#F48024' },
   { name: 'Programming', color: '#7C5CFC' },
   { name: 'Design',      color: '#E0479E' },
+  // Next to Design rather than anywhere else, because that is the shelf a
+  // reader looks on for them. Slate for the drawing, terracotta for the room.
+  { name: 'Architecture', color: '#6E8CA0' },
+  { name: 'Interiors',    color: '#C2703D' },
   { name: 'Business',    color: '#00A8E8' },
   { name: 'Gaming',      color: '#A259FF' },
   { name: 'Sports',      color: '#1DB954' },
@@ -336,6 +354,43 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     blurb: 'Curiosities from the archives, out of copyright.',
     category: 'Culture',
   },
+  // Art lives here rather than under Interiors, which is about rooms and the
+  // things in them. Culture already held the archive and the essay end of this.
+  {
+    name: 'Hyperallergic',
+    url: 'https://hyperallergic.com/feed/',
+    site: 'hyperallergic.com',
+    blurb: 'Art criticism with a political spine.',
+    category: 'Culture',
+  },
+  {
+    name: 'ARTnews',
+    url: 'https://www.artnews.com/feed/',
+    site: 'artnews.com',
+    blurb: "The art world's news desk - museums, sales and the disputes between them.",
+    category: 'Culture',
+  },
+  {
+    name: 'Contemporary Art Daily',
+    url: 'https://www.contemporaryartdaily.com/feed/',
+    site: 'contemporaryartdaily.com',
+    blurb: 'Exhibitions documented in photographs and almost no words.',
+    category: 'Culture',
+  },
+  {
+    name: 'Artnet News',
+    url: 'https://news.artnet.com/feed',
+    site: 'news.artnet.com',
+    blurb: 'The art market, and who is buying.',
+    category: 'Culture',
+  },
+  {
+    name: 'Open Culture',
+    url: 'https://www.openculture.com/feed',
+    site: 'openculture.com',
+    blurb: 'Free films, courses and cultural ephemera, gathered daily.',
+    category: 'Culture',
+  },
 
   // ── Programming ──
   {
@@ -402,6 +457,174 @@ export const SUGGESTED_FEEDS: SuggestedFeed[] = [
     site: 'thisiscolossal.com',
     blurb: 'Art and visual culture. Worth it for the pictures alone.',
     category: 'Design',
+  },
+  {
+    name: "It's Nice That",
+    url: 'https://feeds.feedburner.com/itsnicethat/SlXC',
+    site: 'itsnicethat.com',
+    blurb: 'Graphic design and illustration, and the people making it.',
+    category: 'Design',
+  },
+  {
+    name: 'PRINT Magazine',
+    url: 'https://www.printmag.com/feed/',
+    site: 'printmag.com',
+    blurb: 'Graphic design history, criticism and practice.',
+    category: 'Design',
+  },
+  {
+    name: 'Design Observer',
+    url: 'https://designobserver.com/feed/',
+    site: 'designobserver.com',
+    blurb: 'Essays on design and the consequences of it.',
+    category: 'Design',
+  },
+  {
+    name: 'Nielsen Norman Group',
+    url: 'https://www.nngroup.com/feed/rss/',
+    site: 'nngroup.com',
+    blurb: 'Usability research, with the evidence attached.',
+    category: 'Design',
+  },
+  {
+    name: 'UX Collective',
+    url: 'https://uxdesign.cc/feed',
+    site: 'uxdesign.cc',
+    blurb: 'Practitioner writing on product and interface design.',
+    category: 'Design',
+  },
+  {
+    name: 'Sidebar',
+    url: 'https://sidebar.io/feed.xml',
+    site: 'sidebar.io',
+    blurb: 'Five design links a day, chosen by hand.',
+    category: 'Design',
+  },
+  {
+    name: 'swissmiss',
+    url: 'https://www.swiss-miss.com/feed',
+    site: 'swiss-miss.com',
+    blurb: 'A design blog that has been going since 2005, and still is.',
+    category: 'Design',
+  },
+
+  // ── Architecture ──
+  {
+    name: 'Dezeen',
+    url: 'https://www.dezeen.com/feed/',
+    site: 'dezeen.com',
+    blurb: 'Architecture and design, published relentlessly and photographed well.',
+    category: 'Architecture',
+  },
+  {
+    name: 'ArchDaily',
+    url: 'https://www.archdaily.com/rss/',
+    site: 'archdaily.com',
+    blurb: 'Buildings in detail - plans, sections and the photographs to go with them.',
+    category: 'Architecture',
+  },
+  {
+    name: 'designboom',
+    url: 'https://www.designboom.com/feed/',
+    site: 'designboom.com',
+    blurb: 'Architecture, art and industrial design, mostly told in pictures.',
+    category: 'Architecture',
+  },
+  {
+    name: "The Architect's Newspaper",
+    url: 'https://www.archpaper.com/feed/',
+    site: 'archpaper.com',
+    blurb: 'The profession itself - practices, commissions and US building policy.',
+    category: 'Architecture',
+  },
+  {
+    name: 'Architizer',
+    url: 'https://architizer.com/blog/feed/',
+    site: 'architizer.com',
+    blurb: 'Projects, building products and the awards circuit.',
+    category: 'Architecture',
+  },
+  {
+    name: 'Common Edge',
+    url: 'https://commonedge.org/feed/',
+    site: 'commonedge.org',
+    blurb: 'Argument about architecture and the public it gets built for.',
+    category: 'Architecture',
+  },
+  {
+    name: '99% Invisible',
+    url: 'https://feeds.99percentinvisible.org/99percentinvisible',
+    site: '99percentinvisible.org',
+    blurb: 'The design of the built world, one overlooked thing at a time.',
+    category: 'Architecture',
+  },
+  {
+    name: 'Curbed',
+    url: 'https://www.curbed.com/rss/index.xml',
+    site: 'curbed.com',
+    blurb: 'Cities, housing and what it now costs to live in them.',
+    category: 'Architecture',
+    access: 'metered',
+  },
+  {
+    name: 'The Architectural Review',
+    url: 'https://www.architectural-review.com/feed',
+    site: 'architectural-review.com',
+    blurb: 'Criticism and history, from a magazine at it since 1896.',
+    category: 'Architecture',
+    access: 'subscriber',
+  },
+
+  // ── Interiors ──
+  {
+    name: 'Design Milk',
+    url: 'https://design-milk.com/feed/',
+    site: 'design-milk.com',
+    blurb: 'Modern interiors, furniture and objects, in quantity.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Sight Unseen',
+    url: 'https://www.sightunseen.com/feed/',
+    site: 'sightunseen.com',
+    blurb: 'Independent furniture and object design, and who is making it.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Apartment Therapy',
+    url: 'https://www.apartmenttherapy.com/main.rss',
+    site: 'apartmenttherapy.com',
+    blurb: 'Small-space living, storage and rooms on an actual budget.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Remodelista',
+    url: 'https://www.remodelista.com/feed/',
+    site: 'remodelista.com',
+    blurb: 'Considered renovation - kitchens, hardware and how it was done.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Yellowtrace',
+    url: 'https://www.yellowtrace.com.au/feed/',
+    site: 'yellowtrace.com.au',
+    blurb: 'Interiors and design, from Australia and further out.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Elle Decor',
+    url: 'https://www.elledecor.com/rss/all.xml',
+    site: 'elledecor.com',
+    blurb: 'Decorating, houses and the trade behind them.',
+    category: 'Interiors',
+  },
+  {
+    name: 'Architectural Digest',
+    url: 'https://www.architecturaldigest.com/feed/rss',
+    site: 'architecturaldigest.com',
+    blurb: 'Houses and interiors, and the people who commissioned them.',
+    category: 'Interiors',
+    access: 'metered',
   },
 
   // ── Business ──

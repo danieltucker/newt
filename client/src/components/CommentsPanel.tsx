@@ -5,9 +5,15 @@ import RichEditor from './RichEditor';
 import ReportModal from './ReportModal';
 import { uploadImage } from '../utils/imageUpload';
 import { fetchPageMeta } from '../utils/pageMeta';
+import { articlePathFor } from '../utils/articleUrl';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import SplitMenuButton, { MenuItem } from './SplitMenuButton';
 import styles from './CommentsPanel.module.css';
+
+// What the Share row says once it has done something. Constants because the
+// success string is also the test for "show the tick".
+const COPIED_OK = 'Link copied';
+const COPIED_FAIL = 'Couldn’t copy';
 
 // The comment thread, always open. It lives at the foot of the article reader
 // modal, where there is room to actually read and write; cards carry only the
@@ -102,13 +108,24 @@ function initialOf(name: string): string {
 // It stays a plain pill when there is nothing behind the caret - a signed-out
 // reader, or an account with no model connected on a surface that offers no
 // repost either. A caret over an empty menu is worse than no caret.
-export function CommentBar({ count, onClick, onExplore, onRepost }: {
+export function CommentBar({ count, onClick, onExplore, onRepost, shareUrl }: {
   count: number;
   onClick: () => void;
   /** Opens an Explore thread on this article. Absent with no model connected. */
   onExplore?: () => void;
   /** Opens the composer on a post quoting this article. */
   onRepost?: () => void;
+  /**
+   * The article's own address. Given one, the menu offers Share, which puts
+   * this instance's page *for* that article on the clipboard - not the
+   * publisher's URL. The two are different links and the difference is the
+   * point: the Newt page carries the conversation, so a shared link arrives
+   * somewhere with comments on it rather than at the bare source.
+   *
+   * The copy happens here rather than in each caller so every surface that
+   * shows this pill shares the same link in the same form.
+   */
+  shareUrl?: string;
 }) {
   // Split in two so a narrow card can drop the noun and keep the number - the
   // count is the only part of this label that is data. See the collapse note in
@@ -119,7 +136,25 @@ export function CommentBar({ count, onClick, onExplore, onRepost }: {
     ? 'Read the article and its comments'
     : 'Read the article and add a comment';
 
-  if (!onExplore && !onRepost) {
+  // What the Share row currently says. Empty means "Share" - it only ever holds
+  // the outcome of a copy that has just happened.
+  const [copied, setCopied] = useState('');
+
+  function copyLink(close: () => void) {
+    const href = `${window.location.origin}${articlePathFor(shareUrl!)}`;
+    // `navigator.clipboard` is absent over plain http, which is exactly how
+    // someone reaches a self-hosted instance on their own network - so the
+    // failure is reported rather than swallowed, and the menu stays open long
+    // enough to read it.
+    const done = navigator.clipboard?.writeText(href);
+    if (!done) { setCopied(COPIED_FAIL); setTimeout(close, 1600); return; }
+    done.then(
+      () => { setCopied(COPIED_OK); setTimeout(close, 900); },
+      () => { setCopied(COPIED_FAIL); setTimeout(close, 1600); },
+    );
+  }
+
+  if (!onExplore && !onRepost && !shareUrl) {
     return (
       <button
         className={styles.bar}
@@ -144,6 +179,7 @@ export function CommentBar({ count, onClick, onExplore, onRepost }: {
       onPrimary={onClick}
       primaryTitle={title}
       menuLabel="Take it further"
+      onOpenChange={open => { if (!open) setCopied(''); }}
       menu={close => (
         <>
           {onExplore && (
@@ -158,6 +194,19 @@ export function CommentBar({ count, onClick, onExplore, onRepost }: {
               label="Repost"
               icon={<RepostIcon />}
               onClick={() => { close(); onRepost(); }}
+            />
+          )}
+          {shareUrl && (
+            /* Does not close on click, unlike the two above. Copying produces
+               nothing to look at - no navigation, no new screen - so closing
+               immediately would leave the reader unsure whether anything
+               happened. The row reports what it did and the menu shuts itself
+               a moment later. */
+            <MenuItem
+              label={copied || 'Share'}
+              icon={<ShareIcon />}
+              current={copied === COPIED_OK}
+              onClick={() => copyLink(close)}
             />
           )}
         </>
@@ -885,6 +934,19 @@ function RepostIcon() {
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
       <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+// A chain link rather than the usual share arrow: what this row does is put a
+// URL on the clipboard, not open a share sheet, and the arrow promises the
+// second thing.
+function ShareIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
     </svg>
   );
 }

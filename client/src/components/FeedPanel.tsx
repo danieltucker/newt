@@ -1342,6 +1342,7 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
                 readTime: article.readTime != null ? `${article.readTime} min read` : null,
               }),
             })}
+            shareUrl={article.link}
           />
           <SaveButton
             className={styles.rowSave}

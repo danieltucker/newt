@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth, AuthRequest } from '../middleware/auth';
 import { PUBLIC_USER_SELECT, toPublicUser, friendIdsOf, displayNameOf } from '../lib/friends';
 import { isWalledOff } from '../lib/blocks';
 import { canonicalArticleKey, isBlankHtml } from '../lib/comments';
+import { syncPostReferences } from '../lib/exploredPaths';
 import { perUserLimiter } from '../lib/rateLimit';
 import { ensureFeeds } from '../lib/feedRefresh';
 import { addFeedSubscription } from '../lib/feedSubscriptions';
@@ -223,6 +224,10 @@ router.post('/', requireAuth, blogWriteLimiter, async (req: AuthRequest, res: Re
       select: FULL_SELECT,
     });
 
+    // Which articles this post is about, for their explored-paths lists. Read
+    // from the sanitized body, so it records what was actually stored.
+    await syncPostReferences(post.id, clean);
+
     // Best-effort: make the change show up in subscribers' folders now rather
     // than after the 30-minute stale window. Never fail the write over it.
     invalidateBlogFeeds(req.userId!).catch(err =>
@@ -318,6 +323,11 @@ router.patch('/post/:id', requireAuth, blogWriteLimiter, async (req: AuthRequest
       data,
       select: FULL_SELECT,
     });
+
+    // Only when the body was part of this edit. Retitling or widening a post
+    // does not change which articles it cites, and rebuilding the rows from a
+    // `data.body` that isn't there would delete every reference the post has.
+    if (typeof data.body === 'string') await syncPostReferences(post.id, data.body);
 
     // Best-effort: make the change show up in subscribers' folders now rather
     // than after the 30-minute stale window. Never fail the write over it.

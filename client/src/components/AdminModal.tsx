@@ -2794,8 +2794,16 @@ export default function AdminModal({
                             {f.consecutiveFailures} in a row
                           </span>
                         </td>
-                        <td className={styles.emailCell}>
-                          <span className={styles.mutedText}>{f.lastError || '-'}</span>
+                        {/* Wraps rather than clips. This cell used to be an
+                            .emailCell - 170px with an ellipsis - which cut
+                            every message off at about four words and left the
+                            part naming the actual fault permanently unread.
+                            The error is the only column here an admin can't
+                            reconstruct from somewhere else, so it gets the room. */}
+                        <td className={styles.errorCell}>
+                          <span className={styles.mutedText} title={f.lastError || undefined}>
+                            {f.lastError || '-'}
+                          </span>
                           {f.lastErrorAt && (
                             <div className={styles.mutedText} title={new Date(f.lastErrorAt).toLocaleString()}>
                               {relativeTime(f.lastErrorAt)}

@@ -28,6 +28,7 @@ import htmlRoutes from './routes/html';
 import seoRoutes from './routes/seo';
 import llmRoutes from './routes/llm';
 import researchRoutes from './routes/research';
+import exploreRoutes from './routes/explores';
 import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
@@ -170,6 +171,10 @@ app.use('/api/v1/sites', apiLimiter, siteRoutes);
 // shared apiLimiter still applies on top as the per-IP backstop.
 app.use('/api/v1/llm', apiLimiter, llmRoutes);
 app.use('/api/v1/research', apiLimiter, researchRoutes);
+// Reading a shared explore, which unlike everything in researchRoutes is not
+// behind auth and never calls a model — a link to a public thread has to open
+// for someone with no account.
+app.use('/api/v1/explores', apiLimiter, exploreRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

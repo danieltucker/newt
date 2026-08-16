@@ -22,7 +22,7 @@ function isPrivateIp(ip: string): boolean {
   if (mapped && net.isIPv4(mapped[1])) return isPrivateIp(mapped[1]);
 
   if (net.isIPv4(ip)) {
-    const [a, b] = ip.split('.').map(Number);
+    const [a, b, c] = ip.split('.').map(Number);
     return (
       a === 0 ||                              // "this network"
       a === 10 ||                             // RFC1918
@@ -30,7 +30,18 @@ function isPrivateIp(ip: string): boolean {
       (a === 100 && b >= 64 && b <= 127) ||   // RFC6598 CGNAT - Tailscale lives here
       (a === 169 && b === 254) ||             // link-local, incl. cloud metadata
       (a === 172 && b >= 16 && b <= 31) ||    // RFC1918
-      (a === 192 && b === 0) ||               // IETF protocol assignments
+      // 192.0.0.0/24 and 192.0.2.0/24 only — *not* 192.0.0.0/16.
+      //
+      // This was `a === 192 && b === 0`, which blocked the whole /16. The
+      // reserved parts of 192.0 are two /24s: 192.0.0.0/24 (IETF protocol
+      // assignments) and 192.0.2.0/24 (TEST-NET-1). Everything else under
+      // 192.0 is ordinary routable space that is allocated and in use —
+      // 192.0.64.0/18 is Automattic's, which is where WordPress.com and every
+      // site on WordPress VIP lives. TechCrunch is one of them (192.0.66.220),
+      // so the guard was refusing to fetch a perfectly public feed and
+      // reporting it as an address that isn't allowed.
+      (a === 192 && b === 0 && c === 0) ||    // IETF protocol assignments
+      (a === 192 && b === 0 && c === 2) ||    // TEST-NET-1
       (a === 192 && b === 168) ||             // RFC1918
       (a === 198 && b >= 18 && b <= 19) ||    // benchmarking
       a >= 224                                // multicast, reserved, broadcast
@@ -52,31 +63,85 @@ function isPrivateIp(ip: string): boolean {
   return true;
 }
 
+export type SafeAgent = http.Agent | https.Agent;
+
+/**
+ * Either an agent, or the reason there isn't one.
+ *
+ * The reason exists because four quite different faults used to arrive as the
+ * same `null`: a URL that doesn't parse, a scheme we don't speak, a name that
+ * doesn't resolve, and an address we refuse to connect to. Callers turned that
+ * into one sentence — "Address is not allowed" — and an admin looking at a
+ * broken feed had no way to tell a DNS outage from a blocked range, which is
+ * the single most useful thing to know when a feed stops working.
+ */
+export type SafeAgentResult =
+  | { agent: SafeAgent; address: string; reason?: undefined }
+  | { agent: null; address: null; reason: string };
+
 /**
  * Resolves the URL's hostname, validates it's not a private/internal IP, then
  * returns an HTTP/HTTPS agent whose lookup function is pinned to that resolved
  * address. Using this agent on the subsequent fetch prevents DNS rebinding:
  * the same IP that passed the check is the one used for the connection.
  *
- * Returns null if the URL is invalid, uses a non-HTTP/S scheme, or resolves
- * to a private address.
+ * Reports *why* it refused. Prefer this over `makeSafeAgent` anywhere the
+ * failure is shown to a human.
  */
-export async function makeSafeAgent(urlStr: string): Promise<http.Agent | https.Agent | null> {
+export async function resolveSafeAgent(urlStr: string): Promise<SafeAgentResult> {
   let parsed: URL;
-  try { parsed = new URL(urlStr); } catch { return null; }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return { agent: null, address: null, reason: 'the address could not be parsed as a URL' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return {
+      agent: null,
+      address: null,
+      reason: `the scheme "${parsed.protocol}" is not allowed - only http and https are fetched`,
+    };
+  }
 
   let address: string;
   try {
     const result = await lookup(parsed.hostname);
     address = result.address;
-  } catch { return null; }
+  } catch (err) {
+    // The DNS error code is the whole point of surfacing this separately:
+    // ENOTFOUND is a dead or misspelled hostname, EAI_AGAIN is the resolver
+    // itself failing, and those want opposite responses from an admin.
+    const code = (err as NodeJS.ErrnoException)?.code;
+    return {
+      agent: null,
+      address: null,
+      reason: `DNS lookup for "${parsed.hostname}" failed${code ? ` (${code})` : ''}`,
+    };
+  }
 
-  if (isPrivateIp(address)) return null;
+  if (isPrivateIp(address)) {
+    return {
+      agent: null,
+      address: null,
+      reason: `"${parsed.hostname}" resolved to ${address}, which is not allowed - `
+        + 'that is a private, loopback or otherwise reserved address rather than the public internet',
+    };
+  }
 
   const family = net.isIPv6(address) ? 6 : 4;
   const AgentClass = parsed.protocol === 'https:' ? https.Agent : http.Agent;
-  return new AgentClass({ lookup: pinnedLookup(address, family) } as ConstructorParameters<typeof AgentClass>[0]);
+  const agent = new AgentClass(
+    { lookup: pinnedLookup(address, family) } as ConstructorParameters<typeof AgentClass>[0],
+  );
+  return { agent, address };
+}
+
+/**
+ * The agent alone, or null. Kept for callers that only branch on success and
+ * have nowhere to print a reason.
+ */
+export async function makeSafeAgent(urlStr: string): Promise<SafeAgent | null> {
+  return (await resolveSafeAgent(urlStr)).agent;
 }
 
 type LookupCallback =

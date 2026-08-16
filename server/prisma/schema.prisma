@@ -130,6 +130,25 @@ model ResearchThread {
   // about six weeks later.
   sourceUrl    String   @default("")
   sourceTitle  String   @default("")
+  // canonicalArticleKey(sourceUrl). The same key Comment.articleKey and
+  // BlogPost.articleKey use, stored rather than derived for the same reason
+  // they are: it is what "every explore about this article" is looked up by,
+  // and a LIKE over sourceUrl could not match the copy that arrived with a
+  // tracking parameter on it. Empty for a thread started from a bare question.
+  sourceKey    String   @default("")
+  // 'private' (default, only the author) | 'friends' | 'public'. The same
+  // vocabulary and the same friendship rules as Comment and BlogPost - see
+  // VisibilityMeta on the client, which labels all three.
+  //
+  // Default private and stays private until the author deliberately widens it.
+  // That matters more here than anywhere else in the app: a thread's messages
+  // can quote the reader's own private comments and reading-list notes back at
+  // them (see articleContext.ts), so nothing about an explore is safe to
+  // expose by default.
+  visibility   String   @default("private")
+  // When it was first made visible to anyone else. Null while private; used to
+  // order the explored-paths list, so re-titling a thread doesn't reshuffle it.
+  sharedAt     DateTime?
   // Which key answered. Nullable and SetNull rather than Cascade: removing a
   // key from settings must not delete the research it produced.
   credentialId String?
@@ -139,6 +158,10 @@ model ResearchThread {
   updatedAt    DateTime @default(now())
 
   @@index([userId, updatedAt])
+  // "What has been shared about this article", which is the explored-paths
+  // query. Keyed on sourceKey first because that is always the equality term;
+  // visibility narrows it to the tiers the viewer is allowed to see.
+  @@index([sourceKey, visibility, sharedAt])
 }
 
 model ResearchMessage {
@@ -798,6 +821,7 @@ model BlogPost {
   publishedAt     DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  references      PostReference[]
 
   @@unique([userId, slug])
   @@index([userId, publishedAt])
@@ -809,6 +833,36 @@ model BlogPost {
   // author, which without this is a sequential scan of the whole table on a
   // route a crawler will walk exhaustively.
   @@index([tags(ops: ArrayOps)], type: Gin)
+}
+
+// An article a post points at, one row per referenced URL.
+//
+// A repost is not its own kind of thing — it is an ordinary post that happens
+// to open with a /reference card (see composerSeed.ts), and the article it
+// quotes lives nowhere but in a `data-url` attribute inside the post's HTML.
+// That was fine while nothing needed to ask the question backwards. The
+// explored-paths list on an article asks exactly that: which posts are about
+// *this*. Answering it from the bodies would mean a LIKE over every post on the
+// instance on every article opened, with no index able to help.
+//
+// So the references are extracted once, when the post is written, and kept
+// here. Derived data, deliberately: the body stays the source of truth, and
+// these rows are rebuilt wholesale from it on every save.
+model PostReference {
+  id         String   @id @default(cuid())
+  postId     String
+  post       BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  // canonicalArticleKey of the embedded URL — the same key comments thread on,
+  // so a post quoting the ?utm_source= copy is found from the clean one.
+  articleKey String
+  // The URL as the embed carried it, for linking back without recomputing.
+  url        String
+  createdAt  DateTime @default(now())
+
+  // One row per article per post: a post that cites the same piece three times
+  // is still one post about it, and the list must not show it three times.
+  @@unique([postId, articleKey])
+  @@index([articleKey])
 }
 
 // An image embedded in a note, comment or blog post. Bytes live in the database

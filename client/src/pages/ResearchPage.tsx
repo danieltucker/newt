@@ -16,6 +16,7 @@ import { faviconUrl } from '../utils/color';
 import { useFeedSearch } from '../hooks/useFeedSearch';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import NewtMark from '../components/NewtMark';
+import ExploreShareModal from '../components/ExploreShareModal';
 import styles from './ResearchPage.module.css';
 
 /**
@@ -389,6 +390,7 @@ export default function ResearchPage({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   /** Articles attached to the question being typed. Cleared when it is sent. */
   const [refs, setRefs] = useState<ResearchSource[]>([]);
   /**
@@ -435,6 +437,10 @@ export default function ResearchPage({
   const seededRefsRef = useRef<string | null>(null);
 
   const active = threads.find(t => t.id === activeId) ?? null;
+
+  // The share dialog belongs to one conversation. Leaving it open across a
+  // switch would show one thread's transcript above another thread's controls.
+  useEffect(() => { setSharing(false); }, [activeId]);
 
   // ── References ────────────────────────────────────────────────────────────
 
@@ -1022,12 +1028,41 @@ export default function ResearchPage({
                 </a>
               )}
             </div>
+            {/* Only once there is an answer to share. An empty thread has
+                nothing in it, and the server refuses to widen one anyway. */}
+            {active && canCondense && (
+              <button
+                className={active.visibility === 'private' ? styles.shareBtn : styles.sharedBtn}
+                onClick={() => setSharing(true)}
+                title={active.visibility === 'private'
+                  ? 'Choose who can see this conversation'
+                  : 'Shared — change who can see it, or copy the link'}
+              >
+                {active.visibility === 'private' ? 'Share…' : 'Shared'}
+              </button>
+            )}
             {canCondense && (
               <button className={styles.primaryBtn} onClick={handleCondense} disabled={condensing}>
                 {condensing ? 'Condensing…' : 'Condense into a post'}
               </button>
             )}
           </header>
+
+          {sharing && active && (
+            <ExploreShareModal
+              threadId={active.id}
+              title={active.title}
+              visibility={active.visibility}
+              messages={messages}
+              onChanged={v => {
+                // Patch both copies: the sidebar reads the list, the header
+                // reads the active thread, and they must not disagree about
+                // whether this conversation is shared.
+                setThreads(ts => ts.map(t => (t.id === active.id ? { ...t, visibility: v } : t)));
+              }}
+              onClose={() => setSharing(false)}
+            />
+          )}
 
           {error && <div className={styles.error}>{error}</div>}
 

@@ -2,6 +2,154 @@
 
 Notable changes to Newt, newest first.
 
+## v1.20.0 - Explored paths
+
+**2026-08-16**
+
+An article page now shows what people did with the piece beyond replying to it:
+conversations they had about it, and posts they wrote about it. Explore threads
+can be shared. And the comment menu on a card will hand you a link.
+
+### Share, from the card
+
+The caret beside the comment pill carried Explore and Repost. It now carries
+Share, which copies this instance's page for the article rather than the
+publisher's URL. The difference is the point: the Newt page is where the
+conversation is, so a link you send someone arrives somewhere with comments on
+it instead of at the bare source.
+
+The row reports what it did rather than closing instantly - a copy produces
+nothing to look at, so a menu that just vanished left you unsure whether it had
+worked. Over plain http, where `navigator.clipboard` does not exist and a
+self-hosted instance on a home network is exactly where that happens, it says
+so instead of failing silently.
+
+### An explore can be shared
+
+Explore threads were private by construction - one person's working notes, with
+no way to show anyone. They now use the same three tiers as comments and posts:
+just you, friends, or anyone. A shared thread gets an address of its own at
+`/e/<id>` that opens for a reader with no account, and it is read-only in the
+strong sense: the route behind it cannot call a model at all, so nobody can
+continue your research on your credit.
+
+**Sharing is a dialog, not a switch, and that is deliberate.** An explore is
+answered partly with your own material - Newt feeds the model your comments on
+the article, *including the private ones it calls Personal Notes*, and your
+reading-list notes about it - and the model quotes that back in its answers. A
+thread can therefore contain writing you never meant anyone to see and have
+long since forgotten was in scope. So the share dialog shows you every message
+that is about to become visible, in full, before it offers you a tier. A toggle
+labelled "Public" would have been one click to publish a private note.
+
+Threads stay private until you move them, including every thread that already
+exists. Nothing was widened by this release.
+
+### Explored paths
+
+Between the article and its comments there is now a section listing what has
+been shared about the piece: explores their authors published, and posts
+written about it. Each entry says whose it is, how many exchanges the
+conversation ran to, and shows enough of it to tell whether it is worth
+opening. It draws nothing at all when there is nothing to show, so the great
+majority of articles are unchanged.
+
+Visibility works the way it does everywhere else - public is public, friends-
+only shows to friends, and a block hides it in both directions. Your own
+private threads are *not* listed, even to you: a heading about what has been
+shared must not show you something nobody else can see.
+
+Posts get there because a repost is an ordinary post that opens with a
+reference card, and the article it quotes lived only in an attribute inside the
+post's HTML. Asking "which posts are about this article" meant a scan of every
+post body on the instance. Those references are now recorded when a post is
+saved, and existing posts are backfilled once at startup.
+
+## v1.19.1 - The feed that was never unsafe
+
+**2026-08-16**
+
+A fix for feeds that had been refused for being dangerous when they were
+nothing of the sort, an error message that says what went wrong, and site pages
+that no longer stop dead at twenty articles.
+
+### TechCrunch, and everything else on WordPress
+
+The SSRF guard - the check that stops a feed address being used to reach
+machines inside the network - was refusing `192.0.*` outright. That is one octet
+too wide. The reserved parts of 192.0 are two small blocks, `192.0.0.0/24` and
+`192.0.2.0/24`; the rest of it is ordinary public internet, and `192.0.64.0/18`
+in particular belongs to Automattic - which is where WordPress.com and every
+site hosted on WordPress VIP answers from.
+
+TechCrunch is one of those, at `192.0.66.220`. So its feed was failing every
+poll, for months, on the grounds that it was a private address. It never was.
+Anything else on WordPress VIP was refused the same way, as was any site that
+happened to resolve into the same range.
+
+The feed URL was fine all along: `https://techcrunch.com/feed/` is correct and
+serves valid RSS.
+
+**A feed that has already failed 20 times has switched itself off**, which is
+what that threshold is for. Upgrading does not switch it back on - nothing is
+ever deleted or re-enabled automatically. Turn it on again in Admin → Feeds →
+All feeds, and it will fetch on the next poll.
+
+### An error that says what happened
+
+"Address is not allowed: https://techcrunch.com/feed/" named the feed you were
+already looking at and told you nothing else. It was also the message for four
+different faults: an address that doesn't parse, a scheme we don't fetch, a
+hostname that doesn't resolve, and an address deliberately refused.
+
+Those now read differently, because they want different responses:
+
+- `DNS lookup for "example.com" failed (ENOTFOUND)`
+- `"example.com" resolved to 10.0.0.5, which is not allowed - that is a
+  private, loopback or otherwise reserved address rather than the public
+  internet`
+
+The resolved address is named, since "which address, and why that one" is the
+first question worth asking - and it is the part that would have identified this
+bug on day one rather than after twenty failed polls.
+
+The feed health table in the admin panel now shows the whole message. It was
+being clipped to about four words, which cut off the entire explanation and left
+only the part that was already on screen.
+
+### Architecture and Interiors
+
+Two new categories on the first-run picker and in the manager's Discover tab.
+Architecture is buildings and the cities around them - Dezeen, ArchDaily,
+designboom, The Architect's Newspaper, Architizer, Common Edge, 99% Invisible,
+Curbed and The Architectural Review. Interiors is rooms and the things in them -
+Design Milk, Sight Unseen, Apartment Therapy, Remodelista, Yellowtrace, Elle
+Decor and Architectural Digest.
+
+Art went to Culture rather than either of them, since it is not a room and not a
+building: Hyperallergic, ARTnews, Contemporary Art Daily, Artnet News and Open
+Culture. Design was the thinnest category on the list at four feeds and now has
+eleven, with It's Nice That, PRINT, Design Observer, Nielsen Norman Group, UX
+Collective, Sidebar and swissmiss.
+
+Every one of the twenty-eight was fetched and parsed through the real fetcher
+before being added, and the two behind paywalls are labelled as such. The
+header comment records what failed the same check - a dead Brand New feed, a
+Metropolis feed that returns nothing, a Typewolf feed whose items carry no
+dates - so none of them get tried again next time.
+
+### Site pages keep going
+
+A site page showed the first twenty articles, and the "Load more" button under
+them sits between the feed list and the things you have saved - so on a site you
+had saved anything from, the bottom of the page was the saved list and the way
+to see more was somewhere above it. A page announcing 214 articles and showing
+20, with nothing at the foot of it, read as a broken count.
+
+The list now loads the next page as you reach the end of it, the button stays as
+a fallback, and a line under the list says how far through you are - "Showing 20
+of 214 articles".
+
 ## v1.19.0 - Saved once, and something to cite
 
 **2026-08-14**

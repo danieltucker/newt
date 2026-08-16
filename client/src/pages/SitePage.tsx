@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './SitePage.module.css';
 import { apiGet, apiErrorText } from '../services/api';
 import { SiteOverview, SiteArticle, ReadingListItem } from '../types';
@@ -160,19 +160,48 @@ export default function SitePage({ domain, navigate, onOpenThread, onFollowSite,
     return () => { document.title = 'Newt'; };
   }, [site]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
     if (!site || !site.hasMore || loadingMore) return;
     setLoadingMore(true);
     try {
       const next = await apiGet<SiteOverview>(
         `/api/v1/sites/${encodeURIComponent(domain)}?offset=${site.articles.length}`,
       );
-      setSite(prev => (prev
-        ? { ...prev, articles: [...prev.articles, ...next.articles], hasMore: next.hasMore }
-        : next));
+      setSite(prev => {
+        if (!prev) return next;
+        return {
+          ...prev,
+          articles: [...prev.articles, ...next.articles],
+          // A page that came back empty ends the list whatever the server says
+          // about `hasMore`. Without this an empty-but-hasMore answer would be
+          // an infinite loop now that the sentinel below fetches by itself:
+          // nothing is appended, the offset never moves, and it asks again.
+          hasMore: next.articles.length > 0 && next.hasMore,
+        };
+      });
     } catch { /* leave what's on screen */ }
     setLoadingMore(false);
-  }
+  }, [site, loadingMore, domain]);
+
+  // Load the next page when the end of the list comes into view. The button
+  // below stays as the manual fallback (and as the thing that says there *is*
+  // more) - the same arrangement the feed river uses.
+  //
+  // Paging was reachable only from that button before, and the button sits
+  // between the two sections rather than at the foot of the page, so on a site
+  // with anything saved from it the bottom of the page was the saved list and
+  // the way to see more articles was somewhere up above it.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !site?.hasMore || loadingMore) return;
+    if (!('IntersectionObserver' in window)) return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) loadMore();
+    }, { rootMargin: '400px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [site?.hasMore, loadingMore, loadMore]);
 
   // Subscribing from here is the point of showing the site to someone who isn't
   // subscribed: the page has just told them what the feed would bring. The URL
@@ -297,6 +326,14 @@ export default function SitePage({ domain, navigate, onOpenThread, onFollowSite,
             )}
           </div>
           <EntryList entries={feedEntries} layout={layout} onOpenThread={onOpenThread} />
+          <div ref={sentinelRef} aria-hidden />
+          {/* How much of the site you are actually looking at. The page has
+              always printed a total in the stats above, so a list that stopped
+              at twenty with nothing to explain it read as the total being
+              wrong rather than the list being one page of it. */}
+          <div className={styles.moreMeta}>
+            Showing {site.articles.length} of {counts.articles} article{counts.articles === 1 ? '' : 's'}
+          </div>
           {site.hasMore && (
             <button className={styles.moreBtn} disabled={loadingMore} onClick={loadMore}>
               {loadingMore ? 'Loading…' : 'Load more'}

@@ -1,7 +1,7 @@
 import nodeFetch from 'node-fetch';
 import type { Response } from 'node-fetch';
 import type { Readable } from 'stream';
-import { makeSafeAgent } from './isSafeUrl';
+import { resolveSafeAgent } from './isSafeUrl';
 
 /**
  * An outbound fetch to a user-supplied address, with the SSRF gate applied to
@@ -53,8 +53,19 @@ export async function safeFetch(startUrl: string, opts: FetchOptions = {}): Prom
   let url = startUrl;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const agent = await makeSafeAgent(url);
-    if (!agent) throw new Error(`Address is not allowed: ${url}`);
+    // The reason is carried into the message rather than dropped. This string
+    // is what ends up in Feed.lastError and in the admin panel's feed health
+    // table, so "Address is not allowed: <url>" full stop was the least useful
+    // possible thing to print - it named the feed the admin was already looking
+    // at and said nothing about the fault.
+    const { agent, reason } = await resolveSafeAgent(url);
+    if (!agent) {
+      throw new Error(
+        hop === 0
+          ? `Couldn't fetch ${url}: ${reason}`
+          : `Couldn't follow a redirect to ${url}: ${reason}`,
+      );
+    }
 
     const res = await nodeFetch(url, {
       ...opts,
