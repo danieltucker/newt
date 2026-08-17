@@ -346,8 +346,14 @@ export default function ArticleDetailModal({
           {/* Between the article and the conversation about it, which is where
               it belongs: these are things somebody made *from* the piece, so
               they follow the piece - and they are not comments, so they do not
-              belong inside the thread. Draws nothing when there are none. */}
-          <ExploredPaths articleUrl={url} />
+              belong inside the thread. Draws nothing when there are none.
+
+              Wrapped because every section in this scroller states the column
+              it sits in; see .pathsWrap. The wrapper is gutters only, so an
+              article with no paths still costs nothing. */}
+          <div className={styles.pathsWrap}>
+            <ExploredPaths articleUrl={url} />
+          </div>
 
           <div className={styles.commentsWrap}>
             <CommentsPanel

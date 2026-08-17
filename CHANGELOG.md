@@ -2,6 +2,97 @@
 
 Notable changes to Newt, newest first.
 
+## v1.21.1 - The card said "Comments" while you wrote about it
+
+**2026-08-17**
+
+1.20.2 made the number on a card count the whole discussion — replies plus the
+posts and shared explores about the piece — and renamed it accordingly. The
+reference cards in the composer kept half of that.
+
+The row shows "4 in the discussion" once the live count arrives. Until it does,
+it rested on a hardcoded "Comments" — so a card named the same thing two ways,
+and named it wrongly first. That first version is the one you actually look at
+while writing, because the count lands a moment later, and article and post
+embeds always show the row whether or not anyone has said anything.
+
+The resting label is now "Discussion". One rule, in `RichEditor.module.css`,
+which is where the row's text lives: a count cannot be baked into stored markup
+that will outlive it, so the label before it arrives is CSS rather than content.
+Published posts pick it up from the same rule — the embed styles are `:global`
+and `PostBody` has no copy of its own.
+
+## v1.21.0 - The newt button becomes a menu
+
+**2026-08-17**
+
+Two pills sprang out sideways from the round "n" in the corner. That works for
+two things and stops working at four, which is what the browser extension needs
+it to hold: Notes, New note, Share and Save.
+
+So the pills are now one panel, stacked vertically above the button. Not four
+floating pills in a column - one surface with hairlines between the rows,
+because four separate pills read as four things that happen to be near each
+other, and this is a menu. It unfolds from the bottom edge, the edge the button
+is on, and the rows land in sequence from the bottom up so the whole thing reads
+as one object opening rather than four arriving.
+
+**Share and Save are new, and they come and go with the page.** Share puts
+*this instance's* page for whatever you are reading on the clipboard - the
+reader at `/a/<id>`, or a post's own page if it was written here - which is the
+same link the comment bar's Share has always copied, and the reason to send it
+instead of the publisher's URL is that the conversation is on it. Save files the
+article into the reading list. Both rows disappear on a bare new tab: a Share
+that copies the new tab page is not a feature.
+
+They report in place rather than closing the menu, unlike the comment bar's
+Share. The menu stays put because you may well want both, and one that shut
+itself after Save would have to be reopened to then Share the same article.
+
+**Save resolves its own title.** None of the three things "this page" can be
+actually carries one - the comment thread and the reader both travel as a bare
+URL, and a post travels as an address built from a username and a slug. So Save
+fetches it, once, on press, and falls back to the host: the same call the reader
+settled on in 1.20.4, for the same reason. A row named after its domain beats a
+blank one.
+
+**The column also deleted a layout.** The row needed a second one at 420px -
+two pills and a 52px thumb target don't fit across a phone - and keeping two in
+step was half the reason it went. A column is flush with whichever edge the
+button is docked to either way, needs no `row-reverse`, and is the same shape
+the extension will put in the corner of somebody else's page. One shape means
+the two cannot drift.
+
+**One contrast fix found by measuring, not by looking.** The pills set both an
+accent background tint and accent text on hover. Carried onto a menu row that
+measured **4.30:1 in the light theme** - under AA for 13px text, and the light
+accent is the *darker* of the two, so the theme that looks safer is the one that
+failed. Rows now tint the background and leave the label alone, which is what
+`.pickerRow` in the same stylesheet already did: 15.10:1 light, 13.47:1 dark.
+The keyboard focus ring had the same problem at 70% accent (2.67:1 against the
+row, under the 3:1 a control boundary asks for) and is now solid.
+
+Verified in Playwright against the real tokens, both themes, at 320/390/desktop
+and docked to either side - `color-mix()` computes to `oklab()`, so this is not
+a thing you can check on paper.
+
+**Also — Explored paths was running off the edge of the reader.** Every section
+in the article modal's scroller states the 720px column it sits in: the article
+does, the comments do, the action bar does. The explored-paths shelf was mounted
+as a bare child of the scroller and stated nothing, so it spanned the full width
+of the modal while its neighbours were inset, and its heading sat hard against
+the left edge where the rounded corner clipped the first letter.
+
+It now sits in the same column. The gutter had to go on a wrapper in the modal
+rather than in the shelf's own stylesheet — the column is a fact about this
+modal, not about the shelf — and it is horizontal only, because the component
+renders nothing on an article with no paths and a wrapper with vertical padding
+would leave a band of blank space behind on every one of them.
+
+**Also:** `shareLinkFor` moved out of `CommentsPanel` into `utils/shareLink`.
+Two surfaces share it now, and the second one had no business importing the
+whole comment panel to get at one function.
+
 ## v1.20.4 - The headline is the link
 
 **2026-08-17**

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { shareLinkFor } from './CommentsPanel';
+import { shareLinkFor } from './shareLink';
 
 // Where Share sends people.
 //

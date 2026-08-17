@@ -7,6 +7,7 @@ import {
 import { DockSide, readDock, sideForX, writeDock } from '../utils/newtDock';
 import { useFeedSearch } from '../hooks/useFeedSearch';
 import { faviconUrl } from '../utils/color';
+import { copyShareLink } from '../utils/shareLink';
 
 /**
  * The newt button - the round "n" in the bottom corner.
@@ -15,9 +16,23 @@ import { faviconUrl } from '../utils/color';
  * putting behind it. They aren't any more: the same corner is now the shortest
  * route to a question about whatever is on screen, so the button opens a small
  * menu rather than one console. What it does *not* do is grow into a launcher
- * for the whole app - everything here is a way of writing something down or
- * asking about what you are reading, which is the one sentence that decides
- * whether a future row belongs in it.
+ * for the whole app - everything here is a way of writing something down, or of
+ * keeping, passing on, or asking about what you are reading. That is the one
+ * sentence that decides whether a future row belongs in it.
+ *
+ * ── The menu is a column, and that is the extension's doing ──
+ *
+ * Until 1.21.0 the rows were two pills springing out *beside* the button, which
+ * works for two and stops working at four: the row runs off a phone screen, and
+ * the 420px breakpoint that turned it into a column meant two layouts to keep
+ * honest. The browser extension has to put this same menu in the corner of
+ * somebody else's page, where horizontal room is whatever the site has not
+ * already taken - so the column is the layout that survives both places, and
+ * keeping one shape means the two cannot drift.
+ *
+ * They are also drawn as one connected panel rather than four floating pills.
+ * Four separate pills read as four separate things that happen to be near each
+ * other; one panel with dividers reads as a menu, which is what it is.
  *
  * The button can be dragged to the other side of the window. That is a
  * left-handed reader's fix, and a fix for the button sitting on top of whatever
@@ -57,6 +72,23 @@ interface Props {
   contextLabel?: string | null;
   /** What /reference can attach: saved articles and your own posts. */
   references?: EmbedData[];
+  /**
+   * The address of whatever is open to be read. Given one, the menu offers
+   * Share, which puts *this instance's* page for that address on the clipboard
+   * rather than the publisher's URL - see utils/shareLink for why those differ.
+   *
+   * Absent on a bare new tab, and the row goes with it. A Share that copies the
+   * new tab page is not a feature.
+   */
+  shareUrl?: string;
+  /**
+   * Save what is open to the reading list. Absent when there is nothing open to
+   * save, on the same principle as `shareUrl`.
+   *
+   * Resolving the title is the caller's job, not this button's: what is being
+   * read is something the page knows and this corner does not.
+   */
+  onSave?: () => Promise<void>;
 }
 
 function domainOf(url: string): string {
@@ -87,8 +119,25 @@ const SendIcon = () => (
   </svg>
 );
 
+const ShareIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+    <path d="M16 6l-4-4-4 4" /><path d="M12 2v14" />
+  </svg>
+);
+
+const SaveIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+/** How long a row holds "Saved" before going back to being a button. */
+const SAVED_MS = 1100;
+
 export default function NewtButton({
   onOpenNotes, onNewNote, onAsk, onOpenSettings, contextLabel, references = [],
+  shareUrl, onSave,
 }: Props) {
   const [side, setSide] = useState<DockSide>(readDock);
   const [open, setOpen] = useState(false);
@@ -99,6 +148,19 @@ export default function NewtButton({
   const [attached, setAttached] = useState<ReferenceItem[]>([]);
   /** Where the button is while it's being dragged; null when it's docked. */
   const [dragAt, setDragAt] = useState<{ x: number; y: number } | null>(null);
+
+  // What Share and Save are saying instead of their own labels, if anything.
+  // Unlike the comment bar's Share - which lives in a menu that closes to get
+  // out of the way - these rows report in place and the menu stays put: the
+  // reader may well want a second one of them, and a menu that shut itself
+  // after Save would have to be reopened to then Share the same article.
+  const [shareMsg, setShareMsg] = useState('');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+  // Timers for the two messages above, cleared on unmount so a row that reports
+  // just as the console opens over it doesn't set state into a dead component.
+  const msgTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => { msgTimers.current.forEach(clearTimeout); }, []);
 
   // The close cross paints itself with the brand gradient, and a gradient needs
   // an id of its own - two newt buttons on one page must not share one.
@@ -255,12 +317,42 @@ export default function NewtButton({
     send();
   }
 
-  // A pill's action. Closed immediately rather than animated out: what these
-  // open - the notes console, the settings dialog - covers this corner in the
-  // same frame, so an exit animation would play underneath it.
+  // A row's action, for the rows that go somewhere. Closed immediately rather
+  // than animated out: what these open - the notes console, the settings dialog
+  // - covers this corner in the same frame, so an exit animation would play
+  // underneath it.
   function pick(run: () => void) {
     close(true);
     run();
+  }
+
+  /** Hold a message on a row, then put the label back. */
+  function flash(set: (s: string) => void, text: string, ms: number) {
+    set(text);
+    msgTimers.current.push(setTimeout(() => set(''), ms));
+  }
+
+  function share() {
+    if (!shareUrl || shareMsg) return;
+    copyShareLink(shareUrl).then(({ text, holdMs }) => flash(setShareMsg, text, holdMs));
+  }
+
+  async function save() {
+    // Guarded on `saving` as well as the message: the await below is a round
+    // trip, and without it a second press queues a second save of the same
+    // article while the first is still in the air.
+    if (!onSave || saving || saveMsg) return;
+    setSaving(true);
+    try {
+      await onSave();
+      flash(setSaveMsg, 'Saved', SAVED_MS);
+    } catch {
+      // The article is not saved, and saying nothing here would look exactly
+      // like the success above. Longer, for the same reason a failed copy is.
+      flash(setSaveMsg, 'Couldn’t save', 1600);
+    } finally {
+      setSaving(false);
+    }
   }
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -436,69 +528,110 @@ export default function NewtButton({
         </div>
       )}
 
-      {/* The button and the two places it can send you, on one row. Reversed
-          when the button is docked left, so the pills always spring out into
-          the room rather than off the edge of the window - the group keeps its
-          reading order either way, it is which side of the button it sits on
-          that flips. */}
-      <div className={`${styles.dock} ${side === 'left' ? styles.dockLeft : ''}`}>
-        {open && !dragging && (
-          <div className={`${styles.pills} ${closing ? styles.pillsClosing : ''}`}>
-            <button className={styles.pill} onClick={() => pick(onOpenNotes)}>
-              <NoteIcon />
-              <span>Notes</span>
-              <kbd className={styles.pillKey}>n</kbd>
-            </button>
-            <button className={styles.pill} onClick={() => pick(onNewNote)}>
-              <PlusIcon />
-              <span>New note</span>
-            </button>
-          </div>
-        )}
+      {/* The menu: one panel, stacked above the button, growing out of the
+          corner it is docked in. No row-reverse and no second layout at a
+          breakpoint - a column is already flush with whichever edge the wrapper
+          is pinned to, and it is the same shape the extension puts on somebody
+          else's page.
 
-        <button
-          className={styles.button}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-          // Click is deliberately not handled: the pointer sequence above
-          // decides between a press and a drag, and a click listener would fire
-          // again after a drag that happened to end where it started.
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          title={showX ? 'Close' : 'Newt — notes and Ask (drag to move)'}
-          aria-label={showX ? 'Close newt menu' : 'Newt menu'}
+          Order is deliberate, nearest the button first as the thumb travels:
+          Save and Share are about the thing in front of you and are gone the
+          moment there isn't one, so they sit closest; Notes and New note are
+          always here and sit above, where they stay put rather than shifting
+          down a row every time an article opens. */}
+      {open && !dragging && (
+        <div
+          className={`${styles.menu} ${closing ? styles.menuClosing : ''}`}
+          role="menu"
+          aria-label="Newt"
         >
-          {/* The mark turns into a close button while the menu is out, so the
-              thing that opened it is visibly the thing that shuts it. Both
-              glyphs are always mounted, stacked in one grid cell and
-              counter-rotated past each other - a swap you can watch reads as
-              one object turning, where a straight cross-fade reads as two. */}
-          <span className={`${styles.glyph} ${showX ? styles.glyphOpen : ''}`} aria-hidden>
-            <span className={styles.letter}>n</span>
-            <svg className={styles.cross} viewBox="0 0 24 24" fill="none">
-              <defs>
-                {/* Its own gradient per instance, the same way NewtMark does
-                    it - two marks on one page must not share an id. */}
-                <linearGradient id={crossGradient} x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
-                  <stop offset="0" stopColor="#9B8CFF" />
-                  <stop offset=".55" stopColor="#5BC8E6" />
-                  <stop offset="1" stopColor="#36D6A6" />
-                </linearGradient>
-              </defs>
-              {/* Sized to the mark it replaces: 12 of 24 units across, which
-                  lands within a pixel of the "n"'s own width. */}
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                stroke={`url(#${crossGradient})`}
-                strokeWidth="2.8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
-        </button>
-      </div>
+          <button className={styles.row} role="menuitem" onClick={() => pick(onOpenNotes)}>
+            <NoteIcon />
+            <span className={styles.rowLabel}>Notes</span>
+            <kbd className={styles.rowKey}>n</kbd>
+          </button>
+
+          <button className={styles.row} role="menuitem" onClick={() => pick(onNewNote)}>
+            <PlusIcon />
+            <span className={styles.rowLabel}>New note</span>
+          </button>
+
+          {shareUrl && (
+            <button
+              className={styles.row}
+              role="menuitem"
+              onClick={share}
+              // The row reports in place, so what it says has to reach a screen
+              // reader too - the label is the only thing that changed.
+              aria-label={shareMsg || 'Share'}
+            >
+              <ShareIcon />
+              <span className={styles.rowLabel}>{shareMsg || 'Share'}</span>
+            </button>
+          )}
+
+          {onSave && (
+            <button
+              className={styles.row}
+              role="menuitem"
+              onClick={save}
+              disabled={saving}
+              aria-label={saveMsg || 'Save'}
+            >
+              <SaveIcon />
+              <span className={styles.rowLabel}>{saveMsg || (saving ? 'Saving…' : 'Save')}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* No wrapper of its own any more: the menu is a sibling in the column
+          rather than a row sharing one, so .wrap's own alignment already pins
+          the button to the docked edge. */}
+      <button
+        className={styles.button}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        // Click is deliberately not handled: the pointer sequence above
+        // decides between a press and a drag, and a click listener would fire
+        // again after a drag that happened to end where it started.
+        aria-expanded={open}
+        // Not "menu" and not "dialog": pressing this opens both, and which of
+        // the two is on top depends on whether a model is connected.
+        aria-haspopup="true"
+        title={showX ? 'Close' : 'Newt — notes, Ask and this page (drag to move)'}
+        aria-label={showX ? 'Close newt menu' : 'Newt menu'}
+      >
+        {/* The mark turns into a close button while the menu is out, so the
+            thing that opened it is visibly the thing that shuts it. Both
+            glyphs are always mounted, stacked in one grid cell and
+            counter-rotated past each other - a swap you can watch reads as
+            one object turning, where a straight cross-fade reads as two. */}
+        <span className={`${styles.glyph} ${showX ? styles.glyphOpen : ''}`} aria-hidden>
+          <span className={styles.letter}>n</span>
+          <svg className={styles.cross} viewBox="0 0 24 24" fill="none">
+            <defs>
+              {/* Its own gradient per instance, the same way NewtMark does
+                  it - two marks on one page must not share an id. */}
+              <linearGradient id={crossGradient} x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stopColor="#9B8CFF" />
+                <stop offset=".55" stopColor="#5BC8E6" />
+                <stop offset="1" stopColor="#36D6A6" />
+              </linearGradient>
+            </defs>
+            {/* Sized to the mark it replaces: 12 of 24 units across, which
+                lands within a pixel of the "n"'s own width. */}
+            <path
+              d="M6 6l12 12M18 6L6 18"
+              stroke={`url(#${crossGradient})`}
+              strokeWidth="2.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </span>
+      </button>
     </div>
   );
 }

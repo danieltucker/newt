@@ -1221,7 +1221,13 @@
    Its text comes from the data-comments attribute rather than from the markup,
    because the number changes after the embed is written - see
    applyCommentCounts. With no attribute the row rests on the neutral label:
-   "not asked yet" must not read as "nobody has commented". */
+   "not asked yet" must not read as "nobody has commented".
+
+   That resting label is "Discussion", not "Comments". What the row leads to,
+   and what the number replacing it counts, has since 1.20.2 been the whole
+   discussion - replies plus the posts and shared explores about the target. A
+   card that said "Comments" until the count landed and "4 in the discussion"
+   after it named the same thing two ways, and named it wrongly first. */
 :global(.note-embed .note-embed-comments) {
   display: flex;
   align-items: center;
@@ -1246,7 +1252,7 @@
   border-radius: 3px 3px 3px 0;   /* the square corner reads as the tail */
 }
 
-:global(.note-embed .note-embed-comments)::after { content: 'Comments'; }
+:global(.note-embed .note-embed-comments)::after { content: 'Discussion'; }
 :global(.note-embed .note-embed-comments[data-comments])::after { content: attr(data-comments); }
 
 /* Small: the far end of the row, divided off from the card's own link so the

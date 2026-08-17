@@ -435,6 +435,26 @@
   .repostBtn { padding: 0 15px; font-size: 12.5px; }
 }
 
+/* ── Explored paths ───────────────────────────────────────────────────── */
+
+/* The column every section in this scroller sits in. ExploredPaths was the one
+   child of .scroll without it, so it ran the full width of the modal while the
+   article above and the comments below were inset - which put its heading hard
+   against the left edge, where the rounded corner clipped the first letter.
+   Its own stylesheet cannot fix that: the gutter is a fact about this modal,
+   not about the shelf, which is why .article and .commentsWrap both state it
+   here too.
+
+   Horizontal only. The vertical rhythm and the rule above it belong to the
+   component, and an empty section here has to cost nothing - ExploredPaths
+   renders null on an article with no paths, and a wrapper with vertical padding
+   would leave a band of blank space behind on every one of them. */
+.pathsWrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
 /* ── Comments ─────────────────────────────────────────────────────────── */
 
 .commentsWrap {
@@ -457,6 +477,7 @@
   .modal { width: 100%; height: 100%; border-radius: 0; }
   .article { padding: 18px 20px 8px; }
   .actionBar { padding: 16px 20px 0; }
+  .pathsWrap { padding: 0 20px; }
   .commentsWrap { padding: 22px 20px 32px; }
   .title { font-size: 24px; }
   .prose { font-size: 15.5px; }

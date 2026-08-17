@@ -1,10 +1,12 @@
-/* The newt button, the two pills that spring out beside it, and the Ask card
-   that floats above them.
+/* The newt button, the menu that unfolds above it, and the Ask card above that.
 
-   No menu panel: everything here is its own floating surface, hung off the
-   corner the button is docked in. The wrapper is what's pinned, so moving the
-   whole assembly to the other side is a matter of swapping two properties and
-   reversing one row. */
+   Three surfaces stacked in one pinned column, hung off the corner the button
+   is docked in. The wrapper is what's pinned, so moving the whole assembly to
+   the other side is a matter of swapping two properties - the column needs no
+   reversing, which is the main thing 1.21.0's switch from a row bought.
+
+   The menu is one panel with dividers rather than a row of separate pills; see
+   the component's header for why, and for why it matches the extension. */
 .wrap {
   position: fixed;
   right: max(22px, env(safe-area-inset-right, 0px));
@@ -43,20 +45,6 @@
 .wrapDragging {
   transform: translate(-50%, -50%);
   cursor: grabbing;
-}
-
-/* ── The button, and the pills beside it ── */
-.dock {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-/* Docked left, the pills go to the button's right. The .pills group is one flex
-   item, so reversing this row swaps the two sides without reversing Notes and
-   New note within it. */
-.dockLeft {
-  flex-direction: row-reverse;
 }
 
 /* The button's own paper. It used to be a hardcoded off-white with a hardcoded
@@ -176,54 +164,117 @@
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.pills {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* ── The menu ──
+   One surface holding every row, so the border, the blur and the shadow are
+   stated once and the rows are just rows. `overflow: hidden` is what lets the
+   14px corners clip the first and last row's own background on hover - without
+   it a hovered end row paints square corners over the panel's round ones.
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  height: 36px;
-  padding: 0 13px;
+   Unfolds from the bottom edge, which is the edge the button is on, so it reads
+   as coming out of it rather than appearing above it. */
+.menu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 176px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 14px;
   background: color-mix(in oklab, var(--surface) 90%, transparent);
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
   box-shadow:
-    0 8px 22px color-mix(in oklab, var(--shadow) 50%, transparent),
-    0 2px 5px color-mix(in oklab, var(--shadow) 35%, transparent);
+    0 16px 38px color-mix(in oklab, var(--shadow) 60%, transparent),
+    0 4px 10px color-mix(in oklab, var(--shadow) 40%, transparent);
+  transform-origin: bottom right;
+  animation: menuIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.wrapLeft .menu { transform-origin: bottom left; }
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 38px;
+  padding: 0 13px;
+  border: none;
+  background: none;
   color: var(--text);
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
+  text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.12s;
-  /* Springs out from the button rather than fading in on the spot - the row is
-     one gesture, so the two pills are staggered along it. */
-  animation: pillIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition: background 0.12s, color 0.12s;
+  /* The rows land in sequence *inside* the panel that is already unfolding, so
+     the whole thing reads as one object opening rather than four arriving. The
+     delays are set per row below. */
+  animation: rowIn 0.16s ease-out both;
 }
 
-/* Furthest from the button, so it arrives last. */
-.pills .pill:first-child { animation-delay: 0.05s; }
+/* Nearest the button first, counting up the column - the stagger runs the way
+   the panel grows. :nth-last-child so the order is measured from the bottom,
+   which is the fixed end: Save and Share come and go with the page, so counting
+   from the top would change which row leads depending on what is open. */
+.row:nth-last-child(1) { animation-delay: 0s; }
+.row:nth-last-child(2) { animation-delay: 0.035s; }
+.row:nth-last-child(3) { animation-delay: 0.07s; }
+.row:nth-last-child(4) { animation-delay: 0.105s; }
 
-.pill:hover {
-  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow:
-    0 12px 28px color-mix(in oklab, var(--shadow) 60%, transparent),
-    0 3px 7px color-mix(in oklab, var(--shadow) 40%, transparent);
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.pill svg { flex-shrink: 0; color: var(--muted); }
-.pill:hover svg { color: inherit; }
+/* A hairline between rows, not around them: the panel already has the outline,
+   so a full border per row would double up on every edge. */
+.row + .row { box-shadow: inset 0 1px 0 var(--border); }
 
-.pillKey {
+/* Hover tints the row toward the accent and leaves the label alone - the same
+   bargain .pickerRow below makes, and for a measured reason. Doing both, which
+   is what the pills this replaced did, puts accent text on an accent-tinted
+   ground: 4.30:1 in the light theme, under AA for 13px text. Tinting only
+   measures 15.10:1 light and 13.47:1 dark. The icon going from --muted to full
+   --text is the rest of the feedback. */
+.row:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* Keyboard parity: the panel clips its corners, so an outline ring on an end
+   row would be sliced. A filled row plus an inset ring keeps it whole.
+
+   The ring is the solid accent, not a mix of it. At 70% it measured 2.67:1
+   against the row it sits on in the light theme - under the 3:1 WCAG asks of a
+   control boundary, and the light accent is the darker of the two, so the
+   theme that looks safer is the one that failed. Solid clears both. */
+.row:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.row:disabled { cursor: default; opacity: 0.65; }
+
+.row svg { flex-shrink: 0; color: var(--muted); }
+.row:hover:not(:disabled) svg, .row:focus-visible svg { color: var(--text); }
+
+/* Takes the slack so the kbd hint sits hard against the right edge. */
+.rowLabel {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.rowKey {
+  flex-shrink: 0;
   padding: 1px 5px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -233,48 +284,26 @@
   font-size: 10.5px;
 }
 
-@keyframes pillIn {
-  from { opacity: 0; transform: translateX(10px) scale(0.94); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
-}
-
-/* Mirrored: docked left, the pills spring out rightward. */
-.dockLeft .pill {
-  animation-name: pillInLeft;
-}
-
-@keyframes pillInLeft {
-  from { opacity: 0; transform: translateX(-10px) scale(0.94); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
-}
-
 /* ── Leaving ──
-   The row retracts into the button rather than blinking out, so the order is
-   the reverse of arriving: the far pill goes first and the near one follows it
-   in. These rules come after the entrance ones deliberately - they carry the
-   same specificity and win on document order alone.
+   The panel folds back into the button rather than blinking out. One animation
+   on the whole surface, not a per-row retraction: the rows are inside it and go
+   with it, and staggering an exit only delays the moment the corner is clear.
 
-   The total here (0.03s + 0.12s) is CLOSE_MS in the component, which is the
-   timer that unmounts all of this once it has played. Change one, change both. */
-.pillsClosing .pill {
-  animation: pillOut 0.12s ease-in both;
-  animation-delay: 0.03s;
+   0.12s is under CLOSE_MS in the component, which is the timer that unmounts
+   all of this once it has played. Change one, check the other. */
+.menuClosing {
+  animation: menuOut 0.12s ease-in both;
   pointer-events: none;
 }
 
-.pillsClosing .pill:first-child { animation-delay: 0s; }
-
-.dockLeft .pillsClosing .pill { animation-name: pillOutLeft; }
-
-@keyframes pillOut {
-  from { opacity: 1; transform: translateX(0) scale(1); }
-  to   { opacity: 0; transform: translateX(12px) scale(0.92); }
+@keyframes menuOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(6px) scale(0.97); }
 }
 
-@keyframes pillOutLeft {
-  from { opacity: 1; transform: translateX(0) scale(1); }
-  to   { opacity: 0; transform: translateX(-12px) scale(0.92); }
-}
+/* The rows have already landed; replaying their entrance under a closing panel
+   would make them flicker on the way out. */
+.menuClosing .row { animation: none; }
 
 /* ── The Ask card ── */
 .ask {
@@ -511,7 +540,7 @@
 }
 
 /* Touch: the button is a thumb target, not a cursor one, and it never gets the
-   hover that would otherwise announce it. The pills grow with it. */
+   hover that would otherwise announce it. The rows grow with it. */
 @media (hover: none) {
   .button {
     width: 52px;
@@ -521,35 +550,24 @@
   /* On .glyph, not .letter: both glyphs are sized in em off it. */
   .glyph { font-size: 27px; }
 
-  .pill { height: 40px; padding: 0 15px; font-size: 13.5px; }
+  /* 44px is the thumb target the rest of the app holds itself to; the menu is
+     wider to match, so four of them don't read as a cramped strip. */
+  .row { height: 44px; padding: 0 15px; font-size: 13.5px; }
+  .menu { min-width: 196px; }
 }
 
-/* Two pills and a 52px thumb target don't fit across a narrow phone on one row,
-   and the answer is not to shrink them: the row becomes a column, pills above
-   the button, still flush with whichever edge it's docked to. row-reverse is
-   dropped here rather than adapted - it flips the main axis, which in a column
-   would send the pills below the button instead of beside it. */
-@media (max-width: 420px) {
-  .dock {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-  }
-
-  .dockLeft {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .pills { order: -1; }
-}
+/* No narrow-screen branch any more. The column already fits - it is a fixed
+   ~176px against the 320px of the smallest phone anyone still uses, and it is
+   flush with whichever edge the wrapper is pinned to either way. The row layout
+   this replaced needed a second layout here, and keeping two in step was the
+   other half of the reason it went. */
 
 /* No springing, no retracting - but the exit still has to finish, because the
    component waits CLOSE_MS before unmounting either way. `both` on a zeroed
    animation keeps the surface invisible for that beat instead of leaving it
    sitting there fully painted until the timer fires. */
 @media (prefers-reduced-motion: reduce) {
-  .button, .pill, .ask { animation: none; }
+  .button, .menu, .row, .ask { animation: none; }
 
   /* The mark still becomes a cross - that is information, not decoration - it
      just stops spinning to get there. */
@@ -557,7 +575,7 @@
   .glyphOpen .letter { transform: none; }
   .glyphOpen .cross { transform: none; }
 
-  .askClosing, .pillsClosing .pill {
+  .askClosing, .menuClosing {
     animation: fadeOut 0.1s linear both;
   }
 

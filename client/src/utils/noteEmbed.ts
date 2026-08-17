@@ -72,10 +72,11 @@ const DEFAULT_VARIANT: EmbedVariant = 'small';
 //
 // What this list marks is the stronger claim: kinds whose target has a thread
 // whether or not anyone has posted in it yet, because it is a page of ours with
-// a comment box on it. Those cards rest on a "Comments" invitation. Everything
-// else stays silent until a count actually comes back - see the CSS, which hides
-// the row until it has something to report, so a card never promises a
-// conversation that doesn't exist.
+// a comment box on it. Those cards rest on a "Discussion" invitation - the same
+// word the count replacing it uses, see commentLabel. Everything else stays
+// silent until a count actually comes back - see the CSS, which hides the row
+// until it has something to report, so a card never promises a conversation
+// that doesn't exist.
 const THREADED_KINDS: EmbedKind[] = ['article', 'post'];
 
 export function hasThread(kind: EmbedKind): boolean {

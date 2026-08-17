@@ -67,6 +67,7 @@ import { canonicalFeedUrl } from '../utils/feedKey';
 import { articleEmbed } from '../utils/noteEmbed';
 import { postReferences } from '../utils/postReferences';
 import { stashSeed } from '../utils/composerSeed';
+import { fetchPageMeta, hostOf } from '../utils/pageMeta';
 import { useFolders } from '../hooks/useFolders';
 import { useFeeds, useImportableFeeds, useSuggestedFeeds } from '../hooks/useFeeds';
 import { useNotifications } from '../hooks/useNotifications';
@@ -433,6 +434,35 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const askInExplore = useCallback((question: string, refs: string[] = []) => {
     navigate(exploreAskPath(question, page.url, refs));
   }, [navigate, page]);
+
+  /**
+   * The newt button's Save: put whatever is open into the reading list.
+   *
+   * The title is fetched rather than passed in, because none of the three
+   * things `page` can be actually carries one - the comment thread and the
+   * reader both travel as a bare URL, and a post travels as an address built
+   * from a username and a slug. Resolving it here costs one request, and only
+   * when Save is pressed.
+   *
+   * The host is the fallback, on the same principle the reader settled on in
+   * 1.20.4: a link whose metadata cannot be read is still a good link, and a
+   * reading list row named after its domain is worth more than a blank one.
+   * fetchPageMeta never throws, so this only fails if the save itself does -
+   * which the button reports.
+   */
+  const savePage = useCallback(async () => {
+    if (!page.url) return;
+    const meta = await fetchPageMeta(page.url);
+    const host = hostOf(page.url);
+    await saveItem({
+      url: page.url,
+      title: meta.title || host,
+      source: host,
+      readTime: '',
+      tag: '',
+      imageUrl: meta.image || '',
+    });
+  }, [page, saveItem]);
 
   /**
    * The search bar's /reference: carry an article to Explore and attach it to
@@ -1320,6 +1350,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
           contextLabel={page.label}
           references={articleReferences}
+          // Share and Save appear only with something open to share or save,
+          // which is the same condition `page.label` reports to the Ask field.
+          shareUrl={page.url}
+          onSave={page.url ? savePage : undefined}
         />
       )}
 
