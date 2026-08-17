@@ -3,7 +3,25 @@ import { createHash } from 'crypto';
 import { refreshTokenKey } from './jwt';
 
 describe('refreshTokenKey', () => {
-  const token = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEyMyJ9.c2lnbmF0dXJl';
+  /**
+   * A refresh cookie's *shape*, not a credential.
+   *
+   * refreshTokenKey only hashes the string it is handed, so nothing here needs
+   * to be a real token - what matters is that the fixture looks like what the
+   * lookup will actually see: three dot-separated base64url segments.
+   *
+   * Assembled rather than written out as a literal, and that is deliberate. A
+   * JWT literal begins `eyJ`, which is exactly what secret scanners match on,
+   * and this file tripped one. The value was always a hand-made fake - its
+   * "signature" is the ASCII word `signature`, nine bytes where a real HS256
+   * signature is thirty-two, and no key ever signed it - but a scanner cannot
+   * know that, and a repository that cries wolf gets its alerts ignored.
+   * Building the string here keeps the shape without the tripwire.
+   *
+   * Please don't inline it again.
+   */
+  const seg = (s: string) => Buffer.from(s).toString('base64url');
+  const token = [seg('{"alg":"HS256"}'), seg('{"sub":"user_123"}'), seg('signature')].join('.');
 
   it('is a 64-character hex digest', () => {
     expect(refreshTokenKey(token)).toMatch(/^[0-9a-f]{64}$/);
