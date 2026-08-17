@@ -6,6 +6,7 @@ import ReportModal from './ReportModal';
 import { uploadImage } from '../utils/imageUpload';
 import { fetchPageMeta } from '../utils/pageMeta';
 import { articlePathFor } from '../utils/articleUrl';
+import { blogRefOfUrl, blogPathFor } from '../utils/blogUrl';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import SplitMenuButton, { MenuItem } from './SplitMenuButton';
 import styles from './CommentsPanel.module.css';
@@ -14,6 +15,36 @@ import styles from './CommentsPanel.module.css';
 // success string is also the test for "show the tick".
 const COPIED_OK = 'Link copied';
 const COPIED_FAIL = 'Couldn’t copy';
+
+/**
+ * The link Share puts on the clipboard: this instance's page for something.
+ *
+ * Which page that is depends on what the thing is, and getting this wrong is
+ * what the first version of Share did:
+ *
+ *  - An **article** published elsewhere has no page here of its own, so the
+ *    Newt page for it is the reader at `/a/<id>`. That is where its comment
+ *    thread lives, and it is the reason to send this link instead of the
+ *    publisher's URL.
+ *  - A **post written on this instance** already has a page - `/u/<author>/
+ *    <slug>` - with the writing itself on it, the author's name, and the same
+ *    comment thread (threads key on the post's URL, so the two cannot diverge).
+ *    Wrapping it in `/a/` instead sent readers to a generic reader rendering a
+ *    feed item *about* the post, whose only way through to the post was the
+ *    toolbar's "Open original".
+ *
+ * This is the same rule noteEmbed already applies when it decides where a
+ * reference card points; see commentsHref there.
+ *
+ * `blogRefOfUrl` is what tells them apart, and it is origin-checked - a feed
+ * can carry any link at all, and a lookalike /u/<name>/<slug> path on somebody
+ * else's host must never be rewritten into one of ours.
+ */
+export function shareLinkFor(url: string): string {
+  const post = blogRefOfUrl(url);
+  const path = post ? blogPathFor(post.username, post.slug) : articlePathFor(url);
+  return `${window.location.origin}${path}`;
+}
 
 // The comment thread, always open. It lives at the foot of the article reader
 // modal, where there is room to actually read and write; cards carry only the
@@ -117,13 +148,14 @@ export function CommentBar({ count, onClick, onExplore, onRepost, shareUrl }: {
   onRepost?: () => void;
   /**
    * The article's own address. Given one, the menu offers Share, which puts
-   * this instance's page *for* that article on the clipboard - not the
+   * this instance's page *for* that address on the clipboard - not the
    * publisher's URL. The two are different links and the difference is the
    * point: the Newt page carries the conversation, so a shared link arrives
    * somewhere with comments on it rather than at the bare source.
    *
-   * The copy happens here rather than in each caller so every surface that
-   * shows this pill shares the same link in the same form.
+   * Which page that is depends on whether the address is a post written here;
+   * see shareLinkFor. The copy happens there rather than in each caller so
+   * every surface showing this pill shares the same link in the same form.
    */
   shareUrl?: string;
 }) {
@@ -141,7 +173,7 @@ export function CommentBar({ count, onClick, onExplore, onRepost, shareUrl }: {
   const [copied, setCopied] = useState('');
 
   function copyLink(close: () => void) {
-    const href = `${window.location.origin}${articlePathFor(shareUrl!)}`;
+    const href = shareLinkFor(shareUrl!);
     // `navigator.clipboard` is absent over plain http, which is exactly how
     // someone reaches a self-hosted instance on their own network - so the
     // failure is reported rather than swallowed, and the menu stays open long

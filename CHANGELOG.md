@@ -2,6 +2,35 @@
 
 Notable changes to Newt, newest first.
 
+## v1.20.1 - Sharing a post sends you to the post
+
+**2026-08-17**
+
+Share, added in 1.20.0, wrapped everything in a reader link. That is right for
+an article published somewhere else: it has no page here except the reader, and
+the reader is where its comment thread lives, which is the whole reason to send
+that link rather than the publisher's.
+
+It is wrong for a post written on this instance. A post already has a page -
+`/u/<author>/<slug>` - with the writing itself on it, its author, and the same
+comment thread, since threads key on the post's URL and the two cannot diverge.
+Sharing one handed the reader a generic reader rendering a feed item *about*
+the post, whose only route through to the post was the toolbar's "Open
+original".
+
+Share now sends a post to its own page and everything else to the reader. That
+is the rule reference cards have always followed - see `commentsHref` in
+noteEmbed - so the two now agree instead of quietly disagreeing.
+
+The check is origin-aware, which is the part that matters: a feed can carry any
+link at all, so a lookalike `/u/<name>/<slug>` path on somebody else's host is
+never rewritten into a path on this instance.
+
+**Also:** entries in Explored paths built their link to a post without encoding
+the author's username. Usernames are not charset-restricted, so for some
+authors the entry simply did not go anywhere. Both surfaces now build that path
+the same way.
+
 ## v1.20.0 - Explored paths
 
 **2026-08-16**

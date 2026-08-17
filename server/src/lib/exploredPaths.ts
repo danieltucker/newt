@@ -242,7 +242,11 @@ export async function exploredPathsFor(url: string, viewerId?: string): Promise<
       kind: 'post',
       id: p.id,
       title: p.title,
-      href: p.user ? `/u/${p.user.username}/${p.slug}` : p.url,
+      // Encoded, matching the client's blogPathFor. Usernames are not
+      // charset-restricted server-side, so a raw one can produce a path that
+      // does not resolve - and the symptom is an entry in this list that
+      // simply does not go anywhere.
+      href: p.user ? `/u/${encodeURIComponent(p.user.username)}/${p.slug}` : p.url,
       snippet: clamp(p.excerpt ?? '', SNIPPET_CHARS),
       visibility: p.visibility,
       author: p.user ? toPublicUser(p.user as PublicUser) : null,
