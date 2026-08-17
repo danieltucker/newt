@@ -91,6 +91,10 @@ export default function ArticleDetailModal({
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
   const [loading, setLoading] = useState(true);
+  // A lead image that 404s drops out of the layout entirely rather than being
+  // hidden in place: it is wrapped in a link now, and an image hidden inside a
+  // link leaves the link behind as an invisible clickable gap above the title.
+  const [heroFailed, setHeroFailed] = useState(false);
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -156,14 +160,23 @@ export default function ArticleDetailModal({
   // Stored article wins where it has data; fall back to whatever the card knew
   const heroImage = article?.imageUrl ?? imageUrl ?? null;
   const cats = article?.categories?.length ? article.categories : (categories ?? []);
-  const displayTitle = article?.title || title;
-  const displaySource = article?.source || source || '';
   const domain = domainOf(url);
+  // A shared link opens with no metadata of its own - the reader is given the
+  // URL and nothing else - so when the URL isn't a stored feed item there is no
+  // title to show. Falling back to the domain keeps the headline (and the link
+  // on it) from rendering as an empty, unclickable line. Only once the lookup
+  // has settled: during it the real title may still be on its way.
+  const displayTitle = article?.title || title || (loading ? '' : domain);
+  const displaySource = article?.source || source || '';
   const favicon = domain ? faviconUrl(domain) : '';
   const dateText = longDate(article?.pubDate ?? pubDate);
   const readText = article?.readTime != null
     ? `${article.readTime} min read`
     : (readTime || '');
+
+  // The stored article can arrive with a different image than the card opened
+  // with, and the new one deserves its own chance to load.
+  useEffect(() => { setHeroFailed(false); }, [heroImage]);
 
   return (
     <div
@@ -199,14 +212,31 @@ export default function ArticleDetailModal({
 
         <div className={styles.scroll}>
           <article className={styles.article}>
-            {heroImage && (
-              <img
-                className={styles.hero}
-                src={heroImage}
-                alt=""
-                referrerPolicy="no-referrer"
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+            {/* The image and the headline are the two things a reader arriving
+                on a shared link reaches for when they want the piece itself,
+                and until now neither did anything: the only route to the
+                source was "Open original" up in the toolbar, which is chrome,
+                and chrome is the part people scroll past. Both now go where
+                the toolbar button goes. */}
+            {heroImage && !heroFailed && (
+              <a
+                className={styles.heroLink}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                /* Not the title: the headline below is a link to the same place
+                   and already reads it out, and hearing it twice is worse than
+                   hearing what this one is. */
+                aria-label={`Read this at ${domain || 'the source'}`}
+              >
+                <img
+                  className={styles.hero}
+                  src={heroImage}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={() => setHeroFailed(true)}
+                />
+              </a>
             )}
 
             {cats.length > 0 && (
@@ -215,7 +245,16 @@ export default function ArticleDetailModal({
               </div>
             )}
 
-            <h1 className={styles.title}>{displayTitle}</h1>
+            {/* Only linked once there is something to read out - during the
+                lookup a shared link has no title yet, and an anchor with no
+                text is a link with no name. */}
+            <h1 className={styles.title}>
+              {displayTitle && (
+                <a className={styles.titleLink} href={url} target="_blank" rel="noopener noreferrer">
+                  {displayTitle}
+                </a>
+              )}
+            </h1>
 
             <div className={styles.meta}>
               {displaySource && <span>{displaySource}</span>}

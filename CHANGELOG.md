@@ -2,6 +2,36 @@
 
 Notable changes to Newt, newest first.
 
+## v1.20.4 - The headline is the link
+
+**2026-08-17**
+
+1.20.1 fixed where a share link *points*. This fixes where it lets you go once
+you arrive.
+
+Following a shared link lands you in the reader, which is the right place - the
+conversation is there. But the piece it is a conversation about lived behind
+"Open original", a small button in the top-right chrome, next to Close. Everyone
+who has ever used a link on the internet tries the headline and the picture
+first, and on this page both were inert. A reader who did the obvious thing
+concluded the article wasn't reachable.
+
+The headline and the lead image now open the source in a new tab, the same
+place the toolbar button goes. The title underlines on hover rather than
+permanently - it is still the page's heading, and a heading that is always
+underlined reads as decoration.
+
+**Also:** the reader is handed only a URL when it opens from a shared link, so
+an article that isn't a stored feed item - a hand-saved link, or a feed that has
+since expired - had no title to show and rendered a blank headline. It now falls
+back to the domain once the lookup settles, which keeps the heading, and the
+link on it, from being an empty line.
+
+**Also:** the author byline on a shared explore page was the last link still
+building a `/u/<name>` path by hand, without encoding the username - the same
+break 1.20.1 fixed in Explored paths. It now uses the shared helper, so every
+profile link in the app is built one way.
+
 ## v1.20.2 - The whole discussion, not just the replies
 
 **2026-08-17**

@@ -137,13 +137,24 @@
   margin: 0 auto;
 }
 
+/* The image is a link to the source, so it carries the affordance the image
+   itself can't: the cursor, and a lift on hover. The radius lives here as well
+   as on the image so the focus ring follows the picture's corners. */
+.heroLink {
+  display: block;
+  border-radius: 14px;
+  margin-bottom: 18px;
+  transition: opacity 0.15s ease;
+}
+
+.heroLink:hover { opacity: 0.9; }
+
 .hero {
   display: block;
   width: 100%;
   max-height: 340px;
   object-fit: cover;
   border-radius: 14px;
-  margin-bottom: 18px;
 }
 
 .cats {
@@ -173,6 +184,20 @@
   line-height: 1.2;
   color: var(--text);
   letter-spacing: -0.01em;
+}
+
+/* Reads as the headline it is until you point at it - a permanently underlined
+   h1 would look like a link farm, and the heading is still the heading. */
+.titleLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.titleLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--accent);
 }
 
 .meta {

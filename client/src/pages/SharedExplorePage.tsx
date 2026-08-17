@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import styles from './SharedExplorePage.module.css';
 import { SharedExplore, SharedExploreMessage, getSharedExplore } from '../services/llm';
 import { articlePathFor } from '../utils/articleUrl';
+import { profilePathFor } from '../utils/profileUrl';
 import { faviconUrl } from '../utils/color';
 import { relTime } from '../utils/notifications';
 
@@ -83,7 +84,9 @@ export default function SharedExplorePage({ threadId, navigate }: Props) {
         <div className={styles.byline}>
           {thread.author && (
             <>
-              <a className={styles.author} href={`/u/${thread.author.username}`}>
+              {/* Built the same way every other profile link is: usernames
+                  aren't charset-restricted, so the segment must be encoded. */}
+              <a className={styles.author} href={profilePathFor(thread.author.username)}>
                 {thread.author.displayName}
               </a>
               <span className={styles.dot}>·</span>
