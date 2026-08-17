@@ -284,17 +284,17 @@ describe('page embeds (a plain URL rendered as a card)', () => {
     expect(row().hasAttribute('data-comments')).toBe(false);
 
     applyCommentCounts(root, { 'https://example.com/post': 7 });
-    expect(row().getAttribute('data-comments')).toBe('7 comments');
+    expect(row().getAttribute('data-comments')).toBe('7 in the discussion');
   });
 
   // Where an article differs: it is a page of ours with a comment box on it, so
-  // "no comments yet" is an invitation rather than a dead end.
+  // "nothing said yet" is an invitation rather than a dead end.
   it('differs from an article, which says so even at zero', () => {
     const root = document.createElement('div');
     root.appendChild(createEmbed(articleEmbed(item()), 'large'));
     applyCommentCounts(root, { 'https://example.com/post': 0 });
     expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
-      .toBe('No comments yet');
+      .toBe('Nothing said yet');
   });
 
   it('is asked about at all - the URL goes into the counts request', () => {
@@ -353,7 +353,7 @@ describe('live comment counts', () => {
     const root = mount('large');
     applyCommentCounts(root, { 'https://example.com/post': 4 });
     expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
-      .toBe('4 comments');
+      .toBe('4 in the discussion');
   });
 
   it('leaves an unknown count resting on the neutral label', () => {
@@ -370,10 +370,13 @@ describe('live comment counts', () => {
     expect(root.querySelector('.note-embed-comments')!.hasAttribute('data-comments')).toBe(false);
   });
 
-  it('says it in words, singular and plural and none', () => {
-    expect(commentLabel(0)).toBe('No comments yet');
-    expect(commentLabel(1)).toBe('1 comment');
-    expect(commentLabel(12)).toBe('12 comments');
+  // The number counts the whole discussion - replies, posts written about the
+  // target, and shared explores about it - so the wording deliberately does not
+  // say "comments", which would undercount and disagree with the card's pill.
+  it('says it in words, at none and one and many', () => {
+    expect(commentLabel(0)).toBe('Nothing said yet');
+    expect(commentLabel(1)).toBe('1 in the discussion');
+    expect(commentLabel(12)).toBe('12 in the discussion');
   });
 
   it('counts a reposted post too - it has a thread of its own', () => {
@@ -381,7 +384,7 @@ describe('live comment counts', () => {
     root.innerHTML = buildEmbedHtml(postEmbed(post()), 'large');
     applyCommentCounts(root, { 'https://newt.test/u/ada/on-looms': 1 });
     expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
-      .toBe('1 comment');
+      .toBe('1 in the discussion');
   });
 
   // The medium card carries the row too now - it is the size most cards in a
@@ -390,7 +393,7 @@ describe('live comment counts', () => {
     const root = mount('small');
     applyCommentCounts(root, { 'https://example.com/post': 4 });
     expect(root.querySelector('.note-embed-comments')!.getAttribute('data-comments'))
-      .toBe('4 comments');
+      .toBe('4 in the discussion');
   });
 
   it('does nothing to the inline size, which has no row', () => {

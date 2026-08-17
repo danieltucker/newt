@@ -18,6 +18,7 @@ import { blockWallOf, notWalledWhere } from '../lib/blocks';
 import { Visibility, isVisibility, visibilityWhere, canModerateComment } from '../lib/commentVisibility';
 import { assembleThread } from '../lib/commentTree';
 import { canSeePost } from '../lib/blog';
+import { exploredPathCounts } from '../lib/exploredPaths';
 import { perUserLimiter } from '../lib/rateLimit';
 import { limitsForUser } from '../lib/trust';
 
@@ -289,37 +290,62 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 });
 
-// POST /api/v1/comments/counts  { urls: [...] } -> { "<url>": n }
+// POST /api/v1/comments/counts  { urls: [...] }
+//   -> { counts: { "<url>": total }, paths: { "<url>": n } }
+//
 // One round-trip for a screenful of cards instead of a request per card.
+//
+// `counts` is the whole discussion: comments, plus the posts and shared
+// explores about the article (see lib/exploredPaths). A card says how much
+// there is to come back for, and before this it said only how many replies -
+// so an article somebody had written a whole post about reported nothing.
+//
+// `paths` is that second half on its own. The client needs it because posting a
+// comment reports a new *comment* total, and without knowing what the rest of
+// the discussion came to, adding a reply would wipe the posts and explores out
+// of the number until the next reload.
 router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> => {
   const urls: unknown = req.body?.urls;
   if (!Array.isArray(urls)) { res.status(400).json({ error: 'urls must be an array' }); return; }
 
   const valid = (urls as unknown[]).filter(isHttpUrl).slice(0, MAX_URLS_PER_COUNT);
-  if (valid.length === 0) { res.json({ counts: {} }); return; }
+  if (valid.length === 0) { res.json({ counts: {}, paths: {} }); return; }
 
   try {
     const { showPublic, friendIds, wall } = await viewerContext(req.userId);
     // Several URLs can share one key, so count by key then fan back out
     const keyByUrl = new Map(valid.map(u => [u, canonicalArticleKey(u)]));
-    const grouped = await prisma.comment.groupBy({
-      by: ['articleKey'],
-      where: {
-        articleKey: { in: [...new Set(keyByUrl.values())] },
-        ...visibilityWhere(req.userId, showPublic, friendIds),
-        // Counts follow the thread: a card must not advertise comments that
-        // vanish when the thread opens.
-        ...notWalledWhere(wall),
-      },
-      _count: { _all: true },
-    });
+    const keys = [...new Set(keyByUrl.values())];
+    const [grouped, pathsByKey, hidden] = await Promise.all([
+      prisma.comment.groupBy({
+        by: ['articleKey'],
+        where: {
+          articleKey: { in: keys },
+          ...visibilityWhere(req.userId, showPublic, friendIds),
+          // Counts follow the thread: a card must not advertise comments that
+          // vanish when the thread opens.
+          ...notWalledWhere(wall),
+        },
+        _count: { _all: true },
+      }),
+      // Scoped by the same rules the reader's Explored paths list uses, so the
+      // number on the card and the rows on the page cannot disagree.
+      exploredPathCounts(keys, req.userId),
+      // Blog posts the viewer can't read report zero — a count is a small leak,
+      // but it still tells them a post exists behind the URL.
+      hiddenBlogKeys(keys, req.userId, friendIds),
+    ]);
     const byKey = new Map(grouped.map(g => [g.articleKey, g._count._all]));
-    // Blog posts the viewer can't read report zero — a count is a small leak,
-    // but it still tells them a post exists behind the URL.
-    const hidden = await hiddenBlogKeys([...new Set(keyByUrl.values())], req.userId, friendIds);
     const counts: Record<string, number> = {};
-    for (const [url, key] of keyByUrl) counts[url] = hidden.has(key) ? 0 : (byKey.get(key) ?? 0);
-    res.json({ counts });
+    const paths: Record<string, number> = {};
+    for (const [url, key] of keyByUrl) {
+      // A hidden post reports nothing at all, not merely no comments: the
+      // explores and posts about it would leak its existence just as readily.
+      const n = hidden.has(key) ? 0 : (pathsByKey.get(key) ?? 0);
+      paths[url] = n;
+      counts[url] = hidden.has(key) ? 0 : (byKey.get(key) ?? 0) + n;
+    }
+    res.json({ counts, paths });
   } catch (err) {
     logger.error(err, 'Comment counts error');
     res.status(500).json({ error: 'Server error' });

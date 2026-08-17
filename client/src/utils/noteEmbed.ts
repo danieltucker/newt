@@ -347,9 +347,14 @@ const COMMENTS_ATTR = 'data-comments';
 
 const ANY_EMBED = `.${EMBED_CLASS}`;
 
+// The number here is the whole discussion - comments plus the posts and shared
+// explores about the target - because it comes from the same counts endpoint the
+// cards use (see useCommentCounts). Saying "comments" would undercount an
+// article somebody had written a post about, and disagree with the pill on that
+// article's own card.
 export function commentLabel(n: number): string {
-  if (n <= 0) return 'No comments yet';
-  return `${n} comment${n === 1 ? '' : 's'}`;
+  if (n <= 0) return 'Nothing said yet';
+  return `${n} in the discussion`;
 }
 
 /** Write live counts into every embed under `root`, keyed by source URL. */

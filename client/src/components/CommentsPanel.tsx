@@ -162,11 +162,17 @@ export function CommentBar({ count, onClick, onExplore, onRepost, shareUrl }: {
   // Split in two so a narrow card can drop the noun and keep the number - the
   // count is the only part of this label that is data. See the collapse note in
   // SplitMenuButton.module.css.
-  const label = count > 0 ? String(count) : 'Comment';
-  const labelExtra = count > 0 ? `comment${count === 1 ? '' : 's'}` : undefined;
+  //
+  // "In the discussion" rather than "comments", because the number is no longer
+  // only replies: it counts the posts written about the article and the explore
+  // threads shared about it too (see lib/exploredPaths). A card that said "2
+  // comments" about an article somebody had written a whole post on was
+  // undercounting the thing it exists to advertise.
+  const label = count > 0 ? String(count) : 'Discuss';
+  const labelExtra = count > 0 ? 'in the discussion' : undefined;
   const title = count > 0
-    ? 'Read the article and its comments'
-    : 'Read the article and add a comment';
+    ? 'Read the article, the comments, and what people made of it'
+    : 'Read the article and join the discussion';
 
   // What the Share row currently says. Empty means "Share" - it only ever holds
   // the outcome of a copy that has just happened.

@@ -2,6 +2,34 @@
 
 Notable changes to Newt, newest first.
 
+## v1.20.2 - The whole discussion, not just the replies
+
+**2026-08-17**
+
+The pill on a card counted comments and called them comments. That was accurate
+and increasingly beside the point: since 1.20.0 an article can also have posts
+written about it and explore threads shared about it, and a card saying "2
+comments" about a piece somebody had written a whole post on was undercounting
+the very thing it exists to advertise.
+
+The number is now the whole discussion - replies, posts, and shared explores -
+and the pill says so: **Discuss** when there is nothing yet, **7 in the
+discussion** when there is. Narrow cards still drop to the bare number, as they
+did. Reference cards inside a post read from the same counts and use the same
+wording, so the two cannot say different things about the same article.
+
+The count is built from the same visibility rules the reader's Explored paths
+list uses, in the same module, deliberately: if those two ever drifted apart a
+card would promise three and the page would show two, and the reader would be
+left assuming something had been hidden from them. A post the viewer may not
+read still reports nothing at all rather than reporting its explores.
+
+Posting a comment used to be able to knock the rest of the discussion out of
+the number until the next reload - an open thread reports its comment total
+back to the card, and that total knows nothing about posts or explores. The two
+halves are now tracked separately and recombined, so replying adds one to a
+number that keeps counting everything else.
+
 ## v1.20.1 - Sharing a post sends you to the post
 
 **2026-08-17**

@@ -146,25 +146,35 @@ function clamp(s: string, n: number): string {
  *    section must never do.
  *  - anyone on either side of a block is dropped.
  */
-export async function exploredPathsFor(url: string, viewerId?: string): Promise<ExploredPath[]> {
-  const key = canonicalArticleKey(url);
-  if (!key) return [];
-
+/**
+ * Who this viewer is allowed to see things from.
+ *
+ * Extracted so the *list* and the *count* on the card that opens it are built
+ * from the same rules. If these two ever disagree, a card promises three
+ * responses and the page shows two - and the reader is left assuming something
+ * was hidden from them.
+ */
+async function viewerScope(viewerId?: string) {
   const [friendIds, wall] = await Promise.all([
     viewerId ? friendIdsOf(viewerId) : Promise.resolve(new Set<string>()),
     blockWallOf(viewerId),
   ]);
 
-  // Which tiers this viewer can see, and from whom. Written once and applied to
-  // both queries so an explore and a post can never disagree about who may read
-  // what.
+  // Which tiers this viewer can see, and from whom.
   const tiers: Record<string, unknown>[] = [{ visibility: 'public' }];
   if (friendIds.size > 0) {
     tiers.push({ visibility: 'friends', userId: { in: [...friendIds] } });
   }
   if (viewerId) tiers.push({ userId: viewerId });
 
-  const notWalled = wall.size > 0 ? { userId: { notIn: [...wall] } } : {};
+  return { tiers, notWalled: wall.size > 0 ? { userId: { notIn: [...wall] } } : {} };
+}
+
+export async function exploredPathsFor(url: string, viewerId?: string): Promise<ExploredPath[]> {
+  const key = canonicalArticleKey(url);
+  if (!key) return [];
+
+  const { tiers, notWalled } = await viewerScope(viewerId);
 
   const [threads, refs] = await Promise.all([
     prisma.researchThread.findMany({
@@ -259,6 +269,58 @@ export async function exploredPathsFor(url: string, viewerId?: string): Promise<
   // Newest first across both kinds - the two lists are one list to a reader.
   paths.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
   return paths.slice(0, MAX_PATHS);
+}
+
+/**
+ * How many explored paths each of these articles has, for a screenful of cards.
+ *
+ * The discussion count on a card is comments *plus* these, so this exists to be
+ * added to the comment count in one batched request rather than per card.
+ *
+ * Counted through `viewerScope` - the same rules `exploredPathsFor` lists by -
+ * and capped nowhere, unlike the list: a card reporting "12 in the discussion"
+ * over a page showing twelve is right, and truncating the number to the list's
+ * page size would under-report a busy article.
+ */
+export async function exploredPathCounts(
+  keys: string[],
+  viewerId?: string,
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const wanted = [...new Set(keys.filter(Boolean))];
+  if (wanted.length === 0) return counts;
+
+  const { tiers, notWalled } = await viewerScope(viewerId);
+
+  const [threads, refs] = await Promise.all([
+    prisma.researchThread.groupBy({
+      by: ['sourceKey'],
+      where: {
+        sourceKey: { in: wanted },
+        // Private threads are not shared, so they are not in the list and must
+        // not be in the number either - including the viewer's own.
+        visibility: { in: ['public', 'friends'] },
+        OR: tiers,
+        ...notWalled,
+      },
+      _count: { _all: true },
+    }),
+    // Rows rather than a groupBy, because a post that cites itself has to be
+    // dropped and that is a comparison between two columns of the same row -
+    // the same exclusion the list makes. The set is small: one row per post per
+    // article, over one screenful of articles.
+    prisma.postReference.findMany({
+      where: { articleKey: { in: wanted }, post: { OR: tiers, ...notWalled } },
+      select: { articleKey: true, post: { select: { articleKey: true } } },
+    }),
+  ]);
+
+  for (const t of threads) counts.set(t.sourceKey, t._count._all);
+  for (const r of refs) {
+    if (r.post.articleKey === r.articleKey) continue;   // a post is not about itself
+    counts.set(r.articleKey, (counts.get(r.articleKey) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // ── One-time repair of rows written before these columns existed ────────────
