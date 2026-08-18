@@ -1,7 +1,8 @@
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 /* Inline (Arc-style) layout on desktop grows to fit its content - no inner
@@ -24,6 +25,7 @@
   gap: 6px;
 }
 
+
 .pinTileWrap {
   position: relative;
 }
@@ -41,6 +43,12 @@
   opacity: 1;
 }
 
+/* The bookmark's own colour washes the whole tile, not just the plate behind
+   its icon. A tinted square inside a grey box made every pin read as the same
+   grey card with a different sticker on it; tinting the card is what turns a
+   row of pins into a row of *these particular* sites. Same button vocabulary as
+   everything else - matched border, lift, depth - with --tile-tint as the
+   parameter, set from the bookmark in PinnedTile. */
 .pinTile {
   display: flex;
   flex-direction: column;
@@ -48,25 +56,51 @@
   gap: 6px;
   padding: 10px 6px 8px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
+  border: 1px solid color-mix(in oklab, var(--tile-tint, var(--accent)) 24%, var(--border));
+  background: linear-gradient(
+    165deg,
+    color-mix(in oklab, var(--tile-tint, var(--accent)) 14%, var(--surface2)),
+    color-mix(in oklab, var(--tile-tint, var(--accent)) 7%, var(--surface2))
+  );
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  transition:
+    background 0.18s ease,
+    border-color 0.16s ease,
+    transform 0.22s var(--ease-settle),
+    box-shadow 0.22s ease;
 }
 
+/* Lifts toward the pointer, the tint deepening and the border coming up to meet
+   it - so a tile reads as something sitting on the rail rather than printed
+   into it. */
 .pinTile:hover {
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-color: color-mix(in oklab, var(--tile-tint, var(--accent)) 55%, transparent);
+  background: linear-gradient(
+    165deg,
+    color-mix(in oklab, var(--tile-tint, var(--accent)) 22%, var(--surface2)),
+    color-mix(in oklab, var(--tile-tint, var(--accent)) 12%, var(--surface2))
+  );
+  transform: translateY(-2px);
+  box-shadow:
+    var(--lift-shadow),
+    0 2px 12px color-mix(in oklab, var(--tile-tint, var(--accent)) 22%, transparent);
 }
 
 .pinTile:active {
-  transform: scale(0.97);
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .pinTile:hover { transform: none; }
+}
+
+/* No background of its own any more - the tile carries the tint now. */
 .pinFaviconWrap {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   display: flex;
   align-items: center;
@@ -131,16 +165,38 @@
 }
 
 /* ── Folder chevron (inline layout) ── */
+/* The row's whole hover state.
+   Nearly invisible at rest, so a column of folders is a column of names and
+   nothing else. Under the pointer it fades up and steps right - a small enough
+   motion to be felt rather than watched, and the only thing on the row that
+   moves. In inline layout it also rotates when the folder opens, which is the
+   same glyph saying two things about the same folder: where it goes, and
+   whether it is already there. */
 .chevron {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 16px;
   line-height: 1;
-  transition: transform 0.18s ease;
-  transform: rotate(0deg);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.24s var(--ease-settle),
+    color 0.16s ease;
 }
 
-.chevronOpen {
+.folderItem:hover .chevron,
+.folderItem:focus-visible .chevron {
+  opacity: 0.85;
+  color: var(--text);
+  transform: translateX(1px);
+}
+
+/* An open folder keeps its chevron down whether or not the pointer is on it -
+   it is reporting a state now, not offering an action. */
+.chevronOpen,
+.folderItem:hover .chevronOpen {
+  opacity: 0.85;
   transform: rotate(90deg);
 }
 
@@ -186,12 +242,33 @@
   min-height: var(--ctl-h);
   padding: 4px 8px;
   border-radius: var(--ctl-r);
+  border: 1px solid transparent;
   text-decoration: none;
-  transition: background 0.12s;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.2s ease;
 }
 
-.inlineRow:hover .inlineLink {
-  background: var(--surface2);
+/* Glass, not a grey fill. These are the things you actually click, so they get
+   the one hover state left in the folder list - and it is the same frosted
+   vocabulary as the column they sit in rather than a flat swatch dropped on
+   top of it: a translucent pane, a hairline catching the light along its top
+   edge, and a soft shadow underneath. Reads as a slip of glass laid over the
+   rail, which is what the rail is made of. */
+.inlineRow:hover .inlineLink,
+.inlineLink:focus-visible {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 62%, transparent),
+    color-mix(in oklab, var(--surface) 38%, transparent)
+  );
+  border-color: color-mix(in oklab, #fff 9%, transparent);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow:
+    0 2px 10px color-mix(in oklab, var(--shadow) 40%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 12%, transparent);
 }
 
 .inlineFaviconWrap {
@@ -239,12 +316,23 @@
   font-style: italic;
 }
 
+/* Folder rows wear the same selection vocabulary as the navigation rail's
+   travelling highlight - the same radius, the same gradient fill, the same
+   brighter hairline and glow. The one difference is the tint: --sel-tint is set
+   to the folder's own colour below, so a selected folder reads as *that*
+   folder rather than as a generic accent highlight. See tokens.css. */
 .folderItem {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 9px 11px;
-  border-radius: 13px;
+  gap: 10px;
+  /* No favicon square any more, so the row is a line of text and the padding is
+     a text row's rather than a tile's. What that bought: about 48px of width
+     back for the name, and a folder list that shows nearly twice as many
+     folders in the same column. The four faviconsm were a thumbnail of a
+     thumbnail - too small to identify anything, and repeated down the rail they
+     read as texture rather than information. */
+  padding: 7px 10px;
+  border-radius: var(--sel-radius);
   cursor: grab;
   /* No `touch-action: none` here. It was PointerSensor's tax - a pointermove
      can't be prevented, so the only way to stop the page scrolling under a drag
@@ -256,19 +344,33 @@
   border: 1px solid transparent;
   width: 100%;
   text-align: left;
-  transition: background 0.15s, transform 0.12s, border-color 0.15s;
+  /* No transform in this transition, deliberately. dnd-kit writes the row's
+     transform inline on every frame of a drag, and a CSS transition on the same
+     property makes the row ease *behind* the pointer - which also hands a
+     lagging rect to the collision detection, so the drop lands on the wrong
+     slot. The press-scale below snaps instead, which is right for a press. */
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.2s ease;
   position: relative;
+  /* Selection inside this row is the folder's own colour. */
+  --sel-tint: var(--folder-color, var(--accent));
 }
 
 .folderItem:active {
   cursor: grabbing;
 }
 
-.folderItem:hover {
-  background: var(--surface2);
-  z-index: 10;
-}
+/* ── Folders are a list of names ──
+   No highlight behind the row, hovered or selected. A folder list is something
+   you read down, and a box that lights up under the pointer competes with the
+   only thing on the row worth reading. Every name is bold, so the column scans
+   as a set of labels rather than a ranking; which one you are in is said by
+   colour, and which one you are about to pick is said by the chevron.
 
+   The bookmarks *inside* a folder are a different matter - those are things you
+   click rather than read, and they get a proper hover. See .inlineLink. */
 .folderItem:hover .menuWrap {
   opacity: 1;
 }
@@ -277,98 +379,81 @@
   transform: scale(0.985);
 }
 
-.folderItem.active {
-  background: color-mix(in oklab, var(--folder-color, var(--surface2)) 12%, var(--surface2));
-  border-color: color-mix(in oklab, var(--folder-color, transparent) 28%, transparent);
-}
+/* The folder's colour, and nothing else. It used to swell into a pill carrying
+   the unread count; a rail with a number on every row reads as a dashboard
+   rather than a list of places to go, and the number was never what anyone came
+   to the rail for. Dimmed until the folder is the one you are in.
 
-.preview {
+   The ring is the other half of the row's hover, beside the chevron. It is a
+   box-shadow rather than a border so it costs no layout - nothing moves to make
+   room for it - and it grows out of the dot and fades back in rather than
+   snapping, which at 4px is the difference between a halo and a flicker. It was
+   there when the row also had a coloured highlight behind it and read as noise;
+   with the highlight gone it is the whole idea. */
+.folderDot {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  padding: 3px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  /* The folder's colour at full strength, always. It used to sit at 55% opacity
+     until the row was hovered or current, which meant the one thing on the row
+     carrying the folder's identity spent most of its life washed out - and a
+     column of half-faded dots reads as a list that is loading rather than one
+     that is ready. Which folder you are in is the name's job, said in the
+     accent; the dot only ever has to say which folder this is. */
+  background: var(--folder-color, var(--accent));
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--folder-color, var(--accent)) 0%, transparent);
+  transition:
+    transform 0.24s var(--ease-settle),
+    box-shadow 0.26s var(--ease-settle);
 }
 
-.previewCell {
-  border-radius: 3px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  position: relative;
+.folderItem:hover .folderDot,
+.folderItem:focus-visible .folderDot {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--folder-color, var(--accent)) 20%, transparent);
 }
 
-.previewFavicon {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  position: absolute;
-  inset: 0;
+.folderItem:active .folderDot { transform: scale(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .folderItem:hover .folderDot { transform: none; }
 }
 
-.previewMonogram {
-  font-size: 7px;
-  font-weight: 700;
-  line-height: 1;
-}
+/* The width freed by dropping the favicon square goes here - a folder called
+   "Reading & research" now fits where "Reading & r…" used to. */
+/* One weight for every row, and it is not a bold one. Weight used to carry the
+   selection - 500 normally, 600 for the folder you were in - which meant every
+   row was quietly telling you it was not the important one; bolding all of them
+   fixed that and made the column shout instead. Held at 500 the list reads as a
+   set of labels, and colour is left to say which of them you are in: one signal
+   doing one job rather than two doing half each.
 
-.folderText {
+   Full-strength ink rather than --muted, for the same reason the heading above
+   is. A folder name is the primary text of its row - there is nothing else on
+   the row for it to be secondary to. */
+.folderName {
   flex: 1;
   min-width: 0;
-}
-
-.folderNameRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.colorDot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.folderName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.15s, font-weight 0.1s;
+  transition: color 0.15s ease;
 }
 
-.folderItem.active .folderName {
-  font-weight: 600;
-  color: var(--text);
-}
+.folderItem.active .folderName { color: var(--accent); }
 
-.folderUnread {
-  flex-shrink: 0;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 9px;
-  font-weight: 700;
-  font-family: 'Hanken Grotesk', sans-serif;
-  line-height: 16px;
-  text-align: center;
-}
 
+/* The row left behind while the DragOverlay copy rides the cursor. Belt and
+   braces on the transition: dnd-kit hands the *active* item no inline
+   transition, so anything the stylesheet has to say about one would apply to
+   exactly the element that must not have it. */
 .dragging {
   opacity: 0.4;
+  transition: none;
 }
 
 .dragOverlay {

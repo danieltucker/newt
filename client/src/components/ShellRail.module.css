@@ -1,0 +1,191 @@
+/* The navigation rail. See ShellRail.tsx for what the zones are and why.
+
+   The frosted surface and the sticky positioning live on NewTabPage's .leftCol,
+   which is the column this sits in - so this file is only the rail's own
+   contents. In the drawer there is no .leftCol and the sheet provides the
+   surface instead; that is why nothing here paints a background of its own. */
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  /* Fills its column so the folder tree below can be the thing that overflows. */
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Zones ── */
+.places {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The pinned tiles and the folder tree read as one subject, so they share a
+   heading and sit in one block. The tree is what gives when the column runs
+   short: it scrolls inside itself rather than the column scrolling as one,
+   which would take the places above it off the top of the screen. */
+.bookmarks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+/* `overflow-y: auto` forces overflow-x to compute to auto as well, so this box
+   clips sideways whether or not it was asked to. Everything that hangs outside
+   a row - an unread badge on a folder tile, the tilt on a stacked pinned card,
+   the ring under a hovered dot - was being sliced off by it. The padding gives
+   them room inside the clip and the negative margin gives the room back to the
+   layout, so nothing moved to pay for it. */
+.treeBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 6px 8px;
+  margin: -6px -8px;
+}
+
+.treeBody::-webkit-scrollbar { display: none; }
+
+/* Full-strength ink, not --muted. At 10.5px uppercase this is a heading, and
+   a heading rendered in the colour reserved for secondary text reads as though
+   the section it names is secondary too. */
+.zoneLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.pinned { min-width: 0; }
+
+
+/* ── Rows ── */
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--sel-radius);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.16s ease;
+  min-width: 0;
+  /* Above the travelling lozenge, which is painted at the foot of .places. */
+  z-index: 1;
+}
+
+/* Hover is grey. The colour belongs to the one row you are actually on, and
+   the lozenge slides there when the selection changes rather than chasing the
+   pointer - a coloured box darting around under the cursor turned out to be the
+   loudest thing on the page, in a rail meant to be read past. */
+.row:hover,
+.row:focus-visible { color: var(--text); }
+
+.row:not(.rowOn):hover::before,
+.row:not(.rowOn):focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--sel-radius);
+  background: var(--surface2);
+  z-index: -1;
+}
+
+.rowOn {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* A little lift under the pointer. The label comes with it, a touch less far:
+   the icon rising on its own read as the glyph jumping rather than the row
+   coming up to meet you, and if a surface is lifting then everything standing
+   on it lifts too. The difference of half a pixel between them is what keeps it
+   reading as depth rather than as the line sliding. */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transition: transform 0.22s var(--ease-settle);
+}
+
+.row:hover .icon,
+.row:focus-visible .icon { transform: translateY(-2px); }
+
+.row:hover .label,
+.row:focus-visible .label { transform: translateY(-1px); }
+
+.row:active .icon { transform: translateY(0) scale(0.92); }
+.row:active .label { transform: translateY(0); }
+
+.label {
+  flex: 1;
+  transition: transform 0.22s var(--ease-settle);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── The travelling highlight ──
+   One element that slides between rows, rather than a background on each. The
+   rail is a set of places and moving between them is a move, so the highlight
+   moves too - and because it is a single painted box, the transition is a
+   transform rather than four rows repainting.
+
+   The glow is the depth: a tinted fill, a slightly brighter hairline, and a
+   soft accent shadow beneath, so the active row reads as sitting a layer above
+   the frosted column instead of being coloured in on it. */
+.lozenge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: var(--sel-radius);
+  background: var(--sel-bg);
+  border: 1px solid var(--sel-border);
+  box-shadow: var(--sel-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.34s var(--ease-settle),
+    height 0.34s var(--ease-settle),
+    opacity 0.2s ease;
+}
+
+.lozengeOn { opacity: 1; }
+
+
+
+/* ── Touch ──
+   44px is the thumb target the rest of the app holds itself to (see
+   NewtButton), and the rail is the drawer's whole contents on a phone. */
+@media (hover: none) {
+  .row { padding: 11px 10px; font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lozenge,
+  .icon {
+    transition-duration: 0.01ms;
+  }
+}

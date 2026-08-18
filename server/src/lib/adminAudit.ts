@@ -18,11 +18,31 @@ export const ADMIN_ACTIONS = {
   feedDelete: 'feed.delete',
   domainBlock: 'domain.block',
   domainUnblock: 'domain.unblock',
+  // Personas. Creating one mints an account, and every generation puts words
+  // under a name real readers will reply to — so both are recorded here rather
+  // than only in the content itself. `persona.generate` is the one action in
+  // this table that is *routine*: it fires on every comment, reply and post a
+  // persona writes, which is exactly why it is worth having when someone asks
+  // "who told it to say that".
+  personaCreate: 'persona.create',
+  personaUpdate: 'persona.update',
+  personaDelete: 'persona.delete',
+  personaGenerate: 'persona.generate',
+  // The instance's own model endpoints. Recorded because changing which model
+  // the site writes with, or pointing it at a different box, is a change to what
+  // the server does on the network — not a preference.
+  // `model.*`, not `siteModel.*`: the target half of these names is lowercase
+  // throughout the table (`post.unpublish` for a BlogPost), and the audit view
+  // groups on that prefix. The label below is what carries the full noun.
+  siteModelCreate: 'model.create',
+  siteModelUpdate: 'model.update',
+  siteModelDelete: 'model.delete',
 } as const;
 
 export type AdminActionName = (typeof ADMIN_ACTIONS)[keyof typeof ADMIN_ACTIONS];
 
-export type AdminTargetType = 'comment' | 'blogPost' | 'user' | 'report' | 'feed' | 'domain';
+export type AdminTargetType =
+  'comment' | 'blogPost' | 'user' | 'report' | 'feed' | 'domain' | 'persona' | 'siteModel';
 
 export interface AdminActionInput {
   actorId: string;
@@ -73,6 +93,13 @@ const ACTION_LABELS: Record<string, string> = {
   'feed.delete': 'Deleted feed',
   'domain.block': 'Blocked domain',
   'domain.unblock': 'Unblocked domain',
+  'persona.create': 'Created persona',
+  'persona.update': 'Edited persona',
+  'persona.delete': 'Deleted persona',
+  'persona.generate': 'Persona wrote',
+  'model.create': 'Added site model',
+  'model.update': 'Edited site model',
+  'model.delete': 'Removed site model',
 };
 
 export function actionLabel(action: string): string {
@@ -88,5 +115,9 @@ export function actionLabel(action: string): string {
 export function isDestructive(action: string): boolean {
   return action === ADMIN_ACTIONS.commentDelete
     || action === ADMIN_ACTIONS.userDelete
-    || action === ADMIN_ACTIONS.feedDelete;
+    || action === ADMIN_ACTIONS.feedDelete
+    // Deleting a persona takes its account with it, and with the account go its
+    // posts and comments — the same reach as user.delete, which is why it sits
+    // with the destructive ones rather than with the other persona verbs.
+    || action === ADMIN_ACTIONS.personaDelete;
 }

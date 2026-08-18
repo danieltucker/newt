@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { setAccessToken, apiFetch } from '../services/api';
+import { resetPersonaContext } from '../services/personas';
 
 interface AuthState {
   accessToken: string | null;
@@ -84,6 +85,10 @@ export function useAuth() {
   const logout = useCallback(async () => {
     await apiFetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
     setAccessToken(null);
+    // Session-scoped caches keyed on who is signed in. Whether this account may
+    // summon personas is exactly the kind of answer that must not survive into
+    // the next sign-in on the same tab.
+    resetPersonaContext();
     setState({ accessToken: null, username: null, isAdmin: false, loading: false });
   }, []);
 

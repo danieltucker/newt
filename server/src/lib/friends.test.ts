@@ -22,10 +22,21 @@ describe('displayNameOf', () => {
 describe('toPublicUser', () => {
   it('exposes only safe fields and a derived display name', () => {
     const out = toPublicUser({ ...base, firstName: 'Jane', lastName: 'Doe', avatar: 'data:abc' });
-    expect(out).toEqual({ id: 'u1', username: 'jdoe', displayName: 'Jane Doe', avatar: 'data:abc' });
+    expect(out).toEqual({
+      id: 'u1', username: 'jdoe', displayName: 'Jane Doe', avatar: 'data:abc', isPersona: false,
+    });
     // No private fields leak through
     expect(out).not.toHaveProperty('firstName');
     expect(out).not.toHaveProperty('email');
+  });
+
+  // Disclosure that an author is an AI persona rides on every public shape of a
+  // user, so that no surface can render an author without it being available.
+  // Defaulting to false rather than undefined matters: a client checking the
+  // field must get a definite "not a persona", not a missing key.
+  it('always states isPersona, defaulting to false', () => {
+    expect(toPublicUser(base).isPersona).toBe(false);
+    expect(toPublicUser({ ...base, isPersona: true }).isPersona).toBe(true);
   });
 });
 

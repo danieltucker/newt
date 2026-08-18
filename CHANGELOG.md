@@ -2,6 +2,146 @@
 
 Notable changes to Newt, newest first.
 
+## v1.23.0 - Models move into the panel, and start reporting for duty
+
+**2026-08-17**
+
+v1.22.0 configured the personas' model through two environment variables, which
+meant a shell session to change a model name. Endpoints now live in **Admin →
+Personas → Models**: add several, mark one default, let a persona override it,
+and see what all of them have been doing.
+
+**One setting deliberately did not move, and it is the important one.** Which
+*private* hosts the server may reach stays in `OPERATOR_LLM_PRIVATE_HOSTS` in
+the environment. The split is the whole security design: changing which model
+answers is a preference and belongs in a UI, while letting the server open
+connections inside your network is a capability. Editing a table row needs an
+admin web session — a borrowed laptop, a stolen cookie. Editing the environment
+needs the host. Since the site model is the only call in Newt permitted to reach
+a private address, that capability stays on the expensive side of the line while
+the day-to-day settings move to the cheap one.
+
+So the panel may name any endpoint. A public one works. A private one works only
+if its host was named on the host machine, once. The form says so **while you
+type** — it recognises a private address, checks it against the allowlist it was
+sent, and explains the refusal before the request is made; the server re-checks
+on save and returns the same explanation.
+
+**`trusted` now grants far less than it did, which is why it is safe to reach
+from a UI.** It no longer means "skip the check for this one URL". It means
+"consult the operator's allowlist", and with an empty allowlist it changes
+nothing whatsoever — so a route that set it by mistake gains exactly nothing. An
+approved host is also still connected to over a **pinned** agent now, at the
+address just validated; the old exemption skipped pinning entirely.
+
+**Multiple endpoints, because the schema cost is nothing and the hardware cost
+is not.** A second box, or a hosted fallback beside a local GPU, is free. Two
+*models on one GPU* is not: only one is resident at a time, so alternating makes
+Ollama unload and reload. The persona form warns when a choice creates that
+pairing, and the Usage panel names it when the numbers show it — a p95 more than
+four times the median on one endpoint is almost always swapping.
+
+**Usage monitoring answers the question a self-hosted operator actually has**,
+which is not "what did this cost" — a local GPU bills nothing — but "is the box
+coping". Every generation is logged, successes and failures alike, with tokens,
+wall-clock duration and the error text. A failure-only log could not tell a
+healthy endpoint from one nothing has called since the last deploy; that is the
+reasoning `FeedFetchLog` was built on, and this follows it at 30 days rather
+than 7, since generations are tens per day rather than one per feed per poll.
+
+Three things the statistics refuse to do, each with a test:
+- **Latency percentiles exclude failures.** A refused connection returns in 2ms
+  and a timeout in 30s; neither describes the model, and both wreck a p95.
+- **Zero tokens means "not reported", not "free".** Ollama only sends usage on
+  newer builds, so rates are computed over calls that reported some — counting
+  the rest as zero would misrepresent the hardware.
+- **An average over no samples is null, not zero.** A median of 0ms would read
+  as an instantaneous model.
+
+A deleted endpoint keeps its history: `SiteModelUsage` is `SET NULL` with the
+label and model name denormalised, so the rows stay readable. Same for a deleted
+persona, which is the case where the log matters most.
+
+Migration `20260817160000_site_models`. `lib/llm/operator.ts` is gone, replaced
+by `lib/llm/siteModels.ts`.
+
+## v1.22.0 - The instance can speak
+
+**2026-08-17**
+
+An admin can now create AI personas: accounts the instance runs, with a voice
+you set, that comment on articles, reply to people, and draft posts. Everything
+they write carries an **AI** badge.
+
+**The model behind them is the operator's, not a user's.** Every AI feature
+until now ran on a key the reader connected themselves — no instance key, no
+fallback, an account without one simply had the features hidden. That rule is
+unchanged for research, proofread and Explore. Personas are the exception,
+because there is nobody to charge: a persona has no account holder. So there is
+a second, separate credential read from the environment (`OPERATOR_LLM_BASE_URL`,
+`OPERATOR_LLM_MODEL`), reachable only by admin-only routes, and used for nothing
+else. Unset, personas cannot generate and the panel says which variable is
+missing; nothing else changes.
+
+**That credential is the only endpoint Newt will call at a private address**, and
+it is the reason an Ollama container can serve this without ever being published.
+The private-address rule exists because a base URL *typed by a user* is a request
+to fetch an arbitrary address on that user's behalf, and sign-ups are open — none
+of which describes a value read from the process environment. The exemption is
+not granted by a flag: `resolveTarget` re-derives the address from the
+environment and honours the flag only on an exact match, so a route carrying a
+user's URL that set it by mistake still gets the ordinary check. An unset
+variable trusts nothing, which needed stating in code — `undefined === undefined`
+would otherwise have made an unconfigured instance trust everything. There are
+tests for each of those.
+
+**A persona is a `User` row, not a new kind of author.** It gets a profile, a
+blog, threading — and, the part that decided it, **blocking and reporting**. A
+reader who wants nothing to do with a persona has exactly the tools they have
+against anybody else. A separate authorless content type would have meant
+reimplementing all of that and would have left readers with no way to mute one.
+`Persona` holds the tone dials; the `User` row is the identity, and deleting one
+deletes both, along with everything it wrote.
+
+**Disclosure does not depend on the model cooperating.** The prompt does tell a
+persona never to claim to be human, and that is a second layer, not the layer.
+The badge renders from `User.isPersona`, which is denormalised onto the user row
+and carried on *every* public shape of a user — `PUBLIC_USER_SELECT`,
+`AUTHOR_SELECT`, comment nodes including replies and tombstones. Selected there
+rather than fetched where a badge happens to be drawn, because the moment it is
+opt-in per surface, some surface added later forgets it, and the failure mode of
+forgetting is an undisclosed AI account.
+
+**Three verbs, and two of them are not the same size of action.** A comment and a
+reply post publicly and immediately — one paragraph in a thread whose context
+makes it obviously a reaction. A post is created as a **draft**: it is a
+standalone page with a title, a URL, an RSS entry in subscribers' folders and a
+search footprint, and publishing that unread is a different kind of mistake. The
+menus say which is about to happen, and the result line names the outcome rather
+than saying "done".
+
+A persona can only reply to a **public** comment. It is nobody's friend, so
+answering a friends-only one would put both the reply and the fact of the
+original in front of an audience its author chose to exclude. Article context is
+also read as the persona rather than as the admin, so a persona cannot react to a
+comment it has no business seeing — the same rule the research routes already
+follow.
+
+Every persona action lands in the audit log, `persona.generate` included. It is
+the one routine entry in that table, and it is the one that answers "who told it
+to say that". Deleting a persona is marked destructive alongside `user.delete`,
+because it has the same reach.
+
+`Persona.guidance` is admin-authored text that goes into a system prompt, so it
+is capped, and the safety rules are appended *after* it. That ordering is a soft
+defence and it is the only one — which is why the field is admin-only.
+
+Also: `PersonaBadge` is its own module. It started inside the admin panel, which
+meant the public blog post page imported the whole Personas form to render one
+span.
+
+Migration `20260817120000_personas`, added by hand as usual.
+
 ## v1.21.1 - The card said "Comments" while you wrote about it
 
 **2026-08-17**

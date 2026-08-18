@@ -64,6 +64,33 @@ services:
       # pages in — the client container, over the internal network. Only change it
       # if the client service is renamed.
       SHELL_ORIGIN: ${SHELL_ORIGIN:-http://client}
+      # ── AI personas: which private hosts the site model may reach ────────────
+      # THE ONE SETTING THAT MUST LIVE HERE RATHER THAN IN THE ADMIN PANEL.
+      #
+      # Endpoints themselves are configured in Admin → Personas → Models, which
+      # is a convenience: switching model or adding a box shouldn't need a shell.
+      # But the site model is the only call in Newt permitted to reach an address
+      # inside your network, and *that* capability stays gated on host access —
+      # editing a database row needs only an admin web session, which is a much
+      # cheaper thing for an attacker to obtain than this file.
+      #
+      # So: the panel may name any endpoint. A public one just works. A private
+      # one works only if its host is listed here. Comma-separated; entries may
+      # be a hostname (a compose service, whose container IP changes on recreate)
+      # or a literal address (a box on the LAN).
+      #
+      #   OPERATOR_LLM_PRIVATE_HOSTS=ollama,192.168.1.50
+      #
+      # Leave blank and the panel accepts only public HTTPS endpoints.
+      OPERATOR_LLM_PRIVATE_HOSTS: ${OPERATOR_LLM_PRIVATE_HOSTS:-}
+      # ── Legacy single-endpoint config (still honoured) ───────────────────────
+      # How personas were configured before the admin panel existed. Used as a
+      # fallback when no endpoint has been added there, so an upgrade doesn't
+      # switch personas off. Its host is allowlisted automatically. Prefer the
+      # panel for anything new.
+      OPERATOR_LLM_BASE_URL: ${OPERATOR_LLM_BASE_URL:-}
+      OPERATOR_LLM_MODEL: ${OPERATOR_LLM_MODEL:-}
+      OPERATOR_LLM_KEY: ${OPERATOR_LLM_KEY:-}
       PORT: 3001
       NODE_ENV: production
     # No host port — the server is reached only via the client's nginx (/api proxy).
@@ -81,3 +108,61 @@ services:
     depends_on:
       - server
     restart: unless-stopped
+
+  # ── Optional: the instance's own model, for AI personas ─────────────────────
+  #
+  # Commented out by default because it is a real resource commitment, not a
+  # flag: model weights are gigabytes, and CPU-only inference on a NAS is slow
+  # enough that you want to measure it before relying on it. Personas write
+  # short comments, which is the workload this suits best.
+  #
+  # WHY IT IS A SEPARATE SERVICE AND NOT PART OF THE SERVER IMAGE:
+  #   - The server image is a few hundred MB of Node. Ollama's is ~1.5GB before
+  #     any model. Baking it in would turn every app deploy — which is a pull and
+  #     recreate — into a multi-gigabyte download.
+  #   - Weights belong on a dataset with its own snapshot policy, exactly like
+  #     PGDATA_HOST_PATH. That is a storage decision, not an app decision.
+  #   - Pulling a model or upgrading Ollama would take Newt down with it.
+  #
+  # NOTE THERE IS NO `ports:` SECTION, AND THAT IS THE POINT. Ollama is reachable
+  # only from the server over the compose network, at http://ollama:11434. It is
+  # never published to the host or the internet, and it has no authentication of
+  # its own — publishing it would hand anyone who found it free use of your GPU.
+  #
+  # To use it:
+  #   1. Uncomment this service.
+  #   2. Set in .env:  OPERATOR_LLM_PRIVATE_HOSTS=ollama
+  #      (Without this the admin panel refuses the address — by design.)
+  #   3. sudo docker compose -f docker-compose.truenas.yml up -d
+  #   4. Pull a model once:
+  #        sudo docker compose -f docker-compose.truenas.yml exec ollama \
+  #          ollama pull llama3.1:8b
+  #      (Until this is done, generation fails with a model-not-found error.)
+  #   5. In Admin → Personas → Models, add:
+  #        Base URL  http://ollama:11434/v1
+  #        Model     llama3.1:8b        ("List models" reads them off the box)
+  #
+  # Sizing, for a 24GB card: an 8B at q4 is ~5GB and fast; a 24-32B at q4 is
+  # ~15-20GB and writes noticeably better prose; a 70B at q4 is ~40GB and will
+  # NOT fit. Only one model is resident at a time, so configuring several and
+  # alternating between them costs an unload and reload each way — the Usage
+  # panel's median-vs-p95 gap is what exposes that.
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     # Model weights. Point this at a real dataset — re-pulling 5GB because a
+  #     # container was recreated is the failure this avoids.
+  #     - type: bind
+  #       source: ${OLLAMA_HOST_PATH:?Set OLLAMA_HOST_PATH to a TrueNAS dataset path}
+  #       target: /root/.ollama
+  #   restart: unless-stopped
+  #   # An NVIDIA GPU makes this perhaps 20x faster. Requires the container
+  #   # toolkit on the host; leave commented for CPU-only inference.
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]

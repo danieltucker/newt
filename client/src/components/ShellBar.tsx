@@ -6,7 +6,7 @@ import CloseButton from './CloseButton';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { accountMenuItems, ShellMenuItem } from '../utils/shellNav';
 
-// The bookmarks rail rides beside the new tab's body while there are two columns
+// The navigation rail rides beside the new tab's body while there are two columns
 // to ride in. Below this it moves into the hamburger - same width at which
 // NewTabPage's .bodyGrid drops to one column, so the rail is never homeless and
 // never rendered twice. Exported because NewTabPage owns the other half of that
@@ -21,13 +21,18 @@ export const RAIL_NARROW = '(max-width: 900px)';
 // chrome makes: search is the widest thing in the bar or it isn't in the bar.
 const SEARCH_NARROW = '(max-width: 620px)';
 
-// Below this the bookmarks rail stops being a dropdown hanging off the hamburger
-// and becomes a full-screen sheet - the same room the reading list and the notes
-// console open into on a phone, with the same backdrop, the same full bleed and
-// the same CloseButton. It used to be a panel that stopped at the shell bar and
-// wore a menu's chrome, which made bookmarks the one place in the app where
-// "open a thing on a phone" meant something visibly different.
-const BOOKMARKS_SHEET = '(max-width: 640px)';
+// Below this the navigation rail stops being a dropdown hanging off the
+// hamburger and becomes a full-screen sheet - the same room the reading list and
+// the notes console open into on a phone, with the same backdrop, the same full
+// bleed and the same CloseButton. It used to be a panel that stopped at the
+// shell bar and wore a menu's chrome, which made bookmarks the one place in the
+// app where "open a thing on a phone" meant something visibly different.
+//
+// The 640-900px dropdown is on borrowed time: the rail now carries destinations
+// as well as folders, and a list of places to go reads badly as a menu hanging
+// off a button. Both presentations become one drawer, at which point this
+// breakpoint and RAIL_NARROW collapse into each other.
+const RAIL_SHEET = '(max-width: 640px)';
 
 // The compact chrome for reading views - a profile, a post, the blog manager.
 // The new tab keeps its tall greeting header; those pages don't want 120px of
@@ -39,8 +44,6 @@ interface Props {
   username: string;
   avatar?: string | null;
   isAdmin?: boolean;
-  /** Adds the Explore row to the avatar menu. See accountMenuItems. */
-  hasModel?: boolean;
   notifUnread: number;
 
   navigate: (to: string) => void;
@@ -53,18 +56,18 @@ interface Props {
   search: ReactNode;
 
   /**
-   * The bookmarks rail, rendered here instead of beside the body once the
+   * The navigation rail, rendered here instead of beside the body once the
    * viewport is too narrow to carry two columns. A render prop rather than a
    * node because the rail has to be able to dismiss the menu it's sitting in:
-   * picking a folder or opening a dialog from inside a dropdown should close
-   * that dropdown. Omitted on views that have no rail (a profile, a post).
+   * picking a destination, a folder, or opening a dialog from inside a dropdown
+   * should close that dropdown.
    */
-  bookmarksRail?: (close: () => void) => ReactNode;
+  rail?: (close: () => void) => ReactNode;
 }
 
 // A dropdown anchored under its trigger. Closes on outside click and Escape.
 // `role` is opt-out because only one of the two carries a list of menuitems -
-// the other holds the bookmarks rail, and calling that a menu would promise
+// the other holds the navigation rail, and calling that a menu would promise
 // arrow-key navigation between rows that aren't menuitems.
 function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
   open: boolean;
@@ -106,12 +109,12 @@ function Menu({ open, onClose, align = 'left', role = 'menu', children }: {
   );
 }
 
-// The bookmarks rail on a phone: a modal over everything, not a panel under the
+// The navigation rail on a phone: a modal over everything, not a panel under the
 // bar. Portalled to the body because .bar carries a backdrop-filter, which makes
 // it the containing block for anything fixed inside it - a sheet rendered in
 // place could never reach past the bar it hangs from, which is exactly what kept
 // this looking unlike every other overlay.
-function BookmarksSheet({ open, onClose, children }: {
+function RailSheet({ open, onClose, children }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
@@ -138,10 +141,10 @@ function BookmarksSheet({ open, onClose, children }: {
       className={styles.sheetBackdrop}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Bookmarks">
+      <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Navigation">
         <div className={styles.sheetHead}>
-          <h2 className={styles.sheetTitle}>Bookmarks</h2>
-          <CloseButton onClick={onClose} label="Close bookmarks" />
+          <h2 className={styles.sheetTitle}>Navigation</h2>
+          <CloseButton onClick={onClose} label="Close navigation" />
         </div>
         <div className={styles.sheetBody}>{children}</div>
       </div>
@@ -163,16 +166,16 @@ function MenuRow({ item, onPick }: { item: ShellMenuItem; onPick: (item: ShellMe
 }
 
 export default function ShellBar({
-  username, avatar, isAdmin, hasModel, notifUnread,
+  username, avatar, isAdmin, notifUnread,
   navigate, onOpenSettings, onOpenAdmin, onOpenNotifications, onLogout,
-  search, bookmarksRail,
+  search, rail,
 }: Props) {
   const [navOpen, setNavOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const railNarrow = useMediaQuery(RAIL_NARROW);
   const searchNarrow = useMediaQuery(SEARCH_NARROW);
-  const bookmarksAsSheet = useMediaQuery(BOOKMARKS_SHEET);
+  const railAsSheet = useMediaQuery(RAIL_SHEET);
   const searchExpanded = searchNarrow && searchOpen;
   const centerRef = useRef<HTMLDivElement>(null);
 
@@ -195,7 +198,7 @@ export default function ShellBar({
 
   // The hamburger is only rendered while it has the rail to hold; without that
   // it would be a menu of one entry the brand button already covers.
-  const showNav = railNarrow && !!bookmarksRail;
+  const showNav = railNarrow && !!rail;
 
   // Widening the window takes the button away, so the menu it opened has to go
   // with it - otherwise narrowing again reopens a dropdown nobody asked for.
@@ -227,7 +230,7 @@ export default function ShellBar({
     return () => document.removeEventListener('keydown', onKey);
   }, [searchExpanded]);
 
-  // Stable: BookmarksSheet's effect adds a listener and locks body scroll, so a
+  // Stable: RailSheet's effect adds a listener and locks body scroll, so a
   // fresh closure each render would tear that down and rebuild it every time -
   // and restore an overflow it had already set to hidden.
   const closeNav = useCallback(() => setNavOpen(false), []);
@@ -240,10 +243,8 @@ export default function ShellBar({
     setAcctOpen(false);
     switch (item.id) {
       case 'profile': navigate(`/u/${encodeURIComponent(username)}`); break;
-      // The blog manager, not the profile's public Posts tab - this menu is
-      // your own things, and drafts only exist in the manager.
-      case 'myblog': navigate('/blog'); break;
-      case 'explore': navigate('/explore'); break;
+      // No 'myblog' or 'explore' here any more: both are places, and places are
+      // the navigation rail's. See shellNav for the split.
       case 'settings': onOpenSettings(); break;
       case 'admin': onOpenAdmin(); break;
       case 'signout': onLogout(); break;
@@ -260,19 +261,24 @@ export default function ShellBar({
             <span className={styles.brandText}>newt</span>
           </button>
 
-          {/* Purely the bookmarks rail's home on viewports too narrow to show
-              it beside the body. It held a short list of destinations too, but
-              the mark to its left already goes home and everything else about
-              you lives under the avatar - so the whole dropdown is bookmarks,
-              and above RAIL_NARROW the button isn't rendered at all. */}
+          {/* The navigation rail's home on viewports too narrow to show it
+              beside the body. It used to hold bookmark folders and nothing else,
+              which made it a menu of one thing; the rail it now carries has the
+              destinations too, so this is the way into the app rather than the
+              way into your links. Above RAIL_NARROW it isn't rendered at all.
+
+              Deliberately not folded onto the mark to its left. A logo that
+              opens a menu instead of going home breaks the one convention every
+              visitor arrives with, and spends the only unconditional way out of
+              wherever they are. */}
           {showNav && (
             <div className={styles.menuWrap}>
               <button
                 className={`${styles.iconBtn} ${navOpen ? styles.iconBtnOpen : ''}`}
                 onClick={openNav}
                 aria-expanded={navOpen}
-                title="Bookmarks"
-                aria-label="Bookmarks"
+                title="Navigation"
+                aria-label="Navigation"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="3" y1="6" x2="21" y2="6" />
@@ -283,21 +289,21 @@ export default function ShellBar({
               {/* Two shapes, one rail: a dropdown on a laptop, a full-screen
                   modal on a phone. Chosen in JS rather than restyled in CSS
                   because the phone version has to be portalled out of the bar -
-                  see BookmarksSheet. */}
-              {bookmarksAsSheet ? (
-                <BookmarksSheet open={navOpen} onClose={closeNav}>
-                  {bookmarksRail?.(closeNav)}
-                </BookmarksSheet>
+                  see RailSheet. */}
+              {railAsSheet ? (
+                <RailSheet open={navOpen} onClose={closeNav}>
+                  {rail?.(closeNav)}
+                </RailSheet>
               ) : (
                 /* Not a menu of menuitems - see Menu. The rail scrolls within
                    itself so a long folder list can't push it past the bottom of
                    the screen. */
                 <Menu open={navOpen} onClose={closeNav} role="group">
                   <div className={styles.menuRailHead}>
-                    <div className={styles.menuRailLabel}>Bookmarks</div>
+                    <div className={styles.menuRailLabel}>Navigation</div>
                   </div>
                   <div className={styles.menuRail}>
-                    {bookmarksRail?.(closeNav)}
+                    {rail?.(closeNav)}
                   </div>
                 </Menu>
               )}
@@ -384,7 +390,7 @@ export default function ShellBar({
               <div className={styles.menuHead}>
                 <span className={styles.menuHandle}>@{username}</span>
               </div>
-              {accountMenuItems({ isAdmin, hasModel }).map(item => (
+              {accountMenuItems({ isAdmin }).map(item => (
                 <MenuRow key={item.id} item={item} onPick={handleAccount} />
               ))}
             </Menu>

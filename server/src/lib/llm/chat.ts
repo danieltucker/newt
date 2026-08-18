@@ -1,7 +1,8 @@
 import nodeFetch from 'node-fetch';
 import type { Readable } from 'stream';
 import { Provider, supportsEffort } from './providers';
-import { makeSafeAgent } from '../isSafeUrl';
+import { makeSafeAgent, resolveSafeAgent } from '../isSafeUrl';
+import { privateHostPredicate } from './operatorEnv';
 
 type FetchOptions = Parameters<typeof nodeFetch>[1] & { timeout?: number };
 
@@ -77,6 +78,23 @@ export interface ChatRequest {
   onUsage?: (usage: Usage) => void;
   /** Aborts the upstream request when the client hangs up. */
   signal?: AbortSignal;
+  /**
+   * Ask for the operator's private-host allowlist to be consulted.
+   *
+   * Setting this is a *request*, not a grant, and it grants far less than its
+   * name suggests. It does not skip the address check — it only allows a private
+   * address to pass **if the operator named that host in
+   * OPERATOR_LLM_PRIVATE_HOSTS**, which requires shell access to the machine.
+   * With an empty allowlist this flag changes nothing whatsoever, so a route
+   * that set it by mistake while carrying a user's URL gains nothing.
+   *
+   * A host that is approved is still connected to over a **pinned** agent, at
+   * the exact address that was validated. See resolveSafeAgent.
+   *
+   * Set in exactly one place: resolveSiteModel in lib/llm/siteModels.ts.
+   * Nothing may ever set this from a request body.
+   */
+  trusted?: boolean;
 }
 
 export class LlmError extends Error {
@@ -107,7 +125,16 @@ const TOTAL_TIMEOUT_MS = 10 * 60_000;
  * The two first-party providers go through the same check. It costs one cached
  * DNS lookup and means there is no second, unchecked path out of this module.
  */
-async function resolveTarget(req: ChatRequest): Promise<{ url: string; agent: NonNullable<Awaited<ReturnType<typeof makeSafeAgent>>> }> {
+type ResolvedTarget = {
+  url: string;
+  /** Always pinned to the address that was validated — allowlisted or not. */
+  agent: NonNullable<Awaited<ReturnType<typeof makeSafeAgent>>>;
+};
+
+// Exported for its test, on the same reasoning as buildBody below: this function
+// decides whether a request may reach a private address, and there is no way to
+// assert on that decision from outside without standing up a fake network.
+export async function resolveTarget(req: ChatRequest): Promise<ResolvedTarget> {
   const base = (req.provider.needsBaseUrl ? req.baseUrl : req.provider.baseUrl).trim().replace(/\/+$/, '');
   if (!base) throw new LlmError('This provider needs a base URL', 400);
 
@@ -119,11 +146,24 @@ async function resolveTarget(req: ChatRequest): Promise<{ url: string; agent: No
     : (/\/v\d+$/.test(base) ? '/chat/completions' : '/v1/chat/completions');
 
   const url = `${base}${path}`;
-  const agent = await makeSafeAgent(url);
+
+  // The site model is the one call allowed to reach a private address, and only
+  // to a host the operator named in the environment. Everything else — every
+  // credential a user added — passes `undefined` here and takes the same path it
+  // always did. An empty allowlist yields `undefined` too, so an instance that
+  // has configured nothing behaves exactly as it did before this existed.
+  const allowPrivate = req.trusted ? privateHostPredicate() : undefined;
+
+  const { agent, reason } = await resolveSafeAgent(url, allowPrivate);
   if (!agent) {
     throw new LlmError(
-      'That endpoint could not be reached, or resolves to a private address. ' +
-      'Self-hosted models must be published at a public HTTPS address.',
+      req.trusted
+        // An admin sees this one, and the fix is on the host, so name the
+        // variable rather than repeating the generic advice below.
+        ? `That endpoint could not be reached: ${reason}. ` +
+          'A private address must have its host listed in OPERATOR_LLM_PRIVATE_HOSTS on the server.'
+        : 'That endpoint could not be reached, or resolves to a private address. ' +
+          'Self-hosted models must be published at a public HTTPS address.',
       400,
     );
   }

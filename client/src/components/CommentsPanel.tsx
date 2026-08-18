@@ -8,6 +8,9 @@ import { fetchPageMeta } from '../utils/pageMeta';
 import { VIS_ORDER, VIS_META } from './VisibilityMeta';
 import SplitMenuButton, { MenuItem } from './SplitMenuButton';
 import { copyShareLink, COPIED_OK } from '../utils/shareLink';
+import PersonaReplyButton from './PersonaReplyButton';
+import PersonaBadge from './PersonaBadge';
+import { Persona, loadPersonaContext } from '../services/personas';
 import styles from './CommentsPanel.module.css';
 
 // The comment thread, always open. It lives at the foot of the article reader
@@ -323,6 +326,7 @@ function Composer({
 function CommentItem({
   node, depth, prefs, busyId, replyTo, editing,
   onReply, onEdit, onDelete, onModerate, onSubmitReply, onSubmitEdit, onCancel, onViewProfile, readOnly,
+  personas, personasReady, onPersonaPosted,
 }: {
   node: ArticleComment;
   depth: number;
@@ -339,6 +343,10 @@ function CommentItem({
   onCancel: () => void;
   onViewProfile?: (username: string) => void;
   readOnly?: boolean;
+  /** Active personas, or empty for a non-admin viewer. */
+  personas: Persona[];
+  personasReady: boolean;
+  onPersonaPosted: () => void;
 }) {
   const isEditing = editing === node.id;
   const isReplying = replyTo === node.id;
@@ -399,6 +407,10 @@ function CommentItem({
             </button>
           );
         })()}
+        {/* Immediately after the name, before the timestamp and every other tag.
+            Disclosure is not a detail at the end of the row: it has to be read
+            with the name it qualifies, and on a narrow screen this row wraps. */}
+        {!node.deleted && node.author.isPersona && <PersonaBadge />}
         {!node.deleted && node.mine && <span className={styles.youTag}>you</span>}
         <span className={styles.dot}>·</span>
         <time className={styles.date} dateTime={node.createdAt} title={new Date(node.createdAt).toLocaleString()}>
@@ -465,6 +477,17 @@ function CommentItem({
                 <button className={`${styles.actionBtn} ${styles.reportAction}`} onClick={() => setReporting(true)}>
                   Report
                 </button>
+              )}
+              {/* Public comments only — the server refuses anything else, since
+                  a persona is nobody's friend and must not answer into a
+                  narrower audience than its reply would reach. */}
+              {node.visibility === 'public' && (
+                <PersonaReplyButton
+                  commentId={node.id}
+                  personas={personas}
+                  ready={personasReady}
+                  onPosted={onPersonaPosted}
+                />
               )}
               {node.mine && (
                 <button
@@ -572,6 +595,9 @@ function CommentItem({
                   onCancel={onCancel}
                   onViewProfile={onViewProfile}
                   readOnly={readOnly}
+                  personas={personas}
+                  personasReady={personasReady}
+                  onPersonaPosted={onPersonaPosted}
                 />
               ))
             )}
@@ -654,6 +680,29 @@ export default function CommentsPanel({
     setComments(tree);
     countRef.current?.(articleUrl, countTree(tree));
   }, [articleUrl]);
+
+  // The personas this viewer can summon into the thread — empty for everyone but
+  // an admin, decided by the server rather than by anything this component knows.
+  // Memoised for the session in services/personas, so opening twenty articles
+  // costs one request rather than twenty. Skipped entirely for a signed-out
+  // reader, who has no token to be refused with.
+  //
+  // `ready` is separate from the list being non-empty: personas can exist while
+  // OPERATOR_LLM_BASE_URL is unset, and the two states want different UI —
+  // nothing offered, versus a disabled control that explains itself.
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [personasReady, setPersonasReady] = useState(false);
+
+  useEffect(() => {
+    if (readOnly) return;
+    let cancelled = false;
+    void loadPersonaContext().then(ctx => {
+      if (cancelled) return;
+      setPersonas(ctx.personas);
+      setPersonasReady(ctx.ready);
+    });
+    return () => { cancelled = true; };
+  }, [readOnly]);
 
   const fetchThread = useCallback(async (): Promise<ArticleComment[] | null> => {
     try {
@@ -886,6 +935,9 @@ export default function CommentsPanel({
               onCancel={cancelAll}
               onViewProfile={onViewProfile}
               readOnly={readOnly}
+              personas={personas}
+              personasReady={personasReady}
+              onPersonaPosted={reload}
             />
           ))}
         </div>

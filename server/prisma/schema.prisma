@@ -12,6 +12,16 @@ model User {
   email         String?           @unique
   passwordHash  String
   isAdmin       Boolean           @default(false)
+  // This account is an AI persona, not a person. Denormalised from the Persona
+  // row on purpose: every surface that renders an author has to disclose it —
+  // comment lists, post cards, profile headers, notification rows — and a join
+  // to Persona on each of those would put a table read on the hottest queries in
+  // the app for one boolean. This is the same trade `isAdmin` already makes.
+  //
+  // **The two must be written together.** A Persona row without this flag is an
+  // undisclosed AI account, which is the one outcome the labelling rule exists
+  // to prevent, so both writes happen in one transaction in routes/adminPersonas.
+  isPersona     Boolean           @default(false)
   bannedAt      DateTime?
   firstName     String?
   lastName      String?
@@ -63,6 +73,179 @@ model User {
   reportsResolved      Report[]      @relation("ReportResolver")
   llmCredentials       LlmCredential[]
   researchThreads      ResearchThread[]
+  persona              Persona?      @relation("PersonaAccount")
+  personasCreated      Persona[]     @relation("PersonaCreator")
+  siteModelsCreated    SiteModel[]   @relation("SiteModelCreator")
+}
+
+// A model the *instance* provides, configured by an admin.
+//
+// Deliberately not an LlmCredential. That table is one person's key, owned by
+// them, spent by them, and invisible to everybody else; this is the operator's
+// own endpoint, spent on personas, and it has no owner in that sense — an admin
+// who adds one and then leaves must not take the instance's model with them.
+// Keeping them apart also means no route can ever confuse "a user's key" with
+// "the key that is allowed to reach a private address".
+//
+// **The private-address exemption is not stored here.** Which hosts may be
+// reached is read from OPERATOR_LLM_PRIVATE_HOSTS in the environment, so adding
+// a row can never widen it. See lib/llm/operatorEnv.ts for why that split
+// exists: editing a row needs an admin session, editing the environment needs
+// the host.
+model SiteModel {
+  id          String   @id @default(cuid())
+  // What an admin calls it. "3090 box", "Groq fallback". The host is the
+  // fallback label when this is empty.
+  label       String   @default("")
+  // An OpenAI-shaped base URL. Always the `compatible` provider — Ollama, vLLM,
+  // LM Studio, OpenRouter and Groq all speak that one shape, and an operator who
+  // wants Anthropic proper can put a gateway in front.
+  baseUrl     String
+  // Free text, as on LlmCredential: a self-hosted box serves whatever it has
+  // pulled, and an allowlist would be wrong the day Ollama adds a model.
+  model       String
+  // Optional bearer token, sealed exactly as LlmCredential's is (AES-256-GCM,
+  // lib/llm/secretBox) and never returned by any route. Empty is the normal
+  // state — a local Ollama has no auth at all.
+  keyCipher   String   @default("")
+  keyIv       String   @default("")
+  keyTag      String   @default("")
+  keyLast4    String   @default("")
+  // Exactly one row may carry this. Enforced in the route rather than by a
+  // partial index, because clearing the old default and setting the new one
+  // happens in one transaction there anyway — the same call LlmCredential makes.
+  isDefault   Boolean  @default(false)
+  // Off without being deleted: a box that is down for maintenance should stop
+  // being dialled without losing its configuration or its usage history.
+  enabled     Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation("SiteModelCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  personas    Persona[]
+  usage       SiteModelUsage[]
+
+  @@index([createdById])
+}
+
+// One generation attempt, successes and failures alike.
+//
+// Logged for every call so the admin panel can answer the question a self-hosted
+// operator actually has, which is not "what did this cost" — a local GPU bills
+// nothing — but **"is the box coping?"**. That is latency, tokens per second and
+// failure rate, and none of them can be reconstructed after the fact. A
+// failure-only log could not distinguish a healthy endpoint from one nothing has
+// called since the last deploy, which is the same reasoning FeedFetchLog was
+// built on.
+//
+// Token counts may legitimately be 0: Ollama only reports usage on newer
+// versions, and a request that failed before the first byte never had any. Zero
+// therefore means "not reported", not "free", and the UI says so rather than
+// averaging it in.
+model SiteModelUsage {
+  id           String    @id @default(cuid())
+  // SetNull, not Cascade: deleting an endpoint must not erase the record of what
+  // it did. The label and model name below are denormalised for exactly that
+  // moment — the row stays readable once the endpoint it names is gone.
+  siteModelId  String?
+  siteModel    SiteModel? @relation(fields: [siteModelId], references: [id], onDelete: SetNull)
+  modelLabel   String    @default("")
+  modelName    String    @default("")
+  // Likewise denormalised. A persona is often deleted precisely *because* of
+  // what it wrote, and that is the case where the log matters most.
+  personaId    String?
+  personaName  String    @default("")
+  // 'comment' | 'reply' | 'post' | 'identity' | 'test'
+  kind         String
+  // 'success' | 'failed'
+  outcome      String
+  inputTokens  Int       @default(0)
+  outputTokens Int       @default(0)
+  // Wall clock for the whole call, first byte to last. On a single GPU this is
+  // the number that exposes model swapping: the same prompt taking 2s and then
+  // 40s is Ollama unloading one model to load another.
+  durationMs   Int       @default(0)
+  error        String    @default("")
+  createdAt    DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([siteModelId, createdAt])
+  @@index([personaId, createdAt])
+}
+
+// An AI persona: the settings that decide how one generated account writes.
+//
+// A persona is a real User row with `isPersona` set, not a parallel kind of
+// author. That is the whole design decision here. Everything that already works
+// for an account — a profile page, a blog, threading, friendships, **blocking
+// and reporting** — then works for a persona for free, and more importantly a
+// reader who wants nothing to do with one has the same tools against it as
+// against anybody else. Modelling personas as a separate authorless content type
+// would have meant reimplementing all of that, badly, and would have left
+// readers with no way to mute one.
+//
+// This row is the *configuration*; the User row is the identity. Deleting the
+// persona deletes the account with it (see the route) — a half-deleted persona
+// would be an account that writes with no settings behind it.
+model Persona {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation("PersonaAccount", fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── The tone dials ──
+  // Enumerated strings validated in lib/llm/personaPrompts, not Prisma enums:
+  // adding a voice should be a one-line change to a lookup table, not a
+  // migration that rewrites a type. The same call FeedItem.categories and
+  // Comment.visibility already make.
+  //
+  // 'voice' is the register (warm, blunt, wry…), 'verbosity' how much it says,
+  // 'formality' how it addresses people. Three axes rather than one "style"
+  // free-text because the point is a *small* set of dials an admin can turn
+  // without writing a prompt — a prompt-writing UI is just the API with extra
+  // steps, and `guidance` below is already the escape hatch for that.
+  voice       String   @default("neutral")
+  verbosity   String   @default("balanced")
+  formality   String   @default("neutral")
+
+  // What this persona has opinions about. Steers what it finds worth saying;
+  // a list of words, so String[] for the same reason BlogPost.tags is one.
+  interests   String[] @default([])
+
+  // Free-text extra direction from the admin, appended to the built prompt.
+  // Capped and sanitised at the route: it lands in a system prompt, so it is
+  // the one field here that can change the model's instructions wholesale.
+  guidance    String   @default("")
+
+  // Which site model writes for this persona. NULL means the instance default,
+  // which is what nearly every persona should be — see the swap note below.
+  //
+  // SetNull on delete: removing an endpoint must fall its personas back to the
+  // default rather than deleting them or leaving them pointing at nothing.
+  //
+  // **On a single GPU, two personas on the same endpoint with different models
+  // is a real cost**, not a preference. Only one model is resident at a time, so
+  // alternating between them makes Ollama unload and reload — tens of seconds
+  // for a large model. The admin UI warns when a choice creates that pairing;
+  // the durationMs column in SiteModelUsage is what proves it afterwards.
+  siteModelId String?
+  siteModel   SiteModel? @relation(fields: [siteModelId], references: [id], onDelete: SetNull)
+
+  // Paused personas keep their account and their history but generate nothing.
+  // Deliberately not the same as banning the account: a ban is a moderation
+  // record about a user, this is an operator switch, and conflating them would
+  // put "turned off my own bot" in the ban log next to real enforcement.
+  active      Boolean  @default(true)
+
+  // Which admin made it. Nullable with SetNull rather than Cascade — an admin
+  // deleting their own account must not silently delete the personas the
+  // instance is still running, and losing the attribution is the lesser harm.
+  createdById String?
+  createdBy   User?    @relation("PersonaCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdById])
+  @@index([siteModelId])
 }
 
 // One person's key for one LLM provider. Owned by the user who added it and

@@ -1,37 +1,45 @@
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-  animation: fade 0.15s ease;
-}
+/* The console is a page in the shell, not a panel over one: it scrolls with
+   the document, the shell bar stays above it, and every tab has an address.
 
-.panel {
+   That is also what fixed the scrolling. As a dialog this was a fixed-height
+   flex column whose body carried `flex: 1; overflow-y: auto` and no
+   `min-height: 0` - and a flex item's automatic minimum size is its content,
+   not zero, so the body could never shrink below what was in it and the
+   scroller never engaged. The panel's own `overflow: hidden` cropped the rest.
+   Whichever tab was tallest looked worst, which is why AI was the one that
+   showed it. None of that survives being a page: the document scrolls. */
+.page {
   display: flex;
-  width: min(1100px, 96vw);
-  height: min(640px, 90vh);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-  animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  align-items: flex-start;
+  gap: 28px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 0 64px;
 }
 
 /* ── Left nav ── */
 .nav {
-  width: 180px;
+  position: sticky;
+  /* Clears the shell bar, whose height ShellBar measures and publishes. */
+  top: calc(var(--shellbar-h, 56px) + 16px);
+  width: 190px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  padding: 24px 12px;
+  padding: 14px 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Never taller than the space under the bar - the tab list takes the
+     overflow rather than the rail running off the bottom of a short window. */
+  max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+
+.nav::-webkit-scrollbar { display: none; }
 
 .navHeader {
   font-size: 11px;
@@ -89,15 +97,23 @@
 .content {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
 
+/* The tab's title, and on a phone the way back to the list. Sticky under the
+   shell bar - same trick and same frosted vocabulary as the settings page - so
+   a long table never leaves you without either. */
 .contentHeader {
+  position: sticky;
+  top: var(--shellbar-h, 56px);
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px 14px;
+  gap: 12px;
+  padding: 16px 0 14px;
+  background: color-mix(in oklab, var(--bg) 94%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
 }
 
 .title {
@@ -107,32 +123,16 @@
   color: var(--text);
 }
 
-.closeBtn {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
-}
-
-.closeBtn:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
+/* No longer a scroller of its own - the document is. Horizontal overflow stays,
+   because the wide tables genuinely need it, and a table that scrolls sideways
+   inside its own box is better than a page that does. */
 .body {
-  flex: 1;
-  overflow-y: auto;
   overflow-x: auto;
-  padding: 4px 24px 24px;
+  padding: 20px 0 0;
 }
 
 .error {
-  margin: 0 24px 12px;
+  margin: 12px 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--danger) 8%, transparent);
@@ -147,7 +147,7 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin: 0 24px 12px;
+  margin: 12px 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: color-mix(in oklab, var(--accent) 10%, transparent);
@@ -1478,7 +1478,7 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
    Eight tabs in a 180px rail beside a table of users needs about 900px before
    either half is readable. Below 720px - the same break Settings uses, and the
    same shape - the rail becomes a list you drill into, and the panel stops
-   being a card and becomes the screen. AdminModal.tsx renders one side or the
+   being a card and becomes the screen. AdminPage.tsx renders one side or the
    other; these rules only have to make each fill the width. */
 .compact .nav {
   width: 100%;
@@ -1508,25 +1508,15 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
    chevron takes the whole gap. */
 .compact .navBadge { margin-left: 0; }
 
-.compact .content { width: 100%; }
+.compact { display: block; padding: 4px 0 48px; }
 
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--surface2);
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+.compact .nav {
+  position: static;
+  max-height: none;
+  overflow: visible;
 }
 
-.iconBtn:hover { background: var(--border); color: var(--text); }
+.compact .content { width: 100%; }
 
 .backBtn {
   display: flex;
@@ -1569,19 +1559,6 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
   }
 
   .title { flex: 1; min-width: 0; font-size: 17px; }
-
-  /* Back already names the way out of the tab; ✕ alone leaves the panel */
-  .closeLabel { display: none; }
-
-  .closeBtn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border-radius: 50%;
-  }
 
   /* Wide tables are the one thing that can't be made to fit - they scroll
      sideways in their own box rather than widening the panel. */

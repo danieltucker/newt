@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import styles from './SettingsModal.module.css';
+import styles from './SettingsPage.module.css';
 import { UserSettings } from '../hooks/useSettings';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { tagKey, hasFavorite } from '../utils/favoriteTags';
@@ -11,7 +11,10 @@ import {
   type ProfileLink,
 } from '../utils/profileLinks';
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
-import AiSettingsPanel, { type LlmBinding } from './AiSettingsPanel';
+import AiSettingsPanel, { type LlmBinding } from '../components/AiSettingsPanel';
+import {
+  SETTINGS_PATH, SETTINGS_SECTIONS, settingsPathFor, type SettingsSection,
+} from '../utils/settingsUrl';
 
 export interface UserProfile {
   username: string;
@@ -29,9 +32,18 @@ export interface UserProfile {
 interface Props {
   settings: UserSettings;
   onUpdate: (patch: Partial<UserSettings>) => Promise<void>;
-  onClose: () => void;
   onImport?: () => void;
-  initialSection?: Section;
+  /**
+   * The section the address names, or null for the bare /settings index.
+   *
+   * The URL is the only copy of this - there is no local "which tab" state to
+   * disagree with it - so Back between sections works, and every section is a
+   * link somebody can send.
+   */
+  section: SettingsSection | null;
+  /** The one setting the address points at, from the #hash. */
+  anchor?: string | null;
+  navigate: (to: string, replace?: boolean) => void;
   onProfileChange?: (profile: UserProfile) => void;
   // Passed in rather than hooked up here, so the shell and this screen read the
   // same list: connecting a model has to make the Explore button appear
@@ -39,7 +51,10 @@ interface Props {
   llm?: LlmBinding;
 }
 
-export type Section = 'account' | 'search' | 'appearance' | 'reading' | 'ai' | 'advanced' | 'integrations';
+// Re-exported so callers that only want the union don't have to know it is the
+// URL helper that owns it. The list lives there because App has to match a path
+// against it before this page is loaded at all.
+export type Section = SettingsSection;
 
 // Downscale the chosen image to a small square data URL client-side -
 // keeps uploads tiny and avoids any server-side image processing.
@@ -80,15 +95,20 @@ const BookOpenIcon = () => (
   </svg>
 );
 
-const NAV: { id: Section; label: string; icon: ReactNode }[] = [
-  { id: 'account',      label: 'Account',      icon: '◍' },
-  { id: 'search',       label: 'Search',       icon: '⌕' },
-  { id: 'appearance',   label: 'Appearance',   icon: '◑' },
-  { id: 'reading',      label: 'Reading',      icon: <BookOpenIcon /> },
-  { id: 'ai',           label: 'AI',           icon: '✦' },
-  { id: 'advanced',     label: 'Advanced',     icon: '⚙' },
-  { id: 'integrations', label: 'Integrations', icon: '⇌' },
-];
+const SECTION_CHROME: Record<Section, { label: string; icon: ReactNode }> = {
+  account:      { label: 'Account',      icon: '◍' },
+  search:       { label: 'Search',       icon: '⌕' },
+  appearance:   { label: 'Appearance',   icon: '◑' },
+  reading:      { label: 'Reading',      icon: <BookOpenIcon /> },
+  ai:           { label: 'AI',           icon: '✦' },
+  advanced:     { label: 'Advanced',     icon: '⚙' },
+  integrations: { label: 'Integrations', icon: '⇌' },
+};
+
+// The rail, in the order the URL helper lists the sections. Taken from there
+// rather than written out again so the first entry and what a bare /settings
+// resolves to cannot drift apart.
+const NAV = SETTINGS_SECTIONS.map(id => ({ id, ...SECTION_CHROME[id] }));
 
 const sectionLabel = (id: Section) => NAV.find(n => n.id === id)?.label ?? '';
 
@@ -357,18 +377,28 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-export default function SettingsModal({ settings, onUpdate, onClose, onImport, initialSection, onProfileChange, llm }: Props) {
-  // Below this width the two columns don't fit side by side, so the panel
+export default function SettingsPage({
+  settings, onUpdate, onImport, section: routeSection, anchor, navigate, onProfileChange, llm,
+}: Props) {
+  // Below this width the two columns don't fit side by side, so the page
   // becomes a drill-down: the section list, then one section at a time with a
   // back button. Driven from JS rather than CSS alone because the two modes are
   // different trees - the list and the panel are never on screen together.
   const compact = useMediaQuery('(max-width: 720px)');
 
-  // First tab by default. A caller that names a section (the profile's "Edit
-  // profile") means it, so that one opens straight into the panel even when
-  // compact, where the list would otherwise come first.
-  const [section, setSection] = useState<Section>(initialSection ?? NAV[0].id);
-  const [showList, setShowList] = useState(!initialSection);
+  // A bare /settings means two different things by width, which is why the
+  // address is allowed to stay bare: on a phone it is the section list, and
+  // there is nothing to name yet. On a wide screen both columns are on screen
+  // at once, so "no section" would show Account while claiming not to - and
+  // Back out of /settings/account would then appear to do nothing. Rewriting
+  // the address (replace, so it adds no history entry) keeps the URL honest
+  // about what is being looked at.
+  useEffect(() => {
+    if (!compact && !routeSection) navigate(settingsPathFor(NAV[0].id), true);
+  }, [compact, routeSection, navigate]);
+
+  const section: Section = routeSection ?? NAV[0].id;
+  const showList = compact && !routeSection;
   const [query, setQuery] = useState('');
   const panelVisible = !compact || !showList;
 
@@ -384,31 +414,33 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
     });
   }, [query]);
 
-  // Picking a search result has to survive the section swap: the anchor only
-  // exists once the new section has rendered, so the scroll waits for the
-  // effect below. The counter makes a second click on the same result a new
-  // value, which is what re-runs it.
-  const targetSeq = useRef(0);
-  const [target, setTarget] = useState<{ anchor: string; n: number } | null>(null);
+  // Going somewhere in settings is navigation now, so every section switch and
+  // every search result is an address. The section swap and the scroll can't
+  // happen in one breath - the anchor only exists once the new section has
+  // rendered - so the jump waits for the effect below.
+  const [seq, setSeq] = useState(0);
 
-  const goTo = useCallback((next: Section, anchor?: string) => {
-    setSection(next);
-    setShowList(false);
-    if (anchor) setTarget({ anchor, n: ++targetSeq.current });
-  }, []);
+  const goTo = useCallback((next: Section, target?: string) => {
+    navigate(settingsPathFor(next, target));
+    // Clicking the same result twice leaves the address exactly as it was, and
+    // a button that does nothing the second time reads as broken. Bumping this
+    // on the click rather than on the URL is what makes the repeat land again.
+    if (target) setSeq(n => n + 1);
+  }, [navigate]);
 
   useEffect(() => {
-    if (!target) return;
+    if (!anchor) return;
     let cancelled = false;
     let found: HTMLElement | null = null;
     let clear: ReturnType<typeof setTimeout> | undefined;
 
     // A couple of sections fill themselves in from a fetch - the friends' feed
     // panel renders nothing at all until its URL arrives - so the anchor gets a
-    // moment to turn up rather than the jump quietly doing nothing.
+    // moment to turn up rather than the jump quietly doing nothing. This is
+    // also what covers arriving cold on a pasted /settings/ai#ai-models.
     function land(attempt: number) {
       if (cancelled) return;
-      found = bodyRef.current?.querySelector<HTMLElement>(`[data-setting="${target!.anchor}"]`) ?? null;
+      found = bodyRef.current?.querySelector<HTMLElement>(`[data-setting="${anchor}"]`) ?? null;
       if (!found) {
         if (attempt < 6) setTimeout(() => land(attempt + 1), 120);
         return;
@@ -425,23 +457,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
       clearTimeout(clear);
       found?.classList.remove(styles.flash);
     };
-  }, [target]);
-
-  // Escape closes, and the page behind must not scroll while the panel is up -
-  // otherwise the wheel over the modal, or a flick past the end of a section,
-  // moves the feed underneath instead. Same contract as the article reader.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onCloseRef.current(); }
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, []);
+  }, [anchor, section, seq]);
 
   // ── Profile state ─────────────────────────────────────────────────────────────
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -464,10 +480,10 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
   }, [panelVisible, section, profile]);
 
   // Every successful save lands here. Besides the local state and the shell's
-  // top-bar avatar, it announces on the window - the profile page renders
-  // *underneath* this modal, and would otherwise keep showing the old photo,
-  // cover and links until something navigated. ArticleModal signals the same
-  // way when its reader closes.
+  // top-bar avatar, it announces on the window - the profile page is one Back
+  // away and would otherwise come back showing the old photo, cover and links
+  // off whatever it had already fetched. ArticleModal signals the same way when
+  // its reader closes.
   const applyProfile = useCallback((p: UserProfile) => {
     setProfile(p);
     onProfileChange?.(p);
@@ -709,26 +725,15 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
 
   function cancelTotp() { setTotpStep('idle'); setTotpCode(''); setTotpError(''); setEnrollData(null); }
 
-  function handleBackdrop(e: React.MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
   return (
-    <div className={styles.backdrop} onClick={handleBackdrop}>
-      <div
-        className={`${styles.panel} ${compact ? styles.compact : ''}`}
-        onClick={e => e.stopPropagation()}
-      >
+    <div className={`${styles.page} ${compact ? styles.compact : ''}`}>
 
         {/* The section list: a rail on the left when there's room, the whole
-            panel when there isn't. */}
+            page when there isn't. */}
         {(!compact || showList) && (
           <nav className={styles.nav}>
             <div className={styles.navTop}>
               <div className={styles.navHeader}>Settings</div>
-              {compact && (
-                <button className={styles.iconBtn} onClick={onClose} aria-label="Close settings">✕</button>
-              )}
             </div>
 
             <div className={styles.searchWrap}>
@@ -784,17 +789,17 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
         {panelVisible && (
         <div className={styles.content}>
           <div className={styles.contentHeader}>
+            {/* Back to the section list on a phone. A navigation now rather
+                than local state, so the browser's own Back does the same
+                thing - which is what a reader who swiped will expect. */}
             {compact && (
-              <button className={styles.backBtn} onClick={() => setShowList(true)}>
+              <button className={styles.backBtn} onClick={() => navigate(SETTINGS_PATH)}>
                 <span aria-hidden>‹</span> Back
               </button>
             )}
             <div className={styles.contentTitle}>
               {sectionLabel(section)}
             </div>
-            <button className={styles.closeBtn} onClick={onClose}>
-              ✕<span className={styles.closeLabel}>&nbsp;Close</span>
-            </button>
           </div>
 
           <div className={styles.contentBody} ref={bodyRef}>
@@ -1483,7 +1488,7 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                     showCost={settings.aiShowCost !== false}
                     onUpdate={onUpdate}
                   />
-                // Only reachable if this modal is rendered outside the shell,
+                // Only reachable if this page is rendered outside the shell,
                 // which nothing does today — but the section is in the nav, so
                 // it needs an answer rather than a blank panel.
                 : <div className={styles.rowHint}>AI settings aren’t available here.</div>
@@ -1510,7 +1515,10 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
                         <div className={styles.rowLabel}>Import bookmarks</div>
                         <div className={styles.rowHint}>Import bookmarks from a browser HTML export or JSON file</div>
                       </div>
-                      <button className={styles.enableBtn} onClick={() => { onImport(); onClose(); }}>
+                      {/* The importer is still a dialog, and it opens over
+                          this page rather than in place of it - so coming out
+                          of it leaves the reader where they were. */}
+                      <button className={styles.enableBtn} onClick={onImport}>
                         Import
                       </button>
                     </div>
@@ -1526,7 +1534,6 @@ export default function SettingsModal({ settings, onUpdate, onClose, onImport, i
           </div>
         </div>
         )}
-      </div>
     </div>
   );
 }

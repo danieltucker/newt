@@ -64,12 +64,16 @@
 .leftCol {
   position: sticky;
   top: calc(var(--shellbar-h, 56px) + 16px);
-  /* Taller than the viewport, and it scrolls internally instead of letting its
-     bottom disappear - the whole point of the rail is that it's always there. */
+  /* Taller than the viewport, and the rail's folder tree scrolls inside itself
+     rather than the column scrolling as one. The whole point of the rail is
+     that it's always there, and a column that scrolls pushes its foot -
+     Settings, your own row - off the bottom for anyone with a few folders.
+     See .tree in ShellRail.module.css for the other half of this. */
   max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
+  /* Visible, not hidden. Nothing spills - the rail's folder tree is what
+     scrolls, inside itself - but the hover ring a folder dot throws is a
+     box-shadow, and an ancestor's overflow: hidden would clip it. */
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -84,11 +88,12 @@
   );
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 55%, transparent);
-}
-
-.leftCol::-webkit-scrollbar {
-  display: none;
+  /* The drop shadow lifts the column off the page; the inset hairline along its
+     top edge is the glass catching the light, which is what stops a frosted
+     panel reading as a flat grey rectangle. Same trick the shell bar uses. */
+  box-shadow:
+    0 12px 32px color-mix(in oklab, var(--shadow) 55%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 7%, transparent);
 }
 
 /* Separates the reading list from the bookmarks panel above it - when there is

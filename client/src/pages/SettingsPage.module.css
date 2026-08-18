@@ -1,53 +1,37 @@
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
+/* Settings is a page in the shell, not a panel over one: it scrolls with the
+   document, the shell bar stays above it, and every section has an address.
+   What used to be the modal's own scroller is now just the page - the only
+   thing that stays put is the section rail, which pins under the bar so the
+   list is reachable however far a long section runs. */
+.page {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-  animation: fadeIn 0.15s ease;
-  /* Nothing here scrolls, and a wheel over the dimmed area must not reach the
-     feed behind it. The panel's own scroller repeats this so a flick past the
-     end of a section stops at the end of the section. */
-  overscroll-behavior: contain;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-.panel {
-  display: flex;
-  width: min(860px, 94vw);
-  height: min(560px, 90vh);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-  animation: slideUp 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  align-items: flex-start;
+  gap: 28px;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 8px 0 64px;
 }
 
 /* ── The section list ──
-   A rail down the left while both columns fit; the whole panel below that, as
+   A rail down the left while both columns fit; the whole page below that, as
    a list you drill into (see .compact at the foot of this file). */
 .nav {
+  position: sticky;
+  /* Clears the shell bar, whose height ShellBar measures and publishes. The
+     fallback covers only the frame before that first measurement lands. */
+  top: calc(var(--shellbar-h, 56px) + 16px);
   width: 232px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  padding: 18px 12px 12px;
+  padding: 14px 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* So .navScroll, not the rail, is what overflows on a short window */
+  /* Never taller than the space under the bar - .navScroll takes the overflow
+     rather than the rail running off the bottom of a short window. */
+  max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
   min-height: 0;
 }
 
@@ -225,10 +209,16 @@
   color: var(--muted);
 }
 
-/* ── Compact: one column, list then panel ── */
+/* ── Compact: one column, list then section ── */
+.compact {
+  display: block;
+  padding: 4px 0 48px;
+}
+
 .compact .nav {
+  position: static;
   width: 100%;
-  border-right: none;
+  max-height: none;
   padding: 14px 10px 10px;
 }
 
@@ -241,26 +231,6 @@
 .compact .resultItem { padding: 11px 12px; }
 
 .compact .content { width: 100%; }
-
-/* A round ✕ for the list view, where there's no header bar to hang the wide
-   Close button off. */
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--surface2);
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.iconBtn:hover { background: var(--border); color: var(--text); }
 
 .backBtn {
   display: flex;
@@ -304,11 +274,22 @@
   min-width: 0;
 }
 
+/* The section's title, and on a phone the way back to the list. Sticky under
+   the shell bar - same trick and same frosted vocabulary as the composer's
+   action bar - so a long section never leaves you without either. */
 .contentHeader {
+  position: sticky;
+  top: var(--shellbar-h, 56px);
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 20px 28px 16px;
+  padding: 16px 0 14px;
+  /* Denser than the composer's action bar, which floats as a rounded chip with
+     its own border. This one is an edge-to-edge band, so anything showing
+     through reads as a smear behind the title rather than as glass. */
+  background: color-mix(in oklab, var(--bg) 94%, transparent);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -323,41 +304,14 @@
   white-space: nowrap;
 }
 
-.closeBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-}
-
-.closeBtn:hover {
-  background: var(--border);
-  color: var(--text);
-}
-
+/* The section itself no longer scrolls - the document does, which is what
+   makes a deep link scroll into place on arrival and what puts one scrollbar
+   on screen instead of two. */
 .contentBody {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* Reaching the end of a section is the end of the scroll - without this the
-     remaining wheel or flick is handed to the feed behind the panel, which is
-     the one place the page underneath must not move. */
-  overscroll-behavior: contain;
-  padding: 24px 28px;
+  padding: 24px 0 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  /* Room for the ring a search result lands under */
-  scroll-padding: 12px;
 }
 
 /* ── Shared section blocks ── */
@@ -929,28 +883,18 @@
 }
 
 /* ── Responsive ──
-   The 720px break matches the one SettingsModal watches in JS: below it the
-   panel is a single column and the rail becomes the drill-down list.
+   The 720px break matches the one SettingsPage watches in JS: below it the
+   page is a single column and the rail becomes the drill-down list.
 
-   That is also where the panel stops being a card and becomes the screen. A
-   dialog inset inside a backdrop spends its two scarcest resources - width and
-   height - on a margin, a border and a shadow whose only job is to say "there
-   is a page behind this", which the Back and ✕ buttons already say. The safe
-   area insets come back as padding so the header clears the notch and the last
-   row clears the home indicator. */
+   That is also where the rail and the section stop being cards. Down here they
+   have the screen to themselves, and spending width on a border whose only job
+   is to separate two columns that are never on screen together is width the
+   longest labels want back. */
 @media (max-width: 720px) {
-  .backdrop {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .panel {
-    width: 100%;
-    height: 100%;
+  .nav {
     border: none;
     border-radius: 0;
-    box-shadow: none;
-    padding-top: env(safe-area-inset-top);
+    background: none;
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -961,27 +905,11 @@
 
   .contentTitle { font-size: 17px; }
 
-  /* The back button already says where you are; ✕ alone is enough on the right */
-  .closeLabel { display: none; }
-
-  /* Both exits are thumb targets here, not pointer targets */
-  .closeBtn {
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    justify-content: center;
-    border-radius: 50%;
-  }
-
-  .iconBtn {
-    width: 36px;
-    height: 36px;
-  }
-
   .backBtn { padding: 8px 14px 8px 10px; }
 
   .contentBody {
     padding: 16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
     gap: 14px;
   }
 

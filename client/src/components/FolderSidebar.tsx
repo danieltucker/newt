@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext, closestCenter,
   DragEndEvent, DragOverlay, DragStartEvent,
@@ -37,6 +38,30 @@ interface Props {
   onReorderPinned: (reordered: Bookmark[]) => void;
   onReorderBookmarks: (folderId: string, reordered: Bookmark[]) => void;
   folderRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  /**
+   * Whether to render the pinned tiles at the top. False inside the navigation
+   * rail, which renders them itself at the head of its bookmarks group.
+   */
+  showPinned?: boolean;
+}
+
+/**
+ * dnd-kit's DragOverlay, portalled to the body.
+ *
+ * The overlay is `position: fixed`, and the rail's column carries a
+ * backdrop-filter - which makes that column the containing block for anything
+ * fixed inside it. Rendered in place, the card you are dragging is therefore
+ * positioned against the rail rather than the viewport, so it hangs tens of
+ * pixels away from the cursor and drifts further the further down the page the
+ * rail has scrolled. Measured at 80px on a folder row: the overlay reported
+ * `top: 368px` and identity transform while painting at y=448.
+ *
+ * ShellBar's mobile sheet walked into the same wall for the same reason; this
+ * is the same answer. The portal is called from inside the DndContext subtree,
+ * so React context still reaches the overlay.
+ */
+function PortalDragOverlay({ children }: { children: ReactNode }) {
+  return createPortal(<DragOverlay>{children}</DragOverlay>, document.body);
 }
 
 // Shared outside-click behaviour for the ··· dropdowns.
@@ -87,8 +112,6 @@ function FolderMenu({ folder, onEdit, onDelete, onMarkRead }: { folder: Folder; 
 interface SortableFolderProps {
   folder: Folder;
   isActive: boolean;
-  sites: Bookmark[];
-  expandable?: boolean;
   expanded?: boolean;
   onSelect: (id: string, el: HTMLElement) => void;
   onEdit: (f: Folder) => void;
@@ -97,14 +120,33 @@ interface SortableFolderProps {
   folderRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
 }
 
-function SortableFolder({ folder, isActive, sites, expandable, expanded, onSelect, onEdit, onDelete, onMarkRead, folderRefs }: SortableFolderProps) {
+function SortableFolder({
+  folder, isActive, expanded,
+  onSelect, onEdit, onDelete, onMarkRead, folderRefs,
+}: SortableFolderProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: folder.id });
-  const previewSites = sites.slice(0, 4);
+
+  // Stable, deliberately. An inline `ref={el => ...}` is a new function on every
+  // render, so React tears the ref down and sets it up again each time - and
+  // dnd-kit, whose setNodeRef this wraps, de-registers and re-measures the node
+  // with it. That was survivable while this list only re-rendered when its data
+  // changed. It stopped being survivable when the travelling marker started
+  // re-rendering it on hover: a drag re-renders continuously, so every folder
+  // was being re-registered mid-gesture and the drop landed wherever the
+  // half-rebuilt measurements pointed.
+  const setRefs = useCallback((el: HTMLDivElement | null) => {
+    setNodeRef(el);
+    folderRefs.current[folder.id] = el;
+  }, [setNodeRef, folderRefs, folder.id]);
 
   return (
     <div
-      ref={el => { setNodeRef(el); folderRefs.current[folder.id] = el; }}
-      className={`${styles.folderItem} ${isActive ? styles.active : ''} ${isDragging ? styles.dragging : ''}`}
+      ref={setRefs}
+      className={[
+        styles.folderItem,
+        isActive ? styles.active : '',
+        isDragging ? styles.dragging : '',
+      ].filter(Boolean).join(' ')}
       style={{
         '--folder-color': folder.color,
         transform: CSS.Transform.toString(transform),
@@ -115,47 +157,24 @@ function SortableFolder({ folder, isActive, sites, expandable, expanded, onSelec
       {...attributes}
       {...listeners}
     >
-      <div className={styles.preview}>
-        {Array.from({ length: 4 }).map((_, i) => {
-          const site = previewSites[i];
-          return (
-            <div key={i} className={styles.previewCell}>
-              {site ? (
-                <>
-                  <img
-                    className={styles.previewFavicon}
-                    src={faviconUrl(site.domain)}
-                    alt=""
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                  <span className={styles.previewMonogram} style={{ color: site.color }}>
-                    {site.name.charAt(0).toUpperCase()}
-                  </span>
-                </>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      {/* Colour only. The dot used to swell into a pill carrying the folder's
+          unread count, which put a number on every row whether or not anyone
+          had asked what it was - and a rail full of counts reads as a dashboard
+          rather than a list of places to go. */}
+      <span className={styles.folderDot} />
 
-      <div className={styles.folderText}>
-        <div className={styles.folderNameRow}>
-          <span className={styles.colorDot} style={{ background: folder.color }} />
-          <span className={styles.folderName}>{folder.name}</span>
-          {(() => {
-            const total = sites.reduce((s, b) => s + (b.unreadCount ?? 0), 0);
-            return total > 0 ? (
-              <span className={styles.folderUnread}>{total > 99 ? '∞' : total}</span>
-            ) : null;
-          })()}
-        </div>
-      </div>
+      <span className={styles.folderName}>{folder.name}</span>
 
-      {expandable && (
-        <span className={`${styles.chevron} ${expanded ? styles.chevronOpen : ''}`} aria-hidden>
-          ›
-        </span>
-      )}
+      {/* The whole hover state. There is no highlight behind the row any more -
+          this nudges right and brightens instead, which is enough to say "this
+          one" and quiet enough to say nothing at all when the pointer is
+          elsewhere. Rendered in both layouts: inline uses it to mean "opens
+          here" and rotates it when it does, panel to mean "opens on the right",
+          and a row with no affordance at all in one of the two would read as
+          the layout having forgotten something. */}
+      <span className={`${styles.chevron} ${expanded ? styles.chevronOpen : ''}`} aria-hidden>
+        ›
+      </span>
 
       <FolderMenu folder={folder} onEdit={onEdit} onDelete={onDelete} onMarkRead={onMarkRead} />
     </div>
@@ -201,9 +220,6 @@ function InlineBookmarkRow({ bookmark, openMode, onOpen, onEdit, onDelete, onPin
           )}
         </span>
         <span className={styles.inlineName}>{bookmark.name}</span>
-        {(bookmark.unreadCount ?? 0) > 0 && (
-          <span className={styles.folderUnread}>{(bookmark.unreadCount ?? 0) > 99 ? '∞' : bookmark.unreadCount}</span>
-        )}
       </a>
       <div className={styles.menuWrap} ref={menuRef}>
         <button
@@ -281,7 +297,7 @@ function InlineBookmarkList({ folderId, sites, openMode, onReorder, onOpen, onEd
           />
         ))}
       </SortableContext>
-      <DragOverlay>
+      <PortalDragOverlay>
         {activeBookmark ? (
           <div className={`${styles.inlineRow} ${styles.inlineDragOverlay}`}>
             <span className={styles.inlineLink}>
@@ -295,7 +311,7 @@ function InlineBookmarkList({ folderId, sites, openMode, onReorder, onOpen, onEd
             </span>
           </div>
         ) : null}
-      </DragOverlay>
+      </PortalDragOverlay>
     </DndContext>
   );
 }
@@ -322,16 +338,19 @@ function PinnedTile({ bookmark, openMode, onOpen, onEdit, onDelete, onUnpin }: {
   };
 
   return (
-    <div className={styles.pinTileWrap} ref={setNodeRef} style={style}>
+    <div className={`${styles.pinTileWrap} ${isDragging ? styles.dragging : ''}`} ref={setNodeRef} style={style}>
       <a
         href={bookmarkHref(bookmark.domain)}
         className={styles.pinTile}
+        // The bookmark's colour, for the whole tile rather than the plate behind
+        // its icon - see .pinTile. Everything the tile tints reads off this.
+        style={{ '--tile-tint': bookmark.color } as React.CSSProperties}
         onClick={() => onOpen(bookmark.id)}
         {...(openMode === 'new-tab' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         {...attributes}
         {...listeners}
       >
-        <span className={styles.pinFaviconWrap} style={{ background: `color-mix(in oklab, ${bookmark.color} 14%, var(--surface2))` }}>
+        <span className={styles.pinFaviconWrap}>
           <span className={styles.pinMonogram} style={{ color: bookmark.color }}>
             {bookmark.name.charAt(0).toUpperCase()}
           </span>
@@ -368,7 +387,15 @@ function PinnedTile({ bookmark, openMode, onOpen, onEdit, onDelete, onUnpin }: {
   );
 }
 
-function PinGrid({ pinned, openMode, onOpen, onEdit, onDelete, onUnpin, onReorder }: {
+/**
+ * The pinned-bookmark tiles.
+ *
+ * Exported because the navigation rail renders these itself, above its list of
+ * destinations, rather than letting them ride at the top of the folder tree.
+ * The rail's tree follows whichever place you are on, and pinned links have to
+ * survive that - see the `pinned` prop on ShellRail for the whole argument.
+ */
+export function PinGrid({ pinned, openMode, onOpen, onEdit, onDelete, onUnpin, onReorder }: {
   pinned: Bookmark[];
   openMode: 'same-tab' | 'new-tab';
   onOpen: (id: string) => void;
@@ -414,7 +441,7 @@ function PinGrid({ pinned, openMode, onOpen, onEdit, onDelete, onUnpin, onReorde
             ))}
           </div>
         </SortableContext>
-        <DragOverlay>
+        <PortalDragOverlay>
           {activePin ? (
             <div className={`${styles.pinTileWrap} ${styles.pinDragOverlay}`}>
               <div className={styles.pinTile}>
@@ -426,7 +453,7 @@ function PinGrid({ pinned, openMode, onOpen, onEdit, onDelete, onUnpin, onReorde
               </div>
             </div>
           ) : null}
-        </DragOverlay>
+        </PortalDragOverlay>
       </DndContext>
     </div>
   );
@@ -436,7 +463,7 @@ export default function FolderSidebar({
   folders, activeFolderId, bookmarksByFolder, pinnedBookmarks, layout, username, bookmarkOpenMode = 'same-tab',
   onSelectFolder, onNewFolder, onNewBookmark, onEditFolder, onDeleteFolder, onMarkFolderRead, onReorderFolders,
   onEditBookmark, onDeleteBookmark, onVisitBookmark, onPinBookmark, onUnpinBookmark, onReorderPinned,
-  onReorderBookmarks, folderRefs,
+  onReorderBookmarks, folderRefs, showPinned = true,
 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const isInline = layout === 'inline';
@@ -504,7 +531,7 @@ export default function FolderSidebar({
 
   return (
     <div className={`${styles.sidebar} ${isInline ? styles.inline : ''}`}>
-      {pinnedBookmarks.length > 0 && (
+      {showPinned && pinnedBookmarks.length > 0 && (
         <PinGrid
           pinned={pinnedBookmarks}
           openMode={bookmarkOpenMode}
@@ -531,8 +558,6 @@ export default function FolderSidebar({
                 <SortableFolder
                   folder={folder}
                   isActive={folder.id === activeFolderId}
-                  sites={sites}
-                  expandable={isInline}
                   expanded={isOpen}
                   onSelect={handleFolderClick}
                   onEdit={onEditFolder}
@@ -563,20 +588,16 @@ export default function FolderSidebar({
           })}
         </SortableContext>
 
-        <DragOverlay>
+        <PortalDragOverlay>
           {activeFolder ? (
             <div className={`${styles.folderItem} ${styles.dragOverlay}`}
               style={{ '--folder-color': activeFolder.color } as React.CSSProperties}
             >
-              <div className={styles.folderText}>
-                <div className={styles.folderNameRow}>
-                  <span className={styles.colorDot} style={{ background: activeFolder.color }} />
-                  <span className={styles.folderName}>{activeFolder.name}</span>
-                </div>
-              </div>
+              <span className={styles.folderDot} />
+              <span className={styles.folderName}>{activeFolder.name}</span>
             </div>
           ) : null}
-        </DragOverlay>
+        </PortalDragOverlay>
       </DndContext>
 
       <div className={styles.sidebarFooter}>

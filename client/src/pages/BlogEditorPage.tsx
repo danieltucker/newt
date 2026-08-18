@@ -376,7 +376,13 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
   useEffect(() => () => { if (measureTimer.current) clearTimeout(measureTimer.current); }, []);
 
   const tooLong = textLen > MAX_BLOG_TEXT;
-  const effectiveId = post?.id ?? createdId;
+  // The id of a post created by the flush below. A ref as well as state,
+  // because the flush runs during teardown - state set then may never be read,
+  // but a ref outlives it, and React's StrictMode tears a component down and
+  // builds it straight back up on the same instance. Without this the rebuilt
+  // composer cannot see the post its own teardown just created.
+  const createdIdRef = useRef<string | null>(null);
+  const effectiveId = post?.id ?? createdId ?? createdIdRef.current;
 
   // A brand-new post gets created exactly once, whatever asks for it. Three
   // things can want to save at the same instant - the debounced autosave, the
@@ -430,6 +436,7 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
         : await createPost(payload);
       setPost(saved);
       setCreatedId(saved.id);
+      createdIdRef.current = saved.id;
       setHeroImage(saved.heroImage);
       // The server lowercases and dedupes, so what it stored may differ from
       // what was typed - taking its answer back is what stops the next
@@ -443,8 +450,15 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
       savedRef.current = snapshotOf(
         title, bodyRef.current, saved.visibility, commentsEnabled, saved.heroImage, saved.tags,
       );
-      // Reflect a server-side re-slug (a renamed draft) without a reload
-      if (!effectiveId) window.history.replaceState({}, '', `/blog/${saved.id}`);
+      // Point the address at the post that now exists, so a reload comes back to
+      // this draft rather than to an empty composer with the draft orphaned in
+      // My posts. Keyed on the address still saying "new" rather than on this
+      // call having been the create: the flush on the way out can create the
+      // post too (see flushRef), and then the save that follows takes the update
+      // branch and would never have corrected the URL.
+      if (window.location.pathname === '/blog/new') {
+        window.history.replaceState({}, '', `/blog/${saved.id}`);
+      }
     } catch (e) {
       // The post was never created, so the next attempt has to be allowed to
       // try again. Harmless when this was an update - the claim was never taken.
@@ -505,8 +519,28 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
     ? () => {
         if (!effectiveId && !claimCreate()) return;
         const payload = { title: title.trim(), body: bodyRef.current, visibility, commentsEnabled, heroImage, tags };
-        const p = effectiveId ? updatePost(effectiveId, payload) : createPost(payload);
-        p.catch(() => {});
+        if (effectiveId) {
+          updatePost(effectiveId, payload).catch(() => {});
+          return;
+        }
+        // A create has to say what it made, even from here.
+        //
+        // This used to be fire-and-forget on the grounds that the component was
+        // gone by now. It is not always gone: StrictMode tears the composer down
+        // and rebuilds it on the same instance, so this fires during the very
+        // first mount - and the claim it took, which is only ever released on
+        // failure, then blocked every save the rebuilt composer tried. The post
+        // existed on the server and the composer had no idea, so it sat on
+        // "Saving shortly…" with a Save button that did nothing. Recording the
+        // id fixes that; releasing the claim on failure is what lets a genuinely
+        // failed create be retried.
+        createPost(payload).then(
+          saved => {
+            createdIdRef.current = saved.id;
+            setCreatedId(saved.id);
+          },
+          () => { creatingRef.current = false; },
+        );
       }
     : null;
 

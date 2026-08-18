@@ -1,26 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { accountMenuItems } from './shellNav';
+import { railPlaces } from './railPlaces';
 
-// navMenuItems is gone with the hamburger's destination list: My posts and My
-// profile moved here, and home is the mark in the corner. The hamburger holds
-// only the bookmarks rail now, which is markup rather than a list to gate.
+// navMenuItems is gone with the hamburger's destination list, and the menu's own
+// destinations went the same way when the navigation rail arrived: Posts and
+// Explore are places, and places belong in the rail. What is left here is you
+// and your configuration.
 describe('accountMenuItems', () => {
   it('lists the account actions for an ordinary user', () => {
     const ids = accountMenuItems({}).map(i => i.id);
-    expect(ids).toEqual(['profile', 'myblog', 'settings', 'signout']);
-  });
-
-  // The route stayed /blog so nobody's saved link broke, and the label lost its
-  // "My" when it moved off the hamburger and under your own avatar.
-  it('calls the blog manager Posts', () => {
-    const item = accountMenuItems({}).find(i => i.id === 'myblog');
-    expect(item?.label).toBe('Posts');
+    expect(ids).toEqual(['profile', 'settings', 'signout']);
   });
 
   it('offers nothing of yours to a signed-out visitor', () => {
     const ids = accountMenuItems({ signedIn: false }).map(i => i.id);
-    expect(ids).not.toContain('myblog');
     expect(ids).not.toContain('profile');
+    expect(ids).not.toContain('settings');
   });
 
   it('has no people entry - friends live on the profile, notifications on the bell', () => {
@@ -49,25 +44,27 @@ describe('accountMenuItems', () => {
   });
 });
 
-describe('accountMenuItems — Explore', () => {
-  it('is absent until a model is connected', () => {
-    // The row is a destination, not an advert: with no key it would lead
-    // straight to "you need to set this up first".
-    expect(accountMenuItems({}).map(i => i.id)).not.toContain('explore');
-    expect(accountMenuItems({ hasModel: false }).map(i => i.id)).not.toContain('explore');
+// The whole point of the split: one row must never be offered in both places.
+// Two ways to reach the same screen is how Posts ended up under a photo of your
+// face in the first place.
+describe('the menu and the rail do not overlap', () => {
+  it('shares no id with the rail, for any account', () => {
+    const menu = new Set(accountMenuItems({ isAdmin: true }).map(i => i.id));
+    for (const place of railPlaces({ hasModel: true })) {
+      expect(menu.has(place.id)).toBe(false);
+    }
   });
 
-  it('appears once one is', () => {
-    expect(accountMenuItems({ hasModel: true }).map(i => i.id)).toContain('explore');
-  });
+  it('keeps destinations out of the menu and account rows out of the rail', () => {
+    const menu = accountMenuItems({ isAdmin: true }).map(i => i.id);
+    expect(menu).not.toContain('today');
+    expect(menu).not.toContain('posts');
+    expect(menu).not.toContain('explore');
 
-  it('sits above Settings, which stays last before Sign out', () => {
-    const ids = accountMenuItems({ hasModel: true }).map(i => i.id);
-    expect(ids.indexOf('explore')).toBeLessThan(ids.indexOf('settings'));
-    expect(ids[ids.length - 1]).toBe('signout');
-  });
-
-  it('is never offered to a signed-out visitor', () => {
-    expect(accountMenuItems({ signedIn: false, hasModel: true }).map(i => i.id)).toEqual(['signin']);
+    const rail = railPlaces({ hasModel: true }).map(p => p.id);
+    expect(rail).not.toContain('settings');
+    expect(rail).not.toContain('admin');
+    expect(rail).not.toContain('signout');
+    expect(rail).not.toContain('profile');
   });
 });

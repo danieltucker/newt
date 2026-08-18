@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo, useCallback, Fragment, ReactNode } from '
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import styles from './AdminModal.module.css';
+import PersonasPanel from '../components/PersonasPanel';
+import styles from './AdminPage.module.css';
+import { ADMIN_PATH, ADMIN_TABS, adminPathFor, type AdminTab } from '../utils/adminUrl';
 
 interface HistoryPoint { date: string; total: number }
 
@@ -93,7 +95,9 @@ interface AdminBlogPost {
 import { summarizeMetadata } from '../utils/auditMetadata';
 import { ModerationReport, ReportStatus, AdminThread, AdminThreadComment } from '../types';
 
-type Tab = 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'feeds' | 'errors' | 'audit';
+// Re-exported shape only: which tabs exist is the URL helper's business, since
+// App has to match a path against the list before this page is loaded at all.
+type Tab = AdminTab;
 
 // Sits beside the audit log in the nav but is its opposite: the audit trail is
 // what admins did and is kept forever, this is what broke and ages out.
@@ -543,6 +547,7 @@ const TAB_TITLES: Record<Tab, string> = {
   reports: 'Reports',
   comments: 'Comments',
   blog: 'Posts',
+  ai: 'AI',
   feeds: 'Feeds',
   errors: 'Errors',
   audit: 'Audit log',
@@ -550,16 +555,23 @@ const TAB_TITLES: Record<Tab, string> = {
 
 interface Props {
   currentUsername: string;
-  onClose: () => void;
-  // Open a person's public profile. Closes the panel on the way - the profile
-  // renders in the shell underneath it.
+  /**
+   * The tab the address names, or null for the bare /admin index.
+   *
+   * The URL is the only copy of this - there is no local "which tab" state to
+   * disagree with it - so Back walks the tabs, and every tab is a link somebody
+   * can send. See utils/adminUrl.
+   */
+  tab: AdminTab | null;
+  /**
+   * One report, from /admin/reports/<id>: show that report instead of the
+   * queue. Fetched by id rather than looked for in the queue, because by now it
+   * may be handled (so filtered out) or several pages down.
+   */
+  reportId?: string | null;
+  navigate: (to: string, replace?: boolean) => void;
+  /** Open a person's public profile. */
   onViewProfile?: (username: string) => void;
-  // Set when the panel was opened from a report alert in the bell: show that
-  // one report instead of the queue. Fetched by id rather than looked for in the
-  // queue, because by now it may be handled (so filtered out) or several pages
-  // down.
-  focusReportId?: string | null;
-  onClearFocusReport?: () => void;
 }
 
 function formatDate(s: string | null): string {
@@ -1158,18 +1170,27 @@ function SignupChart({ signups }: { signups: AdminStats['signups'] }) {
   );
 }
 
-export default function AdminModal({
-  currentUsername, onClose, onViewProfile, focusReportId, onClearFocusReport,
+export default function AdminPage({
+  currentUsername, tab: routeTab, reportId, navigate, onViewProfile,
 }: Props) {
-  // Arriving from a report alert lands on the queue, not the overview.
-  const [tab, setTab] = useState<Tab>(focusReportId ? 'reports' : 'overview');
-
   // Below this the 180px rail and a table of users can't share the width, so
-  // the panel becomes a drill-down: the tab list, then one tab at a time with a
-  // back button. Same shape and same breakpoint as Settings. A report alert
-  // named its tab, so that one skips the list.
+  // the console becomes a drill-down: the tab list, then one tab at a time with
+  // a back button. Same shape and same breakpoint as Settings.
   const compact = useMediaQuery('(max-width: 720px)');
-  const [showList, setShowList] = useState(!focusReportId);
+
+  // A bare /admin means two different things by width, which is why the address
+  // is allowed to stay bare: on a phone it is the tab list, and there is nothing
+  // to name yet. On a wide screen both columns are on screen at once, so "no
+  // tab" would show Overview while claiming not to - and Back out of
+  // /admin/overview would then appear to do nothing. Same call SettingsPage
+  // makes, for the same reason.
+  useEffect(() => {
+    if (!compact && !routeTab) navigate(adminPathFor(ADMIN_TABS[0]), true);
+  }, [compact, routeTab, navigate]);
+
+  const tab: Tab = routeTab ?? ADMIN_TABS[0];
+  const showList = compact && !routeTab;
+  const focusReportId = reportId ?? null;
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [comments, setComments] = useState<AdminComment[]>([]);
@@ -1446,10 +1467,8 @@ export default function AdminModal({
 
   useEffect(() => {
     if (!focusReportId) { setFocused(null); return; }
-    // The initial tab state only covers a panel opened *by* the alert. If it was
-    // already open on another tab, the alert has to move it - otherwise the
-    // click appears to do nothing at all.
-    setTab('reports');
+    // No need to move the tab: /admin/reports/<id> resolves to the Reports tab
+    // (see parseAdminTab), so arriving here at all means we are already on it.
     let cancelled = false;
     setFocused(null);
     apiGet<{ report: ModerationReport }>(`/api/v1/admin/reports/${encodeURIComponent(focusReportId)}`)
@@ -1840,19 +1859,6 @@ export default function AdminModal({
     }
   }
 
-  // Escape closes, and the page behind holds still while the panel is up -
-  // it covers the whole screen at narrow widths, and scrolling a table to its
-  // end should not then start scrolling the feed underneath.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
 
   async function toggleBan(u: AdminUser) {
     setBusyId(u.id);
@@ -1948,9 +1954,19 @@ export default function AdminModal({
     }
   }
 
-  function switchTab(next: Tab) {
-    setTab(next);
-    setShowList(false);
+  const switchTab = (next: Tab) => navigate(adminPathFor(next));
+
+  /**
+   * Everything a tab was holding, dropped when you leave it.
+   *
+   * An effect keyed on the tab rather than work done inside a click handler,
+   * because the tab is the URL's now and there are three ways to change it: the
+   * nav, a link, and the browser's Back button. Only one of those goes through
+   * a click, and a Back that left the previous tab's expanded rows and search
+   * text lying around would be the kind of bug that looks like the page
+   * remembering something it shouldn't.
+   */
+  useEffect(() => {
     setQuery('');
     setConfirmDeleteId(null);
     // An expanded thread belongs to the row that opened it; leaving it open
@@ -1967,23 +1983,17 @@ export default function AdminModal({
     setOpenTrace(null);
     // Same for the log narrowed to one feed - it belongs to the row that opened
     // it, and coming back to the tab should show the whole timeline again.
-    if (next !== 'feeds') setFeedLogFor(null);
-    // Leaving the Reports tab abandons the single-report view the bell opened.
-    if (next !== 'reports') onClearFocusReport?.();
-  }
+    if (tab !== 'feeds') setFeedLogFor(null);
+  }, [tab]);
 
   const totalSignups30d = stats?.signups.reduce((n, s) => n + s.count, 0) ?? 0;
 
   return (
-    <div className={styles.backdrop} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`${styles.panel} ${compact ? styles.compact : ''}`}>
+    <div className={`${styles.page} ${compact ? styles.compact : ''}`}>
         {(!compact || showList) && (
         <div className={styles.nav}>
           <div className={styles.navTop}>
             <div className={styles.navHeader}>Admin</div>
-            {compact && (
-              <button className={styles.iconBtn} onClick={onClose} aria-label="Close admin">✕</button>
-            )}
           </div>
           <button className={`${styles.navItem} ${!compact && tab === 'overview' ? styles.navActive : ''}`} onClick={() => switchTab('overview')}>
             Overview
@@ -2002,6 +2012,9 @@ export default function AdminModal({
           </button>
           <button className={`${styles.navItem} ${!compact && tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
             Posts
+          </button>
+          <button className={`${styles.navItem} ${!compact && tab === 'ai' ? styles.navActive : ''}`} onClick={() => switchTab('ai')}>
+            AI
           </button>
           {/* Badged like Reports, and for the same reason: a failing feed is
               work waiting, and the count is why you'd open the tab. The badge
@@ -2024,14 +2037,11 @@ export default function AdminModal({
         <div className={styles.content}>
           <div className={styles.contentHeader}>
             {compact && (
-              <button className={styles.backBtn} onClick={() => setShowList(true)}>
+              <button className={styles.backBtn} onClick={() => navigate(ADMIN_PATH)}>
                 <span aria-hidden>‹</span> Back
               </button>
             )}
             <span className={styles.title}>{TAB_TITLES[tab]}</span>
-            <button className={styles.closeBtn} onClick={onClose}>
-              ✕<span className={styles.closeLabel}>&nbsp;Close</span>
-            </button>
           </div>
 
           {error && <div className={styles.error}>{error}</div>}
@@ -2377,7 +2387,7 @@ export default function AdminModal({
               still open and however far down the list it has slid. */}
           {tab === 'reports' && focusReportId && (
             <div className={styles.body}>
-              <button className={styles.backToQueue} onClick={onClearFocusReport}>
+              <button className={styles.backToQueue} onClick={() => navigate(adminPathFor('reports'))}>
                 ← Back to the queue
               </button>
               {focused === null && <div className={styles.emptyResult}>Loading report…</div>}
@@ -2753,6 +2763,12 @@ export default function AdminModal({
               )}
             </div>
           )}
+
+          {/* Mounted only while its tab is open, so it fetches its own data on
+              open and drops it on leave. Unlike the tabs above, none of this
+              panel's state belongs to AdminPage — it owns its list, its form
+              and its errors. */}
+          {tab === 'ai' && <PersonasPanel />}
 
           {tab === 'feeds' && (
             <div className={styles.body}>
@@ -3423,6 +3439,5 @@ export default function AdminModal({
         </div>
         )}
       </div>
-    </div>
   );
 }

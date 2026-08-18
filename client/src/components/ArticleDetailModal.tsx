@@ -6,6 +6,7 @@ import { articlePathFor } from '../utils/articleUrl';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import CommentsPanel from './CommentsPanel';
+import PersonaArticleActions from './PersonaArticleActions';
 import ExploredPaths from './ExploredPaths';
 import CloseButton from './CloseButton';
 import styles from './ArticleDetailModal.module.css';
@@ -91,6 +92,9 @@ export default function ArticleDetailModal({
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped to remount the comment thread after a persona comments from the
+  // admin row. See the `key` on CommentsPanel below.
+  const [threadKey, setThreadKey] = useState(0);
   // A lead image that 404s drops out of the layout entirely rather than being
   // hidden in place: it is wrapped in a link now, and an image hidden inside a
   // link leaves the link behind as an invisible clickable gap above the title.
@@ -343,6 +347,19 @@ export default function ArticleDetailModal({
             </div>
           )}
 
+          {/* Admin only, and self-hiding: it draws nothing unless the viewer has
+              personas to summon. Its own row under the action bar rather than a
+              pill inside it — see PersonaArticleActions.module.css. */}
+          {!readOnly && (
+            <div className={styles.actionBar}>
+              <PersonaArticleActions
+                url={url}
+                title={displayTitle}
+                onCommented={() => setThreadKey(k => k + 1)}
+              />
+            </div>
+          )}
+
           {/* Between the article and the conversation about it, which is where
               it belongs: these are things somebody made *from* the piece, so
               they follow the piece - and they are not comments, so they do not
@@ -357,6 +374,12 @@ export default function ArticleDetailModal({
 
           <div className={styles.commentsWrap}>
             <CommentsPanel
+              // Bumped when a persona comments from the row above, which remounts
+              // the thread so the new comment appears. A remount rather than a
+              // callback into the panel because the panel owns its fetching and
+              // there is nothing to preserve: the composer is closed at the
+              // moment an admin uses that control.
+              key={threadKey}
               articleUrl={url}
               articleTitle={displayTitle}
               prefs={prefs}

@@ -1,0 +1,199 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.windowRow { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chipOn {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+
+/* ── Stat tiles ──────────────────────────────────────────────────────────── */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface2);
+}
+.tileValue {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  /* Tabular figures so a number changing between refreshes doesn't reflow the
+     row it sits in. */
+  font-variant-numeric: tabular-nums;
+}
+.tileLabel {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Used for failure counts and error rows. Text on the page background, never a
+   fill: white on solid --danger is 3.91:1, under AA. */
+.bad { color: var(--danger); }
+
+/* The conclusion drawn for the reader, rather than left implicit in two numbers
+   that happen to sit beside each other. */
+.insight {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ── Day bars ────────────────────────────────────────────────────────────── */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 90px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.barCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1 0 26px;
+  height: 100%;
+}
+.barTrack {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+.bar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+  /* A day with one generation must still be visible, or an idle-looking chart
+     is indistinguishable from a day with no data at all. */
+  min-height: 3px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+/* Failures stack at the foot of their day's bar rather than beside it: the
+   question is what share of that day went wrong, not two independent counts. */
+.barFail {
+  width: 100%;
+  background: var(--danger);
+  border-radius: 0 0 3px 3px;
+  min-height: 2px;
+}
+.barLabel {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+/* Wide content scrolls inside its own box; the panel itself must never scroll
+   sideways. */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table th {
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  background: var(--surface2);
+  position: sticky;
+  top: 0;
+}
+.table tr:last-child td { border-bottom: none; }
+
+.numCol {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.gone {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.error {
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--danger);
+  font-size: 13px;
+  background: var(--surface2);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 24px 0;
+  text-align: center;
+}

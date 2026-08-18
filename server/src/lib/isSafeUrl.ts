@@ -87,8 +87,25 @@ export type SafeAgentResult =
  *
  * Reports *why* it refused. Prefer this over `makeSafeAgent` anywhere the
  * failure is shown to a human.
+ *
+ * `allowPrivate` is the single, narrow exception, and it exists for one caller:
+ * the site model an operator configures for AI personas, which is legitimately
+ * a box on the LAN or a container on the compose network. It is consulted
+ * **only** once an address has already been found to be private, it receives
+ * both the hostname and the address it resolved to, and — this is the part that
+ * matters — a host it approves still gets the **pinned agent**. Approving a host
+ * is not the same as switching the protection off: the connection still goes to
+ * the exact address that was just validated, so a name that answers with an
+ * allowlisted address on one lookup and something else on the next cannot slip
+ * through.
+ *
+ * Nothing may pass a predicate derived from user input. The only implementation
+ * is built from an environment variable — see operatorEnv.privateHostAllowed.
  */
-export async function resolveSafeAgent(urlStr: string): Promise<SafeAgentResult> {
+export async function resolveSafeAgent(
+  urlStr: string,
+  allowPrivate?: (hostname: string, address: string) => boolean,
+): Promise<SafeAgentResult> {
   let parsed: URL;
   try {
     parsed = new URL(urlStr);
@@ -119,7 +136,7 @@ export async function resolveSafeAgent(urlStr: string): Promise<SafeAgentResult>
     };
   }
 
-  if (isPrivateIp(address)) {
+  if (isPrivateIp(address) && !allowPrivate?.(parsed.hostname, address)) {
     return {
       agent: null,
       address: null,

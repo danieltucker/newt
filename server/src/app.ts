@@ -13,6 +13,8 @@ import utilRoutes from './routes/util';
 import settingsRoutes from './routes/settings';
 import totpRoutes from './routes/totp';
 import adminRoutes from './routes/admin';
+import adminPersonaRoutes from './routes/adminPersonas';
+import adminSiteModelRoutes from './routes/adminSiteModels';
 import accountRoutes from './routes/account';
 import commentRoutes from './routes/comments';
 import articleRoutes from './routes/articles';
@@ -154,6 +156,16 @@ app.use('/api/v1/reading-folders', apiLimiter, readingFolderRoutes);
 app.use('/api/v1/util', apiLimiter, utilRoutes);
 app.use('/api/v1/settings', apiLimiter, settingsRoutes);
 app.use('/api/v1/totp', apiLimiter, totpRoutes);
+// Before the general admin router, not after. Express falls through a `use`
+// whose router matches no route, so mounting this second would still work — but
+// every persona request would first run adminRoutes' requireAuth + requireAdmin
+// pair for nothing, and the fall-through would be load-bearing behaviour nobody
+// reading either file could see. Longest prefix first is the intent.
+//
+// Personas are the one feature that spends the *operator's* model rather than a
+// caller's own key; see lib/llm/operator.ts.
+app.use('/api/v1/admin/personas', apiLimiter, adminPersonaRoutes);
+app.use('/api/v1/admin/site-models', apiLimiter, adminSiteModelRoutes);
 app.use('/api/v1/admin', apiLimiter, adminRoutes);
 app.use('/api/v1/account', apiLimiter, accountRoutes);
 app.use('/api/v1/comments', apiLimiter, commentRoutes);

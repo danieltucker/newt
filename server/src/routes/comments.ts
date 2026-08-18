@@ -71,6 +71,11 @@ const AUTHOR_SELECT = {
   firstName: true,
   lastName: true,
   avatar: true,
+  // Every comment says whether its author is an AI persona. Selected here rather
+  // than looked up when rendering, because this is the one query in the app that
+  // returns hundreds of authors at once and the badge must never be the thing
+  // that got left off. See User.isPersona.
+  isPersona: true,
 } as const;
 
 type CommentRow = {
@@ -84,7 +89,7 @@ type CommentRow = {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
+  user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null; isPersona: boolean };
 };
 
 interface CommentNode {
@@ -102,7 +107,10 @@ interface CommentNode {
   // can never be conjured up by a non-admin editing their own state — and so a
   // comment you wrote yourself offers the ordinary Delete, not a mod action.
   canModerate: boolean;
-  author: { username: string; displayName: string; avatar: string | null };
+  // isPersona travels with the author on every node, replies included. The
+  // client draws the "AI" badge from it; nothing else in the payload discloses
+  // that the writer is a persona.
+  author: { username: string; displayName: string; avatar: string | null; isPersona: boolean };
   replies: CommentNode[];
 }
 
@@ -127,7 +135,7 @@ function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = f
       updatedAt: row.updatedAt,
       mine: false,
       canModerate: false,
-      author: { username: '', displayName: '[deleted]', avatar: null },
+      author: { username: '', displayName: '[deleted]', avatar: null, isPersona: false },
       replies: [],
     };
   }
@@ -148,6 +156,7 @@ function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = f
       username: row.user.username,
       displayName: displayName(row.user),
       avatar: row.user.avatar,
+      isPersona: row.user.isPersona === true,
     },
     replies: [],
   };

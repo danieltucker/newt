@@ -41,6 +41,8 @@ import {
   parseExploreRefs,
 } from './utils/researchUrl';
 import { parseSharedExplorePath } from './utils/exploreShareUrl';
+import { isSettingsPath, parseSettingsSection } from './utils/settingsUrl';
+import { isAdminPath, parseAdminTab, parseAdminReportId } from './utils/adminUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
 // visitor asks for is either a public page or the landing page.
@@ -96,13 +98,21 @@ export default function App() {
   // Lightweight client-side routing (no router dep - same pathname approach as
   // the article deep links). `navigate` pushes history and re-renders in place.
   // `path` stays pathname-only so every parse*Path helper can keep matching on
-  // it whole; the query string is tracked beside it for pages that read one.
+  // it whole; the query string and the hash are tracked beside it for the pages
+  // that read one.
+  //
+  // The hash is state rather than something read off `window` where it's wanted,
+  // because it is the whole address for a settings deep link
+  // (/settings/reading#comments-sort): a component that read it directly would
+  // not re-render when it changed.
   const [path, setPath] = useState(() => window.location.pathname);
   const [search, setSearch] = useState(() => window.location.search);
+  const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onPop = () => {
       setPath(window.location.pathname);
       setSearch(window.location.search);
+      setHash(window.location.hash);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -117,16 +127,27 @@ export default function App() {
    * simply going where the reader came from.
    */
   const navigate = useCallback((to: string, replace = false) => {
-    const q = to.indexOf('?');
-    const toPath = q === -1 ? to : to.slice(0, q);
-    const toSearch = q === -1 ? '' : to.slice(q);
+    // Split the address into its three parts, hash first: a query string that
+    // came after a '#' is part of the fragment, not a query string, and looking
+    // for '?' first would tear the wrong piece off.
+    const h = to.indexOf('#');
+    const toHash = h === -1 ? '' : to.slice(h);
+    const beforeHash = h === -1 ? to : to.slice(0, h);
+    const q = beforeHash.indexOf('?');
+    const toPath = q === -1 ? beforeHash : beforeHash.slice(0, q);
+    const toSearch = q === -1 ? '' : beforeHash.slice(q);
     if (replace) {
       window.history.replaceState({}, '', to);
-    } else if (toPath !== window.location.pathname || toSearch !== window.location.search) {
+    } else if (
+      toPath !== window.location.pathname
+      || toSearch !== window.location.search
+      || toHash !== window.location.hash
+    ) {
       window.history.pushState({}, '', to);
     }
     setPath(toPath);
     setSearch(toSearch);
+    setHash(toHash);
   }, []);
   const viewProfile = useCallback((name: string) => navigate(profilePathFor(name)), [navigate]);
 
@@ -336,6 +357,33 @@ export default function App() {
         seedTitle: exploreParams.get('title'),
         seedRefs: parseExploreRefs(search),
       }
+    // Settings is signed-in only and has no public counterpart - it is one
+    // account's own preferences. A signed-out visitor asking for /settings
+    // falls through to the landing page above rather than a sign-in wall, the
+    // same way /s/ and /explore do.
+    //
+    // The #hash names one setting inside the section. It is passed on rather
+    // than acted on here: which anchors exist is the settings page's business,
+    // and an unknown one simply lands nowhere.
+    : isSettingsPath(path) ? {
+        kind: 'settings',
+        section: parseSettingsSection(path),
+        anchor: hash.replace(/^#/, '') || null,
+      }
+    // The moderation console. Signed-in only like settings, and gated again on
+    // the server for every request it makes - the route is a convenience for
+    // people who already have the flag, not the thing that grants it. A
+    // signed-out visitor falls through to the landing page above.
+    //
+    // /admin/reports/<id> is one report rather than the queue: what a report
+    // alert in the bell links to. It used to be a prop handed to a modal, which
+    // made the one screen a notification sends a moderator to the one screen
+    // they could not link to, bookmark, or reopen after a reload.
+    : isAdminPath(path) ? {
+        kind: 'admin',
+        tab: parseAdminTab(path),
+        reportId: parseAdminReportId(path),
+      }
     : blogRef ? { kind: 'post', username: blogRef.username, slug: blogRef.slug }
     : profileUsername ? { kind: 'profile', username: profileUsername, tab: profileTab, tag: profileTag }
     : siteDomain ? { kind: 'site', domain: siteDomain }
@@ -354,6 +402,7 @@ export default function App() {
       onViewProfile={viewProfile}
       navigate={navigate}
       view={view}
+      path={path}
     />
   );
 }

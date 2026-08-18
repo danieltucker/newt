@@ -155,6 +155,52 @@
   --grain-opacity: 0.05;
 }
 
+/* ── Selection, lift and easing ──
+   One vocabulary for "this is the one you're on", shared by the navigation
+   rail's travelling highlight, the bookmark folder you have open, and anything
+   else that has to mark a choice. It started as a one-off in the rail and was
+   worth generalising the moment a second surface wanted to look like it: two
+   near-identical selected states, drifting apart over time, is how an app comes
+   to look assembled rather than designed.
+
+   --sel-tint is the parameter. It defaults to the accent, and any element can
+   override it before using the three values below - a folder row sets it to
+   that folder's own colour, so the selection reads as *that* folder rather
+   than as a generic highlight. Custom properties substitute lazily, so
+   --sel-bg re-resolves against whatever --sel-tint is on the element using it.
+
+   The fill is a gradient rather than a flat wash, the border is a touch
+   brighter than the fill, and the shadow pairs an outer glow with an inset top
+   highlight. Together they read as a lozenge sitting a layer above a frosted
+   surface instead of a rectangle coloured in on it. */
+:root {
+  --sel-tint: var(--accent);
+  --sel-radius: 10px;
+  /* Mixed over --surface2 rather than transparent, which gives the fill a floor.
+     Over transparent it was the tint and nothing else, so a dark folder colour
+     on a dark panel came out invisible - the selected folder looked unmarked
+     while the accent-tinted places looked fine, purely because the accent is
+     the lighter colour. A floor makes the mark legible whatever tint it is
+     carrying, which is the whole point of parameterising it. */
+  --sel-bg: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--sel-tint) 26%, var(--surface2)),
+    color-mix(in oklab, var(--sel-tint) 14%, var(--surface2))
+  );
+  --sel-border: color-mix(in oklab, var(--sel-tint) 26%, transparent);
+  --sel-shadow:
+    0 2px 10px color-mix(in oklab, var(--sel-tint) 16%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 10%, transparent);
+
+  /* What a thing lifted toward the pointer casts. */
+  --lift-shadow: 0 6px 16px color-mix(in oklab, var(--shadow) 45%, transparent);
+
+  /* Overshoots slightly and settles. For anything that *travels* - the rail's
+     highlight moving between rows, a knob growing out of an edge, a flyout
+     arriving. Plain ease-out for things that merely fade. */
+  --ease-settle: cubic-bezier(0.22, 1, 0.28, 1);
+}
+
 /* Z-index scale - every overlay picks a band; never use raw numbers.
    background(0) < page(1) < sticky < content-overlay < modal < top < detached */
 :root {

@@ -71,7 +71,7 @@ Copy the shape of the blog feed token (`GET /blogs/feed-token`,
 - Accept it in `middleware/auth.ts` as an alternative to the Bearer JWT.
   Keep the ban check: it is the reason `requireAuth` hits the database on
   every request, and a token must not route around it.
-- Enrol in SettingsModal, beside the TOTP panel.
+- Enrol in `pages/SettingsPage.tsx` (`/settings/account`), beside the TOTP panel.
 - Add a migration by hand — `prisma migrate dev` wants a destructive reset in
   this repo.
 

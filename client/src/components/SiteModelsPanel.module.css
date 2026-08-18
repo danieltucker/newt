@@ -1,0 +1,222 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.blurb,
+.envNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.envNote {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface2);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.error {
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--danger);
+  font-size: 13px;
+  background: var(--surface2);
+  line-height: 1.5;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--surface2);
+  line-height: 1.5;
+}
+.noticeDismiss {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  flex: 0 0 auto;
+}
+.noticeDismiss:hover { color: var(--text); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.primary,
+.secondary,
+.danger,
+.dangerGhost {
+  height: var(--ctl-h);
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+  align-self: flex-start;
+}
+.secondary { background: var(--surface2); color: var(--text); }
+.secondary:hover:not(:disabled) { background: var(--surface); }
+.danger { background: var(--danger); color: #fff; border-color: transparent; }
+.dangerGhost { background: none; color: var(--danger); border-color: var(--danger); }
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled { opacity: 0.55; cursor: default; }
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--surface2);
+}
+.formTitle { margin: 0; font-size: 14px; font-weight: 600; }
+.formActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.field { display: flex; flex-direction: column; gap: 5px; }
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.fieldHint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+
+/* The private-host refusal, shown while typing rather than after saving. Danger
+   coloured because it states that the thing being typed will not work — but
+   text only, not a filled block: nothing has failed yet. */
+.fieldWarn {
+  font-size: 11px;
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+.input {
+  width: 100%;
+  height: var(--ctl-h);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.modelRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.modelRow .input { flex: 1 1 auto; min-width: 0; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ── List ────────────────────────────────────────────────────────────────── */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--surface2);
+}
+.itemOff { opacity: 0.65; }
+
+.itemHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.name { font-size: 14px; font-weight: 600; }
+
+.tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 4px;
+  padding: 3px 5px;
+}
+.tagMuted {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+
+.meta { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.itemActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 20px 0;
+  text-align: center;
+}

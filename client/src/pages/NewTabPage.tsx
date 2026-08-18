@@ -6,14 +6,17 @@ import BackToTop from '../components/BackToTop';
 import FeedOfferPrompt from '../components/FeedOfferPrompt';
 import { toggleFavorite } from '../utils/favoriteTags';
 import SearchBar from '../components/SearchBar';
-import FolderSidebar from '../components/FolderSidebar';
+import FolderSidebar, { PinGrid } from '../components/FolderSidebar';
+import ShellRail from '../components/ShellRail';
 import BookmarksGrid from '../components/BookmarksGrid';
 import ReadingList from '../components/ReadingList';
 import AddLinkModal from '../components/AddLinkModal';
 import NewFolderModal from '../components/NewFolderModal';
 import EditBookmarkModal from '../components/EditBookmarkModal';
 import EditFolderModal from '../components/EditFolderModal';
-import SettingsModal, { Section as SettingsSection, UserProfile } from '../components/SettingsModal';
+import type { UserProfile } from './SettingsPage';
+import { SETTINGS_PATH, settingsPathFor, type SettingsSection } from '../utils/settingsUrl';
+import { ADMIN_PATH, adminPathFor, type AdminTab } from '../utils/adminUrl';
 import ImportBookmarksModal from '../components/ImportBookmarksModal';
 import ArticleModal from '../components/ArticleModal';
 import Console from '../components/Console';
@@ -41,9 +44,15 @@ import SitePage from './SitePage';
 // Research was renamed Explore in v1.17.0. Only what a reader sees changed —
 // the file, the API routes and the tables kept the old name, so the rename
 // carried no migration. This is the seam between the two.
-const AdminModal = lazy(() => import('../components/AdminModal'));
+const AdminPage = lazy(() => import('./AdminPage'));
 const BlogEditorPage = lazy(() => import('./BlogEditorPage'));
 const ExplorePage = lazy(() => import('./ResearchPage'));
+// Settings became a route rather than a modal, which is what lets it come out
+// of the main bundle: it used to be part of the shell whether or not anyone
+// opened it, and it brings AiSettingsPanel with it. Nobody lands on a new tab
+// by way of their own preferences, so paying for both on first paint bought
+// nothing.
+const SettingsPage = lazy(() => import('./SettingsPage'));
 // The notes console, for the same reason - it opens on a keypress, over a page
 // that is already there. It does *not* take RichEditor out of the main bundle
 // with it: CommentsPanel imports the editor too, and the feed and reading list
@@ -105,6 +114,15 @@ export type ShellView =
   | { kind: 'site'; domain: string }
   | { kind: 'myblog' }
   | { kind: 'editor'; postId: string | null }
+  // Settings, which used to be a modal over whatever you were reading. As a
+  // page every section is an address, so Back walks them, a link to one lands
+  // on it, and the settings search can point at a single switch rather than
+  // scrolling to it and hoping. `section` is null for the bare /settings.
+  | { kind: 'settings'; section: SettingsSection | null; anchor?: string | null }
+  // The moderation console, which used to be a modal over whatever you were
+  // reading. As a page every tab is an address, so Back walks them and a report
+  // alert in the bell can link straight to the report it is about.
+  | { kind: 'admin'; tab: AdminTab | null; reportId?: string | null }
   // Explore is in the shell for the same reason the composer is: the notes
   // console and the reading list are what you dig into an article *against*,
   // and having to leave the conversation to check one would be the worse trade.
@@ -129,6 +147,14 @@ interface Props {
   onViewProfile?: (username: string) => void;
   navigate: (to: string, replace?: boolean) => void;
   view?: ShellView | null;
+  /**
+   * The current pathname, for the navigation rail's active row.
+   *
+   * Passed rather than derived from `view`, because the rail's matching rules
+   * are written and tested against paths (see utils/railPlaces) and rebuilding
+   * them out of view kinds would be a second copy of the same answer.
+   */
+  path: string;
 }
 
 // Bare-letter shortcuts must not fire while the user is typing - otherwise "n"
@@ -139,7 +165,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
 }
 
-export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile, navigate, view }: Props) {
+export default function NewTabPage({ accessToken, username, isAdmin, themeSetting, resolvedTheme, onSetTheme, onLogout, onViewProfile, navigate, view, path: railPath }: Props) {
   const { settings, update: updateSetting, refresh: refreshSettings, loaded: settingsLoaded } = useSettings(accessToken);
   // Loaded once for the whole shell rather than per surface: the Explore
   // button on an article, the proofreader in the composer and the search bar's
@@ -315,13 +341,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // Modal state
   const [showAddLink, setShowAddLink] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
-  const [showAdmin, setShowAdmin] = useState(false);
-  // Set when the admin panel is opened from a report alert, so it lands on that
-  // report rather than the top of the queue. Cleared when the panel closes, or
-  // when the moderator steps back to the full queue.
-  const [focusReportId, setFocusReportId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
@@ -382,7 +401,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     await addFeed(siteUrl);
   }, [addFeed]);
 
-  // Profile (avatar) for the top bar; kept in sync by SettingsModal's Account tab
+  // Profile (avatar) for the top bar; kept in sync by the settings Account tab
   const [profile, setProfile] = useState<UserProfile | null>(null);
   useEffect(() => {
     if (!accessToken) return;
@@ -611,16 +630,18 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
   // Only one overlay at a time. Opening the notes console, the command console,
   // or the new-bookmark dialog tears down every other dialog on screen -
-  // otherwise a console typed over a half-filled settings pane leaves two
-  // surfaces fighting for Escape and for focus.
+  // otherwise a console typed over a half-filled dialog leaves two surfaces
+  // fighting for Escape and for focus.
+  //
+  // Settings is not in this list any more. It is a page rather than an overlay,
+  // so a console opened over it has nothing to fight with, and tearing it down
+  // would mean a keypress silently navigating away from what you were editing.
   type Overlay = 'notes' | 'console' | 'addLink';
   const dismissOtherOverlays = useCallback((keep: Overlay) => {
     if (keep !== 'console') { setShowConsole(false); setConsoleFading(false); }
     if (keep !== 'notes') { setShowNotes(false); setNotesFading(false); setNotesTarget(null); setNotesNew(false); }
     if (keep !== 'addLink') { setShowAddLink(false); setBookmarkletAddUrl(''); }
     setShowNewFolder(false);
-    setShowSettings(false);
-    setShowAdmin(false);
     setShowImport(false);
     setEditingBookmark(null);
     setEditingFolder(null);
@@ -949,41 +970,67 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // Wide enough for two columns, or is the rail riding in the hamburger?
   const railNarrow = useMediaQuery(RAIL_NARROW);
 
-  // The bookmarks rail. Built here - it needs every folder and bookmark handler
+  // The navigation rail. Built here - it needs every folder and bookmark handler
   // on this page - but rendered either in the sticky left column or inside the
   // shell bar's menu, never both. `close` is a no-op in the column and dismisses
   // the menu in the hamburger, so anything that puts a dialog on screen (or, in
   // panel layout, swaps the grid behind the menu) gets out of its own way.
+  //
+  // The folder tree and the pinned tiles are passed in as nodes rather than the
+  // rail taking twenty bookmark handlers of its own. The rail's business is
+  // which zones exist and which place you are on; what a folder row does when
+  // you drag it is this page's.
   const renderRail = (close: () => void) => (
-    <FolderSidebar
-      folders={folders}
-      activeFolderId={activeFolderId}
-      bookmarksByFolder={bookmarksByFolder}
-      pinnedBookmarks={pinnedBookmarks}
-      layout={bookmarkLayout}
-      username={username}
-      bookmarkOpenMode={settings.bookmarkOpenMode}
-      onSelectFolder={(id, el) => {
-        handleSelectFolder(id, el);
-        // Inline layout expands the folder in place - that's the result, and
-        // closing the menu would hide it. Panel layout renders the result
-        // behind the menu, so step aside.
-        if (bookmarkLayout === 'panel') close();
-      }}
-      onNewFolder={() => { close(); setShowNewFolder(true); }}
-      onNewBookmark={() => { close(); setShowAddLink(true); }}
-      onEditFolder={f => { close(); setEditingFolder(f); }}
-      onDeleteFolder={handleDeleteFolder}
-      onMarkFolderRead={handleMarkFolderRead}
-      onReorderFolders={reorderFolders}
-      onEditBookmark={b => { close(); setEditingBookmark(b); }}
-      onDeleteBookmark={handleDeleteBookmark}
-      onVisitBookmark={id => { close(); markVisited(id); }}
-      onPinBookmark={handlePinBookmark}
-      onUnpinBookmark={handleUnpinBookmark}
-      onReorderPinned={handleReorderPinned}
-      onReorderBookmarks={handleReorderBookmarksInFolder}
-      folderRefs={folderRefs}
+    <ShellRail
+      hasModel={llm.hasModel}
+      path={railPath}
+      navigate={navigate}
+      onNavigated={close}
+      pinned={pinnedBookmarks.length > 0 ? (
+        <PinGrid
+          pinned={pinnedBookmarks}
+          openMode={settings.bookmarkOpenMode ?? 'same-tab'}
+          onOpen={id => { close(); markVisited(id); }}
+          onEdit={b => { close(); setEditingBookmark(b); }}
+          onDelete={handleDeleteBookmark}
+          onUnpin={handleUnpinBookmark}
+          onReorder={handleReorderPinned}
+        />
+      ) : undefined}
+      tree={(
+        <FolderSidebar
+          folders={folders}
+          activeFolderId={activeFolderId}
+          bookmarksByFolder={bookmarksByFolder}
+          pinnedBookmarks={pinnedBookmarks}
+          // The rail renders these itself, at the head of its bookmarks group.
+          showPinned={false}
+          layout={bookmarkLayout}
+          username={username}
+          bookmarkOpenMode={settings.bookmarkOpenMode}
+          onSelectFolder={(id, el) => {
+            handleSelectFolder(id, el);
+            // Inline layout expands the folder in place - that's the result, and
+            // closing the menu would hide it. Panel layout renders the result
+            // behind the menu, so step aside.
+            if (bookmarkLayout === 'panel') close();
+          }}
+          onNewFolder={() => { close(); setShowNewFolder(true); }}
+          onNewBookmark={() => { close(); setShowAddLink(true); }}
+          onEditFolder={f => { close(); setEditingFolder(f); }}
+          onDeleteFolder={handleDeleteFolder}
+          onMarkFolderRead={handleMarkFolderRead}
+          onReorderFolders={reorderFolders}
+          onEditBookmark={b => { close(); setEditingBookmark(b); }}
+          onDeleteBookmark={handleDeleteBookmark}
+          onVisitBookmark={id => { close(); markVisited(id); }}
+          onPinBookmark={handlePinBookmark}
+          onUnpinBookmark={handleUnpinBookmark}
+          onReorderPinned={handleReorderPinned}
+          onReorderBookmarks={handleReorderBookmarksInFolder}
+          folderRefs={folderRefs}
+        />
+      )}
     />
   );
 
@@ -1067,28 +1114,26 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         username={username}
         avatar={profile?.avatar}
         isAdmin={isAdmin}
-        hasModel={llm.hasModel}
         notifUnread={notifUnread}
         navigate={navigate}
-        onOpenSettings={() => { setSettingsSection(undefined); setShowSettings(true); }}
-        onOpenAdmin={() => setShowAdmin(true)}
+        onOpenSettings={() => navigate(SETTINGS_PATH)}
+        onOpenAdmin={() => navigate(ADMIN_PATH)}
         onOpenNotifications={() => setShowNotifications(true)}
         onLogout={onLogout}
         search={searchEl}
-        // A profile or a post takes the whole body and has no rail, so there is
-        // nothing to fold into the menu on those.
-        bookmarksRail={renderRail}
+        rail={renderRail}
       />
 
       <div className={styles.content}>
         {/* One body shape for every page the shell hosts: the rail on the left,
             whatever you came for on the right. The rail is chrome, not part of
-            the new tab - bookmarks are just as worth reaching from a profile or
-            a post as from the feed. Only the right-hand column changes. */}
+            the new tab - where you can go and what you have kept are just as
+            worth reaching from a profile or a post as from the feed. Only the
+            right-hand column changes. */}
         <div className={styles.bodyGrid}>
-          {/* The rail pins itself beside the body so bookmarks stay reachable
-              however far the page scrolls. Below RAIL_NARROW it isn't here at
-              all - the shell bar's menu has it. */}
+          {/* The rail pins itself beside the body so it stays reachable however
+              far the page scrolls. Below RAIL_NARROW it isn't here at all - the
+              shell bar's menu has it. */}
           {!railNarrow && (
             <div className={styles.leftCol}>
               {renderRail(() => {})}
@@ -1111,7 +1156,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 initialTag={view.tag}
                 // Clicking your own avatar lands on Account, where the photo,
                 // the cover and the links all live.
-                onEditProfile={() => { setSettingsSection('account'); setShowSettings(true); }}
+                onEditProfile={() => navigate(settingsPathFor('account'))}
               />
             )}
             {view.kind === 'post' && (
@@ -1144,6 +1189,36 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 username={username}
                 navigate={navigate}
               />
+            )}
+            {view.kind === 'settings' && (
+              <Suspense fallback={FEATURE_FALLBACK}>
+                <SettingsPage
+                  section={view.section}
+                  anchor={view.anchor}
+                  navigate={navigate}
+                  // Theme is the one setting the shell owns rather than the
+                  // server: it is applied before this page exists, so the
+                  // switch reads the live value and writes to both.
+                  settings={{ ...settings, theme: themeSetting }}
+                  onUpdate={async (patch) => { if (patch.theme) handleSetTheme(patch.theme); await updateSetting(patch); }}
+                  onImport={() => setShowImport(true)}
+                  onProfileChange={setProfile}
+                  llm={llm}
+                />
+              </Suspense>
+            )}
+            {view.kind === 'admin' && (
+              <Suspense fallback={FEATURE_FALLBACK}>
+                <AdminPage
+                  currentUsername={username}
+                  tab={view.tab}
+                  reportId={view.reportId}
+                  navigate={navigate}
+                  // Every @handle in the admin tables routes to that person's
+                  // profile - a navigation now rather than a panel closing.
+                  onViewProfile={name => onViewProfile?.(name)}
+                />
+              </Suspense>
             )}
             {view.kind === 'editor' && (
               <Suspense fallback={FEATURE_FALLBACK}>
@@ -1181,7 +1256,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                   // the feed archive alongside it, on the server.
                   references={noteReferences}
                   hasModel={llm.hasModel}
-                  onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
+                  onOpenSettings={() => navigate(settingsPathFor('ai'))}
                   // The source card at the top of a thread opens the same reader
                   // the feed does — the article's text and its comment thread,
                   // over the conversation rather than away from it.
@@ -1347,7 +1422,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           onOpenNotes={openNotes}
           onNewNote={openNewNote}
           onAsk={llm.hasModel ? askInExplore : undefined}
-          onOpenSettings={() => { setSettingsSection('ai'); setShowSettings(true); }}
+          onOpenSettings={() => navigate(settingsPathFor('ai'))}
           contextLabel={page.label}
           references={articleReferences}
           // Share and Save appear only with something open to share or save,
@@ -1486,33 +1561,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         />
       )}
 
-      {showSettings && (
-        <SettingsModal
-          settings={{ ...settings, theme: themeSetting }}
-          onUpdate={async (patch) => { if (patch.theme) handleSetTheme(patch.theme); await updateSetting(patch); }}
-          onClose={() => setShowSettings(false)}
-          onImport={() => { setShowSettings(false); setShowImport(true); }}
-          initialSection={settingsSection}
-          onProfileChange={setProfile}
-          llm={llm}
-        />
-      )}
-
-      {showAdmin && (
-        <Suspense fallback={FEATURE_FALLBACK}>
-          <AdminModal
-            currentUsername={username}
-            onClose={() => { setShowAdmin(false); setFocusReportId(null); }}
-            // Every @handle in the admin tables routes to that person's profile.
-            // The panel has to close first - the profile renders in the shell
-            // underneath it.
-            onViewProfile={name => { setShowAdmin(false); onViewProfile?.(name); }}
-            focusReportId={focusReportId}
-            onClearFocusReport={() => setFocusReportId(null)}
-          />
-        </Suspense>
-      )}
-
       {showNotifications && (
         <NotificationsModal
           accessToken={accessToken}
@@ -1522,9 +1570,13 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
           onMarkAllRead={markNotificationsRead}
           onClose={() => setShowNotifications(false)}
           onViewProfile={onViewProfile}
-          // Report alerts open the moderation queue. Offered only to admins -
-          // nobody else is ever sent one.
-          onOpenReport={isAdmin ? (id => { setFocusReportId(id); setShowAdmin(true); }) : undefined}
+          // Report alerts link straight to the report. Offered only to admins -
+          // nobody else is ever sent one. The bell closes on the way, since the
+          // console renders in the shell underneath it.
+          onOpenReport={isAdmin ? (id => {
+            setShowNotifications(false);
+            navigate(adminPathFor(null, id));
+          }) : undefined}
         />
       )}
 

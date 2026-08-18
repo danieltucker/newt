@@ -1,0 +1,105 @@
+/* A separate row below the article's own action bar, not another pill inside it.
+   Repost and Explore are things the *reader* does with a piece; these speak as
+   somebody else, and mixing them into the same row would put an admin one
+   mis-click from publishing under another name. The label carries the row. */
+.wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border);
+  margin-top: 8px;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* The badge is PersonaBadge, the same component readers see — no local copy. */
+
+.slot {
+  position: relative;
+  display: inline-flex;
+}
+
+.btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  padding: 4px;
+}
+
+/* Which of the two things is about to happen, said at the moment of choosing.
+   The buttons are one word each and cannot carry it. */
+.menuNote {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.menuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.menuItem:hover:not(:disabled) { background: var(--surface2); }
+.menuItem:disabled { opacity: 0.5; cursor: default; }
+
+.menuName { font-size: 13px; font-weight: 500; }
+.menuHandle { font-size: 11px; color: var(--muted); }
+
+.result {
+  font-size: 11px;
+  color: var(--muted);
+}
+.error {
+  font-size: 11px;
+  color: var(--danger);
+}

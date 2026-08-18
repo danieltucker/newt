@@ -1,0 +1,23 @@
+/* Filled with the accent rather than outlined: this is the one label beside a
+   name that must not read as decoration, and an outline at 10px disappears
+   against a byline.
+
+   `--on-accent`, never a literal white. The dark accent is a pale lavender that
+   only carries dark text — `color: #fff` on it measures 2.90:1. See
+   styles/tokens.css. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  /* Never shrink and never wrap: a badge squeezed to "A" is not a disclosure. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
