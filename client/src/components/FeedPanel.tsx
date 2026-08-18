@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiFetch } from '../services/api';
+import { canonicalArticleKey } from '../utils/articleKey';
 import { FeedArticle, CommentPrefs, ReadingFolder, FeedFolder } from '../types';
 import { faviconUrl } from '../utils/color';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
@@ -33,11 +34,6 @@ const SEARCHABLE_AT = 8;
 // through a screenful costs one request instead of a dozen
 const READ_FLUSH_MS = 600;
 
-// How long the "Saved to …" receipt stays up before the card goes back to
-// being a card. Long enough to read the shelf name, short enough that it isn't
-// still sitting there when you reach for the comments.
-const SAVED_PILL_MS = 2400;
-
 // How often an open feed asks whether anything has arrived. This only counts —
 // it never inserts — so it can afford to be quiet. Paused while the tab is
 // hidden, and run once immediately on coming back, which is the case that
@@ -50,31 +46,6 @@ const NEW_CHECK_MS = 3 * 60 * 1000;
 // question there is. So it isn't in the toolbar at all - it arrives when it
 // starts being the thing you want.
 const PAGE_STALE_MS = 15 * 60 * 1000;
-
-// A card that's been dealt with - dismissed, or saved to the reading list - but
-// is still drawn in its slot, greyed out, until the feed reloads. Removing it
-// outright pulls every card below it up, and the next click lands on whatever
-// slid into place. Only a dismissal is undoable: undoing a save would have to
-// decide what to do with the reading-list copy, and "put the card back" isn't
-// obviously that. Both are already committed server-side.
-//
-// The two states differ in how final they are. A dismissal is a closed door:
-// the card is blocked, and the only thing left to do with it is take it back.
-// A save is not - the article is filed, but you may still want to read it,
-// comment on it, or file it somewhere else, so that card stays live and only
-// looks spent. See ArticleCard.
-type GhostKind = 'dismissed' | 'saved';
-
-interface Ghost {
-  kind: GhostKind;
-  /** Where a save went - the placeholder names it, since the Save button can
-      now put an article somewhere other than the reading list. */
-  dest?: string;
-  /** When this ghost was (re)set. Only there to restart the "Saved to …"
-      receipt when the same card is saved twice - without it, filing an
-      article to the shelf it is already on would flash nothing. */
-  at: number;
-}
 
 interface Props {
   /** The reader's own categories, offered as one of the filters. */
@@ -96,6 +67,14 @@ interface Props {
     card: { markSaved: () => void; restore: () => void },
     dest?: { folderId: string | null },
   ) => void;
+  /** Canonical keys (see utils/articleKey) of everything already in the reading
+      list or the Library, so a card can show its Save button already filled in.
+      Comes from the parent's copy of the list, which is what makes the state
+      survive a reload - the feed itself has no idea what you have saved. */
+  savedKeys?: Set<string>;
+  /** Take an article back out of the reading list / Library - what pressing a
+      filled Save button does. Absent leaves Save as a one-way action. */
+  onUnsaveArticle?: (url: string) => void;
   /** Library shelves, offered behind the Save button's caret. */
   readingFolders?: ReadingFolder[];
   /** Make a new shelf and resolve to its id, from that same menu. */
@@ -162,6 +141,22 @@ const BookmarkIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+// The same bookmark, filled. A save is a state you should be able to read off
+// the card at a glance, without stopping to compare label text.
+const BookmarkFilledIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+const CheckIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <polyline points="3 13 9 19 21 5" />
   </svg>
 );
 
@@ -248,7 +243,11 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
   });
 }
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onExplore, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+// A default that keeps its identity between renders - the effect below is keyed
+// on this set, and a fresh empty one every render would re-run it every render.
+const NO_SAVED_KEYS: Set<string> = new Set();
+
+export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, savedKeys = NO_SAVED_KEYS, onUnsaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onExplore, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
   const [total, setTotal]               = useState(0);
@@ -264,7 +263,17 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   const [activeFeedFolder, setActiveFeedFolder] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [ghosts, setGhosts] = useState<Map<string, Ghost>>(new Map());
+  /**
+   * What a card should show while the reading list catches up with it.
+   *
+   * Saved state is really the parent's `savedKeys`, which is the reading list
+   * itself and therefore the only copy that survives a reload. But that list
+   * only changes once the write lands, and a Save button that waits a round trip
+   * before filling in reads as a press that missed - so a press records what it
+   * committed to here, keyed on the canonical URL, and this wins until the list
+   * agrees (or the write fails and puts it back).
+   */
+  const [savedOverride, setSavedOverride] = useState<Map<string, boolean>>(new Map());
   // Folder-wide, straight from the server, so the chip agrees with the site
   // tiles in the rail rather than counting only what happens to be loaded.
   const [unreadTotal, setUnreadTotal] = useState(0);
@@ -330,9 +339,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     (!activeCategory || a.categories.includes(activeCategory)) &&
     (!activeSource || a.source === activeSource) &&
     (!favoritesOnly || favHits.has(a.id)) &&
-    // A ghost keeps its slot whatever the unread filter says - it was on screen
-    // a moment ago and pulling it now would undo the point of leaving it there.
-    (!unreadOnly || ghosts.has(a.id) || unreadPinned.has(a.id))
+    (!unreadOnly || unreadPinned.has(a.id))
   );
 
   // The filter has to go when its last match does, or you're left staring at an
@@ -381,9 +388,6 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     // site or topic chosen in Tech usually isn't even present in Local.
     setActiveCategory(null);
     setActiveSource(null);
-    // A reload is exactly what clears the placeholders - the dismissed items
-    // simply won't come back in the response.
-    setGhosts(new Map());
     setUnreadOnly(false);
     setUnreadPinned(new Set());
     unreadJudged.current = new Set();
@@ -404,12 +408,10 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
    * usually isn't in Local) and wrong here. Asking for new articles is not
    * asking to be put back at the start of your own view.
    *
-   * The placeholders do go - a reload is exactly what they were waiting for -
-   * and the scroll goes to the top, because the whole point of the press was to
-   * see what has arrived above what you were reading.
+   * The scroll goes to the top, because the whole point of the press was to see
+   * what has arrived above what you were reading.
    */
   const reloadFromTop = useCallback(() => {
-    setGhosts(new Map());
     seenRef.current = new Set();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     load(0, []);
@@ -536,10 +538,6 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // Mirrors readIds - the observer callback can't see fresh state through its closure
   const readIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { readIdsRef.current = new Set(readIds); }, [readIds]);
-  // Same reason as readIdsRef: the scroll sweep runs outside React and can't see
-  // fresh state through its closure.
-  const ghostsRef = useRef<Map<string, Ghost>>(new Map());
-  useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
 
   // Pages fetched while the unread filter is on get judged as they land, on the
   // read state they arrive with. Declared after the mirror above so readIdsRef
@@ -595,12 +593,10 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
    * Viewing is the stronger signal of the two; it just wasn't wired up.
    *
    * The outline clears immediately and the server hears about it on the next
-   * flush. Dismissed cards are skipped: the dismissal has already spent their
-   * place in the unread total, and "read" means nothing for something you threw
-   * away.
+   * flush.
    */
   const markRead = useCallback((ids: string[]) => {
-    const fresh = ids.filter(id => !readIdsRef.current.has(id) && !ghostsRef.current.has(id));
+    const fresh = ids.filter(id => !readIdsRef.current.has(id));
     if (fresh.length === 0) return;
     for (const id of fresh) {
       readIdsRef.current.add(id);
@@ -624,10 +620,6 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   const sweepRead = useCallback(() => {
     const justRead: string[] = [];
     for (const [id, el] of cardEls.current) {
-      // A dismissed card is still mounted as a placeholder; it isn't something
-      // you're scrolling past, so it doesn't get "seen" either (markRead drops
-      // it in any case).
-      if (ghostsRef.current.has(id)) continue;
       const rect = el.getBoundingClientRect();
       // A detached or display:none card measures 0x0 at the origin; treat it as
       // nothing rather than as "scrolled past".
@@ -708,7 +700,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // Scoped to the active category, so clearing Tech doesn't quietly wipe the
   // news you hadn't got to.
   const [markingAll, setMarkingAll] = useState(false);
-  const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id) && !ghosts.has(a.id));
+  const unreadShowing = markReadOnScroll && displayed.some(a => !readIds.has(a.id));
 
   async function handleMarkAllRead() {
     if (markingAll) return;
@@ -738,58 +730,58 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     }
   }
 
+  // An override has done its job the moment the reading list says the same
+  // thing, and holding it past that point would freeze the card against a list
+  // that has since changed elsewhere - unsaved from the reading list panel, say.
+  useEffect(() => {
+    setSavedOverride(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      for (const [key, want] of prev) if (savedKeys.has(key) === want) next.delete(key);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [savedKeys]);
+
+  const isSaved = useCallback((url: string) => {
+    const key = canonicalArticleKey(url);
+    return savedOverride.get(key) ?? savedKeys.has(key);
+  }, [savedOverride, savedKeys]);
+
+  function setSavedFlag(url: string, value: boolean) {
+    setSavedOverride(prev => new Map(prev).set(canonicalArticleKey(url), value));
+  }
+
   // `dest` is what the Save button's caret picked: absent means the reading
   // list, which is what pressing the label alone does. A Library shelf skips
   // the reading list entirely - the article is one you're filing, not one
   // you're queueing to read.
+  //
+  // The article stays on the feed either way. Saving used to dismiss it - the
+  // card greyed out and the next refresh took it away - which made a save an
+  // exit as much as a save, and there was nothing to press if you had filed the
+  // wrong thing. It is a toggle now, and the card is just a card that is saved.
   function handleSave(a: FeedArticle, dest?: { folderId: string | null; label: string }) {
-    // Whether this card was already spent before this save. If it was, a
-    // failure has nothing to put back: the earlier state is still the true one,
-    // and restoring would pull an article that did save back into the feed.
-    const wasGhosted = ghosts.has(a.id);
+    // What the button was showing before this press: a failed save puts that
+    // back rather than assuming "not saved", since a copy may already be filed
+    // somewhere else and this press only added a second one.
+    const was = isSaved(a.link);
     onSaveArticle(
       { id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories, readTime: a.readTime, imageUrl: a.imageUrl },
       {
-        // Once it's saved it leaves the feed (dismissed server-side, so it
-        // stays gone across refreshes).
-        markSaved: () => handleDismiss(a.id, 'saved', dest?.label ?? 'reading list'),
-        restore: () => { if (!wasGhosted) handleUndoDismiss(a.id); },
+        markSaved: () => setSavedFlag(a.link, true),
+        restore: () => setSavedFlag(a.link, was),
       },
       dest ? { folderId: dest.folderId } : undefined
     );
   }
 
-  // Commits straight away. The card stays in the list as a greyed-out
-  // placeholder so nothing below it moves; the next load is what clears it,
-  // which is also when the feed is expected to re-lay out.
-  // Both endpoints hand back the site tiles whose badge changed, because a
-  // dismissal takes the article off those counts too - without this the rail
-  // went on advertising articles the feed had already dropped.
-  async function applyBadges(res: Response) {
-    if (!res.ok) return;
-    const data: { bookmarks?: { id: string; unreadCount: number }[] } = await res.json();
-    if (data.bookmarks?.length) onUnreadCountsChange?.(data.bookmarks);
-  }
-
-  function handleDismiss(articleId: string, kind: GhostKind = 'dismissed', dest?: string) {
-    // A saved card stays live, so it can arrive here more than once - saved
-    // again to a different shelf, or dismissed afterwards. Only the first pass
-    // actually takes the article out of the feed; the rest just relabel the
-    // placeholder, and must not spend the unread count or the DELETE twice.
-    const alreadyGone = ghosts.has(articleId);
-    setGhosts(prev => new Map(prev).set(articleId, { kind, dest, at: Date.now() }));
-    if (alreadyGone) return;
-    // Only an unread article was being counted, so only that one moves the chip.
-    if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => Math.max(0, n - 1));
-    apiFetch(`/api/v1/feeds/articles/${articleId}`, { method: 'DELETE' })
-      .then(applyBadges).catch(() => {});
-  }
-
-  function handleUndoDismiss(articleId: string) {
-    setGhosts(prev => { const m = new Map(prev); m.delete(articleId); return m; });
-    if (!readIdsRef.current.has(articleId)) setUnreadTotal(n => n + 1);
-    apiFetch(`/api/v1/feeds/articles/${articleId}/restore`, { method: 'POST' })
-      .then(applyBadges).catch(() => {});
+  // Pressing a filled Save button. The card fills out again on its own if the
+  // parent's delete fails, because the override is dropped the moment the
+  // reading list disagrees with it.
+  function handleUnsave(a: FeedArticle) {
+    if (!onUnsaveArticle) return;
+    setSavedFlag(a.link, false);
+    onUnsaveArticle(a.link);
   }
 
   function toggleUnreadOnly() {
@@ -1029,11 +1021,11 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
             article={a}
             variant={variants?.[i]}
             isNew={markReadOnScroll && !readIds.has(a.id)}
-            ghost={ghosts.get(a.id)}
+            read={readIds.has(a.id)}
+            saved={isSaved(a.link)}
             cardRef={markReadOnScroll ? observeCard : undefined}
             onSave={dest => handleSave(a, dest)}
-            onDismiss={() => handleDismiss(a.id)}
-            onUndoDismiss={() => handleUndoDismiss(a.id)}
+            onUnsave={onUnsaveArticle && (() => handleUnsave(a))}
             readingFolders={readingFolders}
             onCreateFolder={onCreateFolder}
             commentCount={commentCounts[a.link] ?? 0}
@@ -1076,32 +1068,28 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
           onViewProfile={onViewProfile}
           onExplore={onExplore}
           actions={
-            <>
-              {/* The card's own control, unchanged: the reading list on the
-                  label, a shelf behind the caret. Deciding after reading is
-                  the common case, so it should not be a different button. */}
-              <SaveButton
-                label="Save"
-                icon={<BookmarkIcon />}
-                menuLabel="Save to…"
-                defaultId={READING_LIST_DEST}
-                destinations={destinationsFor(readingFolders)}
-                onSelect={id => {
-                  handleSave(reading, id === READING_LIST_DEST
-                    ? undefined
-                    : { folderId: id || null, label: shelfLabel(id, readingFolders) });
-                  setReading(null);
-                }}
-                onCreateDestination={onCreateFolder && (async name => {
-                  const folderId = await onCreateFolder(name);
-                  handleSave(reading, { folderId, label: name });
-                  setReading(null);
-                })}
-              />
-              <button onClick={() => { handleDismiss(reading.id); setReading(null); }}>
-                Dismiss
-              </button>
-            </>
+            // The card's own control, unchanged: the reading list on the label,
+            // a shelf behind the caret. Deciding after reading is the common
+            // case, so it should not be a different button. It stays put once
+            // pressed - the reader no longer closes on a save, because saving
+            // something is not the same as being finished with it.
+            <SaveButton
+              label="Save"
+              icon={<BookmarkIcon />}
+              savedIcon={<BookmarkFilledIcon />}
+              saved={isSaved(reading.link)}
+              onUnsave={onUnsaveArticle && (() => handleUnsave(reading))}
+              menuLabel="Save to…"
+              defaultId={READING_LIST_DEST}
+              destinations={destinationsFor(readingFolders)}
+              onSelect={id => handleSave(reading, id === READING_LIST_DEST
+                ? undefined
+                : { folderId: id || null, label: shelfLabel(id, readingFolders) })}
+              onCreateDestination={onCreateFolder && (async name => {
+                const folderId = await onCreateFolder(name);
+                handleSave(reading, { folderId, label: name });
+              })}
+            />
           }
         />
       )}
@@ -1109,13 +1097,22 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   );
 }
 
-function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismiss, onUndoDismiss, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, onExplore, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, onUnsave, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, onExplore, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
-  /** Set when this card is a placeholder for something already dealt with. */
-  ghost?: Ghost;
+  /**
+   * You have read this one - scrolled past it, opened the reader on it, or
+   * followed it out to the site. Independent of `isNew`, which is only ever set
+   * when the mark-on-scroll setting is on: with that setting off nothing is
+   * drawn as unread, but an article you actually opened is still read and still
+   * says so.
+   */
+  read?: boolean;
+  /** This article is in the reading list or the Library already. */
+  saved?: boolean;
   cardRef?: (el: HTMLDivElement | null, id: string) => void;
   onSave: (dest?: { folderId: string | null; label: string }) => void;
-  onDismiss: () => void; onUndoDismiss: () => void;
+  /** Takes it back out. Absent leaves Save one-way. */
+  onUnsave?: () => void;
   readingFolders?: ReadingFolder[];
   onCreateFolder?: (name: string) => Promise<string>;
   commentCount: number;
@@ -1143,18 +1140,6 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
 
   const destinations = destinationsFor(readingFolders);
 
-  // A saved card is spent, not gone: it greys out so you can see you've dealt
-  // with it, but everything on it keeps working. The receipt over the top is
-  // the only part that's temporary.
-  const saved = ghost?.kind === 'saved';
-  const [receipt, setReceipt] = useState(true);
-  useEffect(() => {
-    if (!saved) { setReceipt(true); return; }   // a dismissal keeps its pill and its Undo
-    setReceipt(true);
-    const t = setTimeout(() => setReceipt(false), SAVED_PILL_MS);
-    return () => clearTimeout(t);
-  }, [saved, ghost?.at]);
-
   // Following the article out is a view, so the card reports it. Middle click
   // opens a background tab without firing onClick, which is exactly the habit a
   // feed encourages - onAuxClick catches that half.
@@ -1171,42 +1156,17 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
   const showSnippet = !!article.snippet && (
     variant === 'feature' || variant === 'brief' || variant === 'text' || article.title.length < 60
   );
-  const hasHero = showImage && !!article.imageUrl;
   const wrapClass = [
     styles.cardWrap,
-    ghost ? (saved ? styles.spent : styles.ghost) : '',
-    isNew && !ghost ? styles.unread : '',
+    isNew ? styles.unread : '',
     variant === 'feature' ? styles.featureWrap : '',
     variant === 'brief' ? styles.briefWrap : '',
     variant === 'text' ? styles.textWrap : '',
-    // No cover art → reserve top space so the floating controls push text down
-    !hasHero ? styles.noHero : '',
     favHits && favHits.length > 0 ? styles.favCard : '',
   ].filter(Boolean).join(' ');
 
   return (
     <div className={wrapClass} ref={cardRef ? el => cardRef(el, article.id) : undefined}>
-      {/* Dismissed: covers the card so nothing under it is clickable, while
-          leaving it legible - you can still see what you just got rid of, and
-          the Undo needs somewhere to live.
-          Saved: the same pill, but it takes no clicks and it leaves after a
-          couple of seconds. It is a receipt for something that already
-          happened, and it was standing between people and the card. */}
-      {ghost && (
-        <div className={`${styles.ghostOverlay} ${saved ? styles.receiptOverlay : ''}`}>
-          <div className={`${styles.ghostPill} ${saved && !receipt ? styles.pillOut : ''}`}>
-            {/* Naming the destination is the confirmation - "Saved" on its own
-                leaves you wondering which of the places you just chose from it
-                actually went to. */}
-            <span className={styles.ghostLabel}>
-              {saved ? `Saved to ${ghost.dest ?? 'reading list'}` : 'Dismissed'}
-            </span>
-            {!saved && (
-              <button className={styles.undoBtn} onClick={onUndoDismiss}>Undo</button>
-            )}
-          </div>
-        </div>
-      )}
       <div className={styles.card}>
         {/* The art is the biggest target on a magazine card and it is the thing
             people aim at, so it goes where the headline goes. Out of the tab
@@ -1312,7 +1272,16 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             ) : null}
           </div>
           <div className={styles.cardRight}>
-            {isNew && <span className={styles.newDot} role="img" aria-label="Unread" title="Unread" />}
+            {/* The two are exclusive by definition, and the dot is the louder of
+                them on purpose: unread is a call to look, read is a receipt. */}
+            {isNew ? (
+              <span className={styles.newDot} role="img" aria-label="Unread" title="Unread" />
+            ) : read ? (
+              <span className={styles.readChip} title="You've read this">
+                <CheckIcon />
+                Read
+              </span>
+            ) : null}
             <span className={styles.date}>{relativeDate(article.pubDate)}</span>
           </div>
         </div>
@@ -1344,10 +1313,17 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             })}
             shareUrl={article.link}
           />
+          {/* The one thing on the card that reports a state rather than doing
+              something new: once the article is saved the pill says so and
+              pressing it takes the save back. The caret keeps its whole menu
+              either way, so a saved article can still be filed onto a shelf. */}
           <SaveButton
             className={styles.rowSave}
             label="Save"
             icon={<BookmarkIcon />}
+            savedIcon={<BookmarkFilledIcon />}
+            saved={saved}
+            onUnsave={onUnsave}
             menuLabel="Save to…"
             defaultId={READING_LIST_DEST}
             destinations={destinations}
@@ -1362,21 +1338,6 @@ function ArticleCard({ article, variant, isNew, ghost, cardRef, onSave, onDismis
             })}
           />
         </div>
-        {/* Floating window-style controls - top-right, over the cover art.
-            Only Dismiss lives up here now; see the action strip above.
-            Dropped on a dismissed card rather than hidden with an attribute:
-            .cardActions sets `display: flex`, which would beat [hidden]'s UA
-            `display: none` and leave them looking clickable. They're absolute,
-            so removing them costs the card no height. A saved card keeps them -
-            "I've filed that, now get it off my feed" is one of the more common
-            things to want next. */}
-        {(!ghost || saved) && <div className={styles.cardActions}>
-          <button className={`${styles.actionBtn} ${styles.dismissBtn}`} onClick={onDismiss} aria-label="Dismiss" title="Dismiss">
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M1 1l10 10M11 1L1 11"/>
-            </svg>
-          </button>
-        </div>}
       </div>
     </div>
   );

@@ -54,7 +54,7 @@ if (process.env.TRUST_PROXY) {
 // ── Who sets a document's headers ──
 //
 // One `helmet()` over everything was right while everything Express served was
-// JSON. The public document routes below (/u/, /a/, /t/, /recent, robots.txt,
+// JSON. The public document routes below (/u/, /a/, /t/, /e/, /s/, /recent, robots.txt,
 // sitemap*.xml) changed that: nginx sends *those* their own headers from
 // client/security-headers.conf, because they are documents and the SPA they sit
 // beside is served straight off disk with the same set.
@@ -82,9 +82,9 @@ if (process.env.TRUST_PROXY) {
 //
 // Consistency, not a downgrade - the SPA's own index.html has always been
 // served by nginx with exactly these headers and no helmet. What was odd was
-// that six URLs got a second set because Express happened to render them.
+// that a handful of URLs got a second set because Express happened to render them.
 //
-// The trade this makes: these six routes are only hardened when something is
+// The trade this makes: these routes are only hardened when something is
 // in front of them supplying client/security-headers.conf. That is true of
 // every deployment the compose files describe, and it was already true of the
 // SPA - but exposing this server directly to the internet would leave them
@@ -93,7 +93,7 @@ if (process.env.TRUST_PROXY) {
 // Kept in step with the `location ~` regex in client/nginx.conf by hand: it is
 // two lines in two languages and a mismatch shows up as a missing header, so
 // server/src/app.test.ts asserts the two agree.
-const DOCUMENT_ROUTE = /^\/(u|a|t)\/|^\/(recent|robots\.txt|sitemap[a-z0-9-]*\.xml)$/;
+const DOCUMENT_ROUTE = /^\/(u|a|t|e|s)\/|^\/(recent|robots\.txt|sitemap[a-z0-9-]*\.xml)$/;
 
 const apiHelmet = helmet();
 
@@ -190,7 +190,7 @@ app.use('/api/v1/explores', apiLimiter, exploreRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-// Server-rendered documents for the public pages (/u/, /a/, /t/, sitemap,
+// Server-rendered documents for the public pages (/u/, /a/, /t/, /e/, /s/, sitemap,
 // robots). Not under /api: these are the addresses a person shares and a crawler
 // fetches, and nginx proxies exactly those prefixes here — see client/nginx.conf.
 //

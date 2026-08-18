@@ -424,14 +424,6 @@
   border-top: none;
 }
 
-/* No cover art to float over in a row - drop the controls back into the flow
-   at the right end, but keep the grey-button look */
-.gridList .cardActions {
-  position: static;
-  flex-shrink: 0;
-  opacity: 1;
-}
-
 /* ── Magazine layout - editorial grid: wide features, full-text briefs,
    and a mix of image/text cards. Rows stay aligned; meta anchors to the
    card bottom so stretched cards read as intentional. ── */
@@ -552,67 +544,6 @@
   transform: translateY(-3px);
 }
 
-/* ── Window-style controls - a cluster of grey buttons pinned to the card's
-   top-right. Over cover art they float on top; on art-less cards the .noHero
-   rule reserves top padding so they push the text down instead. ── */
-.cardActions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 2;
-  display: flex;
-  gap: 4px;
-  opacity: 0.85;
-  transition: opacity 0.12s;
-}
-
-.cardWrap:hover .cardActions,
-.cardWrap:focus-within .cardActions {
-  opacity: 1;
-}
-
-/* Square, and big enough to hit: the old 30x26 was under what a cursor wants
-   and nowhere near what a thumb needs. Sized off --ctl-h in both directions so
-   it matches the save and comment pills at the foot of the same card, and grows
-   with them on touch. An icon square, so --ctl-r rather than a pill - the same
-   corner the shell bar's buttons and every close button carry. */
-.actionBtn {
-  width: var(--ctl-h);
-  height: var(--ctl-h);
-  border-radius: var(--ctl-r);
-  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
-  background: color-mix(in oklab, var(--surface) 80%, transparent);
-  backdrop-filter: blur(6px);
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.actionBtn svg {
-  stroke-width: 2.2;
-}
-
-/* Grey at rest; dismiss goes red on hover */
-.actionBtn:hover {
-  background: color-mix(in oklab, var(--accent) 85%, transparent);
-  border-color: transparent;
-  color: var(--on-accent);
-}
-
-.dismissBtn:hover {
-  background: var(--danger);
-}
-
-/* Reserve top space on art-less cards so the controls sit above the text
-   rather than over it (list layout keeps its own inline row) */
-.grid .cardWrap.noHero .card,
-.gridMagazine .cardWrap.noHero .card {
-  padding-top: 46px;
-}
-
 /* ── Card ── */
 .card {
   display: flex;
@@ -628,145 +559,6 @@
 .cardWrap:hover .card {
   box-shadow: 0 12px 28px var(--shadow);
   border-color: color-mix(in oklab, var(--accent) 40%, transparent);
-}
-
-/* ── Ghost ──
-   An article that's been dismissed or saved, still holding its slot so the feed
-   doesn't close up under the pointer. Faded far enough to read as gone but not
-   so far you can't tell what it was - the only decision left is whether to take
-   it back. The border stays at full strength so the slot still reads as an item
-   rather than a hole in the grid. */
-.ghost .card {
-  opacity: 0.3;
-  filter: grayscale(1);
-  pointer-events: none;
-}
-
-.ghost:hover {
-  transform: none;
-}
-
-.ghost:hover .card {
-  box-shadow: none;
-  border-color: var(--border);
-}
-
-/* ── Spent ──
-   Saved, rather than dismissed. Greyed like a ghost so the slot reads as
-   handled, but every control on it still works: the article is in your reading
-   list now, which is a reason to want to read it, comment on it or file it
-   somewhere else - not a reason to be locked out of it.
-
-   The fade is applied to the card's contents rather than to the card, and it
-   skips the two rows that are buttons. Fading the whole card took the controls
-   down with it - a working Save pill at 50% opacity and no colour looks exactly
-   like a disabled one, so the state that was meant to say "handled, carry on"
-   was reading as "handled, hands off". Everything that is *about* the article
-   greys; everything you can still press keeps its colour.
-
-   No transition, deliberately. This is the receipt for a button you just
-   pressed, and a quarter-second cross-fade on a confirmation reads as lag
-   rather than as polish - you are still looking at a card that has not
-   obviously reacted for a fifth of a second after you clicked it. It snaps.
-
-   There is no hover state either, and that is the other half of the same
-   problem. It used to lift back towards full strength under the pointer, on
-   the reasoning that it was what said "still live". But the pointer is on the
-   card at the moment you press Save - that is how it got pressed - so the card
-   went straight into the lifted state and only greyed properly once you moved
-   the mouse away, which made a save look like it had not registered until you
-   stopped looking at it. The coloured controls say "still live" now, all the
-   time, without needing to be hovered to say it. */
-.spent .card > *:not(.commentRow):not(.cardActions) {
-  opacity: 0.5;
-  filter: grayscale(0.9);
-}
-
-/* The card itself keeps full opacity now, so the "handled" reading has to come
-   from the surface it is drawn on rather than from a fade over the lot.
-   The base .card transitions background and border-color over 0.35s, which
-   would put the same lag back into the half of the change this rule owns; only
-   box-shadow stays animated, since that one belongs to hover. */
-.spent .card {
-  background: color-mix(in oklab, var(--surface2) 70%, var(--surface));
-  border-color: color-mix(in oklab, var(--border) 70%, transparent);
-  transition: box-shadow 0.35s ease;
-}
-
-/* Blocks the card underneath while staying invisible itself - only the pill is
-   opaque, and only the pill takes clicks. */
-.ghostOverlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-}
-
-/* The saved receipt blocks nothing, even while it's up: the save button that
-   raised it is directly underneath, and pressing it twice in a row (to correct
-   the shelf) has to be possible. */
-.receiptOverlay {
-  pointer-events: none;
-}
-
-/* Fades in place rather than unmounting, so it goes as softly as it came.
-   Only ever applied to the receipt, which takes no clicks anyway. */
-.pillOut {
-  opacity: 0;
-  transform: translateY(-6px);
-  transition: opacity 0.45s ease, transform 0.45s ease;
-}
-
-.ghostPill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 5px 6px 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--surface) 94%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 45%, transparent);
-}
-
-.ghostLabel {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Nested inside .ghostPill, so it takes the small tier - at the standalone
-   height the pill around it would grow by 8px top and bottom. */
-.undoBtn {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  min-height: var(--ctl-h-sm);
-  padding: 0 13px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.undoBtn:hover {
-  background: var(--surface);
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* ── Unread ──
@@ -803,6 +595,35 @@
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
   flex-shrink: 0;
+}
+
+/* ── Read ──
+   The receipt half of the pair above: the dot says "look at this", the chip
+   says "you already did". Deliberately the quieter of the two - it is drawn on
+   most of the feed most of the time, so it sits at the weight of the date it
+   stands next to rather than competing with the headline above it. No accent,
+   no fill: colour here would make a page of read articles louder than a page of
+   unread ones, which is the wrong way round.
+
+   Independent of the mark-on-scroll setting. With that setting off nothing is
+   drawn as unread, and this is the only thing on the card that reports the read
+   state the server has been keeping all along. */
+.readChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.readChip svg {
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1122,8 +943,8 @@
      is exactly the sort of guess the feed's toolbar was just rid of. */
   .gridList .commentRow { flex: 0 0 auto; gap: 5px; }
   .gridList .commentRow button { font-size: 12px; }
-  .gridList .cardActions { flex: 0 0 auto; }
   .domain, .handle, .date, .readTime { font-size: 13px; }
+  .readChip { font-size: 12px; }
   .domain { opacity: 0.7; }
   .favicon { width: 16px; height: 16px; }
 
@@ -1195,8 +1016,6 @@
     border-top: 1px solid var(--border);
   }
 
-  .ghostLabel { font-size: 13px; }
-  .undoBtn { font-size: 13px; padding: 7px 14px; }
 }
 
 /* The `@media (max-width: 380px)` block that used to sit here - action pills
@@ -1208,16 +1027,6 @@
    control for a thumb rather than a cursor.
    Must stay after the dimmed base rules to outrank them. */
 @media (hover: none) {
-  .cardActions { opacity: 1; }
-
-  /* Keeps the taller button off the title on an art-less card. The button's own
-     size is not restated - it is --ctl-h wide and tall, which has already
-     grown. */
-  .grid .cardWrap.noHero .card,
-  .gridMagazine .cardWrap.noHero .card {
-    padding-top: 52px;
-  }
-
   /* A tag is a real control here - it stars a favorite - so it needs to be
      hittable, not just readable */
   .cats .cat {

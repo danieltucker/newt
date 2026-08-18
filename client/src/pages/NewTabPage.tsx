@@ -73,6 +73,7 @@ import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
 import { exploreArticlePath, exploreAskPath, exploreReferencePath } from '../utils/researchUrl';
 import { canonicalFeedUrl } from '../utils/feedKey';
+import { canonicalArticleKey } from '../utils/articleKey';
 import { articleEmbed } from '../utils/noteEmbed';
 import { postReferences } from '../utils/postReferences';
 import { stashSeed } from '../utils/composerSeed';
@@ -624,6 +625,25 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     () => [...articleReferences, ...postReferences(myPosts)],
     [articleReferences, myPosts],
   );
+
+  // What the feed's Save buttons read their state off. Keyed the way the server
+  // matches a duplicate save (see canonicalArticleKey), so an article saved from
+  // the bookmarklet with a "?utm_source=" on it still shows as saved on the card
+  // the river dealt.
+  const savedArticleKeys = useMemo(
+    () => new Set(readingList.map(i => canonicalArticleKey(i.url))),
+    [readingList],
+  );
+
+  // Pressing a filled Save button. Every copy goes - one article can be filed on
+  // more than one shelf, and leaving a copy behind would leave the button still
+  // showing as saved, which reads as a press that did nothing.
+  const handleUnsaveArticle = useCallback((url: string) => {
+    const key = canonicalArticleKey(url);
+    for (const item of readingList) {
+      if (canonicalArticleKey(item.url) === key) removeItem(item.id);
+    }
+  }, [readingList, removeItem]);
 
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
@@ -1319,6 +1339,8 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 feedFolders={feedFolders}
                 subscriptionCount={subscriptions.length}
                 onManageFeeds={() => setShowFeedManager(true)}
+                savedKeys={savedArticleKeys}
+                onUnsaveArticle={handleUnsaveArticle}
                 onSaveArticle={async (a, card, dest) => {
                   const fields = {
                     url: a.url,
@@ -1328,13 +1350,14 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                     tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
                     imageUrl: a.imageUrl ?? '',
                   };
-                  // Both committed paths grey the card first and talk to the
-                  // server after. They used to wait for the round trip - two of
-                  // them, for a shelf - which left the card looking untouched
-                  // for as long as the network took, so the press read as
-                  // having missed. Every other write in the reading list
-                  // already commits locally and reconciles behind the scenes
-                  // (see useReadingList); this is the one that didn't.
+                  // Both committed paths fill the card's Save button in first
+                  // and talk to the server after. They used to wait for the
+                  // round trip - two of them, for a shelf - which left the card
+                  // looking untouched for as long as the network took, so the
+                  // press read as having missed. Every other write in the
+                  // reading list already commits locally and reconciles behind
+                  // the scenes (see useReadingList); this is the one that
+                  // didn't.
                   //
                   // Picking a shelf is already a decision about this article, so
                   // it never stops for the dialog - and it skips the reading
@@ -1364,7 +1387,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                     // The dialog is its own feedback: it holds the screen while
                     // it saves and stays open if that fails. So this one waits
                     // for the real answer - by the time the dialog is out of the
-                    // way the card behind it is already grey.
+                    // way the card behind it already reads as saved.
                     setSavingArticle({ ...a, markSaved: card.markSaved });
                   }
                 }}

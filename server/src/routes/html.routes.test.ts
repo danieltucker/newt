@@ -54,6 +54,42 @@ describe('GET /u/:username/:slug', () => {
     expect(res.text).toContain('property="og:type" content="article"');
   });
 
+  it('falls back to the first image in the body when there is no cover', async () => {
+    prismaMock.blogPost.findFirst.mockResolvedValue({
+      ...POST,
+      heroImage: '',
+      body: '<p>Words.</p><img src="/api/v1/images/img1"><img src="/api/v1/images/img2">',
+    });
+
+    const res = await request(app).get('/u/dan/on-rewriting-my-editor').expect(200);
+
+    expect(res.text).toMatch(/property="og:image" content="[^"]*\/api\/v1\/images\/img1"/);
+    // The second one is still in the crawlable body — it is only not the cover.
+    expect(res.text).not.toContain('og:image" content="http://localhost:5173/api/v1/images/img2"');
+  });
+
+  it('prefers the cover the author chose over the first image in the body', async () => {
+    prismaMock.blogPost.findFirst.mockResolvedValue({
+      ...POST,
+      heroImage: '/api/v1/images/cover',
+      body: '<img src="/api/v1/images/inline">',
+    });
+
+    const res = await request(app).get('/u/dan/on-rewriting-my-editor').expect(200);
+
+    expect(res.text).toMatch(/property="og:image" content="[^"]*\/api\/v1\/images\/cover"/);
+  });
+
+  it('ignores a body image an unfurler could not fetch', async () => {
+    prismaMock.blogPost.findFirst.mockResolvedValue({
+      ...POST, heroImage: '', body: '<img src="data:image/png;base64,AAAA">',
+    });
+
+    const res = await request(app).get('/u/dan/on-rewriting-my-editor').expect(200);
+
+    expect(res.text).not.toContain('og:image');
+  });
+
   it('is indexable — there is no per-user opt-out, so public means public', async () => {
     prismaMock.blogPost.findFirst.mockResolvedValue(POST);
 
@@ -243,8 +279,151 @@ describe('GET /a/:id — a thread on somebody else\'s article', () => {
     expect(res.text).toContain('og:description');
   });
 
+  it('describes the article, not Newt: its own standfirst and image', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue({ articleTitle: 'A headline' });
+    prismaMock.comment.count.mockResolvedValue(1);
+    prismaMock.feedItem.findFirst.mockResolvedValue({
+      title: 'A headline',
+      snippet: 'What the piece is actually about.',
+      imageUrl: 'https://cdn.example.com/lede.jpg',
+    });
+
+    const res = await request(app).get(`/a/${ID}`).expect(200);
+
+    expect(res.text).toContain('content="What the piece is actually about."');
+    expect(res.text).toContain('property="og:image" content="https://cdn.example.com/lede.jpg"');
+    expect(res.text).toContain('content="summary_large_image"');
+    // The comment count is what Newt adds; it must not displace the article.
+    expect(res.text).not.toContain('public comment');
+  });
+
+  it('names the article even when nobody has commented on it', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue(null);
+    prismaMock.comment.count.mockResolvedValue(0);
+    prismaMock.feedItem.findFirst.mockResolvedValue({
+      title: 'A headline', snippet: null, imageUrl: null,
+    });
+
+    const res = await request(app).get(`/a/${ID}`).expect(200);
+
+    // Without this the card said "example.com" where the headline belongs.
+    expect(res.text).toContain('<title>A headline · Newt</title>');
+  });
+
+  it('refuses an image the unfurler could not fetch', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue(null);
+    prismaMock.comment.count.mockResolvedValue(0);
+    prismaMock.feedItem.findFirst.mockResolvedValue({
+      title: 'A headline', snippet: null, imageUrl: 'data:image/png;base64,AAAA',
+    });
+
+    const res = await request(app).get(`/a/${ID}`).expect(200);
+
+    expect(res.text).not.toContain('og:image');
+    expect(res.text).toContain('content="summary"');
+  });
+
   it('404s an id that is not an http URL', async () => {
     const bad = Buffer.from('javascript:alert(1)').toString('base64url');
     await request(app).get(`/a/${bad}`).expect(404);
+  });
+});
+
+describe('GET /e/:id — a shared explore', () => {
+  const THREAD = {
+    id: 'thr1',
+    title: 'Why looms mattered',
+    sourceTitle: '',
+    visibility: 'public',
+    sharedAt: new Date('2026-08-03T10:00:00Z'),
+    createdAt: new Date('2026-08-01T10:00:00Z'),
+    updatedAt: new Date('2026-08-04T10:00:00Z'),
+    user: { ...AUTHOR, bannedAt: null },
+  };
+
+  it('describes the thread with the question its author asked', async () => {
+    prismaMock.researchThread.findUnique.mockResolvedValue(THREAD);
+    prismaMock.researchMessage.findFirst.mockResolvedValue({
+      body: 'What did mechanised weaving actually change about a working day?',
+    });
+
+    const res = await request(app).get('/e/thr1').expect(200);
+
+    expect(res.text).toContain('<title>Why looms mattered · Newt</title>');
+    expect(res.text).toContain('content="What did mechanised weaving actually change about a working day?"');
+    expect(res.text).toMatch(/<link rel="canonical" href="[^"]*\/e\/thr1">/);
+    expect(res.text).toContain('property="article:author" content="Dan Tucker"');
+  });
+
+  // Model output at scale is the thin-page problem the profile rule already
+  // declines; the card still has to render, which is why this is not a 404.
+  it('renders the card but declines the index entry', async () => {
+    prismaMock.researchThread.findUnique.mockResolvedValue(THREAD);
+    prismaMock.researchMessage.findFirst.mockResolvedValue({ body: 'A question.' });
+
+    const res = await request(app).get('/e/thr1').expect(200);
+
+    expect(res.text).toContain('name="robots" content="noindex, follow"');
+    expect(res.text).toContain('property="og:title"');
+  });
+
+  it('falls back to the source when the thread has no messages', async () => {
+    prismaMock.researchThread.findUnique.mockResolvedValue({ ...THREAD, sourceTitle: 'A piece on looms' });
+    prismaMock.researchMessage.findFirst.mockResolvedValue(null);
+
+    const res = await request(app).get('/e/thr1').expect(200);
+
+    expect(res.text).toContain('content="An explore about A piece on looms, on Newt."');
+  });
+
+  // The sharpest edge in the file: an explore can quote its author's private
+  // notes, and this response is cached and served to everyone.
+  it.each(['private', 'friends'])('404s a %s thread', async (visibility) => {
+    prismaMock.researchThread.findUnique.mockResolvedValue({ ...THREAD, visibility });
+
+    const res = await request(app).get('/e/thr1').expect(404);
+
+    expect(res.text).not.toContain('Why looms mattered');
+  });
+
+  it('404s a thread whose author is banned', async () => {
+    prismaMock.researchThread.findUnique.mockResolvedValue({
+      ...THREAD, user: { ...AUTHOR, bannedAt: new Date() },
+    });
+
+    await request(app).get('/e/thr1').expect(404);
+  });
+
+  it('404s an id that is not a thread id, without asking the database', async () => {
+    await request(app).get('/e/not%2Fan%2Fid').expect(404);
+    expect(prismaMock.researchThread.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /s/:domain — a publisher', () => {
+  it('names the publisher instead of the app', async () => {
+    const res = await request(app).get('/s/arstechnica.com').expect(200);
+
+    expect(res.text).toContain('<title>arstechnica.com · Newt</title>');
+    expect(res.text).toContain('content="Articles from arstechnica.com, gathered on Newt."');
+    expect(res.text).toMatch(/<link rel="canonical" href="[^"]*\/s\/arstechnica\.com">/);
+  });
+
+  it('is the same page whether or not the link carried www.', async () => {
+    const res = await request(app).get('/s/www.arstechnica.com').expect(200);
+
+    expect(res.text).toContain('<title>arstechnica.com · Newt</title>');
+  });
+
+  // Nothing here is readable without an account, so there is nothing to index.
+  it('declines the index entry', async () => {
+    const res = await request(app).get('/s/arstechnica.com').expect(200);
+
+    expect(res.text).toContain('name="robots" content="noindex, follow"');
+  });
+
+  it('404s something that is not a hostname', async () => {
+    await request(app).get('/s/localhost').expect(404);
+    await request(app).get('/s/not%20a%20host').expect(404);
   });
 });

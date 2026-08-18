@@ -29,6 +29,12 @@ interface Props {
   icon?: ReactNode;
   /** What pressing the label does. */
   onPrimary: () => void;
+  /**
+   * Draws the pill as switched on rather than at rest, for a label that reports
+   * a state instead of offering an action - Save, once the article is saved.
+   * Hover already lights the pill this way; this is the same look, held.
+   */
+  active?: boolean;
   /** Tooltip on the label half. The caret's is `menuLabel`. */
   primaryTitle?: string;
   /** Heading over the menu, the sheet's title, and the caret's accessible name. */
@@ -105,7 +111,7 @@ export function MenuItem({ label, icon, hint, current, muted, onClick }: {
 }
 
 export default function SplitMenuButton({
-  label, labelExtra, icon, onPrimary, primaryTitle, menuLabel,
+  label, labelExtra, icon, onPrimary, active = false, primaryTitle, menuLabel,
   className = '', menu, onOpenChange,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -235,7 +241,11 @@ export default function SplitMenuButton({
       {/* The open state is a class rather than :focus-within, because focus is
           inside a menu that now lives in <body> - the pill would go grey the
           moment its own menu took focus. */}
-      <div className={`${styles.group} ${open ? styles.groupOpen : ''}`}>
+      <div className={[
+        styles.group,
+        open ? styles.groupOpen : '',
+        active ? styles.groupOn : '',
+      ].filter(Boolean).join(' ')}>
         <button
           type="button"
           className={styles.main}

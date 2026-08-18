@@ -51,18 +51,36 @@ interface Props {
    */
   onCreateDestination?: (name: string) => Promise<void>;
   createLabel?: string;
+  /**
+   * This article is already saved. The label stops being a verb and becomes a
+   * state: it reads `savedLabel`, fills its icon, and pressing it takes the
+   * article back out via `onUnsave` rather than saving it again.
+   *
+   * The caret is unchanged either way - filing a saved article onto a shelf is
+   * still a thing to want, and it is the one action the label can no longer do.
+   */
+  saved?: boolean;
+  savedLabel?: string;
+  /** The filled counterpart of `icon`. Falls back to `icon` when absent. */
+  savedIcon?: ReactNode;
+  onUnsave?: () => void;
 }
 
 export default function SaveButton({
   label, defaultId, destinations, onSelect, icon, currentId,
   menuLabel = 'Save to…', className = '',
   onCreateDestination, createLabel = 'New folder…',
+  saved = false, savedLabel = 'Saved', savedIcon, onUnsave,
 }: Props) {
   // The name being typed, or null while the row is still just a row.
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const target = destinations.find(d => d.id === defaultId) ?? destinations[0];
+
+  // Only a caller that can undo a save gets the toggle; without onUnsave the
+  // button would say "Saved" and then save it again when pressed.
+  const isOn = saved && !!onUnsave;
 
   // Naming a folder here is not filing under "somewhere to put things later",
   // it is filing this article - so the caller does both and this just closes.
@@ -82,10 +100,12 @@ export default function SaveButton({
   return (
     <SplitMenuButton
       className={className}
-      label={label}
-      icon={icon}
-      onPrimary={() => target && onSelect(target.id)}
-      primaryTitle={target ? `${menuLabel.replace(/…$/, '')} ${target.label}` : label}
+      label={isOn ? savedLabel : label}
+      icon={isOn ? (savedIcon ?? icon) : icon}
+      active={isOn}
+      onPrimary={() => { if (isOn) onUnsave!(); else if (target) onSelect(target.id); }}
+      primaryTitle={isOn ? 'Remove from saved'
+        : target ? `${menuLabel.replace(/…$/, '')} ${target.label}` : label}
       menuLabel={menuLabel}
       // A closed menu forgets a half-typed folder name. Reopening to find one
       // waiting would be a draft nobody asked to keep.

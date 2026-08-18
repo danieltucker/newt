@@ -36,6 +36,15 @@
   background: color-mix(in oklab, var(--accent) 10%, transparent);
 }
 
+/* Held on - the label is reporting a state, not offering one (a saved article's
+   Save pill). A touch more fill than hover, so a pill that is on still lights
+   under the pointer rather than looking already-hovered. */
+.groupOn {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
 .main,
 .caret {
   display: inline-flex;

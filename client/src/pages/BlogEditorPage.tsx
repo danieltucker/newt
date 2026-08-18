@@ -723,7 +723,16 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
           {hasModel && !bodyEmpty && (
             <ProofreadPanel getDraft={() => ({ title, body: bodyRef.current })} />
           )}
-          {post && visibility === 'private' && (
+          {/* Not gated on the post existing on the server yet. Publishing an
+              unsaved draft is one action, not two - save() creates it and sets
+              the visibility in the same request - and requiring a save first
+              meant a brand-new post had no way to be published from here at
+              all. That was invisible while drafts autosaved within a couple of
+              seconds of opening; it became very visible when a bug stopped the
+              first autosave landing, because then the button never appeared and
+              the only route to publishing was the switch at the top of the
+              page. Validity is the real precondition, and `valid` is it. */}
+          {visibility === 'private' && (
             <button className={styles.publishBtn} disabled={!valid} onClick={() => save('public')}>
               Publish publicly
             </button>

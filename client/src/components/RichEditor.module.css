@@ -1807,3 +1807,51 @@
   .findBar { padding: 8px 12px; }
   .uploadNote, .uploadError { margin: 0 18px 10px; }
 }
+
+/* ── The markdown source view ──
+   Monospace and a wider measure, because this is markup being read as markup:
+   the alignment of a list's indentation and a table's pipes is the information,
+   and a proportional face throws it away. Otherwise it sits in the same box as
+   the document it replaces - same padding, same scroll container - so switching
+   views moves the words rather than the page. */
+.sourceArea {
+  /* Stretched to the scroll box rather than sized by its own content.
+     `min-height: 100%` is what .editor uses and it is not enough here: a
+     textarea has an intrinsic height from its `rows` attribute, so it came out
+     two lines tall in a box several hundred pixels deep. Filling .editorScroll
+     (already position: relative) also puts the scrollbar on the textarea rather
+     than leaving one on it and another on its parent.
+
+     Safe in all three hosts because .editorScroll is a flex item with its
+     height resolved by the column above it, not by what is inside it - see
+     .editorShell in BlogEditorPage, CommentsPanel and .docPane in
+     NotesConsole. */
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-line-2) transparent;
+  box-sizing: border-box;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  padding: 4px 32px 40px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 13.5px;
+  line-height: 1.7;
+  /* Tabs are two spaces here (see the Tab handler), and a wider tab stop would
+     put the rendered width out of step with what markdownToHtml counts. */
+  tab-size: 2;
+  color: var(--paper-text-2);
+  caret-color: var(--paper-accent);
+  --select-bg: color-mix(in oklab, var(--paper-accent) 30%, transparent);
+  /* Long lines wrap rather than scroll sideways: a horizontal scrollbar in a
+     writing surface means losing your place every time a URL goes past the
+     edge. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sourceArea::-webkit-scrollbar { width: 8px; }
+.sourceArea::-webkit-scrollbar-thumb { background: var(--paper-line-2); border-radius: 4px; }

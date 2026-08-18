@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
 import {
-  COLOR_CLASSES, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt,
+  COLOR_CLASSES, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
 } from './noteFormat';
 
 const editor = (html: string): HTMLElement => {
@@ -286,5 +286,69 @@ describe('clearFormatting', () => {
     const el = editor('<h1>first</h1><p><b>second</b></p><h3>third</h3>');
     clearFormatting(across(el, 'first', 'third'), el);
     expect(el.innerHTML).toBe('<p>first</p><p>second</p><p>third</p>');
+  });
+});
+
+describe('normalizeBlocks', () => {
+  it('gathers a loose run into a paragraph', () => {
+    const el = editor('Bare words<p>A block</p>');
+    expect(normalizeBlocks(el)).toBe(true);
+    expect(el.innerHTML).toBe('<p>Bare words</p><p>A block</p>');
+  });
+
+  it('keeps one paragraph per run rather than one per node', () => {
+    const el = editor('one <b>two</b> three<p>block</p>four <i>five</i>');
+    normalizeBlocks(el);
+    expect(el.innerHTML).toBe('<p>one <b>two</b> three</p><p>block</p><p>four <i>five</i></p>');
+  });
+
+  it('leaves a document that is already blocks alone', () => {
+    const el = editor('<h2>Title</h2><p>Words</p><ul><li>item</li></ul>');
+    expect(normalizeBlocks(el)).toBe(false);
+    expect(el.innerHTML).toBe('<h2>Title</h2><p>Words</p><ul><li>item</li></ul>');
+  });
+
+  // Wrapping one would rewrite the stored markup of every post that has one.
+  it('leaves an embed standing on its own where it is', () => {
+    const el = editor(
+      '<span class="note-embed" contenteditable="false" data-embed="1">x</span><p>after</p>');
+    expect(normalizeBlocks(el)).toBe(false);
+    expect(el.firstElementChild?.className).toBe('note-embed');
+  });
+
+  it('drops the pretty-printing between blocks', () => {
+    const el = editor('<p>one</p>\n  \n<p>two</p>');
+    normalizeBlocks(el);
+    expect(el.innerHTML).toBe('<p>one</p><p>two</p>');
+  });
+
+  it('keeps the whitespace that is part of a run', () => {
+    const el = editor('one <b>two</b>');
+    normalizeBlocks(el);
+    expect(el.innerHTML).toBe('<p>one <b>two</b></p>');
+  });
+});
+
+// The report this was written for: "the clear styling button is not working,
+// and it struggles when I paste content in". Both are one shape - a selection
+// sitting in a node that is not a child block of the root, which blocksIn
+// cannot name, so the whole command returned having done nothing.
+describe('clearFormatting on a document that was pasted into', () => {
+  it('clears a bare run at the top level', () => {
+    const el = editor('loose <b>bold</b> words');
+    clearFormatting(across(el, 'loose ', ' words'), el);
+    expect(el.innerHTML).toBe('<p>loose bold words</p>');
+  });
+
+  it('clears a selection that starts loose and ends in a block', () => {
+    const el = editor('loose <b>bold</b><h2>and a <i>heading</i></h2>');
+    clearFormatting(across(el, 'loose ', 'heading'), el);
+    expect(el.innerHTML).toBe('<p>loose bold</p><p>and a heading</p>');
+  });
+
+  it('clears with the caret in a loose run and nothing selected', () => {
+    const el = editor('just <b>words</b>');
+    clearFormatting(caretAfter(el, 'just '), el);
+    expect(el.innerHTML).toBe('<p>just words</p>');
   });
 });

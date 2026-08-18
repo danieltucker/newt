@@ -7,7 +7,8 @@ import { ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import { findRanges, replaceRange, replaceAll, FindOptions } from '../utils/noteFind';
 import { modLabel } from '../utils/platform';
 import { PageMeta, EMPTY_PAGE_META, pageEmbed, isBareUrl } from '../utils/pageMeta';
-import { markdownToHtml, looksLikeMarkdown } from '../utils/markdown';
+import { markdownToHtml, htmlToMarkdown, looksLikeMarkdown } from '../utils/markdown';
+import { sanitizePastedHtml } from '../utils/pasteHtml';
 import { Emoji, EMOJI_GROUPS, searchEmoji } from '../utils/emoji';
 import {
   EMBED_CLASS, EmbedData, EmbedKind, EmbedVariant, applyCommentCounts, createEmbed, embedAt,
@@ -18,7 +19,7 @@ import {
   galleryIndexOf, hydrateGalleries,
 } from '../utils/noteGallery';
 import {
-  ColorKind, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt,
+  ColorKind, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
 } from '../utils/noteFormat';
 import Lightbox from './Lightbox';
 
@@ -1434,6 +1435,11 @@ export default function RichEditor({
     // and numbers missing; put them right on the way in.
     const beforeRepair = el.innerHTML;
     normalizeLists(el);
+    // And the same for the shape above the lists: a body that arrives with loose
+    // text at the top level opens looking perfectly fine and then refuses every
+    // block command, clear-formatting included. Repaired on the way in, and
+    // persisted below with the list repair.
+    normalizeBlocks(el);
     // Blog bodies come back from the server sanitizer stripped of the attribute
     // that makes an embed atomic, so put it back before the caret can wander in.
     hydrateEmbeds(el);
@@ -1768,6 +1774,64 @@ export default function RichEditor({
     };
   }, [colorAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Markdown source view ──────────────────────────────────────────────
+  //
+  // The document as text, editable. It exists because the rich surface cannot
+  // always talk you out of a shape it got into: a bad paste that made everything
+  // a heading, a block that will not become a paragraph however many times you
+  // press ¶. Seeing the markup as words is the shortest route from "this is
+  // wrong" to "this is fixed", and it is a repair tool first and a writing
+  // surface second.
+  //
+  // `null` is the rich view; a string is the source view holding its text. The
+  // contentEditable stays mounted underneath the whole time — hidden rather than
+  // unmounted, so the caret machinery, the refs and the mount effect that seeds
+  // the content never have to cope with the surface disappearing.
+  //
+  // Not everything in a post has a markdown spelling. Reference embeds,
+  // galleries, colours and resized pictures come through as the HTML they
+  // already are, and go back unchanged; see utils/markdown's htmlToMarkdown for
+  // why that matters more than the view being tidy.
+  const [sourceText, setSourceText] = useState<string | null>(null);
+
+  /**
+   * Write the source view's text back into the document.
+   *
+   * Every keystroke, rather than on leaving the view. The alternative is a
+   * surface whose contents are not in the document yet, which means an autosave
+   * writes the *old* post and closing the tab mid-edit throws the work away —
+   * neither of which anyone would predict from a view that looks like it is
+   * showing them their post. If this ever costs enough to notice, the fix is to
+   * debounce this one call, not to move the work.
+   */
+  function applySource(text: string) {
+    const editor = ref.current;
+    setSourceText(text);
+    if (!editor) return;
+    // Through the paste allowlist on the way in: the source view is a text box
+    // an author can type anything into, and what lands in the document should
+    // be the same set of markup a paste is held to and the server will keep.
+    const html = sanitizePastedHtml(markdownToHtml(text, { source: true }));
+    editor.innerHTML = html || '<p><br></p>';
+    normalizeLists(editor);
+    normalizeBlocks(editor);
+    hydrateEmbeds(editor);
+    hydrateGalleries(editor);
+    emit();
+  }
+
+  function toggleSource() {
+    const editor = ref.current;
+    if (!editor) return;
+    if (sourceText === null) {
+      record('struct');   // so one undo takes the whole visit back
+      setSourceText(htmlToMarkdown(editor.innerHTML));
+      return;
+    }
+    setSourceText(null);
+    editor.focus();
+  }
+
   // ── Clear formatting ──────────────────────────────────────────────────
   // Not execCommand('removeFormat'): that leaves links, code spans and every
   // colour standing, which is precisely the formatting this button is pressed
@@ -1996,7 +2060,44 @@ export default function RichEditor({
       return;
     }
     if (pasteUrl(e)) { e.preventDefault(); return; }
-    if (pasteMarkdown(e)) e.preventDefault();
+    if (pasteMarkdown(e)) { e.preventDefault(); return; }
+    if (pasteRichText(e)) e.preventDefault();
+  }
+
+  /**
+   * HTML on the clipboard, rewritten into the editor's own markup before it goes
+   * in. Returns whether it handled the paste.
+   *
+   * The browser's own handling was what ran here until now, and what it inserts
+   * is the source's markup nearly verbatim: a Google Docs paste wrapped in
+   * `<b style="font-weight:normal">` and so entirely bold, a web page's nested
+   * `<div>`s and `<section>`s that no block command can transform because they
+   * are not blocks the editor knows, headings the source used for its own
+   * furniture. The document then changed shape again on save, because the
+   * server's sanitizer keeps a different set of tags than contentEditable does.
+   *
+   * See utils/pasteHtml: it mirrors that sanitizer, so what lands here is what
+   * the post will still be after a reload.
+   */
+  function pasteRichText(e: React.ClipboardEvent): boolean {
+    const html = e.clipboardData?.getData('text/html');
+    if (!html?.trim()) return false;
+    const clean = sanitizePastedHtml(html);
+    // Nothing worth inserting — a clipboard carrying only a stylesheet, or a
+    // tracking pixel. Falling through to the browser would put the junk back.
+    if (!clean) return true;
+
+    record('struct');
+    document.execCommand('insertHTML', false, clean);
+    const editor = ref.current;
+    if (editor) {
+      normalizeLists(editor);
+      normalizeBlocks(editor);
+      hydrateEmbeds(editor);
+      hydrateGalleries(editor);
+    }
+    emit();
+    return true;
   }
 
   /**
@@ -2026,6 +2127,7 @@ export default function RichEditor({
       // into whatever list the caret was already in, which is where the stray
       // text-in-a-list shapes come from.
       normalizeLists(editor);
+      normalizeBlocks(editor);
       hydrateEmbeds(editor);
       hydrateGalleries(editor);
     }
@@ -3544,8 +3646,21 @@ export default function RichEditor({
 
   return (
     <>
-      {/* ── Utility bar ── */}
+      {/* ── Utility bar ──
+          In the source view it is one button: everything else on it acts on a
+          selection in the rich surface, which is not the surface being typed
+          into. Buttons that look pressable and do nothing are worse than
+          buttons that are not there. */}
       <div className={styles.toolbar} ref={toolbarRef} role="toolbar" aria-label="Formatting">
+        {sourceText !== null ? (
+          <WordBtn
+            title="Back to the formatted view"
+            onRun={toggleSource}
+          >
+            Done
+          </WordBtn>
+        ) : (
+        <>
         {inlineBtns}
         <span className={styles.tbSep} />
         <TBtn title="Heading 1" onRun={() => applyBlock('h1')}>H1</TBtn>
@@ -3568,11 +3683,19 @@ export default function RichEditor({
           <TBtn title="Emoji" active={!!emojiAt} onRun={toggleEmoji}><EmojiIcon /></TBtn>
         </span>
         {linkBtns}
+        <span className={styles.tbSep} />
+        {/* Last on the bar, because it is the thing you reach for when the rest
+            of the bar has not worked. */}
+        <WordBtn title="Edit the markdown behind this post" onRun={toggleSource}>Markdown</WordBtn>
+        </>
+        )}
 
         {/* Row/column controls appear only while the caret is in a table. They
             take a row of their own - spelled out they'd wrap raggedly into the
-            formatting buttons, and the caret can only ever be in one table. */}
-        {inTable && (
+            formatting buttons, and the caret can only ever be in one table.
+            `inTable` is where the caret was left in the rich surface, so it
+            outlives a switch to the source view and has to be gated too. */}
+        {sourceText === null && inTable && (
           <div className={styles.tbTableRow}>
             <span className={styles.tbGroupLabel}>Table</span>
             <WordBtn title="Insert a row below this one"     onRun={() => addRow(true)}>Add row</WordBtn>
@@ -3855,8 +3978,39 @@ export default function RichEditor({
       )}
 
     <div className={styles.editorScroll} ref={scrollRef}>
+      {sourceText !== null && (
+        <textarea
+          className={styles.sourceArea}
+          value={sourceText}
+          onChange={e => applySource(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          aria-label="Markdown source"
+          // The document is being typed into as text; a Tab here should indent
+          // rather than leave for the next control, which is what every code
+          // editor does and what a list needs.
+          onKeyDown={e => {
+            if (e.key !== 'Tab') return;
+            e.preventDefault();
+            const el = e.currentTarget;
+            const { selectionStart: from, selectionEnd: to } = el;
+            const next = `${sourceText.slice(0, from)}  ${sourceText.slice(to)}`;
+            applySource(next);
+            // Assigning `value` moves the caret to the end, so put it back
+            // where the two spaces just went.
+            requestAnimationFrame(() => el.setSelectionRange(from + 2, from + 2));
+          }}
+          autoFocus
+        />
+      )}
       <div
         ref={ref}
+        // Hidden rather than unmounted while the source view is open: the mount
+        // effect that seeds this element runs once, so tearing it down would
+        // leave nothing to put the content back into.
+        hidden={sourceText !== null}
         className={styles.editor}
         contentEditable
         suppressContentEditableWarning

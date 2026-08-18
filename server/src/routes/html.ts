@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { renderShell } from '../lib/htmlShell';
-import { renderHead, renderNoscript, ogImageFrom, absoluteUrl } from '../lib/seoMeta';
+import { renderHead, renderNoscript, ogImageFrom, absoluteUrl, firstImageIn } from '../lib/seoMeta';
 import { escapeHtml } from '../lib/htmlEscape';
 import { publicOrigin, postPathFor, postUrlFor, profileUrlFor, excerptOf } from '../lib/blog';
 import { blogFeedUrlFor, renderRss } from '../lib/blogFeed';
@@ -210,6 +210,12 @@ router.get('/u/:username/:slug', async (req: Request, res: Response): Promise<vo
     const canonical = postUrlFor(author.username, post.slug);
     const description = post.excerpt || excerptOf(post.body);
 
+    // A cover image is optional, and most posts never get one — so without this
+    // fallback a post that opens with a photograph still unfurled as a bare
+    // text card. ogImageFrom first because an explicit cover is a choice the
+    // author made; the body's first image is the inference.
+    const ogImage = ogImageFrom(post.heroImage) ?? firstImageIn(post.body);
+
     // Public comments only, and only when the author left them enabled. This is
     // the Reddit lesson from the design discussion: a comment indexed as part of
     // the post it answers is content about that subject, and the same comment
@@ -231,7 +237,7 @@ router.get('/u/:username/:slug', async (req: Request, res: Response): Promise<vo
       title: post.title,
       description,
       canonical,
-      image: ogImageFrom(post.heroImage),
+      image: ogImage,
       ogType: 'article',
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt,
@@ -250,7 +256,7 @@ router.get('/u/:username/:slug', async (req: Request, res: Response): Promise<vo
           url: profileUrlFor(author.username),
         },
         mainEntityOfPage: canonical,
-        ...(absoluteUrl(post.heroImage) ? { image: absoluteUrl(post.heroImage) } : {}),
+        ...(absoluteUrl(ogImage) ? { image: absoluteUrl(ogImage) } : {}),
         ...(post.tags.length ? { keywords: post.tags.join(', ') } : {}),
         ...(comments.length
           ? {
@@ -513,22 +519,47 @@ router.get('/a/:id', async (req: Request, res: Response): Promise<void> => {
 
     const key = canonicalArticleKey(url);
     const host = articleHost(url);
-    const [comment, count] = await Promise.all([
+    const [comment, count, item] = await Promise.all([
       prisma.comment.findFirst({
         where: { articleKey: key, visibility: 'public', deletedAt: null },
         orderBy: { createdAt: 'asc' },
         select: { articleTitle: true },
       }),
       prisma.comment.count({ where: { articleKey: key, visibility: 'public', deletedAt: null } }),
+      // What the publisher says about their own article, as it arrived in a
+      // feed. Without this the card for a shared article described *Newt* — the
+      // host name where a headline belongs and "read and discuss this article on
+      // Newt" where the standfirst belongs — which is the least useful thing a
+      // link to somebody else's writing could say about itself.
+      //
+      // FeedItem rather than ReadingListItem: this row is publisher metadata
+      // that arrived over a public feed, and the page it feeds is public. A
+      // reading-list row belongs to a person, and whose library an article sits
+      // in is not something a shared link should answer.
+      prisma.feedItem.findFirst({
+        where: { linkKey: key },
+        orderBy: { fetchedAt: 'desc' },
+        select: { title: true, snippet: true, imageUrl: true },
+      }),
     ]);
 
-    const title = comment?.articleTitle || host || 'Discussion';
+    const title = comment?.articleTitle || item?.title || host || 'Discussion';
+    // The publisher's own image, hotlinked — it is theirs, it is already public,
+    // and an unfurler wants an address it can GET. Anything that is not an
+    // http(s) address is not one.
+    const image = item?.imageUrl && /^https?:\/\//i.test(item.imageUrl) ? item.imageUrl : null;
     const head = renderHead({
       title,
-      description: count > 0
-        ? `${count} public ${count === 1 ? 'comment' : 'comments'} on this article, on Newt.`
-        : 'Read and discuss this article on Newt.',
+      // The article's own standfirst first: a card for a link to somebody else's
+      // piece should say what the piece is about. The comment count is what Newt
+      // adds to it, and is only worth the whole description when there is
+      // nothing better to say.
+      description: item?.snippet
+        || (count > 0
+          ? `${count} public ${count === 1 ? 'comment' : 'comments'} on this article, on Newt.`
+          : 'Read and discuss this article on Newt.'),
       canonical: `${publicOrigin()}/a/${encodeURIComponent(req.params.id)}`,
+      image,
       robots: 'noindex, follow',
       ogType: 'article',
     });
@@ -536,6 +567,116 @@ router.get('/a/:id', async (req: Request, res: Response): Promise<void> => {
     res.type('html').send(await renderShell(head));
   } catch (err) {
     logger.error(err, 'Thread document error');
+    await plainShell(res, 500);
+  }
+});
+
+// ── Shared explore: /e/<id> ──────────────────────────────────────────────────
+
+/**
+ * A shared explore thread.
+ *
+ * Public threads only, and the same one-answer-for-everything rule the post
+ * route uses: a `friends` thread, a `private` one and an id that was never
+ * written all answer 404 here. A crawler is never signed in and this response is
+ * cached and shared, so anything narrower than "public" must not be rendered
+ * into it — and a thread's messages can quote its author's own private notes
+ * back at them, which makes that the sharpest edge in this file.
+ *
+ * `noindex, follow`, deliberately. The body of an explore is model output, and a
+ * few thousand pages of it is how a domain teaches Google to crawl less of the
+ * writing that people actually wrote — the same judgement the thin-profile rule
+ * above makes, for the same reason. The meta is still rendered in full, because
+ * noindex is a search directive and unfurlers ignore it: a thread put on the
+ * clipboard by the share dialog should still show what it is.
+ */
+router.get('/e/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Thread ids are cuids — one path segment, never a nested path. Mirrors
+    // parseSharedExplorePath on the client.
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(req.params.id)) { await notFound(res); return; }
+
+    const thread = await prisma.researchThread.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true, title: true, sourceTitle: true, visibility: true,
+        sharedAt: true, createdAt: true, updatedAt: true,
+        user: { select: { ...PUBLIC_USER_SELECT, bannedAt: true } },
+      },
+    });
+    if (!thread || thread.visibility !== 'public') { await notFound(res); return; }
+    // A banned author's work is not served anonymously anywhere else here
+    // either — see findAuthor, which applies the same rule to every post.
+    if (!thread.user || thread.user.bannedAt) { await notFound(res); return; }
+
+    // The question, as its author asked it. That is what a card for an explore
+    // should say — the title is a trimmed version of the same sentence, and
+    // repeating it in the description tells a reader nothing twice.
+    const opening = await prisma.researchMessage.findFirst({
+      where: { threadId: thread.id, role: 'user' },
+      orderBy: { createdAt: 'asc' },
+      select: { body: true },
+    });
+
+    const name = displayNameOf(thread.user);
+    const canonical = `${publicOrigin()}/e/${encodeURIComponent(thread.id)}`;
+    const question = excerptOf(opening?.body ?? '');
+    const description = question
+      || (thread.sourceTitle ? `An explore about ${thread.sourceTitle}, on Newt.` : `An explore by ${name}, on Newt.`);
+
+    const head = renderHead({
+      title: thread.title,
+      description,
+      canonical,
+      ogType: 'article',
+      robots: 'noindex, follow',
+      publishedTime: thread.sharedAt ?? thread.createdAt,
+      modifiedTime: thread.updatedAt,
+      authorName: name,
+    });
+
+    res.type('html').send(await renderShell(head));
+  } catch (err) {
+    logger.error(err, 'Shared explore document error');
+    await plainShell(res, 500);
+  }
+});
+
+// ── Site page: /s/<domain> ───────────────────────────────────────────────────
+
+/**
+ * Everything Newt has gathered from one publisher.
+ *
+ * The page behind this address is signed-in only (routes/sites.ts requires auth
+ * for all of it), so there is no content to render and none is looked up — this
+ * exists because the URL is shareable and was unfurling as the site's tagline
+ * and nothing else. The domain is already in the address bar of whoever is
+ * looking at the card, so naming it in the title gives away nothing and is the
+ * one true thing the document can say about itself.
+ *
+ * `noindex` follows from the same fact: a page a crawler cannot read is not a
+ * search result, and letting Google collect one thin stub per publisher we have
+ * ever seen an article from is exactly the pattern the profile rule above
+ * declines.
+ */
+router.get('/s/:domain', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Mirrors siteDomainOf/parseSitePath on the client and normalizeDomain on
+    // routes/sites.ts — a host, lowercased, no scheme and no `www.`.
+    const domain = decodeURIComponent(req.params.domain)
+      .trim().toLowerCase().replace(/^www\./, '');
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(domain)) { await notFound(res); return; }
+
+    const head = renderHead({
+      title: domain,
+      description: `Articles from ${domain}, gathered on Newt.`,
+      canonical: `${publicOrigin()}/s/${encodeURIComponent(domain)}`,
+      robots: 'noindex, follow',
+    });
+
+    res.type('html').send(await renderShell(head));
+  } catch (err) {
+    logger.error(err, 'Site document error');
     await plainShell(res, 500);
   }
 });

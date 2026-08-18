@@ -107,3 +107,28 @@ function clearShellCacheTtlByAdvancingTime() {
   const t = realNow() + 120_000;
   vi.spyOn(Date, 'now').mockImplementation(() => t);
 }
+
+describe('the fallback card the template ships with', () => {
+  it('finds the markers in the template as it is actually written', () => {
+    expect(REAL_SHELL).toContain('<!--SSR-FALLBACK-META-->');
+    expect(REAL_SHELL).toContain('<!--/SSR-FALLBACK-META-->');
+  });
+
+  // The routes nginx serves off disk - the landing page, /blog, /explore - get
+  // no injected head at all, and this block is the only thing that stops a link
+  // to one unfurling as a title and a raw URL.
+  it('survives when nothing is injected over it', async () => {
+    const out = await renderShell('');
+    expect(out).toContain('property="og:title"');
+    expect(out).toContain('property="og:image"');
+  });
+
+  it('is gone the moment a page writes its own', async () => {
+    const out = await renderShell(
+      '<title>A post</title><meta property="og:title" content="A post · Newt">',
+    );
+    expect(out.match(/property="og:title"/g)).toHaveLength(1);
+    expect(out).not.toContain('<!--SSR-FALLBACK-META-->');
+    expect(out).not.toContain('a new tab worth opening');
+  });
+});

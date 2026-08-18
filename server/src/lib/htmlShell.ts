@@ -17,8 +17,20 @@ import logger from './logger';
 // subrequest is not an extra assumption — it is a thing that was already true a
 // millisecond ago.
 
-/** Where the built index.html is served from. The nginx container, in the compose stack. */
-const SHELL_ORIGIN = process.env.SHELL_ORIGIN || 'http://client';
+/**
+ * Where the built index.html is served from. The nginx container, in the
+ * compose stack — both compose files set this explicitly, so the fallbacks below
+ * only ever apply to a server run straight off `npm run dev`.
+ *
+ * There, `http://client` resolves to nothing and every server-rendered route
+ * would answer with the last-resort document: correct meta, no application. So
+ * dev falls back to the Vite dev server, which serves a perfectly good index.html
+ * of its own. That is what makes a post look the same in dev as in production
+ * instead of only ever being testable after a deploy.
+ */
+const SHELL_ORIGIN = process.env.SHELL_ORIGIN
+  || process.env.CLIENT_ORIGIN
+  || 'http://localhost:5173';
 
 // Short, because the shell changes on every deploy and a stale one names asset
 // files that no longer exist — a blank page for whoever loads it. A minute of
@@ -37,6 +49,15 @@ const BODY_MARKER = '<!--SSR-BODY-->';
 // an error — the browser takes the first — which is precisely the bug it would
 // cause, so the static one is removed whenever a real one is injected.
 const STATIC_TITLE = /<title>[\s\S]*?<\/title>\s*/i;
+
+// The template also ships a fallback og:/twitter: block, so that the routes
+// nginx serves straight off disk — the landing page, /blog, /explore — unfurl as
+// something better than a bare title. It is removed on the same terms as the
+// title above and for the same reason: two og:title tags in a document is not an
+// error, it is an unfurler picking one of them, which is a card describing the
+// app where it should be describing the page. See the markers in
+// client/index.html.
+const FALLBACK_META = /<!--SSR-FALLBACK-META-->[\s\S]*?<!--\/SSR-FALLBACK-META-->\s*/i;
 
 let cached: { html: string; at: number } | null = null;
 
@@ -105,7 +126,9 @@ export async function renderShell(head: string, body = ''): Promise<string> {
   // response that injects no head — an error page, or a future route that wants
   // the plain shell — with no title whatsoever, which is worse than the generic
   // one it was carrying.
-  let out = /<title[\s>]/i.test(head) ? cached!.html.replace(STATIC_TITLE, '') : cached!.html;
+  let out = /<title[\s>]/i.test(head)
+    ? cached!.html.replace(STATIC_TITLE, '').replace(FALLBACK_META, '')
+    : cached!.html;
 
   out = out.includes(HEAD_MARKER)
     ? out.replace(HEAD_MARKER, head)

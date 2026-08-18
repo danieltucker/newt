@@ -375,6 +375,20 @@ export function colorsAt(node: Node | null, root: HTMLElement): { fg: string | n
 /** Blocks that become a plain paragraph, carrying their contents across. */
 const RESET_BLOCKS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'DIV']);
 
+/**
+ * What may stand as a top-level child of the editor.
+ *
+ * A superset of what the editor writes, on purpose: it also has to recognise
+ * the shapes a document can arrive in — a `<div>` from an older note, a
+ * `<figure>` that survived a paste — because the question this answers is "is
+ * this already a block?", and answering no to something that plainly is one
+ * would wrap it in a paragraph and change the document.
+ */
+const BLOCK_NODES = new Set([
+  'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'BLOCKQUOTE', 'PRE',
+  'HR', 'TABLE', 'DIV', 'FIGURE', 'SECTION', 'ARTICLE',
+]);
+
 /** The top-level block a node sits in - a direct child of the editor root. */
 function blockOf(node: Node, offset: number, root: HTMLElement): HTMLElement | null {
   let n: Node | null = node === root
@@ -393,6 +407,88 @@ function blocksIn(range: Range, root: HTMLElement): HTMLElement[] {
   const to = last ? children.indexOf(last) : -1;
   if (from < 0 || to < 0) return [];
   return children.slice(Math.min(from, to), Math.max(from, to) + 1);
+}
+
+/**
+ * Every top-level node of the editor is a block, or an object standing in for
+ * one. Returns whether anything had to be moved.
+ *
+ * ── Why this is needed ──
+ * contentEditable does not maintain this invariant and never promised to. A
+ * paste, a select-all-and-delete, an execCommand that half-worked — any of them
+ * can leave a bare text node or a loose `<b>` sitting directly in the root, and
+ * such a document *looks* completely normal. It reads normally, it saves
+ * normally, and it comes back the same.
+ *
+ * What it is not is addressable. Every block operation in this file finds the
+ * block a selection is in by looking for the direct child of the root that
+ * contains it — and a text node is not among `root.children`, so the lookup
+ * comes back empty and the command returns having done nothing at all. That is
+ * the "clear formatting doesn't work" report: not a bug in the clearing, but a
+ * selection sitting in a place the editor has no name for. The same hole is
+ * under every heading, list and quote transform.
+ *
+ * So rather than teaching each command to cope, the shape is repaired: stray
+ * runs are gathered into paragraphs, and the commands can go on assuming what
+ * they already assume.
+ *
+ * Atomic objects — an embed, a gallery — are left where they are. They are
+ * their own top-level things and always have been; wrapping one would rewrite
+ * the stored markup of every post that has one in it.
+ */
+export function normalizeBlocks(root: HTMLElement): boolean {
+  // Same reason normalizeLists does this: re-parenting a node drops the caret
+  // instead of carrying it, and the nodes themselves survive - only their
+  // parents change - so the caret can be put back exactly where it was.
+  const sel = window.getSelection();
+  const mark = sel && sel.rangeCount && root.contains(sel.anchorNode)
+    ? { node: sel.anchorNode!, offset: sel.anchorOffset }
+    : null;
+
+  let changed = false;
+  let run: Node[] = [];
+
+  const flush = (before: Node | null) => {
+    if (!run.length) return;
+    const p = document.createElement('p');
+    run.forEach(n => p.appendChild(n));
+    root.insertBefore(p, before);
+    run = [];
+    changed = true;
+  };
+
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE && (BLOCK_NODES.has(node.nodeName) || isAtomic(node))) {
+      flush(node);
+      continue;
+    }
+    // Whitespace between two blocks is the pretty-printing of whatever wrote
+    // the markup, not a line of the document.
+    if (node.nodeType === Node.TEXT_NODE && !(node.nodeValue ?? '').trim() && !run.length) {
+      node.remove();
+      changed = true;
+      continue;
+    }
+    run.push(node);
+  }
+  flush(null);
+
+  if (changed && mark && sel) {
+    try {
+      const r = document.createRange();
+      r.setStart(mark.node, Math.min(mark.offset, mark.node.nodeType === Node.TEXT_NODE
+        ? (mark.node.nodeValue ?? '').length
+        : mark.node.childNodes.length));
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } catch {
+      // The marked node was not where it was left. Losing the caret is worse
+      // than not restoring it, and both are better than throwing out of a
+      // repair.
+    }
+  }
+  return changed;
 }
 
 function stripBlockAttrs(el: Element): void {
@@ -489,6 +585,14 @@ function flattenBlock(block: HTMLElement): void {
  * Returns the range to leave selected, or null when there was no text in it.
  */
 export function clearFormatting(range: Range, root: HTMLElement): Range | null {
+  // Before anything is looked up, and not only as a tidy-up: a selection whose
+  // ends sit in a bare text node at the root has no block to name, blocksIn
+  // comes back empty, and this returns having silently done nothing — which is
+  // exactly what the button was reported as doing after a paste. The repair
+  // moves nodes without replacing them, so `range` still points at the same
+  // text afterwards. See normalizeBlocks.
+  normalizeBlocks(root);
+
   const blocks = blocksIn(range, root);
   if (blocks.length === 0) return null;
 

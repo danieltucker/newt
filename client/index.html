@@ -38,6 +38,37 @@
          document with an empty #root, no stylesheet and no application, while
          the build stayed green and every test passed. scripts/check-html.mjs
          is the guard that now fails the build instead. -->
+    <!-- ── The card every un-injected route unfurls as ──
+         Between these two markers is what a link to /, /blog, /explore or any
+         other route nginx serves straight off disk says about itself when it is
+         pasted into iMessage, Slack or a post. Without it those links carried a
+         title and nothing else, so the preview was the app's tagline and the
+         raw URL - which is what a link looks like when nobody has written a
+         card for it.
+
+         server/src/lib/htmlShell.ts removes this whole region whenever it
+         injects a real head, exactly as it removes the static title above and
+         for the same reason: two og:title tags in a document is not an error,
+         it is an unfurler picking one of them, and that is precisely the bug it
+         would cause. Renaming the markers breaks that - they are matched
+         literally.
+
+         og:image is site-relative because a file on disk cannot know which
+         origin it will be served from. Every unfurler that matters resolves it
+         against the document's own URL; the server-rendered routes, which do
+         know the origin, write absolute URLs instead. -->
+    <!--SSR-FALLBACK-META-->
+    <meta name="description" content="Newt is a new tab page that opens onto what you actually want to read: your feeds, your bookmarks, your notes and the people you follow.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Newt">
+    <meta property="og:title" content="Newt - a new tab worth opening">
+    <meta property="og:description" content="A new tab page that opens onto what you actually want to read: your feeds, your bookmarks, your notes and the people you follow.">
+    <meta property="og:image" content="/shots/hero.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Newt - a new tab worth opening">
+    <meta name="twitter:description" content="A new tab page that opens onto what you actually want to read: your feeds, your bookmarks, your notes and the people you follow.">
+    <meta name="twitter:image" content="/shots/hero.png">
+    <!--/SSR-FALLBACK-META-->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/favicon/favicon-32.png" sizes="32x32">
     <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon-180.png">

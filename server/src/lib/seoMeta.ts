@@ -68,6 +68,27 @@ export function ogImageFrom(raw: string | null | undefined): string | null {
   return absoluteUrl(raw);
 }
 
+/**
+ * The first image in a piece of sanitized HTML, as an og:image candidate.
+ *
+ * A cover image is optional and most posts never get one, which left every such
+ * post unfurling as a bare text card even when the writing itself opened with a
+ * photograph. The first image in the body is the nearest thing the post has to a
+ * cover, and it is the one a reader would have met first anyway.
+ *
+ * Only an http(s) address or a site-relative path qualifies — the same rule
+ * ogImageFrom applies, for the same reason: a data: URL in og:image is fetched
+ * by nobody.
+ */
+export function firstImageIn(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const match = html.match(/<img[^>]+\bsrc=["']([^"']+)["']/i);
+  if (!match) return null;
+  const src = match[1].trim();
+  if (/^https?:\/\//i.test(src) || src.startsWith('/')) return src;
+  return null;
+}
+
 function tag(name: string, content: string | null | undefined): string {
   if (!content) return '';
   return `<meta name="${name}" content="${escapeHtml(content)}">`;
