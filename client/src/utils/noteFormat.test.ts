@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
 import {
-  COLOR_CLASSES, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
+  COLOR_CLASSES, PALETTE, applyBlockTag, applyColor, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
 } from './noteFormat';
 
 const editor = (html: string): HTMLElement => {
@@ -350,5 +350,99 @@ describe('clearFormatting on a document that was pasted into', () => {
     const el = editor('just <b>words</b>');
     clearFormatting(caretAfter(el, 'just '), el);
     expect(el.innerHTML).toBe('<p>just words</p>');
+  });
+});
+
+// The report this was written for, in the reporter's words: "where it says 'The
+// project faded as...' it's supposed to be regular text, but I can't get rid of
+// the H2 with the editor buttons." Every case here is a block that
+// execCommand('formatBlock') declined to touch while reporting success.
+describe('applyBlockTag', () => {
+  it('turns a heading into a paragraph', () => {
+    const el = editor('<h2>The project faded as I ran into hurdles</h2>');
+    applyBlockTag(over(el, 'faded'), el, 'P');
+    expect(el.innerHTML).toBe('<p>The project faded as I ran into hurdles</p>');
+  });
+
+  it('turns a paragraph into a heading and back', () => {
+    const el = editor('<p>Words</p>');
+    applyBlockTag(over(el, 'Words'), el, 'H2');
+    expect(el.innerHTML).toBe('<h2>Words</h2>');
+    applyBlockTag(over(el, 'Words'), el, 'P');
+    expect(el.innerHTML).toBe('<p>Words</p>');
+  });
+
+  // A picture that got swallowed into a heading by an earlier paste - the shape
+  // that made formatBlock give up without saying so.
+  it('frees a heading that is wrapped around a picture', () => {
+    const el = editor('<h1><img src="/api/v1/images/a" alt=""><b>and words</b></h1>');
+    applyBlockTag(over(el, 'and words'), el, 'P');
+    expect(el.innerHTML).toBe('<p><img src="/api/v1/images/a" alt=""><b>and words</b></p>');
+  });
+
+  it('frees a heading wrapped around a gallery, leaving the gallery whole', () => {
+    const el = editor(
+      '<h1><span class="note-gallery" contenteditable="false" data-gallery="2">'
+      + '<img src="/api/v1/images/a" alt=""></span></h1>');
+    // No text to point at - a gallery is pictures. The caret is simply in the
+    // heading, which is what clicking beside one gives you.
+    const r = document.createRange();
+    r.selectNodeContents(el.firstElementChild!);
+    applyBlockTag(r, el, 'P');
+    expect(el.firstElementChild?.nodeName).toBe('P');
+    expect(el.querySelector('.note-gallery')?.getAttribute('data-gallery')).toBe('2');
+  });
+
+  it('retags every block a selection crosses', () => {
+    const el = editor('<h2>one</h2><h2>two</h2><h2>three</h2>');
+    applyBlockTag(across(el, 'one', 'two'), el, 'P');
+    expect(el.innerHTML).toBe('<p>one</p><p>two</p><h2>three</h2>');
+  });
+
+  it('works with the caret in a loose run, which is where a paste leaves it', () => {
+    const el = editor('loose words');
+    applyBlockTag(caretAfter(el, 'loose '), el, 'H2');
+    expect(el.innerHTML).toBe('<h2>loose words</h2>');
+  });
+
+  it('turns a to-do into a paragraph and forgets it was ticked', () => {
+    const el = editor('<div class="note-todo" data-checked="true">done</div>');
+    applyBlockTag(over(el, 'done'), el, 'P');
+    expect(el.innerHTML).toBe('<p>done</p>');
+  });
+
+  it('keeps how far a block was indented', () => {
+    const el = editor('<p data-indent="2">over there</p>');
+    applyBlockTag(over(el, 'over'), el, 'BLOCKQUOTE');
+    expect(el.innerHTML).toBe('<blockquote data-indent="2">over there</blockquote>');
+  });
+
+  // Shapes, not levels of text. The list buttons own the list transform.
+  it.each([
+    ['a list', '<ul><li>one</li></ul>'],
+    ['a table', '<table class="note-table"><tbody><tr><td>a</td></tr></tbody></table>'],
+  ])('leaves %s alone', (_name, html) => {
+    const el = editor(html);
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    applyBlockTag(r, el, 'P');
+    expect(el.innerHTML).toBe(html);
+  });
+
+  it('leaves an embed standing on its own alone', () => {
+    const html = '<span class="note-embed" contenteditable="false" data-embed="1">x</span>';
+    const el = editor(html);
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    applyBlockTag(r, el, 'P');
+    expect(el.innerHTML).toBe(html);
+  });
+
+  it('gives a block that ends up empty something to hold the caret', () => {
+    const el = editor('<h2></h2>');
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    applyBlockTag(r, el, 'P');
+    expect(el.innerHTML).toBe('<p><br></p>');
   });
 });

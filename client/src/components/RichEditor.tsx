@@ -19,7 +19,7 @@ import {
   galleryIndexOf, hydrateGalleries,
 } from '../utils/noteGallery';
 import {
-  ColorKind, PALETTE, applyColor, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
+  ColorKind, PALETTE, applyColor, applyBlockTag, clearFormatting, colorCaret, colorClass, colorsAt, normalizeBlocks,
 } from '../utils/noteFormat';
 import Lightbox from './Lightbox';
 
@@ -3178,11 +3178,28 @@ export default function RichEditor({
 
     const block = repairBlankBlock(editor) ?? getBlock(editor);
 
+    // The block transforms, over whatever the selection actually touches. A
+    // no-op when there is no selection in the editor, which is the one case the
+    // browser used to handle by guessing.
+    const retag = (tag: string) => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return;
+      applyBlockTag(range, editor, tag);
+      refreshMarks();
+    };
+
     switch (id) {
-      case 'text':  document.execCommand('formatBlock', false, '<P>'); break;
-      case 'h1':    document.execCommand('formatBlock', false, '<H1>'); break;
-      case 'h2':    document.execCommand('formatBlock', false, '<H2>'); break;
-      case 'h3':    document.execCommand('formatBlock', false, '<H3>'); break;
+      // Not execCommand('formatBlock'). It returns true and changes nothing
+      // whenever the block is not the shape the browser expects - a heading
+      // holding a picture, a paragraph that got wrapped in one after a bad
+      // paste - which is a button that does nothing with no way to tell why.
+      // See applyBlockTag in utils/noteFormat.
+      case 'text':  retag('P'); break;
+      case 'h1':    retag('H1'); break;
+      case 'h2':    retag('H2'); break;
+      case 'h3':    retag('H3'); break;
       case 'ul':
       case 'ol': {
         // Clear out any malformed list left over from earlier editing first -
@@ -3218,8 +3235,8 @@ export default function RichEditor({
         normalizeLists(editor);
         break;
       }
-      case 'quote': document.execCommand('formatBlock', false, '<BLOCKQUOTE>'); break;
-      case 'code':  document.execCommand('formatBlock', false, '<PRE>'); break;
+      case 'quote': retag('BLOCKQUOTE'); break;
+      case 'code':  retag('PRE'); break;
       case 'todo':  if (block) makeTodo(block); break;
       case 'table': insertTable(); break;
       case 'hr': {

@@ -584,6 +584,71 @@ function flattenBlock(block: HTMLElement): void {
  *
  * Returns the range to leave selected, or null when there was no text in it.
  */
+/**
+ * Retag every block a selection touches: heading, paragraph, quote, code.
+ *
+ * ── Why this is not execCommand('formatBlock') ──
+ * That is what the editor used, and it is why a post could end up with a
+ * paragraph trapped inside an `<h2>` that no button would let you out of. The
+ * command is defined in terms of the browser's own idea of "the block the
+ * selection is in", and when that idea does not match the document — a heading
+ * holding an image, a block that is not where the browser expects a block to be,
+ * a selection spanning several — it does not fail, report, or fall back. It
+ * returns true and changes nothing. So the button looked broken because from the
+ * outside it was indistinguishable from broken.
+ *
+ * Doing it here instead means the same block lookup the rest of this module
+ * uses, on the same blocks, with the same answer every time. It also means the
+ * caret survives, which is why the boundaries are put back at the end: the
+ * children move to a new parent rather than being re-created, so the nodes the
+ * selection names are still the nodes it should name.
+ *
+ * Lists, tables and rules are left alone. Each is a shape rather than a level of
+ * text, and turning a list into a heading has no meaning that anyone pressing
+ * "H2" would have wanted; the list buttons own that transform. An atomic object
+ * standing on its own — an embed, a gallery — is skipped for the same reason
+ * flattenBlock skips it.
+ */
+export function applyBlockTag(range: Range, root: HTMLElement, tag: string): void {
+  normalizeBlocks(root);
+
+  const want = tag.toUpperCase();
+  const start = { node: range.startContainer, offset: range.startOffset };
+  const end = { node: range.endContainer, offset: range.endOffset };
+
+  for (const block of blocksIn(range, root)) {
+    if (block.nodeName === want) continue;
+    if (/^(UL|OL|TABLE|HR)$/.test(block.nodeName)) continue;
+    if (isAtomic(block)) continue;
+
+    const next = document.createElement(want);
+    while (block.firstChild) next.appendChild(block.firstChild);
+    // A block with nothing in it has no height and no caret position. Every
+    // empty block in this editor carries a <br> for that reason.
+    if (!next.firstChild) next.appendChild(document.createElement('br'));
+    // Indentation is orthogonal to what kind of block this is: a quote three
+    // levels in is still three levels in when it becomes a paragraph. The
+    // to-do's data-checked is not carried, because the new block is not a to-do.
+    const indent = block.getAttribute('data-indent');
+    if (indent) next.setAttribute('data-indent', indent);
+    block.replaceWith(next);
+  }
+
+  const sel = window.getSelection();
+  if (!sel) return;
+  try {
+    const r = document.createRange();
+    r.setStart(start.node, start.offset);
+    r.setEnd(end.node, end.offset);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  } catch {
+    // A boundary that is no longer placeable. Leaving the selection where the
+    // browser put it is worse than nothing but better than throwing out of a
+    // command the user just pressed.
+  }
+}
+
 export function clearFormatting(range: Range, root: HTMLElement): Range | null {
   // Before anything is looked up, and not only as a tidy-up: a selection whose
   // ends sit in a bare text node at the root has no block to name, blocksIn
