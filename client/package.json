@@ -1,11 +1,11 @@
 {
   "name": "newtab-client",
-  "version": "1.23.0",
+  "version": "1.23.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node ../scripts/check-html.mjs",
+    "build": "tsc && vite build && node ../scripts/check-html.mjs && node ../scripts/check-css.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

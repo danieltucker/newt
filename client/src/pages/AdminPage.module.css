@@ -1540,7 +1540,6 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 @media (max-width: 720px) {
   .backdrop {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   .panel {

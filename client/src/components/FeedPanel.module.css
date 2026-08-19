@@ -250,7 +250,6 @@
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   background: color-mix(in oklab, var(--surface) 82%, transparent);
   backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
   box-shadow: 0 8px 26px color-mix(in oklab, var(--shadow) 55%, transparent);
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;

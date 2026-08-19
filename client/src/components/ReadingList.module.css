@@ -21,7 +21,6 @@
   padding: 24px;
   background: var(--overlay);
   backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   animation: fade 0.18s ease;
 }
 
@@ -595,7 +594,6 @@
 .filingOverlay {
   background: color-mix(in oklab, var(--surface) 55%, transparent);
   backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
 }
 
 .ghostPill {
@@ -608,7 +606,6 @@
   border-radius: 999px;
   background: color-mix(in oklab, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 4px 14px color-mix(in oklab, var(--shadow) 45%, transparent);
 }
 
@@ -1325,7 +1322,6 @@
   .backdrop {
     padding: 0;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   .modal {

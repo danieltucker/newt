@@ -87,7 +87,6 @@
     color-mix(in oklab, var(--surface) 54%, transparent)
   );
   backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
   /* The drop shadow lifts the column off the page; the inset hairline along its
      top edge is the glass catching the light, which is what stops a frosted
      panel reading as a flat grey rectangle. Same trick the shell bar uses. */

@@ -181,7 +181,6 @@
   border-radius: 14px;
   background: color-mix(in oklab, var(--surface) 90%, transparent);
   backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
   box-shadow:
     0 16px 38px color-mix(in oklab, var(--shadow) 60%, transparent),
     0 4px 10px color-mix(in oklab, var(--shadow) 40%, transparent);
@@ -313,7 +312,6 @@
   border-radius: 14px;
   background: color-mix(in oklab, var(--surface) 92%, transparent);
   backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
   /* The tallest thing here, so it gets the deepest lift - three layers: the
      long cast that separates it from the page, the mid one that gives it a
      body, and a hairline at the contact edge. */
