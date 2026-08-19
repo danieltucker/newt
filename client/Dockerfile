@@ -20,14 +20,18 @@ COPY server/package.json server/package.json
 RUN npm ci --workspace=client
 
 COPY client/ client/
-# The client's build script ends by verifying the HTML it just produced. It runs
-# here, in the image build, on purpose: a document that loads no application is
-# not something to discover after the container is serving it.
+# The client's build script ends by verifying what it just produced: that the
+# HTML loads the application, and that the minified CSS still names the
+# properties browsers implement. Both run here, in the image build, on purpose -
+# each guards a defect that only exists in the production output, so a check
+# that ran only on a developer's machine would not have caught either.
 #
-# Named file rather than the directory: .dockerignore excludes scripts/ as
-# build-irrelevant and re-includes only this one, so a `COPY scripts/` would
-# either fail or quietly depend on that exception staying in place.
+# Named files rather than the directory: .dockerignore excludes scripts/ as
+# build-irrelevant and re-includes exactly these, so a `COPY scripts/` would
+# either fail or quietly depend on those exceptions staying in place. A new
+# guard therefore needs a line in both files.
 COPY scripts/check-html.mjs scripts/check-html.mjs
+COPY scripts/check-css.mjs scripts/check-css.mjs
 RUN npm run build --workspace=client
 
 # ── Runtime stage (nginx) ─────────────────────────────────────────────────────
