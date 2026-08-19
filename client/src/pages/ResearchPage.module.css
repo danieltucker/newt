@@ -1,33 +1,47 @@
+/* Explore is a stack of two cards, not a split.
+ *
+ * The bottom card is the index of every conversation you have kept, on the same
+ * frosted panel the bookmarks rail is made of. Opening one lays a second card
+ * over it, inset from the panel's top and left edges so those two sides go on
+ * showing — and translucent enough, being the shell bar's own glass, that the
+ * index is still faintly there underneath.
+ *
+ * The offset is doing real work. It is what tells you the conversation is *on*
+ * something rather than instead of it, which is what makes clicking off the
+ * card an obvious way back. And the card stays inside this column: the rail and
+ * the shell bar are never covered, because the point of a stack on a desk is
+ * that the rest of the desk is still there.
+ *
+ * What this replaced was a 232px rail beside the transcript — too narrow to
+ * read a conversation's title in, and permanently spending a fifth of the width
+ * on a list you look at twice a session. */
+
 .wrap {
-  width: 100%;
+  position: relative;
+  /* The page is scrolled to this before a conversation opens over it, and the
+     shell bar is sticky, so the target has to sit below the bar rather than
+     under it. Same clearance the bookmarks rail pins itself with. */
+  scroll-margin-top: calc(var(--shellbar-h, 56px) + 16px);
 }
 
-/* Two columns: the thread list, and the conversation. Below the breakpoint they
-   become two screens rather than one screen and a drawer — see .showList /
-   .showChat at the bottom of this file, and the note on `pane` in the page. */
-.layout {
-  display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
+/* ── The bottom card: the index ──────────────────────────────────────────── */
 
-/* ── Sidebar ─────────────────────────────────────────────────────────────── */
-
-/* Same frosted vocabulary as the bookmarks rail this sits beside (see .leftCol
-   in NewTabPage.module.css). A flat --surface panel was the one opaque slab on a
-   page whose background is a slow gradient, so it read as a card that had been
-   pasted on rather than a column of the app. */
-.sidebar {
-  position: sticky;
-  top: 12px;
+/* The bookmarks rail's glass, down to the numbers — same tint, same blur, same
+   drop shadow and the same inset hairline along the top edge where the glass
+   catches the light. They are two panels of one app and should not be arguing
+   about what glass is. */
+.index {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: calc(100vh - 120px);
-  padding: 12px;
+  min-width: 0;
+  /* As tall as what is in it, and no taller. Nothing else in this app scrolls
+     inside itself — the page scrolls — and a panel that did was the one place
+     you could lose a conversation off the bottom of a box rather than off the
+     bottom of the screen. Two conversations is a short panel, which is correct:
+     that is how much there is. */
+  padding: 16px 16px 24px;
   border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
-  border-radius: 18px;
+  border-radius: 20px;
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--surface) 74%, transparent),
@@ -35,172 +49,405 @@
   );
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow) 45%, transparent);
+  /* No overflow rule: the cards throw a lift shadow on hover, and clipping the
+     panel would slice it off along every edge. */
+  box-shadow:
+    0 12px 32px color-mix(in oklab, var(--shadow) 55%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 7%, transparent);
 }
 
-.sidebarHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+/* Holding a card, and only then a screen tall.
+ *
+ * The card lies on this panel and takes its height from it, so with two
+ * conversations a content-height panel would put a 215px conversation on the
+ * page. Growing the panel for as long as something is resting on it settles
+ * both halves: closed it is exactly as big as what it holds, and the moment it
+ * is holding a card it is big enough for one. The growth is invisible anyway —
+ * all that shows of the panel by then is 13px down two edges.
+ *
+ * The number is the bookmarks rail's own height, so a short index still ends on
+ * the same line as the rail beside it. */
+.indexUnder {
+  min-height: calc(100vh - var(--shellbar-h, 56px) - 44px);
 }
 
-.sidebarTitle {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* A labelled control in the --ctl-h tier, so: the house pill. */
-.newBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
+.indexHead {
   flex: none;
-  min-height: var(--ctl-h);
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.newBtn:hover { border-color: var(--accent); color: var(--accent); }
-
-.threadList {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.sidebarEmpty {
-  margin: 4px 2px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.threadRow {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: 9px;
 }
-.threadRow:hover { background: var(--surface2); }
 
-.threadActive { background: var(--surface2); }
-.threadActive .threadTitle { color: var(--accent); }
-
-/* Which thread you are in, as a gradient spine down the left edge. */
-.threadActive::before {
+/* The same brand rule the conversation's header carries, so the two cards read
+   as one place seen at two depths. */
+.indexHead::after {
   content: '';
   position: absolute;
-  left: 2px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--pile-3), var(--pile-2) 60%, var(--pile-1));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    var(--pile-3),
+    var(--pile-2) 32%,
+    var(--pile-1) 58%,
+    transparent 92%);
+  opacity: 0.6;
 }
-.threadActive .threadBtn { padding-left: 12px; }
 
-.threadBtn {
+.indexHeadText { min-width: 0; }
+
+.indexTitle {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.indexSub {
+  margin: 6px 0 0;
+  max-width: 56ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Cards rather than rows: a conversation's title is a sentence, and the thing
+   that makes the index worth having is being able to read it without hovering
+   for a tooltip. Auto-fill so the column count follows the width the shell has
+   given the page. */
+.threadGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.convCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 12px 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 78%, transparent),
+    color-mix(in oklab, var(--surface) 56%, transparent)
+  );
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  transition: transform 140ms var(--ease-settle), border-color 140ms ease, box-shadow 140ms ease;
+}
+.convCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  box-shadow: var(--lift-shadow);
+  transform: translateY(-1px);
+}
+
+/* Which one the sheet above is showing. Worth marking even though the sheet
+   covers most of it: the card is what you clicked, and finding it again under
+   the glass is how the layer reads as a layer. */
+.convActive {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+.convActive .convTitle { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .convCard { transition: none; }
+  .convCard:hover { transform: none; }
+}
+
+.convOpen {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
-  padding: 7px 8px;
+  padding: 0;
   cursor: pointer;
 }
 
-.threadTitle {
-  font-size: 13px;
+.convTitle {
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--text);
-  /* One line: the sidebar is an index, not a preview. */
-  white-space: nowrap;
+  /* Two lines, then ellipsis — enough for a headline to be recognisable, and a
+     fixed cap so a row of cards keeps one height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
+.convOpen:hover .convTitle { color: var(--accent); }
 
-.threadMeta {
-  font-size: 11px;
+.convMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
+}
+
+.convFavicon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.convSource {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.threadSource { color: var(--accent); }
+.convTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
 
-.threadDelete {
+/* Who can see this conversation, and the way to change it. On the card because
+   that is where the question gets asked: sharing used to be one subdued button
+   inside the thread, next to a filled Condense that took the eye every time. */
+.convShare {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.convShare:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+/* Already shared. Tinted rather than merely labelled, because "can other people
+   see this" is worth being able to answer from across the page. */
+.convShared {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.convShared:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); }
+
+.convDelete {
   flex: none;
   border: none;
   background: transparent;
   color: var(--muted);
   font-size: 17px;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 6px;
   cursor: pointer;
-  /* Hidden until the row is hovered, so the list reads as titles rather than a
-     column of delete buttons. Focus reveals it too, for keyboard users. */
+  /* Hidden until the card is hovered, so the index reads as titles rather than
+     as a grid of delete buttons. Focus reveals it too, for keyboard users. */
   opacity: 0;
 }
-.threadRow:hover .threadDelete,
-.threadDelete:focus-visible { opacity: 1; }
-.threadDelete:hover { color: var(--danger); background: var(--surface); }
+.convCard:hover .convDelete,
+.convDelete:focus-visible { opacity: 1; }
+.convDelete:hover { color: var(--danger); background: var(--surface); }
 
 .renameInput {
-  flex: 1;
   min-width: 0;
   border: 1px solid var(--accent);
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   padding: 6px 8px;
   border-radius: 8px;
   outline: none;
 }
 
-.confirmRow { display: flex; gap: 4px; padding-right: 4px; }
+.confirmRow { display: flex; gap: 4px; }
 
-/* ── Conversation ────────────────────────────────────────────────────────── */
-
-.main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: calc(100vh - 140px);
+/* Nothing kept yet. Wider than the in-sheet .blank because it has the whole
+   page rather than a column of it. */
+.indexEmpty {
+  max-width: 560px;
+  padding: 48px 0 40px;
 }
 
+/* ── The top card: the conversation ──────────────────────────────────────── */
+
+/* The layer covers the whole column and is entirely transparent; only the sheet
+   inside it is visible. Its job is to catch the click on the two strips of
+   index still showing, so anywhere off the card is a way back — which is why it
+   is inset 0 with the offset written as padding rather than being inset by the
+   offset itself.
+   The peek is named because the dock reads it too: the newt button floats in
+   the window's corner and has to be told how far in from that corner the card's
+   edges already are. */
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  /* Two edges of the panel underneath, and no more. It is a sliver rather than
+     a shelf: what says "there is something under this" is the shadow the card
+     casts onto it, and once the shadow is doing that job an inch of exposed
+     panel is just a margin the page did not ask for. */
+  --peek-top: 13px;
+  --peek-left: 13px;
+  /* How far the column's own edges are from the window's, which is the shell's
+     side padding. Not a measurement this file can take, so it is restated here
+     and in the one media query that changes it — see .content in
+     NewTabPage.module.css. */
+  --shell-gutter: 32px;
+  padding: var(--peek-top) 0 0 var(--peek-left);
+}
+
+/* Glass, and specifically the shell bar's glass — same tint, same blur (see
+   .bar in ShellBar.module.css). That is what lets the index read through it:
+   the card is a pane laid over the panel, not a lid closed on it.
+   The bottom and right corners land exactly on the panel's, at the same radius,
+   so the two cards are tucked into that corner and fanned out of the opposite
+   one. */
+.sheet {
+  flex: 1;
+  min-width: 0;
+  /* Now that the panel underneath grows with its content, the card cannot
+     simply fill it — fifty conversations would make a card three screens tall
+     with its composer somewhere off the bottom. One screen is the ceiling.
+     The number is not a guess: the panel's own floor is
+     100vh − shellbar − 44px and it starts 28px below the bar, so a panel at its
+     floor ends 16px above the fold. Take the peek off the top of that and this
+     is exactly what is left — which is why a short index and a long one produce
+     a card of identical height rather than two that nearly match. */
+  max-height: calc(100vh - var(--shellbar-h, 56px) - 57px);
+  /* One gutter for the header, the transcript and the dock. They used to pick
+     their own — 18, 16 and 14 — which is invisible individually and is exactly
+     why the card read as less finished than the rail beside it. A 20px corner
+     radius wants more than 16px of air inside it, too. */
+  --gutter: 26px;
+  /* The reading column, and the app's own number: the article reader and a blog
+     post both set their prose in 720px (see .prose in ArticleDetailModal). A
+     transcript is prose, and at the card's full width it was running to a
+     115-character measure — long enough that the eye loses the line. */
+  --measure: 720px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  border-radius: 20px;
+  /* The shell bar's tint, with the fade shortened. The bar runs 78% to 58% over
+     56px of height, where the thin end is the edge it dissolves at; over 750px
+     of card the same range leaves the bottom third — the half you type into —
+     the most see-through part of it, which is backwards. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 80%, transparent),
+    color-mix(in oklab, var(--surface) 68%, transparent)
+  );
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  /* The whole separation between the two cards, since nothing underneath is
+     dimmed to help. Three shadows rather than one: a tight dark one that draws
+     the edge itself, a middle one for the lift, and a wide soft one for the
+     ground it is lifted off. A single large blur at this offset reads as a glow
+     around the card rather than as a card above a panel.
+     The inset hairline along the top is the same light-catching edge the rail
+     and the shell bar have. */
+  box-shadow:
+    0 1px 3px color-mix(in oklab, var(--shadow) 55%, transparent),
+    0 8px 20px color-mix(in oklab, var(--shadow) 55%, transparent),
+    0 28px 64px color-mix(in oklab, var(--shadow) 70%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 8%, transparent);
+  /* Two animations rather than one set of keyframes, because they want
+     different curves. The travel settles; the fade does not — a card that
+     arrives at full opacity halfway through is a card you can read while it is
+     still moving, which is the point of moving it at all. */
+  animation:
+    sheetRise 420ms var(--ease-settle) both,
+    sheetFade 240ms ease-out both;
+}
+
+/* Dealt onto the pile.
+ *
+ * It comes from down and to the right — out from under the card it is landing
+ * on, along the diagonal the offset already implies — and grows the last few
+ * per cent into place. --ease-settle overshoots slightly and settles, which is
+ * what a card does when you put it down, and the whole point of doing this at
+ * all: a conversation that simply *appears* leaves the reader working out what
+ * just replaced what.
+ *
+ * The distance is deliberate and was measured. An earlier pass travelled 14px
+ * over 300ms, and --ease-settle is so front-loaded (it is 95% of the way in the
+ * first quarter of its run) that the whole movement was over inside 100ms —
+ * technically an animation, and invisible. Nearly three times the distance over
+ * a longer run is what makes it something you actually see happen. */
+@keyframes sheetRise {
+  from { transform: translate(26px, 40px) scale(0.955); }
+  to   { transform: none; }
+}
+
+@keyframes sheetFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* And back down the same diagonal, faster than it came — going away should not
+   cost as much attention as arriving. Kept in step with EXIT_MS in the page,
+   which is what holds the unmount back long enough for this to be seen. */
+.layerClosing .sheet {
+  animation: sheetSink 200ms ease-in both;
+}
+
+@keyframes sheetSink {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translate(16px, 26px) scale(0.975); }
+}
+
+/* Nothing travels, but the two states still have to be told apart, so the fade
+   stays and only the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  .sheet { animation: sheetFade 160ms ease-out both; }
+  .layerClosing .sheet { animation: sheetFade 120ms ease-in reverse both; }
+}
+
+/* ── The sheet's header ──────────────────────────────────────────────────── */
+
+/* Full width rather than in the reading column, like the article reader's own
+   toolbar: this is the card's chrome, and a close button that stops short of
+   the corner looks lost. */
 .head {
   position: relative;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 14px;
-  margin-bottom: 4px;
+  padding: 16px var(--gutter);
 }
 
 /* The rule under the title, painted in the brand gradient rather than the flat
@@ -225,17 +472,39 @@
 
 .heading {
   margin: 0;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
-/* The breadcrumb under the title. Deliberately only the publisher: the article's
-   own name is already the thread title on a thread started from one, and the
-   card at the top of the transcript is where you go to actually open it. */
+/* The title, as the way into the article. On a thread started from one the
+   title *is* the headline, so a heading that did nothing when clicked was the
+   app declining to do the obvious thing with it. Underlined only on hover: it
+   has to look like a heading first and a link second. */
+.headingLink {
+  display: block;
+  max-width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.headingLink:hover { color: var(--accent); text-decoration: underline; }
+
+/* The breadcrumb under the title. Deliberately only the publisher: the
+   article's own name is already the heading above it, and the card at the top
+   of the transcript is where the rest of it is. */
 .sourceLink {
   display: inline-flex;
   align-items: center;
@@ -258,48 +527,57 @@
   object-fit: contain;
 }
 
-/* The way back to the conversation list. Only exists on the narrow layout,
-   where the list is a screen rather than a column — above that breakpoint the
-   list is already on screen and an arrow pointing at it would be a button that
-   does nothing. */
-.backBtn {
-  display: none;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--ctl-h);
-  height: var(--ctl-h);
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--text);
-  padding: 0;
-  border-radius: var(--ctl-r);
-  cursor: pointer;
-}
-.backBtn:hover { border-color: var(--accent); color: var(--accent); }
+/* The sheet is a bare flex column: the header, the transcript and the dock each
+   carry their own gutter. An error banner is the one child that doesn't, so it
+   is given one here rather than sitting flush against the glass. */
+.sheet > .error { margin: 12px var(--gutter) 0; }
 
+/* The scroller. It used to be the document: the transcript ran down the page
+   and the composer was stuck to the viewport with position: sticky. Inside a
+   sheet that is the wrong shape twice over — the sheet has a bottom edge of its
+   own for the composer to sit on, and a page that scrolls behind a layer is how
+   a layer stops reading as one. */
 .transcript {
   flex: 1;
+  min-height: 0;
+  padding: 26px var(--gutter) 30px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The turns, in a box of their own inside the scroller.
+ *
+ * Two things need this rather than laying the turns out in .transcript
+ * directly. A flex column's children default to flex-shrink: 1, so they
+ * compressed to fit the scroller instead of letting it scroll — the source card
+ * kept its frame and its buttons and had its headline and standfirst squeezed
+ * out of it, which reads as a card that failed to load. And the page watches
+ * this box's height to decide when to follow the newest turn down: the
+ * scroller's own height never changes, so there would be nothing to watch. */
+.transcriptInner {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 20px 0;
-  min-height: 0;
+  /* An exchange is a question and its answer, so the space between turns has to
+     be bigger than the space inside one or the two run together. */
+  gap: 30px;
+  max-width: var(--measure);
+  margin-inline: auto;
+  width: 100%;
 }
 
 .turnUser, .turnAssistant {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .turnRole {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -320,22 +598,31 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--pile-3) 15%, transparent);
 }
 
+/* Set like the reading surfaces it sits beside: the article reader's prose is
+   16/1.72 and this is a transcript rather than an article, so it lands just
+   under. It was 14.5/1.65, which is a UI size — fine for a chat window, small
+   for something you condense into a post. */
 .turnBody {
-  font-size: 14.5px;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.7;
   color: var(--text);
   /* A long unbroken token — a URL, a hash — must not widen the column. */
   overflow-wrap: anywhere;
 }
 
 /* The question is set apart rather than bubbled: this is a document you scroll
-   back through, and two columns of alternating bubbles read badly at length. */
+   back through, and two columns of alternating bubbles read badly at length.
+   The fill is translucent rather than a slab of --surface. On glass an opaque
+   panel reads as a patch stuck to the window — the tint has to let the card
+   through it the way everything else on this card does. */
 .userText {
   margin: 0;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-left: 2px solid var(--accent);
-  background: var(--surface);
-  border-radius: 0 10px 10px 0;
+  background: color-mix(in oklab, var(--surface2) 55%, transparent);
+  border-radius: 4px 12px 12px 4px;
+  font-size: 15.5px;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
@@ -344,8 +631,8 @@
 .turnBody :global(h1),
 .turnBody :global(h2),
 .turnBody :global(h3) {
-  margin: 1.4em 0 0.5em;
-  font-size: 15.5px;
+  margin: 1.5em 0 0.5em;
+  font-size: 17px;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -366,8 +653,8 @@
 .turnBody :global(pre) {
   margin: 0 0 0.85em;
   padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
   border-radius: 10px;
   overflow-x: auto;
 }
@@ -435,79 +722,81 @@
  * composer floated up to the viewport edge — so the chips spent most of their
  * life below the fold, and appeared half-swallowed by the composer on the way
  * to it. They belong to the composer (they fill it), so they travel with it. */
-/* The transcript scrolls under this, so it needs a ground of its own. It used
-   to be a flat --bg slab, which is where most of "the Explore page looks odd"
-   came from: the shell paints a slow gradient behind every page it hosts, and a
-   rectangle of the raw background colour sitting on top of that reads as a
-   panel someone forgot to style. Frosted instead — the same glass the shell bar
-   and the bookmarks rail are made of, so the composer belongs to the app's
-   chrome rather than interrupting it. */
+/* The foot of the sheet, not a sticky bar over a scrolling page. The sheet has
+   a bottom edge of its own and the transcript scrolls inside it, so the dock is
+   simply the last row of the flex column — no stickiness, no z-index, nothing
+   sliding under it.
+   It keeps a ground of its own all the same: it sits a shade denser than the
+   glass above it, which is what separates the thing you type into from the
+   thing you read. */
 .dock {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  position: relative;
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0 -10px;
-  padding: 10px;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: 18px 18px 0 0;
-  border-bottom: none;
+  gap: 10px;
+  padding: 14px var(--gutter) 16px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   background: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--surface) 78%, transparent),
-    color-mix(in oklab, var(--surface) 92%, transparent)
+    color-mix(in oklab, var(--surface) 60%, transparent),
+    color-mix(in oklab, var(--surface) 82%, transparent)
   );
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow: 0 -8px 28px color-mix(in oklab, var(--shadow) 35%, transparent);
+}
+
+/* In the reading column with the transcript. A composer running the full width
+   of the card under prose that stops well short of it is the single thing that
+   made this look unconsidered — the eye reads the left edge of the text as the
+   page's margin, and then the box you type into ignores it. */
+.dock > * {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
 }
 
 /* ── Room for the newt button ──
-   It floats in a bottom corner of the *window*; this dock runs the width of the
-   column and sticks to the bottom of the page. Where they meet is the send
-   button, which is the last thing in the composer row — so the button that asks
-   the follow-up ends up underneath the button that opens the newt menu, and
-   there is no way to press it.
+   It floats in a bottom corner of the *window*; the dock is the foot of a card
+   whose edges are the column's, less the peek on the leading side. Where the
+   two still meet is the send button, which is the last thing in the composer
+   row — so the button that asks the follow-up ends up underneath the button
+   that opens the newt menu, and there is no way to press it.
 
-   So the corner is reserved. The slab itself still runs full width, and the
-   newt button floats over the empty end of it, which reads as deliberate rather
-   than as a control that has been shoved aside.
+   So the corner is reserved, and only by as much as actually overlaps. The
+   button reaches 78px in from the window edge (22px of offset, 46px across,
+   ~10px of air; 84px where a touch pointer makes it 52px), and the card's own
+   edge is already the shell's side padding in from there — plus the peek, on
+   the left, where the card is inset from the column as well. What is left to
+   clear is the difference, and nothing at all once that already exceeds it.
+   The floor keeps the composer's normal padding.
 
-   The number: the button sits 22px off the window edge and is 46px across (52
-   on touch), and wants ~10px of air. The dock's own right edge is already 6px
-   from the window edge on a phone (a 16px page gutter, less this rule's own
-   10px bleed), so 72px clears it there and over-reserves a little on a laptop,
-   which costs the field a few pixels it has to spare.
+   Reading the same variables the card is positioned with is the point: every
+   narrow override moves its edges, and a hard-coded number here would go
+   quietly wrong at exactly the widths where the two are closest together.
 
-   Above 1320px there is nothing to clear: the page is capped at 1200px and
-   centred, so the button is out past the column's edge and a gutter here would
-   just be a hole. See utils/newtDock, which publishes the side. */
-@media (max-width: 1320px) {
-  :global(html[data-newt-dock='right']) .dock { padding-right: 72px; }
-  :global(html[data-newt-dock='left']) .dock { padding-left: 72px; }
+   Above 1264px they never meet: the shell caps its content at 1200px and
+   centres it, so past that the column's right edge walks away from the window's
+   faster than the button reaches in. See utils/newtDock for the side. */
+@media (max-width: 1264px) {
+  :global(html[data-newt-dock='right']) .dock {
+    padding-right: max(14px, calc(78px - var(--shell-gutter)));
+  }
+  :global(html[data-newt-dock='left']) .dock {
+    padding-left: max(14px, calc(78px - var(--shell-gutter) - var(--peek-left)));
+  }
 }
 
-@media (max-width: 1320px) and (hover: none) {
-  :global(html[data-newt-dock='right']) .dock { padding-right: 78px; }
-  :global(html[data-newt-dock='left']) .dock { padding-left: 78px; }
+@media (max-width: 1264px) and (hover: none) {
+  :global(html[data-newt-dock='right']) .dock {
+    padding-right: max(14px, calc(84px - var(--shell-gutter)));
+  }
+  :global(html[data-newt-dock='left']) .dock {
+    padding-left: max(14px, calc(84px - var(--shell-gutter) - var(--peek-left)));
+  }
 }
 
-/* A short fade above the dock so the answer dissolves into it instead of being
-   sliced off by its top edge. Transparent at both ends now the dock is glass —
-   fading to an opaque colour would have painted the very slab this is meant to
-   stop being visible. */
-.dock::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 24px;
-  background: linear-gradient(to top, color-mix(in oklab, var(--bg) 70%, transparent), transparent);
-  pointer-events: none;
-}
+/* ── The follow-up chips ──────────────────────────────────────────────────── */
 
 .suggestions {
   display: flex;
@@ -530,8 +819,8 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
@@ -584,6 +873,9 @@
   gap: 4px;
   min-height: var(--ctl-h-lg);
   border: 1px solid var(--border);
+  /* Solid, unlike everything else on the card. The one place you put something
+     of your own is the one place that should not be see-through — a field you
+     can read the page through is a field that looks disabled. */
   background: var(--surface);
   border-radius: var(--ctl-r);
   padding: 3px 3px 3px 0;
@@ -673,6 +965,13 @@
 
 .sendBtn, .stopBtn, .primaryBtn {
   flex: none;
+  /* Inline-flex rather than inline-block: these carry a glyph beside their
+     label now, and a baseline-aligned SVG sits a pixel low next to text. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
   border: none;
   font: inherit;
   font-size: 13px;
@@ -709,10 +1008,17 @@
 .sendBtn:disabled { opacity: 0.45; cursor: default; }
 .primaryBtn:disabled { opacity: 0.6; cursor: default; }
 
-/* The share control in the thread header. Sits beside "Condense into a post"
+/* The share control in the sheet's header. Sits beside "Condense into a post"
    and matches its height, but stays outlined rather than filled - publishing a
-   conversation is a deliberate step, not the obvious next thing to do. */
+   conversation is a deliberate step, not the obvious next thing to do.
+   It is glyphed and it says what it is now rather than "Share…", and it no
+   longer disappears while an answer streams. Between that and the pill on every
+   card in the index, "where do I share this?" has stopped being a question you
+   have to open a conversation to answer. */
 .shareBtn, .sharedBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: var(--ctl-h);
   padding: 0 14px;
   border-radius: 999px;
@@ -774,7 +1080,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 45%, transparent);
+  box-shadow: 0 10px 28px color-mix(in oklab, var(--shadow) 55%, transparent);
 }
 
 .pickerLabel, .pickerEmpty {
@@ -1034,61 +1340,117 @@ button.refChipTitle:hover { color: var(--accent); }
 
 /* ── Narrow ──────────────────────────────────────────────────────────────── */
 
+/* The shell's side padding halves below here, which the newt-button clearance
+   above needs to know about. */
+@media (max-width: 900px) {
+  .layer { --shell-gutter: 16px; }
+}
+
+/* ── The conversation, full screen ──
+   A phone has no bookmarks rail to be careful of and no room for a stack: a
+   13px sliver of panel down one edge buys nothing on a 390px screen except
+   13px less conversation. So below here the card stops being a card and becomes
+   a screen — full bleed, square, over the shell bar rather than beside it,
+   which is what every other overlay in this app does at this width.
+   The page renders it through a portal to <body> at these widths, and it has
+   to — a fixed layer inside the shell's body grid is fixed to the grid. The
+   width must match FULLSCREEN in the page. */
 @media (max-width: 860px) {
-  .layout { grid-template-columns: minmax(0, 1fr); }
+  .layer {
+    position: fixed;
+    inset: 0;
+    /* Over the shell bar, under the dialogs. The share sheet (--z-modal) and
+       the article reader (--z-top) both open from inside a conversation and
+       both have to land on top of it. */
+    z-index: var(--z-content-overlay);
+    padding: 0;
+  }
 
-  .backBtn { display: inline-flex; }
-
-  /* Two screens, one at a time.
-   *
-   * This was an off-canvas drawer behind a ☰ in the page header, which put a
-   * second hamburger directly under the shell bar's own — and gave the drawer
-   * no way out, since the button that opened it ended up behind the panel it
-   * opened. A list and a detail view that swap is what the rest of the app does
-   * on a phone, and the back arrow in the conversation header is the only
-   * control the arrangement needs.
-   *
-   * `display: none` rather than a transform: the hidden half is genuinely not
-   * on screen, so nothing in it can be tabbed into or read out, and the
-   * transcript no longer sits under a panel that is only pretending to be
-   * elsewhere. */
-  .showList .main,
-  .showChat .sidebar { display: none; }
-
-  /* Its own screen now, so it drops the pinned-column behaviour and simply
-     fills the width it has been given. */
-  .sidebar {
+  .sheet {
+    /* Nothing to stick to and nothing to be capped against: it is the screen. */
     position: static;
     max-height: none;
-    min-height: calc(100vh - 200px);
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    /* A screen, not a pane over one. The tint that let the index show through
+       has nothing behind it here but the page it covers, and glass over a
+       nothing reads as a rendering fault. */
+    background: var(--bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
-  .sidebarTitle { font-size: 12px; }
+  /* Comes up rather than in. A full-screen view arriving from the bottom edge
+     is the one piece of motion vocabulary every phone already has. */
+  .sheet { animation: sheetUp 300ms var(--ease-settle) both, sheetFade 200ms ease-out both; }
+  .layerClosing .sheet { animation: sheetDown 200ms ease-in both; }
 
-  .main { min-height: calc(100vh - 180px); }
+  /* Clears the notch, which otherwise sits over the title and the close. */
+  .head { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
 
-  /* The dock is pinned to the bottom edge, but it was only ever as wide as the
-     body column. On a phone the column's gutters *are* the page margin, so the
-     bar stopped short of both screen edges and the transcript went on scrolling
-     through the two strips left over - which reads as a composer sliced off at
-     each end rather than as a bar with margins.
-     It bleeds to the edges here instead, and the gutters move inside it as
-     padding so the input keeps exactly the inset it had. The negative margins
-     are the shell's own side padding below 900px (see .content in
-     NewTabPage.module.css); written per side because the safe-area insets are
-     not symmetrical once the phone is turned. Square across the top and no side
-     borders, since a rounded corner needs a gap beside it to be a corner. */
+  .index { padding: 14px 12px 20px; }
+
+  /* Nothing is resting on it at this width — the conversation is a screen of
+     its own — so there is nothing for it to grow to fit. */
+  .indexUnder { min-height: 0; }
+
+  .indexTitle { font-size: 19px; }
+
+  .sheet { --gutter: 16px; }
+
+  .heading { font-size: 16.5px; }
+
+  .transcript { padding: 18px var(--gutter) 22px; }
+
+  .transcriptInner { gap: 24px; }
+
   .dock {
-    margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
-    margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
-    padding-left: max(16px, env(safe-area-inset-left, 0px));
-    padding-right: max(16px, env(safe-area-inset-right, 0px));
     /* Clears the home indicator, which otherwise sits over the send button. */
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
   }
+
+  /* One column of cards, since two of them at this width are two ellipses. */
+  .threadGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(34px); }
+  to   { transform: none; }
+}
+
+@keyframes sheetDown {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(24px); }
+}
+
+/* Said again, after the full-screen rules rather than before them. The pair of
+   overrides higher up the file lose to anything a later media query says, and
+   the block above is a later media query — so without this, turning motion off
+   worked on a laptop and did nothing on a phone. */
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+  .sheet { animation: sheetFade 160ms ease-out both; }
+  .layerClosing .sheet { animation: sheetFade 120ms ease-in reverse both; }
+}
+
+/* The sheet's header has four things in it and room for about two. Rather than
+   shrinking any of them past legibility, the title claims the whole first row
+   and the three controls take the second — with the close pushed to its far
+   end, which is where a dismissal is looked for and the one position it must
+   not wander from. */
+@media (max-width: 640px) {
+  .head { flex-wrap: wrap; row-gap: 10px; }
+  .headText { flex: 1 1 100%; }
+  .shareBtn, .sharedBtn, .head .primaryBtn { flex: 0 1 auto; }
+  .head > :last-child { margin-left: auto; }
+}
+
+/* Below this the index header's button will not sit beside its own title
+   without squeezing both, so it goes underneath and runs full width — which is
+   also where a thumb expects the page's one primary action to be. */
+@media (max-width: 520px) {
+  .indexHead { align-items: stretch; }
+  .indexHead .primaryBtn { width: 100%; }
 }
 
 /* Touch: 16px is the threshold under which iOS Safari zooms the page to meet a
@@ -1103,20 +1465,22 @@ button.refChipTitle:hover { color: var(--accent); }
 
 /* ── Feed articles consulted for an answer ───────────────────────────────── */
 
+/* A label and a row of cards, with no frame of its own.
+ *
+ * It used to be a bordered, filled box holding bordered, filled cards — three
+ * nested rectangles to say "here are two links", and the heaviest thing in a
+ * transcript that is mostly prose. The cards are already objects; what they
+ * needed was a heading, not a crate. */
 .sources {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  gap: 8px;
 }
 
 .sourcesLabel {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -1129,7 +1493,7 @@ button.refChipTitle:hover { color: var(--accent); }
 .sourceGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 
 .feedCard {
@@ -1137,20 +1501,20 @@ button.refChipTitle:hover { color: var(--accent); }
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   text-align: left;
   font: inherit;
   color: var(--text);
   text-decoration: none;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  border-radius: 11px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .feedCard:hover {
-  border-color: var(--accent);
-  background: var(--surface);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--surface) 85%, transparent);
 }
 .feedCard:hover .feedCardTitle { color: var(--accent); }
 
@@ -1210,9 +1574,9 @@ button.refChipTitle:hover { color: var(--accent); }
   align-items: stretch;
   gap: 0;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
   border-radius: 14px;
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface) 62%, transparent);
 }
 
 /* A hairline of the brand gradient down the leading edge, tying the card to the
@@ -1333,8 +1697,8 @@ button.refChipTitle:hover { color: var(--accent); }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  background: color-mix(in oklab, var(--bg) 55%, transparent);
   color: var(--text);
   font: inherit;
   font-size: 11.5px;
