@@ -128,6 +128,9 @@
 }
 
 .convCard {
+  /* The anchor for .convOpen's overlay, which is what makes the whole card
+     open the conversation - see below. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -178,6 +181,20 @@
   cursor: pointer;
 }
 
+/* The card opens the conversation, not just the two lines of text on it. A card
+   whose live area is the title alone asks you to aim at a headline that is
+   often one short word, with dead space either side of it that looks exactly as
+   clickable as the word does.
+   Done as an overlay on the button rather than a click handler on the card, so
+   there is still exactly one control here: it keeps its name, its focus ring
+   and its place in the tab order, and nothing has to guess which clicks were
+   meant for the tools below. Those sit above the overlay and keep their own. */
+.convOpen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
 .convTitle {
   font-size: 14px;
   font-weight: 600;
@@ -219,6 +236,10 @@
 }
 
 .convTools {
+  /* Above .convOpen's overlay, so Share and Delete still get their own clicks
+     rather than opening the conversation underneath them. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -257,16 +278,24 @@
 }
 .convShared:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); }
 
+/* Said in a word rather than drawn as a ×. The glyph is the one control on the
+   card whose meaning you have to already know, and it sits a few pixels from
+   Share — which is a mistake worth avoiding on a button that throws a
+   conversation away. It stays borderless beside the outlined Share pill, so
+   labelling it does not promote it. */
 .convDelete {
   flex: none;
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 17px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
   line-height: 1;
-  padding: 3px 7px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
   /* Hidden until the card is hovered, so the index reads as titles rather than
      as a grid of delete buttons. Focus reveals it too, for keyboard users. */
   opacity: 0;
@@ -274,6 +303,12 @@
 .convCard:hover .convDelete,
 .convDelete:focus-visible { opacity: 1; }
 .convDelete:hover { color: var(--danger); background: var(--surface); }
+
+/* Nothing hovers on a touch screen, and a delete that only appears on hover is
+   a delete that does not exist there. */
+@media (hover: none) {
+  .convDelete { opacity: 1; }
+}
 
 .renameInput {
   min-width: 0;

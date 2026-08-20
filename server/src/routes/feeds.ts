@@ -828,35 +828,52 @@ router.get('/search', searchLimiter, async (req: AuthRequest, res: Response): Pr
     // the same reason: two feeds carrying one article is ordinary, and a result
     // list that shows it twice looks broken. DISTINCT ON needs linkKey to lead
     // the inner sort, so the ranking sort has to happen in an outer query.
+    // Against the archive, not the river.
+    //
+    // Two things fall out of that, both good. The corpus is years deep rather
+    // than the fortnight FeedItem holds — which is what this route always
+    // claimed in its own docblock ("the whole archive") and could not deliver.
+    // And the DISTINCT ON is gone: the archive is keyed on articleKey, so one
+    // article is one row and the dedupe happened at write time. That removes a
+    // full sort of every matching row from a query whose LIMIT is applied last
+    // and so could never short-circuit it — the one thing that would otherwise
+    // have made a deeper corpus feel slower rather than better.
+    //
+    // Scoped through ArticleArchiveFeed. The archive is deduped instance-wide,
+    // so without the join a search would answer with articles from feeds the
+    // reader has never subscribed to. The scalar subquery picks which of the
+    // reader's own feeds to attribute it to; the EXISTS guarantees there is one.
     const rows = tagged
       ? await prisma.$queryRaw<SearchRow[]>`
-          SELECT * FROM (
-            SELECT DISTINCT ON (i."linkKey")
-              i."id", i."title", i."link", i."feedId", i."pubDate", i."categories",
-              0::real AS "rank"
-            FROM "FeedItem" i
-            WHERE i."feedId" = ANY(${feedIds}::text[])
-              AND EXISTS (
-                SELECT 1 FROM unnest(i."categories") c
-                WHERE c ILIKE ${escapeLike(trimmed) + '%'} ESCAPE '\\')
-            ORDER BY i."linkKey", i."pubDate" DESC NULLS LAST
-          ) s
-          ORDER BY s."pubDate" DESC NULLS LAST
+          SELECT a."articleKey" AS "id", a."title", a."link", a."pubDate", a."categories",
+                 0::real AS "rank",
+                 (SELECT f."feedId" FROM "ArticleArchiveFeed" f
+                   WHERE f."articleKey" = a."articleKey"
+                     AND f."feedId" = ANY(${feedIds}::text[]) LIMIT 1) AS "feedId"
+          FROM "ArticleArchive" a
+          WHERE EXISTS (SELECT 1 FROM "ArticleArchiveFeed" f
+                         WHERE f."articleKey" = a."articleKey"
+                           AND f."feedId" = ANY(${feedIds}::text[]))
+            AND EXISTS (
+              SELECT 1 FROM unnest(a."categories") c
+              WHERE c ILIKE ${escapeLike(trimmed) + '%'} ESCAPE '\\')
+          ORDER BY a."pubDate" DESC NULLS LAST
           LIMIT ${limit}`
       : await prisma.$queryRaw<SearchRow[]>`
-          SELECT * FROM (
-            SELECT DISTINCT ON (i."linkKey")
-              i."id", i."title", i."link", i."feedId", i."pubDate", i."categories",
-              ts_rank(i."searchVector", to_tsquery('english', ${tsq})) AS "rank"
-            FROM "FeedItem" i
-            WHERE i."feedId" = ANY(${feedIds}::text[])
-              AND i."searchVector" @@ to_tsquery('english', ${tsq})
-            ORDER BY i."linkKey", "rank" DESC, i."pubDate" DESC NULLS LAST
-          ) s
+          SELECT a."articleKey" AS "id", a."title", a."link", a."pubDate", a."categories",
+                 ts_rank(a."searchVector", to_tsquery('english', ${tsq})) AS "rank",
+                 (SELECT f."feedId" FROM "ArticleArchiveFeed" f
+                   WHERE f."articleKey" = a."articleKey"
+                     AND f."feedId" = ANY(${feedIds}::text[]) LIMIT 1) AS "feedId"
+          FROM "ArticleArchive" a
+          WHERE EXISTS (SELECT 1 FROM "ArticleArchiveFeed" f
+                         WHERE f."articleKey" = a."articleKey"
+                           AND f."feedId" = ANY(${feedIds}::text[]))
+            AND a."searchVector" @@ to_tsquery('english', ${tsq})
           -- Relevance first, recency only to settle ties. A local paper and a
           -- national one both matching "school closures" should be separated by
           -- how well they match, not by which polled most recently.
-          ORDER BY s."rank" DESC, s."pubDate" DESC NULLS LAST
+          ORDER BY "rank" DESC, a."pubDate" DESC NULLS LAST
           LIMIT ${limit}`;
 
     // Same naming ladder as the river, so a result and the card it corresponds

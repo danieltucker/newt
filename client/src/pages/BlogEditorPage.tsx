@@ -12,6 +12,7 @@ import { postReferences } from '../utils/postReferences';
 import { takeSeed, clearSeed } from '../utils/composerSeed';
 import { relTime } from '../utils/notifications';
 import ProofreadPanel from '../components/ProofreadPanel';
+import IdeasPanel from '../components/IdeasPanel';
 import { useReadingList } from '../hooks/useReadingList';
 import { useCommentCounts } from '../hooks/useCommentCounts';
 import useSlidingThumb from '../hooks/useSlidingThumb';
@@ -720,6 +721,11 @@ export default function BlogEditorPage({ postId, username, accessToken, navigate
           {/* Before Publish, because it is the thing worth doing first — and
               because the draft it reads is whatever is in the editor right now,
               saved or not. */}
+          {/* Not gated on the draft having anything in it, unlike Proofread:
+              the blank page is exactly when an author wants somewhere to
+              start, and a button that only appears once you have written
+              something is no use to the case it was built for. */}
+          {hasModel && <IdeasPanel getDraft={() => ({ title, body: bodyRef.current })} />}
           {hasModel && !bodyEmpty && (
             <ProofreadPanel getDraft={() => ({ title, body: bodyRef.current })} />
           )}

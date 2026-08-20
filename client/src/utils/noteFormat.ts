@@ -632,6 +632,18 @@ export function applyBlockTag(range: Range, root: HTMLElement, tag: string): voi
     const indent = block.getAttribute('data-indent');
     if (indent) next.setAttribute('data-indent', indent);
     block.replaceWith(next);
+    // A caret on a blank line sits on the block itself: `<p><br></p>` with the
+    // range at (p, 0) is what every empty line in this editor looks like, and
+    // what the slash menu and the markdown shortcuts both hand over once they
+    // have cleared the marker text away. The children move across, so a caret
+    // in a text node survives the swap; a boundary pointing at the block does
+    // not, and restoring it below would hand the browser a range in a node that
+    // is no longer in the document. That reads as the editor losing focus - the
+    // line stops looking selected and the next keystroke goes nowhere. Follow
+    // the boundary onto the replacement, which holds the same children in the
+    // same order, so the offset still means what it meant.
+    if (start.node === block) start.node = next;
+    if (end.node === block) end.node = next;
   }
 
   const sel = window.getSelection();

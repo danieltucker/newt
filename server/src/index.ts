@@ -3,6 +3,7 @@ import app from './app';
 import logger from './lib/logger';
 import { startFeedScheduler, stopFeedScheduler } from './lib/feedScheduler';
 import { backfillExploredPaths } from './lib/exploredPaths';
+import { backfillArticleArchive } from './lib/archiveBackfill';
 
 // Process entry point. Everything that binds a port, opens a timer or installs a
 // signal handler belongs here; the app itself is assembled in app.ts so tests can
@@ -21,6 +22,12 @@ const server = app.listen(PORT, () => {
   // call (see exploredPaths.ts); neither blocks the server from serving, and a
   // failure only means some article pages list less than they could.
   void backfillExploredPaths();
+  // Same deal for the article archive: fill in ReadingListItem.articleKey for
+  // rows that predate the column, and — on the first boot after the archive
+  // ships — seed it from the feed items still in the river, which is the one
+  // chance to keep that window before it expires. Both are no-ops once done,
+  // and neither blocks the server from serving (see archiveBackfill.ts).
+  void backfillArticleArchive();
 });
 
 function shutdown(signal: string) {

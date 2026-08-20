@@ -1,7 +1,9 @@
 import nodeFetch from 'node-fetch';
 import { Prisma } from '@prisma/client';
 import prisma from './prisma';
-import { parseFeed, parseFeedTitle, canonicalFeedKey } from './feedUtils';
+// FeedItem aliased: feedUtils' FeedItem is a *parsed* item off the wire, and the
+// Prisma model of the same name is the stored row. Both appear in this file.
+import { parseFeed, parseFeedTitle, canonicalFeedKey, type FeedItem as ParsedItem } from './feedUtils';
 import { canonicalArticleKey, articleHost } from './comments';
 import { parseBlogFeedUrl, refreshBlogFeed } from './blogFeed';
 import logger from './logger';
@@ -27,9 +29,19 @@ export const FEED_TTL_MS   = 7 * 24 * 60 * 60 * 1000; // 7 days
 // bookmark — so the body has to be bounded by bytes, not just by time.
 //
 // node-fetch aborts the stream and throws once the limit is passed, which the
-// catch below already logs as a failed refresh. 2 MB is generous: a 50-item feed
-// with full content runs a few hundred KB at the high end.
-const MAX_FEED_BYTES = 2_000_000;
+// catch below already logs as a failed refresh.
+//
+// This was 2 MB, justified in this comment as "a few hundred KB at the high end"
+// for a 50-item full-content feed. That estimate was wrong by an order of
+// magnitude and it was quietly killing ordinary feeds: PCGamer's is 2.65 MB and
+// 99% Invisible's is 3.45 MB, both plain, valid, widely-read feeds. 99PI reached
+// FEED_FAILURE_DISABLE_THRESHOLD and was switched off altogether for being big.
+//
+// The limit counts *decompressed* bytes. Both feeds above are under 400 KB on
+// the wire under gzip, so this bounds heap rather than bandwidth - which is also
+// what sets the ceiling: at MAX_CONCURRENCY of 5 the worst case is ~50 MB of
+// transient buffer, and that is the budget being spent here.
+const MAX_FEED_BYTES = 10_000_000;
 
 const UPSERT_CHUNK    = 10; // feed items upserted per DB batch
 const MAX_CONCURRENCY = 5;  // feeds fetched in parallel — keep outbound bursts small
@@ -118,6 +130,21 @@ async function bodySnippet(resp: { text(): Promise<string> }): Promise<string> {
 // The block an admin unrolls under a failed row. Built here rather than at the
 // call sites so every kind of failure — HTTP status, unreadable document,
 // timeout — is described in the same shape and in the same order.
+// What to record when the fetch threw rather than answered.
+//
+// node-fetch's own words for an oversize body are "content size at <url> over
+// limit: 10000000", which reads to an operator as a fault in Newt rather than as
+// a feed that is simply bigger than we agreed to download, and buries the one
+// number they could act on. That case gets a sentence; everything else - a
+// timeout, a DNS failure, a refused connection - keeps the library's message,
+// which for those is already the clearest description available.
+function describeFetchError(err: unknown): string {
+  const oversize = typeof err === 'object' && err !== null
+    && (err as { type?: string }).type === 'max-size';
+  if (!oversize) return errorMessage(err);
+  return `Feed is larger than the ${Math.round(MAX_FEED_BYTES / 1_000_000)} MB download limit`;
+}
+
 function failureDetail(
   feed: RefreshableFeed,
   ctx: AttemptContext,
@@ -442,6 +469,12 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
           update: { fetchedAt: now, title: item.title, linkKey: canonicalArticleKey(item.link), linkHost: articleHost(item.link), readTime: item.readTime, snippet: item.snippet, content: item.content, imageUrl: item.imageUrl, categories: item.categories },
         }).catch(() => {})
       ));
+
+      // The same items into the archive, in the same chunk, so search and
+      // Explore keep years of them after the river has moved on. See the
+      // ArticleArchive note in schema.prisma for why this is written here on
+      // the way in rather than by the sweep on the way out.
+      await Promise.all(chunk.map(item => archiveItem(feed.id, item, now).catch(() => {})));
     }
 
     // Items that dropped out of the feed expire after the TTL
@@ -472,12 +505,108 @@ async function doRefresh(feed: RefreshableFeed): Promise<void> {
     // No response to describe — a timeout, a DNS failure or a body over the size
     // ceiling all land here. The duration is the informative part: an 8s one is
     // the fetch timeout, a 30ms one is a connection refused.
-    await noteFailure(feed, errorMessage(err), {
+    await noteFailure(feed, describeFetchError(err), {
       startedAt: now,
       durationMs: elapsed(now),
       stack: err instanceof Error ? err.stack : undefined,
     });
   }
+}
+
+// How long an article stays searchable after the last feed stopped carrying it.
+//
+// Generously long because the cost is storage and the benefit is the whole point
+// of the table: Explore has been asking for a 365-day grounding window since it
+// was written (feedContext MAX_AGE_DAYS) against a corpus that could never hold
+// more than a fortnight. Nothing reads this but the sweep, so changing it is a
+// number edit and not a migration.
+export const ARCHIVE_TTL_MS = 3 * 365 * 24 * 60 * 60 * 1000; // ~3 years
+
+// One item into the archive.
+//
+// firstSeenAt is written on create and never updated - the same contract
+// FeedItem.firstSeenAt has, and here it means the earliest sighting across every
+// feed that ever carried the article. lastSeenAt moves on every sighting and is
+// what retention measures, so a piece a publisher keeps listing never ages out
+// while it is still being carried.
+//
+// `?? undefined` on the text columns rather than passing null through: two feeds
+// carrying one article is ordinary and they do not always carry it equally well,
+// so a copy that arrives with no snippet must not blank the one that had it.
+// Prisma skips an undefined field, so the better-populated copy wins whichever
+// order they arrive in. The cost is that a genuinely cleared snippet never
+// clears, which is the right way round for a table nobody edits by hand.
+async function archiveItem(feedId: string, item: ParsedItem, now: Date): Promise<void> {
+  const articleKey = canonicalArticleKey(item.link);
+
+  await prisma.articleArchive.upsert({
+    where: { articleKey },
+    create: {
+      articleKey,
+      link: item.link,
+      linkHost: articleHost(item.link),
+      title: item.title,
+      snippet: item.snippet,
+      content: item.content,
+      imageUrl: item.imageUrl,
+      readTime: item.readTime,
+      categories: item.categories,
+      pubDate: item.date,
+      firstSeenAt: now,
+      lastSeenAt: now,
+    },
+    update: {
+      lastSeenAt: now,
+      title: item.title,
+      snippet: item.snippet ?? undefined,
+      content: item.content ?? undefined,
+      imageUrl: item.imageUrl ?? undefined,
+      readTime: item.readTime ?? undefined,
+      pubDate: item.date ?? undefined,
+    },
+  });
+
+  // Which feed vouched for it, so search stays scoped to a subscriber's own
+  // feeds. Empty update: the pair either exists or does not, and there is
+  // nothing about it to change.
+  await prisma.articleArchiveFeed.upsert({
+    where: { articleKey_feedId: { articleKey, feedId } },
+    create: { articleKey, feedId },
+    update: {},
+  });
+}
+
+/**
+ * Drop archived articles nobody is holding on to.
+ *
+ * The guard is the third tier of the retention design, and it is computed here
+ * rather than materialised as a `pinned` column on purpose. A flag would have to
+ * be written by every path that creates a reference, and would still be wrong in
+ * the ordinary case: you archive an article in March and comment on it in June,
+ * by which time nothing is looking at the flag again. Asking the question at
+ * sweep time is always right, needs no hooks in comments, posts or the reading
+ * list, and self-heals if a reference goes away.
+ *
+ * All three joins are indexed on articleKey - Comment and PostReference have
+ * carried one all along, and ReadingListItem gained one with this table.
+ *
+ * A NULL ReadingListItem.articleKey is "unknown", never "not referenced": those
+ * are rows written before the column existed and not yet backfilled, and
+ * deleting an article because we have not worked out its key yet would be the
+ * one unrecoverable mistake available here. They are excluded from the guard,
+ * which keeps *more* than necessary until scripts/backfillArticleKeys.ts runs.
+ */
+export async function pruneArticleArchive(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - ARCHIVE_TTL_MS);
+  const deleted = await prisma.$executeRaw`
+    DELETE FROM "ArticleArchive" a
+    WHERE a."lastSeenAt" < ${cutoff}
+      AND NOT EXISTS (SELECT 1 FROM "Comment" c        WHERE c."articleKey" = a."articleKey")
+      AND NOT EXISTS (SELECT 1 FROM "PostReference" p  WHERE p."articleKey" = a."articleKey")
+      AND NOT EXISTS (SELECT 1 FROM "ReadingListItem" r WHERE r."articleKey" = a."articleKey")
+  `;
+  if (deleted > 0) logger.info({ deleted }, 'Archive retention sweep removed articles');
+  return deleted;
 }
 
 // Refresh the feeds that are stale (or all of them when force is set), never

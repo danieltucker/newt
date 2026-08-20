@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseDomain, parseLink, bookmarkHref, faviconUrl, deriveName, deriveColor } from './color';
+import {
+  PALETTE, parseDomain, parseLink, bookmarkHref, faviconUrl, deriveName, deriveColor, isAutoColor,
+} from './color';
 
 describe('parseDomain (host only)', () => {
   it('returns a bare host', () => {
@@ -171,5 +173,39 @@ describe('deriveColor', () => {
 
   it('returns a hex colour', () => {
     expect(deriveColor('github.com')).toMatch(/^#[0-9A-Fa-f]{6}$/);
+  });
+});
+
+/**
+ * The edit dialog saves whatever it is showing, so this predicate decides
+ * whether a colour survives an edit that was not about the colour. It returning
+ * true for a hand-picked colour is the bug that made "edit the name" reset a
+ * bookmark to its derived colour.
+ */
+describe('isAutoColor', () => {
+  it('is auto when the stored colour is the derived one', () => {
+    expect(isAutoColor('github.com', deriveColor('github.com'))).toBe(true);
+  });
+
+  it('is not auto when the owner picked something else', () => {
+    const picked = PALETTE.find(c => c !== deriveColor('github.com'))!;
+    expect(isAutoColor('github.com', picked)).toBe(false);
+  });
+
+  it('derives from the host, not the whole link', () => {
+    // The dialog stores a path with the domain; the colour has never been about
+    // the path, so a bookmark deep-linking into a site is still auto.
+    expect(isAutoColor('github.com/danieltucker', deriveColor('github.com'))).toBe(true);
+  });
+
+  it('treats a missing colour as auto', () => {
+    expect(isAutoColor('github.com', '')).toBe(true);
+  });
+
+  // Nothing to derive from means nothing to compare against, so a stored colour
+  // is the only colour there is - and it has to be kept.
+  it('keeps a stored colour when the domain does not parse', () => {
+    expect(isAutoColor('not a host', '#FF4500')).toBe(false);
+    expect(isAutoColor('not a host', '')).toBe(true);
   });
 });

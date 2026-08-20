@@ -18,6 +18,7 @@ const MODELS = [
   'feedItem', 'feedSubscription', 'feedFolder', 'readFeedItem', 'dismissedFeedItem', 'refreshToken',
   'adminAction', 'commentRevision', 'errorLog', 'feedFetchLog', 'blockedDomain',
   'researchThread', 'researchMessage',
+  'articleArchive', 'articleArchiveFeed',
 ] as const;
 
 const METHODS = [
@@ -33,6 +34,9 @@ export type PrismaMock = Record<(typeof MODELS)[number], Model> & {
   // raw query. It can say nothing about the SQL text around them; see the note
   // at the top about what this mock is and isn't for.
   $queryRaw: ReturnType<typeof vi.fn>;
+  // Same tagged-template shape as $queryRaw. The archive retention sweep is the
+  // only caller, and it returns a row count rather than rows.
+  $executeRaw: ReturnType<typeof vi.fn>;
 };
 
 function makeModel(): Model {
@@ -44,6 +48,7 @@ function makeModel(): Model {
 export const prismaMock = {
   $transaction: vi.fn(),
   $queryRaw: vi.fn(),
+  $executeRaw: vi.fn(),
 } as PrismaMock;
 
 for (const name of MODELS) prismaMock[name] = makeModel();
@@ -70,6 +75,8 @@ export function resetPrismaMock(): void {
   }
   prismaMock.$queryRaw.mockReset();
   prismaMock.$queryRaw.mockResolvedValue([]);
+  prismaMock.$executeRaw.mockReset();
+  prismaMock.$executeRaw.mockResolvedValue(0);
   prismaMock.$transaction.mockReset();
   prismaMock.$transaction.mockImplementation(async (arg: unknown) =>
     typeof arg === 'function'

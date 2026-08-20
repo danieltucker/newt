@@ -97,6 +97,37 @@ export interface ProofreadIssue {
   suggestion: string;
 }
 
+/** One direction the post could take, from the composer's Ideas button. */
+export interface IdeaAngle {
+  title: string;
+  detail: string;
+}
+
+/**
+ * An article from the author's own feed that Ideas turned up.
+ *
+ * Everything but `why` comes from the reader's own archive rather than from
+ * the model, so these are always real articles they are already subscribed to.
+ */
+export interface IdeaArticle {
+  title: string;
+  url: string;
+  source: string;
+  pubDate: string | null;
+  /** One line on what it gives the piece. Empty when the model didn't say. */
+  why: string;
+}
+
+export interface IdeasReport {
+  summary: string;
+  angles: IdeaAngle[];
+  questions: string[];
+  related: IdeaArticle[];
+  /** Links from the draft the server opened, and how many of those it read. */
+  linksRead: number;
+  linksTried: number;
+}
+
 export interface ProofreadReport {
   summary: string;
   readability: string;
@@ -219,6 +250,17 @@ export const listModels = (body: {
 
 export const proofread = (title: string, body: string) =>
   apiPost<ProofreadReport>('/api/v1/llm/proofread', { title, body });
+
+/**
+ * Angles, open questions and related reading for a post that isn't written yet.
+ *
+ * The draft goes up as its HTML rather than as text: the server reads the links
+ * out of it as well as the prose, and a link is the one thing htmlToText throws
+ * away. Slow by API standards — it may read pages and search the feed — so the
+ * caller is expected to show that it is working.
+ */
+export const postIdeas = (brief: string, title: string, body: string) =>
+  apiPost<IdeasReport>('/api/v1/llm/ideas', { brief, title, body });
 
 // ── Streaming ───────────────────────────────────────────────────────────────
 

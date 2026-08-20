@@ -1,0 +1,246 @@
+/* The composer's planning panel. Deliberately built from the same parts as
+   ProofreadPanel - same trigger pill, same card, same head - because to the
+   author they are one pair of buttons on one row, and two AI panels that
+   disagreed about their own chrome would read as two features bolted on. */
+
+.trigger {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 0 14px;
+  min-height: var(--ctl-h);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.trigger:hover { border-color: var(--accent); color: var(--accent); }
+.trigger:disabled { opacity: 0.55; cursor: default; }
+
+/* Full width so it takes a row of its own in the composer's footer, which is a
+   wrapping flex line of otherwise pill-sized controls. */
+.panel {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.close:hover { color: var(--text); background: var(--surface2); }
+
+/* ── The brief ── */
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.brief {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.brief:focus { outline: none; border-color: var(--accent); }
+.brief:disabled { opacity: 0.6; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* Says what pressing the button will actually read, before it reads it. */
+.hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.go {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 0 16px;
+  min-height: var(--ctl-h);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.go:hover { filter: brightness(1.08); }
+.go:disabled { opacity: 0.5; cursor: default; filter: none; }
+
+/* ── The report ── */
+
+.status, .summary {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.status { color: var(--muted); }
+
+.summary {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.angles {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.angle {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.angleTitle {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.angleDetail {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.block { margin-top: 14px; }
+
+.blockTitle {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.questions {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.related {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.article {
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.articleLink {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.articleLink:hover { color: var(--accent); text-decoration: underline; }
+
+.articleMeta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.articleWhy {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.footnote {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.error {
+  margin-top: 12px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 9px;
+}

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import styles from './SettingsPage.module.css';
 import { UserSettings } from '../hooks/useSettings';
-import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useRailMarker, useKeepActiveVisible } from '../hooks/useRailMarker';
 import { tagKey, hasFavorite } from '../utils/favoriteTags';
 import { apiFetch, apiGet, apiPatch, apiPost } from '../services/api';
 import { COVER_AUTO, COVER_THEMES, coverStyle } from '../utils/coverGradient';
@@ -13,7 +13,8 @@ import {
 import { uploadImage, ACCEPTED_IMAGE_TYPES } from '../utils/imageUpload';
 import AiSettingsPanel, { type LlmBinding } from '../components/AiSettingsPanel';
 import {
-  SETTINGS_PATH, SETTINGS_SECTIONS, settingsPathFor, type SettingsSection,
+  SETTINGS_SECTIONS, SETTINGS_GROUPS, groupForSection, sectionsInGroup,
+  settingsPathFor, type SettingsSection, type SettingsGroup,
 } from '../utils/settingsUrl';
 
 export interface UserProfile {
@@ -95,6 +96,31 @@ const BookOpenIcon = () => (
   </svg>
 );
 
+// The mark beside the word. Small enough that the word is still doing the
+// naming - the glyph is only there to be recognised, which is what happens in
+// peripheral vision on the way past.
+//
+// Sliders rather than a cog. A cog at 15px is a circle with short spokes, which
+// is the brightness icon, and Appearance is one of the five pills six pixels to
+// the right of it - the one place in the app where that confusion has somewhere
+// to land.
+const SlidersIcon = () => (
+  <svg
+    className={styles.wordmarkIcon}
+    width="15" height="15" viewBox="0 0 16 16"
+    fill="none" stroke="currentColor" strokeWidth="1.5"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden
+  >
+    <path d="M2.5 4.25h11M2.5 11.75h11" />
+    <circle cx="6" cy="4.25" r="1.75" fill="var(--surface)" />
+    <circle cx="10.5" cy="11.75" r="1.75" fill="var(--surface)" />
+  </svg>
+);
+
+// What each section is called, in the sub-nav and in a search result. Only two
+// of the six ever reach the sub-nav - the rest are the whole of their group and
+// are named by the pill instead - but a result has to say where it lives
+// whichever kind of section it is in.
 const SECTION_CHROME: Record<Section, { label: string; icon: ReactNode }> = {
   account:      { label: 'Account',      icon: '◍' },
   search:       { label: 'Search',       icon: '⌕' },
@@ -102,57 +128,31 @@ const SECTION_CHROME: Record<Section, { label: string; icon: ReactNode }> = {
   reading:      { label: 'Reading',      icon: <BookOpenIcon /> },
   ai:           { label: 'AI',           icon: '✦' },
   advanced:     { label: 'Advanced',     icon: '⚙' },
-  integrations: { label: 'Integrations', icon: '⇌' },
 };
 
-// The rail, in the order the URL helper lists the sections. Taken from there
-// rather than written out again so the first entry and what a bare /settings
-// resolves to cannot drift apart.
-const NAV = SETTINGS_SECTIONS.map(id => ({ id, ...SECTION_CHROME[id] }));
+const sectionLabel = (id: Section) => SECTION_CHROME[id]?.label ?? '';
 
-const sectionLabel = (id: Section) => NAV.find(n => n.id === id)?.label ?? '';
+// The pills. Labels come from the URL helper, which is where the grouping is
+// decided; only the glyph is chosen here, because it is presentation and the
+// helper has no business knowing about it.
+const GROUP_ICONS: Record<SettingsGroup, ReactNode> = {
+  account:  '◍',
+  newtab:   '⊞',
+  reading:  <BookOpenIcon />,
+  ai:       '✦',
+  advanced: '⚙',
+};
 
-// What the search field can find. Every entry names a `data-setting` anchor on
-// a real control below, so a hit lands on the switch itself rather than the
-// section that happens to contain it - which for Reading is a long scroll.
-// `terms` carries the words people actually type that the label doesn't say:
-// "2fa" for the authenticator, "dark" for the theme, "opml" for the feeds.
-const SEARCH_INDEX: { anchor: string; section: Section; label: string; terms: string }[] = [
-  { anchor: 'profile',        section: 'account',      label: 'Profile',                      terms: 'name first last email avatar photo picture display' },
-  { anchor: 'cover',          section: 'account',      label: 'Profile cover',                terms: 'banner header gradient image background' },
-  { anchor: 'links',          section: 'account',      label: 'Profile links',                terms: 'social website mastodon github bluesky url' },
-  { anchor: 'password',       section: 'account',      label: 'Change password',              terms: 'security credentials sign in login' },
-  { anchor: 'totp',           section: 'account',      label: 'Two-factor authentication',    terms: '2fa totp authenticator security code mfa' },
-  { anchor: 'search-engine',  section: 'search',       label: 'Search engine',                terms: 'google duckduckgo bing brave default query' },
-  { anchor: 'search-new-tab', section: 'search',       label: 'Open results in new tab',      terms: 'window target blank' },
-  { anchor: 'theme',          section: 'appearance',   label: 'Theme',                        terms: 'dark light auto system colour color mode' },
-  { anchor: 'bookmark-layout',section: 'appearance',   label: 'Bookmark layout',              terms: 'panel inline sidebar folders arc grid' },
-  { anchor: 'background',     section: 'appearance',   label: 'Background',                   terms: 'gradient wallpaper page colour color' },
-  { anchor: 'favorite-tags',  section: 'reading',      label: 'Favorite tags',                terms: 'favourite star topics keywords highlight' },
-  { anchor: 'rss',            section: 'reading',      label: 'RSS feeds',                    terms: 'feed subscriptions articles atom syndication' },
-  { anchor: 'mark-read',      section: 'reading',      label: 'Mark articles read as you scroll', terms: 'unread badge seen scrolling' },
-  { anchor: 'comments-public',section: 'reading',      label: 'Show public comments',         terms: 'comments threads others replies' },
-  { anchor: 'comments-visibility', section: 'reading', label: 'Default visibility for new comments', terms: 'comments public friends private personal note' },
-  { anchor: 'comments-expand',section: 'reading',      label: 'Open comment threads automatically', terms: 'comments expand collapse' },
-  { anchor: 'comments-sort',  section: 'reading',      label: 'Comment order',                terms: 'comments sort newest oldest first' },
-  { anchor: 'save-article',   section: 'reading',      label: 'Saving articles',              terms: 'reading list save dialog instant review tags' },
-  { anchor: 'reading-list-open', section: 'reading',   label: 'How the reading list opens articles', terms: 'reader overlay new tab same window' },
-  { anchor: 'bookmark-open',  section: 'reading',      label: 'How bookmarks open',           terms: 'new tab same window links' },
-  { anchor: 'page-size',      section: 'reading',      label: 'Articles per page',            terms: 'feed page size load more count' },
-  // "api key" and the provider names are what people type looking for this —
-  // "Claude", "ChatGPT" and "Ollama" more often than the word "model".
-  // "research" stays in the search terms after the rename: it is what the
-  // feature was called, and somebody looking for it by the old name should land
-  // on the new one rather than on nothing.
-  { anchor: 'ai-models',      section: 'ai',           label: 'Connected models',             terms: 'api key llm claude chatgpt openai anthropic ollama openwebui explore research proofread ai model' },
-  { anchor: 'ai-depth',       section: 'ai',           label: 'Answer length and cost',        terms: 'cost price cheap expensive tokens spend budget length brief short verbose depth effort thinking' },
-  { anchor: 'ai-feed-search',  section: 'ai',           label: 'Search your feed when exploring', terms: 'feed articles rss context grounding sources cite recent news explore research' },
-  { anchor: 'ai-privacy',     section: 'ai',           label: 'What gets sent to your model',  terms: 'privacy data context comments article sent provider' },
-  { anchor: 'console',        section: 'advanced',     label: 'Console',                      terms: 'backtick commands power user notes' },
-  { anchor: 'import',         section: 'advanced',     label: 'Import bookmarks',             terms: 'html json browser export migrate' },
-  { anchor: 'personal-feed',  section: 'integrations', label: 'Your friends’ post feed',      terms: 'rss private token blog url rotate' },
-  { anchor: 'bookmarklets',   section: 'integrations', label: 'Browser bookmarklets',         terms: 'save article add bookmark drag toolbar' },
-];
+// The `data-setting` attributes on the blocks below outlived the search field
+// that used to read them, and deliberately: the #anchor is a *URL* feature, not
+// a search feature. /settings/reading#comments-sort still lands on the switch it
+// names rather than on the section that happens to contain it - which for
+// Reading is a long scroll - and that address is parsed in App, carried in the
+// `anchor` prop, and answered by the effect below. See utils/settingsUrl.
+//
+// What went with the search field was the index it matched against: a table of
+// every anchor with the words people type looking for it ("2fa" for the
+// authenticator, "opml" for the feeds). Nothing else read it.
 
 function BookmarkletRow({ label, href }: { label: string; href: string }) {
   const [copied, setCopied] = useState(false);
@@ -266,8 +266,13 @@ function PersonalFeedPanel() {
         read your friends’ friends-only posts. Rotate it to revoke a link you’ve shared.
       </div>
       <div className={styles.row}>
+        {/* .textInput, not .input - there is no .input in this stylesheet and
+            never was, so this field has been rendering as a bare browser input
+            in the middle of a styled block. It reads as more than a typo now
+            that Integrations has moved into Advanced and this is no longer
+            behind its own nav row. */}
         <input
-          className={styles.input}
+          className={styles.textInput}
           readOnly
           value={revealed ? url : url.replace(/\/feed\/[^.]+\.xml$/, '/feed/••••••••.xml')}
           onFocus={e => e.currentTarget.select()}
@@ -380,52 +385,63 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 export default function SettingsPage({
   settings, onUpdate, onImport, section: routeSection, anchor, navigate, onProfileChange, llm,
 }: Props) {
-  // Below this width the two columns don't fit side by side, so the page
-  // becomes a drill-down: the section list, then one section at a time with a
-  // back button. Driven from JS rather than CSS alone because the two modes are
-  // different trees - the list and the panel are never on screen together.
-  const compact = useMediaQuery('(max-width: 720px)');
-
-  // A bare /settings means two different things by width, which is why the
-  // address is allowed to stay bare: on a phone it is the section list, and
-  // there is nothing to name yet. On a wide screen both columns are on screen
-  // at once, so "no section" would show Account while claiming not to - and
-  // Back out of /settings/account would then appear to do nothing. Rewriting
-  // the address (replace, so it adds no history entry) keeps the URL honest
-  // about what is being looked at.
+  // A bare /settings used to mean two different things by width - the section
+  // list on a phone, Account on a wide screen - which is why the address was
+  // allowed to stay bare. There is one nav at every width now, so there is only
+  // one answer: it shows the first section, and an address that showed a
+  // section while claiming to show none would make Back out of
+  // /settings/account appear to do nothing. Rewriting it (replace, so it adds
+  // no history entry) keeps the URL honest about what is being looked at.
   useEffect(() => {
-    if (!compact && !routeSection) navigate(settingsPathFor(NAV[0].id), true);
-  }, [compact, routeSection, navigate]);
+    if (!routeSection) navigate(settingsPathFor(SETTINGS_SECTIONS[0]), true);
+  }, [routeSection, navigate]);
 
-  const section: Section = routeSection ?? NAV[0].id;
-  const showList = compact && !routeSection;
-  const [query, setQuery] = useState('');
-  const panelVisible = !compact || !showList;
+  const section: Section = routeSection ?? SETTINGS_SECTIONS[0];
+  // Derived, never addressed. See the note on SETTINGS_GROUPS: putting the group
+  // in the URL would break every /settings/<section> link that has already been
+  // pasted somewhere, for a level of the nav nobody needs to link to.
+  const group = groupForSection(section);
+  const subSections = sectionsInGroup(group);
+
+  // Says which screen this is, and the half of that which survives the window
+  // being one of nine. Reset on unmount the way every other titled page here
+  // does.
+  useEffect(() => {
+    document.title = `${sectionLabel(section)} · Settings · Newt`;
+    return () => { document.title = 'Newt'; };
+  }, [section]);
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const groupRefs = useRef(new Map<SettingsGroup, HTMLElement>());
 
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    const words = q.split(/\s+/);
-    return SEARCH_INDEX.filter(e => {
-      const hay = `${e.label} ${e.terms} ${sectionLabel(e.section)}`.toLowerCase();
-      return words.every(w => hay.includes(w));
-    });
-  }, [query]);
+  // The lozenge behind the lit pill. Sharing the hook with the shell rail and
+  // the admin console rather than growing a third of these: one painted box
+  // that slides is the same idea whichever axis it runs along.
+  const marker = useRailMarker({
+    activeId: group,
+    elementFor: id => groupRefs.current.get(id as SettingsGroup) ?? null,
+    containerRef: navRef,
+  });
 
-  // Going somewhere in settings is navigation now, so every section switch and
-  // every search result is an address. The section swap and the scroll can't
-  // happen in one breath - the anchor only exists once the new section has
-  // rendered - so the jump waits for the effect below.
-  const [seq, setSeq] = useState(0);
+  // Five pills do not fit a phone, so the row scrolls - and a lit pill off the
+  // right-hand edge is a nav that has stopped saying where you are.
+  useKeepActiveVisible({
+    activeId: group,
+    elementFor: id => groupRefs.current.get(id as SettingsGroup) ?? null,
+  });
 
-  const goTo = useCallback((next: Section, target?: string) => {
-    navigate(settingsPathFor(next, target));
-    // Clicking the same result twice leaves the address exactly as it was, and
-    // a button that does nothing the second time reads as broken. Bumping this
-    // on the click rather than on the URL is what makes the repeat land again.
-    if (target) setSeq(n => n + 1);
+  // Going somewhere in settings is navigation, so every group and every sub-tab
+  // is an address rather than a piece of local state.
+  //
+  // No `target` parameter any more. It existed so a search result could name an
+  // anchor as well as a section, alongside a counter that re-fired the scroll
+  // when the same result was picked twice — and with the search field gone,
+  // nothing inside this page produces an anchored address. A pasted one still
+  // lands: that arrives as the `anchor` prop and is answered by the effect
+  // below.
+  const goTo = useCallback((next: Section) => {
+    navigate(settingsPathFor(next));
   }, [navigate]);
 
   useEffect(() => {
@@ -457,7 +473,7 @@ export default function SettingsPage({
       clearTimeout(clear);
       found?.classList.remove(styles.flash);
     };
-  }, [anchor, section, seq]);
+  }, [anchor, section]);
 
   // ── Profile state ─────────────────────────────────────────────────────────────
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -470,14 +486,14 @@ export default function SettingsPage({
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!panelVisible || section !== 'account' || profile) return;
+    if (section !== 'account' || profile) return;
     apiGet<UserProfile>('/api/v1/account').then(p => {
       setProfile(p);
       setFirstName(p.firstName ?? '');
       setLastName(p.lastName ?? '');
       setEmail(p.email ?? '');
     }).catch(() => setProfileError('Could not load profile'));
-  }, [panelVisible, section, profile]);
+  }, [section, profile]);
 
   // Every successful save lands here. Besides the local state and the shell's
   // top-bar avatar, it announces on the window - the profile page is one Back
@@ -517,11 +533,11 @@ export default function SettingsPage({
   const [claimBusy, setClaimBusy] = useState(false);
 
   useEffect(() => {
-    if (!panelVisible || section !== 'account') return;
+    if (section !== 'account') return;
     apiGet<{ claimable: boolean }>('/api/v1/account/admin-claim')
       .then(d => setAdminClaimable(d.claimable))
       .catch(() => {});
-  }, [panelVisible, section]);
+  }, [section]);
 
   async function claimAdmin() {
     setClaimBusy(true); setClaimError('');
@@ -678,9 +694,9 @@ export default function SettingsPage({
   const [totpLoading, setTotpLoading] = useState(false);
 
   useEffect(() => {
-    if (!panelVisible || section !== 'account') return;
+    if (section !== 'account') return;
     apiFetch('/api/v1/totp/status').then(r => r.json()).then(d => setTotpEnabled(d.enabled));
-  }, [panelVisible, section]);
+  }, [section]);
 
   async function handleEnroll() {
     setTotpLoading(true); setTotpError('');
@@ -726,84 +742,76 @@ export default function SettingsPage({
   function cancelTotp() { setTotpStep('idle'); setTotpCode(''); setTotpError(''); setEnrollData(null); }
 
   return (
-    <div className={`${styles.page} ${compact ? styles.compact : ''}`}>
+    <div className={styles.page}>
+      <div className={styles.console}>
+        {/* One row of pills in place of a seven-row rail, and the same nav at
+            every width - the drill-down list, the chevrons and the back button
+            are gone with it.
 
-        {/* The section list: a rail on the left when there's room, the whole
-            page when there isn't. */}
-        {(!compact || showList) && (
-          <nav className={styles.nav}>
-            <div className={styles.navTop}>
-              <div className={styles.navHeader}>Settings</div>
-            </div>
+            The rail had to go for the reason the admin console's did: ShellRail
+            is already down the left of every page, and two columns of navigation
+            side by side argue about which one is the navigation. Seven flat rows
+            had a second problem - they gave "Open results in a new tab" and the
+            whole of Reading identical weight, so the shape of the list said
+            nothing about the shape of what was in it.
 
-            <div className={styles.searchWrap}>
-              <svg className={styles.searchIcon} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                <circle cx="7" cy="7" r="4.5" />
-                <path d="M10.5 10.5L14 14" />
-              </svg>
-              <input
-                className={styles.searchInput}
-                type="search"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search settings…"
-                aria-label="Search settings"
-                spellCheck={false}
-                autoFocus={!compact}
+            Groups answer "which part of the app", the sub-nav answers "which
+            view of it". See SETTINGS_GROUPS for what got folded into what. */}
+        <nav
+          className={`${styles.nav} ${subSections.length > 1 ? '' : styles.navBare}`}
+          ref={navRef}
+          aria-label="Settings sections"
+        >
+          <div className={styles.navRow}>
+            {/* Says which screen this is, which the pills never did - they name
+                the group, not the page. h1 rather than a decorative span: it is
+                the page's heading whatever size it is set in, and a screen with
+                no h1 hands a screen reader a document that starts at the nav. */}
+            <h1 className={styles.wordmark}>
+              <SlidersIcon />
+              Settings
+            </h1>
+            <div className={styles.sectionRow}>
+              <span
+                className={`${styles.lozenge} ${marker ? styles.lozengeOn : ''}`}
+                style={marker ? { transform: `translateX(${marker.left}px)`, width: marker.width } : undefined}
+                aria-hidden
               />
-              {query && (
-                <button className={styles.searchClear} onClick={() => setQuery('')} aria-label="Clear search">✕</button>
-              )}
-            </div>
-
-            <div className={styles.navScroll}>
-              {query
-                ? (results.length === 0
-                    ? <div className={styles.navEmpty}>Nothing here matches “{query.trim()}”.</div>
-                    : results.map(r => (
-                        <button
-                          key={r.anchor}
-                          className={styles.resultItem}
-                          onClick={() => goTo(r.section, r.anchor)}
-                        >
-                          <span className={styles.resultLabel}>{r.label}</span>
-                          <span className={styles.resultSection}>{sectionLabel(r.section)}</span>
-                        </button>
-                      )))
-                : NAV.map(n => (
-                    <button
-                      key={n.id}
-                      className={`${styles.navItem} ${!compact && section === n.id ? styles.navActive : ''}`}
-                      onClick={() => goTo(n.id)}
-                    >
-                      <span className={styles.navIcon}>{n.icon}</span>
-                      <span className={styles.navLabel}>{n.label}</span>
-                      {compact && <span className={styles.navChevron} aria-hidden>›</span>}
-                    </button>
-                  ))}
-            </div>
-          </nav>
-        )}
-
-        {/* The chosen section */}
-        {panelVisible && (
-        <div className={styles.content}>
-          <div className={styles.contentHeader}>
-            {/* Back to the section list on a phone. A navigation now rather
-                than local state, so the browser's own Back does the same
-                thing - which is what a reader who swiped will expect. */}
-            {compact && (
-              <button className={styles.backBtn} onClick={() => navigate(SETTINGS_PATH)}>
-                <span aria-hidden>‹</span> Back
-              </button>
-            )}
-            <div className={styles.contentTitle}>
-              {sectionLabel(section)}
+              {SETTINGS_GROUPS.map(g => (
+                <button
+                  key={g.id}
+                  ref={el => { if (el) groupRefs.current.set(g.id, el); else groupRefs.current.delete(g.id); }}
+                  className={`${styles.sectionItem} ${group === g.id ? styles.sectionActive : ''}`}
+                  aria-current={group === g.id ? 'page' : undefined}
+                  onClick={() => goTo(g.sections[0])}
+                >
+                  <span className={styles.sectionIcon} aria-hidden>{GROUP_ICONS[g.id]}</span>
+                  {g.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className={styles.contentBody} ref={bodyRef}>
+          {/* Only where there is a choice, which today is New tab alone. A
+              sub-nav of one is a row that says nothing twice. */}
+          {subSections.length > 1 && (
+            <div className={styles.subRow}>
+              {subSections.map(s => (
+                <button
+                  key={s}
+                  className={`${styles.subItem} ${section === s ? styles.subActive : ''}`}
+                  aria-current={section === s ? 'page' : undefined}
+                  onClick={() => goTo(s)}
+                >
+                  {sectionLabel(s)}
+                </button>
+              ))}
+            </div>
+          )}
+        </nav>
 
+        <div className={styles.content}>
+          <div className={styles.contentBody} ref={bodyRef}>
             {section === 'search' && (
               <>
                 <div className={styles.sectionBlock} data-setting="search-engine">
@@ -1527,13 +1535,16 @@ export default function SettingsPage({
               </>
             )}
 
-            {section === 'integrations' && <PersonalFeedPanel />}
+            {/* What Integrations used to hold. Two blocks that were a whole
+                nav row between them, now the tail of the section they always
+                belonged to. */}
+            {section === 'advanced' && <PersonalFeedPanel />}
 
-            {section === 'integrations' && <BookmarkletsPanel />}
+            {section === 'advanced' && <BookmarkletsPanel />}
 
           </div>
         </div>
-        )}
+      </div>
     </div>
   );
 }

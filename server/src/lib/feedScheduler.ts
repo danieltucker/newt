@@ -1,5 +1,5 @@
 import prisma from './prisma';
-import { refreshStaleFeeds, FEED_STALE_MS } from './feedRefresh';
+import { refreshStaleFeeds, pruneArticleArchive, FEED_STALE_MS } from './feedRefresh';
 import logger from './logger';
 
 // The scheduler decouples feed refreshing from request handlers: it walks feeds
@@ -13,6 +13,12 @@ const TICK_INTERVAL_MS = 5 * 60 * 1000;             // walk the table every 5 mi
 // the panel should say which it is rather than leave an admin to infer it.
 export const DEMAND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;  // ignore feeds unopened for 14 days
 const BATCH            = 50;                          // feeds refreshed per tick
+// How often the archive retention sweep runs. Daily rather than per tick: it
+// deletes rows that are already years old, so nothing about it is urgent, and
+// it walks three anti-joins that there is no reason to run every five minutes.
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+let lastPruneAt = 0;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -35,6 +41,13 @@ async function tick(): Promise<void> {
       take: BATCH,
       select: { id: true, fetchUrl: true, lastCheckedAt: true, etag: true, lastModified: true },
     });
+    // Before the early return: an instance with nothing stale to fetch is
+    // exactly the kind that would otherwise never prune.
+    if (Date.now() - lastPruneAt > PRUNE_INTERVAL_MS) {
+      lastPruneAt = Date.now();
+      await pruneArticleArchive().catch(err => logger.warn({ err }, 'Archive prune failed'));
+    }
+
     if (feeds.length === 0) return;
     await refreshStaleFeeds(feeds);
     logger.info({ count: feeds.length }, 'Feed scheduler refreshed feeds');

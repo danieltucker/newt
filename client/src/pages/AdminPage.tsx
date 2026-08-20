@@ -1,10 +1,14 @@
-import { useState, useEffect, useMemo, useCallback, Fragment, ReactNode } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, ReactNode } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import PersonasPanel from '../components/PersonasPanel';
 import styles from './AdminPage.module.css';
-import { ADMIN_PATH, ADMIN_TABS, adminPathFor, type AdminTab } from '../utils/adminUrl';
+import {
+  ADMIN_TABS, ADMIN_SECTIONS, adminPathFor, sectionForTab, tabsInSection,
+  type AdminTab, type AdminSection,
+} from '../utils/adminUrl';
+import { useRailMarker, useKeepActiveVisible } from '../hooks/useRailMarker';
 
 interface HistoryPoint { date: string; total: number }
 
@@ -30,6 +34,9 @@ interface AdminStats {
     friendships: number;
     blocks: number;
     openReports: number;
+    // Last 24 hours, not all time: the attention strip asks what needs someone
+    // now, and an error from three weeks ago is history rather than work.
+    errors24h: number;
   };
   activeUsers7d: number;
   signups: { date: string; count: number }[];
@@ -541,7 +548,39 @@ function countBy<T, F extends string>(
   ) as Record<F, number>;
 }
 
-const TAB_TITLES: Record<Tab, string> = {
+// The console's mark. A shield because the word beside it is doing the naming
+// and the glyph only has to do the recognising - which is what gets noticed in
+// peripheral vision, and noticing is the point: this is the tab you should not
+// leave open on a shared screen.
+const ShieldIcon = () => (
+  <svg
+    className={styles.wordmarkIcon}
+    width="15" height="15" viewBox="0 0 16 16"
+    fill="none" stroke="currentColor" strokeWidth="1.5"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden
+  >
+    <path d="M8 1.75 13.25 3.5v4.25c0 3-2.2 5.4-5.25 6.5-3.05-1.1-5.25-3.5-5.25-6.5V3.5L8 1.75Z" />
+  </svg>
+);
+
+// The glyph on each section pill. Chosen here rather than in adminUrl because
+// it is presentation and that file has no business knowing about it - the same
+// split SettingsPage makes with GROUP_ICONS.
+//
+// AI carries Settings' star and System carries its cog on purpose: the same
+// idea in two consoles should not be two different marks, and the two are never
+// on screen together for the repeat to read as a collision.
+const SECTION_ICONS: Record<AdminSection, string> = {
+  overview:   '▦',  // the stat grid
+  moderation: '⚑',  // the report queue
+  system:     '⚙',  // the machinery
+  ai:         '✦',
+};
+
+// What each view is called in the sub-nav. There is no longer a heading above
+// the content repeating it - the lit pill is what says where you are, and a
+// title that restated it was a label for a label.
+const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
   users: 'Users',
   reports: 'Reports',
@@ -1173,23 +1212,36 @@ function SignupChart({ signups }: { signups: AdminStats['signups'] }) {
 export default function AdminPage({
   currentUsername, tab: routeTab, reportId, navigate, onViewProfile,
 }: Props) {
-  // Below this the 180px rail and a table of users can't share the width, so
-  // the console becomes a drill-down: the tab list, then one tab at a time with
-  // a back button. Same shape and same breakpoint as Settings.
+  // Only tightens the nav now. The console used to become a drill-down below
+  // this width - the tab list, then one tab with a back button - because a
+  // 180px rail could not share a screen with a table of users. Two rows of
+  // pills can, so the same nav serves both widths and the extra screen, the
+  // back button and the "which of the two things does a bare /admin mean"
+  // question all go away with it.
   const compact = useMediaQuery('(max-width: 720px)');
 
-  // A bare /admin means two different things by width, which is why the address
-  // is allowed to stay bare: on a phone it is the tab list, and there is nothing
-  // to name yet. On a wide screen both columns are on screen at once, so "no
-  // tab" would show Overview while claiming not to - and Back out of
-  // /admin/overview would then appear to do nothing. Same call SettingsPage
-  // makes, for the same reason.
+  // A bare /admin resolves to the first view at every width, because there is
+  // now only one answer. It used to mean the tab list on a phone and Overview
+  // on a wide screen, which is why the address was allowed to stay bare.
   useEffect(() => {
-    if (!compact && !routeTab) navigate(adminPathFor(ADMIN_TABS[0]), true);
-  }, [compact, routeTab, navigate]);
+    if (!routeTab) navigate(adminPathFor(ADMIN_TABS[0]), true);
+  }, [routeTab, navigate]);
 
   const tab: Tab = routeTab ?? ADMIN_TABS[0];
-  const showList = compact && !routeTab;
+
+  // The other half of saying where you are, and the half that survives the
+  // window being one of nine. Reset on unmount the way every other titled page
+  // here does, so leaving the console does not leave its name in the tab strip.
+  useEffect(() => {
+    document.title = `${TAB_LABELS[tab]} · Admin · Newt`;
+    return () => { document.title = 'Newt'; };
+  }, [tab]);
+
+  // Derived, never addressed. See the note on ADMIN_SECTIONS: putting the
+  // section in the URL would have broken every existing /admin/<tab> link and
+  // the report deep link the notification bell depends on.
+  const section = sectionForTab(tab);
+  const subTabs = tabsInSection(section);
   const focusReportId = reportId ?? null;
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -1956,6 +2008,55 @@ export default function AdminPage({
 
   const switchTab = (next: Tab) => navigate(adminPathFor(next));
 
+  // The two views where a number is the reason to open them rather than a
+  // detail found once inside. Everything else reports its counts in its own
+  // tables, where they are read rather than watched.
+  const badgeForTab = (t: Tab) =>
+    t === 'reports' ? openReports : t === 'feeds' ? feedHealth.length : 0;
+
+  // A section carries what its views are asking for, so a report arriving while
+  // you are reading the audit log is still visible. This is the whole reason
+  // the badges survived the regrouping: with nine flat rows they rescued two
+  // tabs from a list, and with four sections they summarise a group.
+  const badgeForSection = (id: AdminSection) =>
+    tabsInSection(id).reduce((n, t) => n + badgeForTab(t), 0);
+
+  // One painted box that slides between sections - the navigation rail's
+  // lozenge, running along the other axis. Sharing the hook rather than growing
+  // a second highlight idiom is the point; see useRailMarker.
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const sectionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const marker = useRailMarker({
+    activeId: section,
+    elementFor: id => sectionRefs.current.get(id) ?? null,
+    containerRef: navRef,
+    deps: [compact],
+  });
+
+  // Four pills do not fit a narrow phone, so the row scrolls - and a lit pill
+  // off the right-hand edge is a nav that has stopped saying where you are.
+  useKeepActiveVisible({
+    activeId: section,
+    elementFor: id => sectionRefs.current.get(id) ?? null,
+  });
+
+  // What needs a person, as opposed to how big the database is. The stat grid
+  // below gives thirteen numbers equal weight, which makes "3 open reports"
+  // read exactly like "1,204 bookmarks" - one is work waiting and the other is
+  // trivia. These are only rendered when they are non-zero, so a quiet instance
+  // shows nothing at all rather than three reassuring noughts.
+  const attention = [
+    { id: 'reports', n: openReports,
+      label: openReports === 1 ? 'open report' : 'open reports',
+      cue: 'Review the queue', go: () => switchTab('reports') },
+    { id: 'feeds', n: feedHealth.length,
+      label: feedHealth.length === 1 ? 'failing feed' : 'failing feeds',
+      cue: 'Check feed health', go: () => switchTab('feeds') },
+    { id: 'errors', n: stats?.totals.errors24h ?? 0,
+      label: 'errors in 24h',
+      cue: 'See what broke', go: () => switchTab('errors') },
+  ].filter(x => x.n > 0);
+
   /**
    * Everything a tab was holding, dropped when you leave it.
    *
@@ -1989,61 +2090,83 @@ export default function AdminPage({
   const totalSignups30d = stats?.signups.reduce((n, s) => n + s.count, 0) ?? 0;
 
   return (
-    <div className={`${styles.page} ${compact ? styles.compact : ''}`}>
-        {(!compact || showList) && (
-        <div className={styles.nav}>
-          <div className={styles.navTop}>
-            <div className={styles.navHeader}>Admin</div>
-          </div>
-          <button className={`${styles.navItem} ${!compact && tab === 'overview' ? styles.navActive : ''}`} onClick={() => switchTab('overview')}>
-            Overview
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'users' ? styles.navActive : ''}`} onClick={() => switchTab('users')}>
-            Users
-          </button>
-          {/* Badged with the queue depth: the one tab where the number is the
-              reason to open it, not a detail found once inside. */}
-          <button className={`${styles.navItem} ${!compact && tab === 'reports' ? styles.navActive : ''}`} onClick={() => switchTab('reports')}>
-            Reports
-            {openReports > 0 && <span className={styles.navBadge}>{openReports}</span>}
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'comments' ? styles.navActive : ''}`} onClick={() => switchTab('comments')}>
-            Comments
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'blog' ? styles.navActive : ''}`} onClick={() => switchTab('blog')}>
-            Posts
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'ai' ? styles.navActive : ''}`} onClick={() => switchTab('ai')}>
-            AI
-          </button>
-          {/* Badged like Reports, and for the same reason: a failing feed is
-              work waiting, and the count is why you'd open the tab. The badge
-              sits here rather than on Errors because a failing feed is still
-              failing, whereas a recorded server error is already in the past. */}
-          <button className={`${styles.navItem} ${!compact && tab === 'feeds' ? styles.navActive : ''}`} onClick={() => switchTab('feeds')}>
-            Feeds
-            {feedHealth.length > 0 && <span className={styles.navBadge}>{feedHealth.length}</span>}
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'errors' ? styles.navActive : ''}`} onClick={() => switchTab('errors')}>
-            Errors
-          </button>
-          <button className={`${styles.navItem} ${!compact && tab === 'audit' ? styles.navActive : ''}`} onClick={() => switchTab('audit')}>
-            Audit log
-          </button>
-        </div>
-        )}
+    <div className={styles.page}>
+      <div className={styles.console}>
+        {/* Two shallow rows in place of one nine-row rail.
 
-        {(!compact || !showList) && (
+            The rail had to go because it was the console's *second* sidebar -
+            ShellRail is already down the left of every page, and two columns of
+            navigation side by side argue about which one is the navigation. Nine
+            flat rows had a second problem: they gave a report queue and a list of
+            stat cards identical weight, so the shape of the list said nothing
+            about the shape of the work.
+
+            Sections answer "which job", the sub-nav answers "which view of it".
+            Four is the number that matters - it is the most that fits a narrow
+            window without scrolling, which is the one thing the rail could never
+            offer at any width. */}
+        <nav
+          className={`${styles.nav} ${subTabs.length > 1 ? '' : styles.navBare}`}
+          ref={navRef}
+          aria-label="Admin sections"
+        >
+          <div className={styles.navRow}>
+            {/* Says where you are, which the pills never did - they name the
+                section, not the screen. h1 rather than a decorative span: it is
+                the page's heading whatever size it is set in, and a console with
+                no h1 hands a screen reader a document that starts at the nav. */}
+            <h1 className={styles.wordmark}>
+              <ShieldIcon />
+              Admin
+            </h1>
+            <div className={styles.sectionRow}>
+              <span
+                className={`${styles.lozenge} ${marker ? styles.lozengeOn : ''}`}
+                style={marker ? { transform: `translateX(${marker.left}px)`, width: marker.width } : undefined}
+                aria-hidden
+              />
+              {ADMIN_SECTIONS.map(sec => {
+                const count = badgeForSection(sec.id);
+                return (
+                  <button
+                    key={sec.id}
+                    ref={el => { if (el) sectionRefs.current.set(sec.id, el); else sectionRefs.current.delete(sec.id); }}
+                    className={`${styles.sectionItem} ${section === sec.id ? styles.sectionActive : ''}`}
+                    aria-current={section === sec.id ? 'page' : undefined}
+                    onClick={() => switchTab(sec.tabs[0])}
+                  >
+                    <span className={styles.sectionIcon} aria-hidden>{SECTION_ICONS[sec.id]}</span>
+                    {sec.label}
+                    {count > 0 && <span className={styles.navBadge}>{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Only where there is a choice. Overview and AI hold one view each,
+              and a sub-nav of one is a row that says nothing twice. */}
+          {subTabs.length > 1 && (
+            <div className={styles.subRow}>
+              {subTabs.map(t => {
+                const count = badgeForTab(t);
+                return (
+                  <button
+                    key={t}
+                    className={`${styles.subItem} ${tab === t ? styles.subActive : ''}`}
+                    aria-current={tab === t ? 'page' : undefined}
+                    onClick={() => switchTab(t)}
+                  >
+                    {TAB_LABELS[t]}
+                    {count > 0 && <span className={styles.subCount}>{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </nav>
+
         <div className={styles.content}>
-          <div className={styles.contentHeader}>
-            {compact && (
-              <button className={styles.backBtn} onClick={() => navigate(ADMIN_PATH)}>
-                <span aria-hidden>‹</span> Back
-              </button>
-            )}
-            <span className={styles.title}>{TAB_TITLES[tab]}</span>
-          </div>
-
           {error && <div className={styles.error}>{error}</div>}
           {/* Dismissible rather than timed: "switched off 12 feeds" is a result
               worth reading twice, and a toast that vanishes is the wrong shape
@@ -2057,6 +2180,22 @@ export default function AdminPage({
 
           {tab === 'overview' && stats && (
             <div className={styles.body}>
+              {/* Work waiting, above the census. Each one is a way in rather
+                  than a number to note, which is the difference between a
+                  dashboard and a hub - the Open reports stat card below was
+                  already a button for exactly this reason, and this makes that
+                  the rule instead of the exception. */}
+              {attention.length > 0 && (
+                <div className={styles.attention}>
+                  {attention.map(item => (
+                    <button key={item.id} className={styles.attentionCard} onClick={item.go}>
+                      <span className={styles.attentionCount}>{item.n}</span>
+                      <span className={styles.attentionLabel}>{item.label}</span>
+                      <span className={styles.attentionCue}>{item.cue}<span aria-hidden> →</span></span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className={styles.statGrid}>
                 <div className={styles.statCard}>
                   <span className={styles.statValue}>{stats.totals.users}</span>
@@ -3437,7 +3576,7 @@ export default function AdminPage({
             </div>
           )}
         </div>
-        )}
       </div>
+    </div>
   );
 }

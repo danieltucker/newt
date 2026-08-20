@@ -116,6 +116,31 @@ export function personaReply(id: string, commentId: string): Promise<GeneratedCo
   return apiPost<GeneratedComment>(`${BASE}/${id}/reply`, { commentId });
 }
 
+export interface Angle {
+  kind: 'question' | 'clarify' | 'insight';
+  /** What the reader sees, in the persona's voice. */
+  text: string;
+  /** The question the entry's Explore link opens with. */
+  question: string;
+}
+
+export interface GeneratedAngles extends GeneratedComment {
+  angles: Angle[];
+}
+
+/**
+ * A card of places to take the article. Posted public, immediately.
+ *
+ * Comes back looking like a comment because it is stored as one — same thread,
+ * same moderation, same delete. The difference is in the body, which is a list
+ * of questions each linking into Explore rather than an opinion about the piece.
+ * The angle list is returned alongside the rendered HTML so a caller can say how many
+ * landed without parsing the body back apart.
+ */
+export function personaAngles(id: string, url: string, articleTitle?: string): Promise<GeneratedAngles> {
+  return apiPost<GeneratedAngles>(`${BASE}/${id}/angles`, { url, articleTitle });
+}
+
 export interface GeneratedPost {
   id: string;
   title: string;

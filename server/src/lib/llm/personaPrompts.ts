@@ -145,7 +145,7 @@ export function personaVoicePrompt(cfg: PersonaConfig, displayName: string): str
   return parts.join('\n\n') + PERSONA_RULES;
 }
 
-// ── The four things a persona can be asked to write ─────────────────────────
+// ── The things a persona can be asked to write ──────────────────────────────
 
 /**
  * A comment on an article, with nothing to reply to.
@@ -223,6 +223,166 @@ export function parseGeneratedPost(raw: string): ParsedPost {
     title: firstLine.replace(/^#+\s*/, '').trim().slice(0, 120) || 'Untitled',
     body: text,
   };
+}
+
+// ── Angles: where a reader could take an article next ────────────────────────
+
+/**
+ * The three shapes an angle comes in.
+ *
+ * Three rather than one because "give me some thoughts on this" produces three
+ * variations on the same thought. Naming the kinds makes the model spread out,
+ * and gives the reader something to scan by — an open question and a
+ * clarification are wanted at different moments.
+ */
+export type AngleKind = 'question' | 'clarify' | 'insight';
+
+/**
+ * One entry in an angles card.
+ *
+ * `text` and `question` are separate fields on purpose. The text is read with
+ * the article right there, so it can lean on that — "it never measures the thing
+ * it blames". The question is opened in a new tab with none of that around it,
+ * so it has to name its own subject. Asking for one string and using it for both
+ * gets you a link that reads "what about that?".
+ */
+export interface Angle {
+  kind: AngleKind;
+  text: string;
+  question: string;
+}
+
+/** The heading each kind is rendered under, and the set parseAngles accepts. */
+const ANGLE_LABELS: Record<AngleKind, string> = {
+  question: 'Open question',
+  clarify: 'Worth clarifying',
+  insight: 'Follow-on',
+};
+
+export const MAX_ANGLES = 4;
+export const MAX_ANGLE_TEXT = 400;
+/** Short, because it travels in a query string people paste around. */
+export const MAX_ANGLE_QUESTION = 200;
+
+/**
+ * Angles on an article: what a reader could go and find out next.
+ *
+ * The one task that does not ask for a comment. A persona here is not a voice in
+ * the thread, it is a reader who got there first and is pointing at the doors —
+ * so the prompt bans the two things that would turn it back into a comment, a
+ * verdict and a summary.
+ *
+ * The instruction doing the most work is the specificity one. A model asked for
+ * questions about an article will return "what are the broader implications of
+ * this?" for any article ever written, and a card of four of those is worse than
+ * no card: it costs a generation and teaches the reader the button is noise.
+ *
+ * JSON rather than the `TITLE:`-style prefix POST_TASK uses, for the same reason
+ * that split those two — these are short single-sentence fields, not paragraphs
+ * of markdown, so nothing here has to survive being escaped into a JSON string.
+ */
+export const ANGLES_TASK = (
+  `Read the article below and offer between two and ${MAX_ANGLES} places a reader could take it next.\n\n` +
+  `You are not commenting on the article and not summarising it, and you are not giving a verdict on ` +
+  `whether it is any good. Each entry is one of three things:\n` +
+  `- "question": something the article raises and does not settle.\n` +
+  `- "clarify": something in it a reader could easily misread, said plainly.\n` +
+  `- "insight": a connection or a consequence the article does not draw itself.\n\n` +
+  `Every entry must be specific to THIS article. If the same line would fit any piece on the subject it ` +
+  `is not worth offering — no "what are the wider implications of this?". Prefer two sharp entries to ` +
+  `four vague ones.\n\n` +
+  `Reply with a single JSON array and nothing else:\n` +
+  `[{"kind": "question", "text": "…", "question": "…"}]\n\n` +
+  `- kind: exactly one of "question", "clarify", "insight".\n` +
+  `- text: what the reader sees, in your voice. One or two sentences.\n` +
+  `- question: the same thing phrased as a question to open an investigation with. ` +
+  `Under ${MAX_ANGLE_QUESTION} characters, and it must name its own subject rather than saying "this" ` +
+  `or "the article" — it gets read on its own, away from the page.`
+);
+
+/**
+ * Pull the angle list out of a reply, tolerating a code fence around it.
+ *
+ * Drops bad entries and keeps good ones rather than failing the batch on one
+ * malformed item — the same trade `normalizePersonaConfig` makes. Three usable
+ * angles and one the model mangled is still a usable card, so the caller only
+ * has to handle the empty array, which is the genuinely unusable answer.
+ */
+export function parseAngles(raw: string): Angle[] {
+  const start = raw.indexOf('[');
+  const end = raw.lastIndexOf(']');
+  if (start === -1 || end <= start) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const angles: Angle[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const kind = typeof row.kind === 'string' ? row.kind.trim().toLowerCase() : '';
+    const text = typeof row.text === 'string' ? row.text.trim() : '';
+    const question = typeof row.question === 'string' ? row.question.trim() : '';
+    // An entry with no question is a comment with extra steps. The Explore link
+    // is the whole point of the card, so one that cannot carry a link is dropped
+    // rather than rendered as dead text.
+    if (!Object.prototype.hasOwnProperty.call(ANGLE_LABELS, kind) || !text || !question) continue;
+    angles.push({
+      kind: kind as AngleKind,
+      text: text.slice(0, MAX_ANGLE_TEXT),
+      question: question.slice(0, MAX_ANGLE_QUESTION),
+    });
+    if (angles.length === MAX_ANGLES) break;
+  }
+  return angles;
+}
+
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, ch => HTML_ESCAPES[ch]);
+}
+
+/**
+ * The /explore address one angle opens.
+ *
+ * The same shape as `exploreAskPath` in client/src/utils/researchUrl.ts — `?q=`
+ * for the question, `?url=` for the article it came from — and written out again
+ * here rather than shared, because the client and the server do not import from
+ * each other. That makes it a contract held in two places: change the query
+ * parameters there and these links land on a blank Explore without erroring.
+ */
+function explorePathFor(question: string, articleUrl: string): string {
+  return `/explore?${new URLSearchParams({ q: question, url: articleUrl }).toString()}`;
+}
+
+/**
+ * An angles card as comment HTML.
+ *
+ * Built as HTML rather than markdown, unlike every other persona output, because
+ * of the links: a query string is full of characters markdown link syntax reads
+ * as its own, and a question containing a bracket would silently produce half a
+ * link. The text is escaped here and the result still goes through
+ * `sanitizeCommentHtml` at the route — this function is not the trust boundary,
+ * it just has no reason to hand the sanitizer anything dirty.
+ *
+ * The lead-in line is fixed, and not in the persona's voice on purpose. It is
+ * the card saying what it is: somebody skimming a thread should be able to tell
+ * this from an opinion before reading a word of the entries.
+ */
+export function renderAngleComment(angles: Angle[], articleUrl: string): string {
+  const items = angles.map(angle => (
+    `<li><strong>${escapeHtml(ANGLE_LABELS[angle.kind])}</strong> — ${escapeHtml(angle.text)} ` +
+    `<a href="${escapeHtml(explorePathFor(angle.question, articleUrl))}">Explore this →</a></li>`
+  )).join('');
+  return `<p>Some places to take this:</p><ul>${items}</ul>`;
 }
 
 /**

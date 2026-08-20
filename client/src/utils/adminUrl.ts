@@ -14,16 +14,66 @@
 export type AdminTab =
   | 'overview' | 'users' | 'reports' | 'comments' | 'blog' | 'ai' | 'feeds' | 'errors' | 'audit';
 
+/**
+ * The four groups the nav offers, each holding one or more views.
+ *
+ * Sections are a *grouping*, not an address. A view keeps the address it always
+ * had - /admin/users is still /admin/users, and /admin/reports/<id> is still the
+ * way a report alert in the notification bell reaches one report. Which section
+ * a view belongs to is derived from this table rather than written into the URL,
+ * which is what lets the nav be reorganised without breaking a bookmark, a link
+ * in somebody's notification history, or the deep link this file exists for.
+ *
+ * The grouping is by the job being done, not by the table being read:
+ *
+ *   Moderation  something needs judgement. Reports leads because it is the queue
+ *               work arrives in; the other three are what you act on once a
+ *               report sends you there, which is one workflow and used to be
+ *               four unrelated nav rows.
+ *   System      is the machinery working, and who changed what. Feeds and Errors
+ *               are adjacent on purpose - the Errors table filters by a 'feed'
+ *               source and the Feeds tab keeps its own refresh log, so feed
+ *               failures were already being rendered twice under two nav rows
+ *               with nothing to say they were the same events.
+ *   Overview    and AI hold one view each. A section of one is not a wasted
+ *               level: it is what keeps the top row four items wide, which is
+ *               the width that survives a narrow window.
+ */
+export type AdminSection = 'overview' | 'moderation' | 'system' | 'ai';
+
+export interface AdminSectionDef {
+  id: AdminSection;
+  label: string;
+  /** In sub-nav order. The first is where picking the section lands you. */
+  tabs: readonly AdminTab[];
+}
+
+export const ADMIN_SECTIONS: readonly AdminSectionDef[] = [
+  { id: 'overview',   label: 'Overview',   tabs: ['overview'] },
+  { id: 'moderation', label: 'Moderation', tabs: ['reports', 'users', 'comments', 'blog'] },
+  { id: 'system',     label: 'System',     tabs: ['feeds', 'errors', 'audit'] },
+  { id: 'ai',         label: 'AI',         tabs: ['ai'] },
+];
+
 export const ADMIN_PATH = '/admin';
 
 /**
- * In the order the console's nav lists them, which also makes the first entry
- * what a bare /admin resolves to on a wide screen. AdminPage builds its nav
- * from this rather than keeping a second copy of the order.
+ * Every view, in nav order, derived from the sections rather than listed again.
+ *
+ * Two copies of an ordering is two things to keep in step, and the first entry
+ * matters beyond tidiness: it is what a bare /admin resolves to.
  */
-export const ADMIN_TABS: readonly AdminTab[] = [
-  'overview', 'users', 'reports', 'comments', 'blog', 'ai', 'feeds', 'errors', 'audit',
-];
+export const ADMIN_TABS: readonly AdminTab[] = ADMIN_SECTIONS.flatMap(s => [...s.tabs]);
+
+/** Which section holds a view. Every view is in exactly one. */
+export function sectionForTab(tab: AdminTab): AdminSection {
+  return (ADMIN_SECTIONS.find(s => s.tabs.includes(tab)) ?? ADMIN_SECTIONS[0]).id;
+}
+
+/** The views in a section, in sub-nav order. */
+export function tabsInSection(section: AdminSection): readonly AdminTab[] {
+  return (ADMIN_SECTIONS.find(s => s.id === section) ?? ADMIN_SECTIONS[0]).tabs;
+}
 
 export function isAdminPath(path: string): boolean {
   return path === ADMIN_PATH || path.startsWith(`${ADMIN_PATH}/`);

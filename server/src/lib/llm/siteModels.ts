@@ -172,7 +172,7 @@ export async function siteModelConfigured(): Promise<boolean> {
  */
 export const USAGE_RETENTION_DAYS = 30;
 
-export type UsageKind = 'comment' | 'reply' | 'post' | 'identity' | 'test';
+export type UsageKind = 'comment' | 'reply' | 'angles' | 'post' | 'identity' | 'test';
 
 export interface UsageRecord {
   siteModel: ResolvedSiteModel;

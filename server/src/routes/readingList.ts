@@ -157,6 +157,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     data: {
       userId: req.userId!,
       url,
+      // Stored, not derived at read time: the archive retention sweep asks "is
+      // this article in anyone's reading list" as an indexed NOT EXISTS over the
+      // whole table, which canonicalising in JS cannot answer. Same key comments
+      // and post citations already carry.
+      articleKey: canonicalArticleKey(url),
       title,
       source: source || '',
       readTime: readTime || '',

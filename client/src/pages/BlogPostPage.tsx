@@ -131,55 +131,85 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
   return (
     <Shell embedded={embedded}>
       <div className={styles.topbar}>
-        {/* The shell supplies its own way back, so this is the standalone
-            page's only exit. */}
-        {!embedded && (
-          <button className={styles.backBtn} onClick={() => navigate('/')}>
-            {accessToken ? '← Newt' : '← Sign in'}
-          </button>
-        )}
-        {post.isSelf && (
-          <button className={styles.ghostBtn} onClick={() => navigate(blogEditPathFor(post.id))}>
-            Edit post
-          </button>
-        )}
-        {/* A reader who landed straight on a post is the one most likely to
-            want the author's feed, so the subscribe control lives here too -
-            not only on the profile. Signed-in non-authors only: following
-            writes to the viewer's own folders. */}
-        {!post.isSelf && accessToken && author && (
-          <FollowBlogButton username={author.username} variant="primary" />
-        )}
-        {/* Quoting a post into one of your own. Signed-in non-authors only:
-            it writes to the viewer's blog, and reposting yourself is what
-            editing the original is for. */}
-        {!post.isSelf && accessToken && (
-          <button
-            className={styles.ghostBtn}
-            title="Write a post quoting this one"
-            onClick={() => startRepost({
-              title: post.title,
-              embed: postEmbed({
-                url: post.url,
+        {/* Two groups rather than a flat row: leaving this post is one job and
+            acting on it is another, and a bar of five equal children spread by
+            space-between put Report exactly as far from the edge as Follow. */}
+        <div className={styles.navGroup}>
+          {/* The shell supplies its own way back, so this is the standalone
+              page's only exit. */}
+          {!embedded && (
+            <button className={styles.backBtn} onClick={() => navigate('/')}>
+              {accessToken ? '← Newt' : '← Sign in'}
+            </button>
+          )}
+          {/* A post is one piece of a body of work, and the only route from one
+              to the rest of them was the author's avatar - which leads to a
+              profile, not to their writing. Your own go to the manage list,
+              where the drafts are; anyone else's to the Posts tab of their
+              profile, which is the public list of the same thing. */}
+          {post.isSelf ? (
+            <button
+              className={styles.ghostBtn}
+              title="Everything you've written"
+              onClick={() => navigate('/blog')}
+            >
+              My posts
+            </button>
+          ) : author && (
+            <button
+              className={styles.ghostBtn}
+              title={`All posts by @${author.username}`}
+              onClick={() => navigate(profilePathFor(author.username, { tab: 'posts' }))}
+            >
+              Posts
+            </button>
+          )}
+        </div>
+
+        <div className={styles.actionGroup}>
+          {post.isSelf && (
+            <button className={styles.ghostBtn} onClick={() => navigate(blogEditPathFor(post.id))}>
+              Edit post
+            </button>
+          )}
+          {/* A reader who landed straight on a post is the one most likely to
+              want the author's feed, so the subscribe control lives here too -
+              not only on the profile. Signed-in non-authors only: following
+              writes to the viewer's own folders. */}
+          {!post.isSelf && accessToken && author && (
+            <FollowBlogButton username={author.username} variant="primary" />
+          )}
+          {/* Quoting a post into one of your own. Signed-in non-authors only:
+              it writes to the viewer's blog, and reposting yourself is what
+              editing the original is for. */}
+          {!post.isSelf && accessToken && (
+            <button
+              className={styles.ghostBtn}
+              title="Write a post quoting this one"
+              onClick={() => startRepost({
                 title: post.title,
-                slug: post.slug,
-                heroImage: post.heroImage,
-                publishedAt: post.publishedAt,
-                excerpt: post.excerpt,
-                author,
-              }),
-            })}
-          >
-            Repost
-          </button>
-        )}
-        {/* Reporting needs an account to attribute the report to, so it is
-            offered only to signed-in readers of somebody else's post. */}
-        {!post.isSelf && accessToken && (
-          <button className={styles.reportBtn} onClick={() => setReporting(true)}>
-            Report
-          </button>
-        )}
+                embed: postEmbed({
+                  url: post.url,
+                  title: post.title,
+                  slug: post.slug,
+                  heroImage: post.heroImage,
+                  publishedAt: post.publishedAt,
+                  excerpt: post.excerpt,
+                  author,
+                }),
+              })}
+            >
+              Repost
+            </button>
+          )}
+          {/* Reporting needs an account to attribute the report to, so it is
+              offered only to signed-in readers of somebody else's post. */}
+          {!post.isSelf && accessToken && (
+            <button className={styles.reportBtn} onClick={() => setReporting(true)}>
+              Report
+            </button>
+          )}
+        </div>
       </div>
 
       <article className={styles.article}>

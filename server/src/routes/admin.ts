@@ -106,11 +106,13 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
     // never count as comments and are reported on their own.
     const liveComments = { deletedAt: null };
 
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const [
       users, admins, totpUsers, bookmarks, folders, readingItems, feedArticles,
       comments, deletedComments, commentReplies, commentEdits,
       blogPosts, publishedPosts, images, imageBytes, friendships,
-      blocks, openReports,
+      blocks, openReports, errors24h,
       recentUsers, activeTokens,
     ] = await Promise.all([
       prisma.user.count(),
@@ -131,6 +133,11 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
       prisma.friendship.count({ where: { status: 'accepted' } }),
       prisma.block.count(),
       prisma.report.count({ where: { status: 'open' } }),
+      // For the console's attention strip, which asks "what needs me?" rather
+      // than "how big is the database". A 24-hour window because that is the
+      // span over which an error is still news; the Errors table itself keeps
+      // the longer history.
+      prisma.errorLog.count({ where: { createdAt: { gte: dayAgo } } }),
       prisma.user.findMany({
         where: { createdAt: { gte: since } },
         select: { createdAt: true },
@@ -182,7 +189,7 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
         comments, deletedComments, commentReplies, commentEdits,
         blogPosts, publishedPosts,
         images, imageBytes: imageBytes._sum.size ?? 0,
-        friendships, blocks, openReports,
+        friendships, blocks, openReports, errors24h,
       },
       activeUsers7d: activeTokens.length,
       signups,

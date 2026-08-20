@@ -49,6 +49,12 @@ function queryValues(): unknown[] {
   return call ? call.slice(1) : [];
 }
 
+/** The SQL text around those parameters, with the bound values as `?`. */
+function querySql(): string {
+  const call = prismaMock.$queryRaw.mock.calls[0];
+  return call ? (call[0] as unknown as string[]).join('?') : '';
+}
+
 describe('GET /api/v1/feeds/search — scoping', () => {
   // The one that matters. FeedItem rows are shared across every account on the
   // instance and carry no userId, so nothing about the table itself stops a
@@ -171,5 +177,58 @@ describe('GET /api/v1/feeds/search — results', () => {
 
     const res = await request(app).get('/api/v1/feeds/search?q=headline').set(auth);
     expect(res.body.articles[0].source).toBe('cascadedaily.com');
+  });
+});
+
+describe('GET /api/v1/feeds/search — reads the archive', () => {
+  // v1.24.0 moved the corpus. FeedItem holds an article only for as long as its
+  // publisher lists it plus a week, so searching it meant this route could only
+  // ever answer for the last fortnight — while its own docblock promised "the
+  // whole archive". These pin the query at the table that can keep that promise.
+  //
+  // They assert on SQL text, so they check shape and not meaning: the mock runs
+  // no SQL. That is still the right check for this change, because what changed
+  // is which table is named and how the scoping is joined.
+
+  it('searches ArticleArchive rather than the river', async () => {
+    withSubscriptions(['https://cascadedaily.com/feed']);
+    await request(app).get('/api/v1/feeds/search?q=schools').set(auth).expect(200);
+
+    const sql = querySql();
+    expect(sql).toContain('FROM "ArticleArchive"');
+    // Reaching back into FeedItem would undo the split: the river is quick only
+    // because it stays small, and three of its queries have no date bound.
+    expect(sql).not.toContain('FROM "FeedItem"');
+  });
+
+  it('scopes results to the reader’s own feeds through the join table', async () => {
+    withSubscriptions(['https://cascadedaily.com/feed', 'https://example.com/rss']);
+    await request(app).get('/api/v1/feeds/search?q=schools').set(auth).expect(200);
+
+    // The archive is deduped instance-wide and carries no userId, so the join
+    // table is the only thing standing between "search your feeds" and "search
+    // everything this instance ever fetched".
+    expect(querySql()).toContain('"ArticleArchiveFeed"');
+    expect(queryValues()).toContainEqual(['feed-0', 'feed-1']);
+  });
+
+  it('no longer needs DISTINCT ON, because the archive is deduped on write', async () => {
+    withSubscriptions(['https://cascadedaily.com/feed']);
+    await request(app).get('/api/v1/feeds/search?q=schools').set(auth).expect(200);
+
+    // One article is one row here, keyed on articleKey. Dropping DISTINCT ON is
+    // what stops a deeper corpus costing more: it was a full sort of every
+    // matching row, in a query whose LIMIT is applied last and so could never
+    // cut it short.
+    expect(querySql()).not.toContain('DISTINCT ON');
+  });
+
+  it('searches the archive by tag too', async () => {
+    withSubscriptions(['https://cascadedaily.com/feed']);
+    await request(app).get('/api/v1/feeds/search?q=games&mode=tag').set(auth).expect(200);
+
+    const sql = querySql();
+    expect(sql).toContain('FROM "ArticleArchive"');
+    expect(sql).toContain('"ArticleArchiveFeed"');
   });
 });

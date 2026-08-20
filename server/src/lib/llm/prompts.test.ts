@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  splitSuggestions, titleFromQuestion, parseCondensed, parseProofread, parsePlan, SUGGESTION_MARKER,
+  splitSuggestions, titleFromQuestion, parseCondensed, parseProofread, parsePlan, parseIdeas,
+  parseRelevance, SUGGESTION_MARKER,
 } from './prompts';
 
 describe('splitSuggestions', () => {
@@ -176,5 +177,110 @@ describe('parsePlan', () => {
     expect(parsePlan('I would search for iOS 27')).toEqual([]);
     expect(parsePlan('')).toEqual([]);
     expect(parsePlan('{"search":true}')).toEqual([]);
+  });
+});
+
+describe('parseIdeas', () => {
+  const full = JSON.stringify({
+    summary: 'A piece about feed readers.',
+    angles: [
+      { title: 'RSS never died', detail: 'It just stopped being a product.' },
+      { title: 'The cost of the algorithm', detail: 'Who pays for a chronological feed.' },
+    ],
+    questions: ['How many feeds does a typical reader keep?'],
+    related: [{ url: 'https://example.com/a', why: 'Has the subscriber numbers.' }],
+  });
+
+  it('reads a well-formed reply', () => {
+    const report = parseIdeas(full)!;
+    expect(report.summary).toBe('A piece about feed readers.');
+    expect(report.angles).toHaveLength(2);
+    expect(report.angles[0]).toEqual({ title: 'RSS never died', detail: 'It just stopped being a product.' });
+    expect(report.questions).toEqual(['How many feeds does a typical reader keep?']);
+    expect(report.related).toEqual([{ url: 'https://example.com/a', why: 'Has the subscriber numbers.' }]);
+  });
+
+  it('digs the object out of a fenced reply with preamble', () => {
+    const raw = 'Here you go:\n```json\n' + full + '\n```';
+    expect(parseIdeas(raw)?.angles).toHaveLength(2);
+  });
+
+  // The feed block is absent on most drafts, so an answer with angles and no
+  // reading list is the ordinary case rather than a failure.
+  it('accepts a reply with no related articles', () => {
+    const report = parseIdeas('{"angles":[{"title":"One","detail":"Two"}]}')!;
+    expect(report.related).toEqual([]);
+    expect(report.questions).toEqual([]);
+    expect(report.summary).toBe('');
+  });
+
+  it('returns null when there is no object at all', () => {
+    expect(parseIdeas('I could not think of anything.')).toBeNull();
+    expect(parseIdeas('{not json')).toBeNull();
+  });
+
+  it('keeps an angle that only came with detail, as its own heading', () => {
+    const report = parseIdeas('{"angles":[{"detail":"Compare it with Usenet."}]}')!;
+    expect(report.angles).toEqual([{ title: 'Compare it with Usenet.', detail: '' }]);
+  });
+
+  it('drops empty angles, blank questions and picks with no url', () => {
+    const raw = JSON.stringify({
+      angles: [{ title: '', detail: '' }, { title: 'Real' }],
+      questions: ['  ', 'Real?'],
+      related: [{ why: 'no url' }, { url: 'https://example.com/a' }],
+    });
+    const report = parseIdeas(raw)!;
+    expect(report.angles).toEqual([{ title: 'Real', detail: '' }]);
+    expect(report.questions).toEqual(['Real?']);
+    expect(report.related).toEqual([{ url: 'https://example.com/a', why: '' }]);
+  });
+
+  it('caps the lists', () => {
+    const raw = JSON.stringify({
+      angles: Array.from({ length: 12 }, (_, i) => ({ title: `A${i}`, detail: 'd' })),
+      questions: Array.from({ length: 12 }, (_, i) => `Q${i}`),
+      related: Array.from({ length: 12 }, (_, i) => ({ url: `https://example.com/${i}`, why: 'w' })),
+    });
+    const report = parseIdeas(raw)!;
+    expect(report.angles).toHaveLength(6);
+    expect(report.questions).toHaveLength(6);
+    expect(report.related).toHaveLength(8);
+  });
+});
+
+
+describe('parseRelevance', () => {
+  it('reads the kept numbers and their reasons', () => {
+    const kept = parseRelevance('{"keep":[{"n":2,"why":"Has the figures."},{"n":3,"why":""}]}', 4)!;
+    expect(kept).toEqual([{ n: 2, why: 'Has the figures.' }, { n: 3, why: '' }]);
+  });
+
+  // Keeping none is the answer a keyword search over a year of somebody's
+  // reading often deserves, and it has to survive as an empty list rather than
+  // collapsing into "the screen did not run".
+  it('distinguishes keeping nothing from failing to answer', () => {
+    expect(parseRelevance('{"keep":[]}', 3)).toEqual([]);
+    expect(parseRelevance('None of these are relevant.', 3)).toBeNull();
+    expect(parseRelevance('{"verdict":"no"}', 3)).toBeNull();
+  });
+
+  it('drops numbers that name no article', () => {
+    const kept = parseRelevance('{"keep":[{"n":0},{"n":4},{"n":1},{"n":-2},{"n":1.5}]}', 3)!;
+    expect(kept).toEqual([{ n: 1, why: '' }]);
+  });
+
+  it('drops a repeat rather than showing the article twice', () => {
+    const kept = parseRelevance('{"keep":[{"n":1,"why":"First"},{"n":1,"why":"Again"}]}', 2)!;
+    expect(kept).toEqual([{ n: 1, why: 'First' }]);
+  });
+
+  it('accepts a number sent as a string', () => {
+    expect(parseRelevance('{"keep":[{"n":"2","why":"ok"}]}', 3)).toEqual([{ n: 2, why: 'ok' }]);
+  });
+
+  it('keeps the order it was given, most useful first', () => {
+    const kept = parseRelevance('{"keep":[{"n":3},{"n":1}]}', 3)!;
+    expect(kept.map(k => k.n)).toEqual([3, 1]);
   });
 });

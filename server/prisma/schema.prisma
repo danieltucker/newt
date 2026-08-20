@@ -7,11 +7,11 @@ datasource db {
 }
 
 model User {
-  id            String            @id @default(cuid())
-  username      String            @unique
-  email         String?           @unique
-  passwordHash  String
-  isAdmin       Boolean           @default(false)
+  id                   String              @id @default(cuid())
+  username             String              @unique
+  email                String?             @unique
+  passwordHash         String
+  isAdmin              Boolean             @default(false)
   // This account is an AI persona, not a person. Denormalised from the Persona
   // row on purpose: every surface that renders an author has to disclose it —
   // comment lists, post cards, profile headers, notification rows — and a join
@@ -21,11 +21,11 @@ model User {
   // **The two must be written together.** A Persona row without this flag is an
   // undisclosed AI account, which is the one outcome the labelling rule exists
   // to prevent, so both writes happen in one transaction in routes/adminPersonas.
-  isPersona     Boolean           @default(false)
-  bannedAt      DateTime?
-  firstName     String?
-  lastName      String?
-  avatar        String?
+  isPersona            Boolean             @default(false)
+  bannedAt             DateTime?
+  firstName            String?
+  lastName             String?
+  avatar               String?
   // The banner behind the avatar on /u/<username>. Two columns rather than one
   // because they are different kinds of thing and an image must be able to be
   // removed without also forgetting which gradient was underneath it:
@@ -33,49 +33,49 @@ model User {
   //     URL (see normalizeImagePath). Set, it wins over the gradient.
   //   coverTheme — the id of a gradient preset. NULL means "auto": derived from
   //     the username, which is what every profile looked like before this.
-  coverImage    String?
-  coverTheme    String?
+  coverImage           String?
+  coverTheme           String?
   // The owner's links out - Bluesky, GitHub, a personal site. An array of
   // { platform, url }, ordered as the owner arranged them, validated by
   // normalizeProfileLinks before it is ever stored. JSON rather than a table:
   // it is a short ordered list that is only ever read and written whole.
-  profileLinks  Json              @default("[]")
-  settings      Json              @default("{}")
-  totpSecret        String?
-  totpPendingSecret String?
-  totpEnabled       Boolean           @default(false)
+  profileLinks         Json                @default("[]")
+  settings             Json                @default("{}")
+  totpSecret           String?
+  totpPendingSecret    String?
+  totpEnabled          Boolean             @default(false)
   // Bearer secret for this user's personal aggregate blog feed. It travels in a
   // URL (/api/v1/blogs/feed/<token>.xml), so it is never exposed for any user
   // but the owner, and can be rotated to revoke a leaked link.
-  feedToken     String?           @unique
-  createdAt     DateTime          @default(now())
-  folders       Folder[]
-  readingFolders ReadingFolder[]
-  feedFolders   FeedFolder[]
-  feedSubscriptions FeedSubscription[]
-  blogPosts     BlogPost[]
-  bookmarks     Bookmark[]
-  readingList   ReadingListItem[]
-  refreshTokens RefreshToken[]
-  dismissedFeedItems DismissedFeedItem[]
-  readFeedItems      ReadFeedItem[]
-  comments           Comment[]
-  friendshipsRequested Friendship[]  @relation("FriendshipRequester")
-  friendshipsReceived  Friendship[]  @relation("FriendshipAddressee")
+  feedToken            String?             @unique
+  createdAt            DateTime            @default(now())
+  folders              Folder[]
+  readingFolders       ReadingFolder[]
+  feedFolders          FeedFolder[]
+  feedSubscriptions    FeedSubscription[]
+  blogPosts            BlogPost[]
+  bookmarks            Bookmark[]
+  readingList          ReadingListItem[]
+  refreshTokens        RefreshToken[]
+  dismissedFeedItems   DismissedFeedItem[]
+  readFeedItems        ReadFeedItem[]
+  comments             Comment[]
+  friendshipsRequested Friendship[]        @relation("FriendshipRequester")
+  friendshipsReceived  Friendship[]        @relation("FriendshipAddressee")
   notifications        Notification[]
-  notificationsActed   Notification[] @relation("NotificationActor")
+  notificationsActed   Notification[]      @relation("NotificationActor")
   images               Image[]
-  adminActions         AdminAction[] @relation("AdminActionActor")
-  blocksMade           Block[]       @relation("BlockBlocker")
-  blocksReceived       Block[]       @relation("BlockBlocked")
-  reportsFiled         Report[]      @relation("ReportReporter")
-  reportsAgainst       Report[]      @relation("ReportSubject")
-  reportsResolved      Report[]      @relation("ReportResolver")
+  adminActions         AdminAction[]       @relation("AdminActionActor")
+  blocksMade           Block[]             @relation("BlockBlocker")
+  blocksReceived       Block[]             @relation("BlockBlocked")
+  reportsFiled         Report[]            @relation("ReportReporter")
+  reportsAgainst       Report[]            @relation("ReportSubject")
+  reportsResolved      Report[]            @relation("ReportResolver")
   llmCredentials       LlmCredential[]
   researchThreads      ResearchThread[]
-  persona              Persona?      @relation("PersonaAccount")
-  personasCreated      Persona[]     @relation("PersonaCreator")
-  siteModelsCreated    SiteModel[]   @relation("SiteModelCreator")
+  persona              Persona?            @relation("PersonaAccount")
+  personasCreated      Persona[]           @relation("PersonaCreator")
+  siteModelsCreated    SiteModel[]         @relation("SiteModelCreator")
 }
 
 // A model the *instance* provides, configured by an admin.
@@ -93,10 +93,10 @@ model User {
 // exists: editing a row needs an admin session, editing the environment needs
 // the host.
 model SiteModel {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   // What an admin calls it. "3090 box", "Groq fallback". The host is the
   // fallback label when this is empty.
-  label       String   @default("")
+  label       String           @default("")
   // An OpenAI-shaped base URL. Always the `compatible` provider — Ollama, vLLM,
   // LM Studio, OpenRouter and Groq all speak that one shape, and an operator who
   // wants Anthropic proper can put a gateway in front.
@@ -107,21 +107,21 @@ model SiteModel {
   // Optional bearer token, sealed exactly as LlmCredential's is (AES-256-GCM,
   // lib/llm/secretBox) and never returned by any route. Empty is the normal
   // state — a local Ollama has no auth at all.
-  keyCipher   String   @default("")
-  keyIv       String   @default("")
-  keyTag      String   @default("")
-  keyLast4    String   @default("")
+  keyCipher   String           @default("")
+  keyIv       String           @default("")
+  keyTag      String           @default("")
+  keyLast4    String           @default("")
   // Exactly one row may carry this. Enforced in the route rather than by a
   // partial index, because clearing the old default and setting the new one
   // happens in one transaction there anyway — the same call LlmCredential makes.
-  isDefault   Boolean  @default(false)
+  isDefault   Boolean          @default(false)
   // Off without being deleted: a box that is down for maintenance should stop
   // being dialled without losing its configuration or its usage history.
-  enabled     Boolean  @default(true)
+  enabled     Boolean          @default(true)
   createdById String?
-  createdBy   User?    @relation("SiteModelCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy   User?            @relation("SiteModelCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   personas    Persona[]
   usage       SiteModelUsage[]
 
@@ -143,30 +143,30 @@ model SiteModel {
 // therefore means "not reported", not "free", and the UI says so rather than
 // averaging it in.
 model SiteModelUsage {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   // SetNull, not Cascade: deleting an endpoint must not erase the record of what
   // it did. The label and model name below are denormalised for exactly that
   // moment — the row stays readable once the endpoint it names is gone.
   siteModelId  String?
   siteModel    SiteModel? @relation(fields: [siteModelId], references: [id], onDelete: SetNull)
-  modelLabel   String    @default("")
-  modelName    String    @default("")
+  modelLabel   String     @default("")
+  modelName    String     @default("")
   // Likewise denormalised. A persona is often deleted precisely *because* of
   // what it wrote, and that is the case where the log matters most.
   personaId    String?
-  personaName  String    @default("")
+  personaName  String     @default("")
   // 'comment' | 'reply' | 'post' | 'identity' | 'test'
   kind         String
   // 'success' | 'failed'
   outcome      String
-  inputTokens  Int       @default(0)
-  outputTokens Int       @default(0)
+  inputTokens  Int        @default(0)
+  outputTokens Int        @default(0)
   // Wall clock for the whole call, first byte to last. On a single GPU this is
   // the number that exposes model swapping: the same prompt taking 2s and then
   // 40s is Ollama unloading one model to load another.
-  durationMs   Int       @default(0)
-  error        String    @default("")
-  createdAt    DateTime  @default(now())
+  durationMs   Int        @default(0)
+  error        String     @default("")
+  createdAt    DateTime   @default(now())
 
   @@index([createdAt])
   @@index([siteModelId, createdAt])
@@ -188,9 +188,9 @@ model SiteModelUsage {
 // persona deletes the account with it (see the route) — a half-deleted persona
 // would be an account that writes with no settings behind it.
 model Persona {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation("PersonaAccount", fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation("PersonaAccount", fields: [userId], references: [id], onDelete: Cascade)
 
   // ── The tone dials ──
   // Enumerated strings validated in lib/llm/personaPrompts, not Prisma enums:
@@ -203,18 +203,18 @@ model Persona {
   // free-text because the point is a *small* set of dials an admin can turn
   // without writing a prompt — a prompt-writing UI is just the API with extra
   // steps, and `guidance` below is already the escape hatch for that.
-  voice       String   @default("neutral")
-  verbosity   String   @default("balanced")
-  formality   String   @default("neutral")
+  voice     String @default("neutral")
+  verbosity String @default("balanced")
+  formality String @default("neutral")
 
   // What this persona has opinions about. Steers what it finds worth saying;
   // a list of words, so String[] for the same reason BlogPost.tags is one.
-  interests   String[] @default([])
+  interests String[] @default([])
 
   // Free-text extra direction from the admin, appended to the built prompt.
   // Capped and sanitised at the route: it lands in a system prompt, so it is
   // the one field here that can change the model's instructions wholesale.
-  guidance    String   @default("")
+  guidance String @default("")
 
   // Which site model writes for this persona. NULL means the instance default,
   // which is what nearly every persona should be — see the swap note below.
@@ -234,7 +234,7 @@ model Persona {
   // Deliberately not the same as banning the account: a ban is a moderation
   // record about a user, this is an operator switch, and conflating them would
   // put "turned off my own bot" in the ban log next to real enforcement.
-  active      Boolean  @default(true)
+  active Boolean @default(true)
 
   // Which admin made it. Nullable with SetNull rather than Cascade — an admin
   // deleting their own account must not silently delete the personas the
@@ -260,15 +260,15 @@ model Persona {
 // why there is no "show key" affordance anywhere: the server genuinely cannot
 // serve one without decrypting, and no route does.
 model LlmCredential {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   // 'anthropic' | 'openai' | 'compatible' — validated against the registry in
   // lib/llm/providers on every write, so an unknown value can't be stored.
   provider  String
   // What the owner calls it. "Work key", "Ollama box". Free text, may be empty —
   // the provider name is the fallback label.
-  label     String   @default("")
+  label     String           @default("")
   // The three parts AES-256-GCM needs, all base64. Split into columns rather
   // than one packed string so a decrypt failure is legible in the data.
   keyCipher String
@@ -276,11 +276,11 @@ model LlmCredential {
   keyTag    String
   // The last four characters of the plaintext key, kept so the UI can say which
   // key this is without the server ever handing back the key itself.
-  keyLast4  String   @default("")
+  keyLast4  String           @default("")
   // Only meaningful for 'compatible': the OpenAI-shaped base URL to call, e.g.
   // https://ollama.example.com/v1. Empty for the first-party providers, whose
   // endpoints are fixed in the registry and not caller-supplied.
-  baseUrl   String   @default("")
+  baseUrl   String           @default("")
   // The model id this credential talks to by default. Free text on purpose —
   // a self-hosted endpoint's model list is whatever that box has pulled, and
   // hard-coding an allowlist would make Newt wrong every time Ollama adds one.
@@ -288,9 +288,9 @@ model LlmCredential {
   // Exactly one credential per user may carry this. Enforced in the route
   // rather than by a partial index, because clearing the old default and
   // setting the new one happens in one transaction there anyway.
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isDefault Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
   threads   ResearchThread[]
 
   @@index([userId])
@@ -302,23 +302,23 @@ model LlmCredential {
 // public is by being condensed into a BlogPost, which has its own visibility
 // and starts private like every other post.
 model ResearchThread {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Taken from the opening question, trimmed. Renamable by the owner.
   title        String
   // Set when the thread was started from a "Research" button on an article or
   // post rather than from a bare question. Kept so the thread can link back to
   // what it came from, and so the reader knows which article a conclusion is
   // about six weeks later.
-  sourceUrl    String   @default("")
-  sourceTitle  String   @default("")
+  sourceUrl    String            @default("")
+  sourceTitle  String            @default("")
   // canonicalArticleKey(sourceUrl). The same key Comment.articleKey and
   // BlogPost.articleKey use, stored rather than derived for the same reason
   // they are: it is what "every explore about this article" is looked up by,
   // and a LIKE over sourceUrl could not match the copy that arrived with a
   // tracking parameter on it. Empty for a thread started from a bare question.
-  sourceKey    String   @default("")
+  sourceKey    String            @default("")
   // 'private' (default, only the author) | 'friends' | 'public'. The same
   // vocabulary and the same friendship rules as Comment and BlogPost - see
   // VisibilityMeta on the client, which labels all three.
@@ -328,17 +328,17 @@ model ResearchThread {
   // can quote the reader's own private comments and reading-list notes back at
   // them (see articleContext.ts), so nothing about an explore is safe to
   // expose by default.
-  visibility   String   @default("private")
+  visibility   String            @default("private")
   // When it was first made visible to anyone else. Null while private; used to
   // order the explored-paths list, so re-titling a thread doesn't reshuffle it.
   sharedAt     DateTime?
   // Which key answered. Nullable and SetNull rather than Cascade: removing a
   // key from settings must not delete the research it produced.
   credentialId String?
-  credential   LlmCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  credential   LlmCredential?    @relation(fields: [credentialId], references: [id], onDelete: SetNull)
   messages     ResearchMessage[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @default(now())
 
   @@index([userId, updatedAt])
   // "What has been shared about this article", which is the explored-paths
@@ -348,21 +348,21 @@ model ResearchThread {
 }
 
 model ResearchMessage {
-  id        String         @id @default(cuid())
-  threadId  String
-  thread    ResearchThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  id          String         @id @default(cuid())
+  threadId    String
+  thread      ResearchThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   // 'user' | 'assistant'. System framing is rebuilt per request from the
   // thread's source rather than stored as a row, so a prompt improvement
   // applies to every existing thread instead of only new ones.
-  role      String
+  role        String
   // Markdown as the model wrote it. Rendered client-side by react-markdown,
   // which is why this is not run through sanitizeHtml on write: it is not HTML
   // and never reaches innerHTML.
-  body      String
+  body        String
   // The follow-up directions offered at the end of an assistant turn — an
   // array of short strings. JSON rather than a table for the same reason
   // profileLinks is: a short ordered list, only ever read and written whole.
-  suggestions Json         @default("[]")
+  suggestions Json           @default("[]")
   // The articles from the reader's own feed that this answer was given — title,
   // url, source, pubDate. Stored rather than recomputed because the search is
   // not deterministic across time: the same question next month finds different
@@ -372,8 +372,8 @@ model ResearchMessage {
   // Not a relation to FeedItem. An item is deleted when it ages out of its
   // feed, and the citation on a six-week-old answer must not vanish with it —
   // the URL still works, and "we read this" stays true either way.
-  sources   Json           @default("[]")
-  createdAt DateTime       @default(now())
+  sources     Json           @default("[]")
+  createdAt   DateTime       @default(now())
 
   @@index([threadId, createdAt])
 }
@@ -441,40 +441,40 @@ model Block {
 //     deleted; a handled report stays readable, which is the only way to see
 //     that the same person has been reported five times before.
 model Report {
-  id               String    @id @default(cuid())
+  id String @id @default(cuid())
 
   reporterId       String?
-  reporter         User?     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporter         User?   @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
   reporterUsername String
 
   // Who the report is *about* — the author of the reported content, or the
   // reported user themselves. Denormalised so a repeat-offender count survives
   // account deletion.
-  subjectId        String?
-  subject          User?     @relation("ReportSubject", fields: [subjectId], references: [id], onDelete: SetNull)
-  subjectUsername  String
+  subjectId       String?
+  subject         User?   @relation("ReportSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+  subjectUsername String
 
-  targetType       String    // 'comment' | 'blogPost' | 'user'
-  targetId         String
-  targetLabel      String    // human-readable identity, captured at report time
-  targetUrl        String?   // where the content lives, for the moderator to open
+  targetType  String // 'comment' | 'blogPost' | 'user'
+  targetId    String
+  targetLabel String // human-readable identity, captured at report time
+  targetUrl   String? // where the content lives, for the moderator to open
 
   // The reported content as it stood when reported: sanitized HTML for a comment
   // or post, empty for a user report.
-  snapshot         String    @default("")
+  snapshot String @default("")
 
   // One of REPORT_CATEGORIES in lib/reports.ts
-  category         String
-  note             String    @default("")   // the reporter's own words
+  category String
+  note     String @default("") // the reporter's own words
 
-  status           String    @default("open")  // 'open' | 'resolved' | 'dismissed'
-  resolvedById     String?
-  resolvedBy       User?     @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  status             String    @default("open") // 'open' | 'resolved' | 'dismissed'
+  resolvedById       String?
+  resolvedBy         User?     @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   resolvedByUsername String?
-  resolutionNote   String?
-  resolvedAt       DateTime?
+  resolutionNote     String?
+  resolvedAt         DateTime?
 
-  createdAt        DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   // One open report per person per thing — re-reporting the same comment is a
   // no-op rather than a way to flood the queue.
@@ -516,7 +516,7 @@ model Notification {
   id           String   @id @default(cuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String   // 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'report_new'
+  type         String // 'friend_request' | 'friend_accept' | 'comment_reply' | 'friend_comment' | 'report_new'
   actorId      String?
   actor        User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
   articleKey   String?
@@ -550,9 +550,9 @@ model RefreshToken {
 }
 
 model Folder {
-  id                String        @id @default(cuid())
+  id                String     @id @default(cuid())
   userId            String
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   name              String
   color             String
   position          Int
@@ -561,7 +561,7 @@ model Folder {
   feedLastCheckedAt DateTime?
   backgroundImage   String?
   bookmarks         Bookmark[]
-  createdAt         DateTime      @default(now())
+  createdAt         DateTime   @default(now())
 
   @@index([userId])
 }
@@ -622,16 +622,16 @@ model FeedSubscription {
 // regardless of how many folders/users reference it. canonicalKey normalises
 // scheme/www/trailing-slash so URL permutations map to the same feed.
 model Feed {
-  id            String     @id @default(cuid())
-  canonicalKey  String     @unique
-  fetchUrl      String
-  title         String     @default("")
-  lastCheckedAt DateTime?
+  id              String    @id @default(cuid())
+  canonicalKey    String    @unique
+  fetchUrl        String
+  title           String    @default("")
+  lastCheckedAt   DateTime?
   // Conditional-GET validators from the last successful fetch. Sent back as
   // If-None-Match / If-Modified-Since so an unchanged feed answers 304 with no
   // body and no re-upsert.
-  etag          String?
-  lastModified  String?
+  etag            String?
+  lastModified    String?
   // Last time a user actually requested this feed (opened its folder, checked a
   // bookmark). The background scheduler only refreshes feeds demanded recently,
   // so feeds nobody looks at go dormant and stop costing outbound requests.
@@ -675,7 +675,11 @@ model Feed {
   // on the next sweep, so the admin route refuses that and says so.
   disabledReason String?
 
-  items         FeedItem[]
+  items    FeedItem[]
+  // Which archived articles this feed carried. Cascades, so removing a feed
+  // narrows what its former subscribers can search without orphaning the
+  // article rows other feeds still vouch for.
+  archived ArticleArchiveFeed[]
 
   @@index([lastCheckedAt])
   // The admin panel's failing-feeds query: worst first.
@@ -698,20 +702,20 @@ model Feed {
 // not automatically revive them; that is a deliberate admin action, because a
 // rule may have been added for a reason that outlived it.
 model BlockedDomain {
-  id        String   @id @default(cuid())
+  id                String   @id @default(cuid())
   // Normalised at write time by normalizeBlockPattern: lowercased, punycode as
   // given, no scheme, no leading dot for 'domain', leading dot for 'suffix'.
   // Unique so the same rule can't be added twice under two spellings.
-  pattern   String   @unique
-  kind      String
+  pattern           String   @unique
+  kind              String
   // Free-text note from whoever added it — "spam farm", "ticket #42". The reason
   // for a block is never recoverable from the pattern alone.
-  note      String   @default("")
+  note              String   @default("")
   // Denormalised like AdminAction.actorUsername, for the same reason: the record
   // has to stay readable if the account that made it is later deleted.
   createdById       String?
   createdByUsername String   @default("")
-  createdAt DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   @@index([kind])
 }
@@ -726,13 +730,13 @@ model BlockedDomain {
 // steadily. They expire after FEED_LOG_RETENTION_DAYS, pruned on write the way
 // ErrorLog is; this is operational telemetry, not a record to keep.
 model FeedFetchLog {
-  id         String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Plain columns, not a relation, for the same reason ErrorLog.feedUrl is one:
   // a Feed row can be deleted and that must not take the history of it away.
-  feedId     String
-  feedUrl    String
-  feedTitle  String   @default("")
+  feedId    String
+  feedUrl   String
+  feedTitle String @default("")
 
   // 'success'   — fetched and parsed, items upserted
   // 'unchanged' — origin answered 304, nothing to do (the common case)
@@ -742,14 +746,14 @@ model FeedFetchLog {
   // connection refused) and for our own blog feeds, which never leave the process.
   status     Int?
   // Wall-clock duration of the whole attempt, fetch and parse and upserts.
-  durationMs Int      @default(0)
+  durationMs Int     @default(0)
   // Items the document held, and how many of those were not already stored —
   // "44 items, 3 new" is the line that says a feed is actually publishing.
   items      Int?
   newItems   Int?
   error      String?
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([feedId, createdAt])
@@ -770,31 +774,31 @@ model FeedFetchLog {
 // evidence, unlike AdminAction, so it is safe to let it age out and it must, or
 // one bad deploy fills the table.
 model ErrorLog {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // 'server' — an unhandled exception in a route
   // 'feed'   — a subscription that failed to fetch or parse
-  source    String
-  message   String
+  source  String
+  message String
   // Stack trace for a server error, response body or parse detail for a feed.
   // Truncated on write (see MAX_DETAIL) — the point is a diagnosis, not an
   // archive, and an error from a loop must not be able to fill the disk.
-  detail    String?
+  detail  String?
 
   // Request context. All null for a feed error, which has no request behind it.
-  method    String?
-  path      String?
-  status    Int?
+  method String?
+  path   String?
+  status Int?
 
   // Who hit it, denormalised the same way and for the same reason as
   // AdminAction.actorUsername: knowing an error only ever hits one account is
   // half the diagnosis, and deleting that account shouldn't erase the record.
-  userId    String?
-  username  String?
+  userId   String?
+  username String?
 
   // The feed's URL, for source='feed'. A plain string, not a relation — a feed
   // row can be pruned by the TTL sweep and that must not take its errors with it.
-  feedUrl   String?
+  feedUrl String?
 
   createdAt DateTime @default(now())
 
@@ -803,10 +807,10 @@ model ErrorLog {
 }
 
 model FeedItem {
-  id         String    @id @default(cuid())
-  feedId     String
-  feed       Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
-  link       String
+  id           String                   @id @default(cuid())
+  feedId       String
+  feed         Feed                     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  link         String
   // Canonical form of link — lets an article be found from any URL spelling,
   // the same key comments are threaded on.
   //
@@ -816,17 +820,17 @@ model FeedItem {
   // a single card and silently swallow the rest. It was nullable for rows
   // written before the column existed; migration 20260807210000 backfilled them
   // from `link` and made it NOT NULL so the collapse can't come back.
-  linkKey    String
+  linkKey      String
   // The host `link` points at, lowercased and www-stripped: the site page key
   // (/s/<domain>). Stored rather than derived at query time because a feed's own
   // address is often not the site's — Ars Technica publishes at
   // feeds.arstechnica.com, and matching on that would make the obvious
   // /s/arstechnica.com answer nothing. Nullable only for rows written before
   // this column existed; every write sets it.
-  linkHost   String?
-  title      String
-  pubDate    DateTime?
-  fetchedAt  DateTime  @default(now())
+  linkHost     String?
+  title        String
+  pubDate      DateTime?
+  fetchedAt    DateTime                 @default(now())
   // When this item first entered the river, never touched again afterwards.
   //
   // `fetchedAt` cannot answer that: every refresh rewrites it, and a 304 rewrites
@@ -834,14 +838,14 @@ model FeedItem {
   // has arrived since I loaded the page" counted off fetchedAt would report an
   // entire unchanged feed as new. This column is what the new-articles count
   // measures against.
-  firstSeenAt DateTime @default(now())
-  readTime   Int?
-  snippet    String?
+  firstSeenAt  DateTime                 @default(now())
+  readTime     Int?
+  snippet      String?
   // Full article HTML from the feed, sanitized on write. Backfills on the next
   // refresh for items stored before this column existed.
-  content    String?
-  imageUrl   String?
-  categories String[]  @default([])
+  content      String?
+  imageUrl     String?
+  categories   String[]                 @default([])
   // Weighted tsvector over title (A) and snippet (B), maintained by Postgres as
   // a GENERATED ALWAYS ... STORED column — see migration 20260810160000 for why
   // it's generated rather than triggered, and what's deliberately not in it.
@@ -852,8 +856,8 @@ model FeedItem {
   // counts: nothing may write a generated column, and no query should ever ship
   // this to a caller. It's read through $queryRaw in routes/feeds.ts.
   searchVector Unsupported("tsvector")?
-  dismissals DismissedFeedItem[]
-  reads      ReadFeedItem[]
+  dismissals   DismissedFeedItem[]
+  reads        ReadFeedItem[]
 
   @@unique([feedId, link])
   @@index([feedId])
@@ -865,6 +869,91 @@ model FeedItem {
   // polls for while it's open.
   @@index([feedId, firstSeenAt])
   @@index([searchVector], type: Gin)
+}
+
+// One row per article, kept for years — the searchable half of the split
+// introduced in v1.24.0.
+//
+// The problem it solves is not storage, it is that three of the river's queries
+// have no date bound at all. fetchStories DISTINCT ONs every item in every feed
+// you follow and sorts the lot before OFFSET/LIMIT; countStories counts the same
+// set with a correlated NOT EXISTS per row; countNewStories GROUPs it and cannot
+// prune by firstSeenAt, because MIN() per group has to see every row of the
+// group. They are fast today only because FeedItem is small, and it is small for
+// a reason that has nothing to do with time: parseFeed caps ingestion at 50
+// items per feed per refresh, so the river is bounded by how many feeds you
+// follow and does not grow. Simply raising FEED_TTL_MS would have made the front
+// page — and a poll that runs on a timer — degrade forever.
+//
+// So depth lives here instead, and the river never touches this table:
+//
+//   FeedItem        what is new. In-feed plus a grace period, bounded, flat.
+//   ArticleArchive  what there has been. Grows; only search and Explore read it.
+//
+// Written on *ingest* rather than on expiry. Filling it from the sweep would
+// have meant search reading a union of two tables and deduping across them;
+// writing on the way in makes this a superset of the river, so search reads one
+// table and the river is left alone entirely.
+//
+// Keyed on articleKey, which is the whole trick: it is canonicalArticleKey, the
+// same key comments thread on, posts cite, and FeedItem.linkKey carries. Two
+// feeds running one article is one row here, so the DISTINCT ON that the river
+// and the old search both needed is simply gone from this path — the dedupe
+// happened at write time.
+model ArticleArchive {
+  articleKey   String                   @id
+  link         String
+  linkHost     String?
+  title        String
+  snippet      String?
+  // Kept, and deliberately not indexed. Explore quotes article bodies to the
+  // model (see lib/llm/feedContext), so dropping it would have left grounding
+  // over anything older than the river with nothing but a snippet. It stays out
+  // of searchVector for the reason migration 20260810160000 gives: boilerplate,
+  // nav text and syndication footers become searchable words, and every article
+  // from a site whose template says "subscribe to our newsletter" starts
+  // matching a search for "newsletter". Storing it and indexing it are separate
+  // decisions and this table makes them differently.
+  content      String?
+  imageUrl     String?
+  readTime     Int?
+  categories   String[]                 @default([])
+  pubDate      DateTime?
+  // Earliest sighting across every feed that carried it, never moved backwards.
+  firstSeenAt  DateTime
+  // Most recent sighting. What the retention sweep measures against, so an
+  // article a feed keeps re-listing stays as long as it is still being carried.
+  lastSeenAt   DateTime
+  // Same weights as FeedItem.searchVector and for the same reasons — title as A,
+  // snippet as B. Generated, so it cannot drift from the row; declared here only
+  // so `migrate` doesn't read it as drift and offer to drop it. Read through
+  // $queryRaw, never selected through the client.
+  searchVector Unsupported("tsvector")?
+
+  feeds ArticleArchiveFeed[]
+
+  // Relevance ordering reads the GIN index; the rest are for the sweep and for
+  // the site pages, which ask "this host, these feeds".
+  @@index([searchVector], type: Gin)
+  @@index([lastSeenAt])
+  @@index([linkHost])
+}
+
+// Which feeds carried an article, so search stays scoped to your subscriptions.
+//
+// The archive is deduped globally — one row per article for the whole instance —
+// which is what makes it cheap, but it means the row itself cannot say whose
+// search may return it. Without this table "search your feeds" would quietly
+// become "search everything this instance has ever fetched", which is a
+// different product and a question nobody was asked.
+model ArticleArchiveFeed {
+  articleKey String
+  article    ArticleArchive @relation(fields: [articleKey], references: [articleKey], onDelete: Cascade)
+  feedId     String
+  feed       Feed           @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@id([articleKey, feedId])
+  @@index([feedId])
 }
 
 // "I'm done with this article" on a shared item. Per-user and, since v1.11.0,
@@ -898,15 +987,15 @@ model ReadFeedItem {
 }
 
 model Bookmark {
-  id         String   @id @default(cuid())
-  folderId   String?
-  folder     Folder?  @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  domain     String
-  name       String
-  faviconUrl String
-  color      String
+  id            String    @id @default(cuid())
+  folderId      String?
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domain        String
+  name          String
+  faviconUrl    String
+  color         String
   position      Int
   feedUrl       String?
   feedCheckedAt DateTime?
@@ -928,25 +1017,25 @@ model Bookmark {
 // visibility controls who can read it: public (everyone), friends (accepted
 // friends), or private (author only).
 model Comment {
-  id           String    @id @default(cuid())
+  id           String            @id @default(cuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  articleKey   String    // canonical URL key — the join across reading list + feed
-  articleUrl   String    // original URL, kept for reference/linking
-  articleTitle String    @default("")
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleKey   String // canonical URL key — the join across reading list + feed
+  articleUrl   String // original URL, kept for reference/linking
+  articleTitle String            @default("")
   parentId     String?
-  parent       Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies      Comment[] @relation("CommentThread")
-  title        String?   // root comments only
-  body         String    // sanitized HTML from the rich editor
+  parent       Comment?          @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Comment[]         @relation("CommentThread")
+  title        String? // root comments only
+  body         String // sanitized HTML from the rich editor
   // 'public' (every signed-in user) | 'friends' (accepted friends) | 'private' (only the author)
-  visibility   String    @default("private")
+  visibility   String            @default("private")
   // Set when the author deletes a comment that still has replies: the row is
   // kept as a tombstone (content wiped) so the thread below it survives. A
   // comment with no replies is hard-deleted instead, so this stays null.
   deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
   revisions    CommentRevision[]
 
   @@index([articleKey])
@@ -980,30 +1069,30 @@ model CommentRevision {
 // land in the same thread. Both columns are stored rather than derived so that
 // changing the deploy origin later can't orphan existing threads.
 model BlogPost {
-  id              String   @id @default(cuid())
+  id              String          @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   title           String
-  slug            String   // "my-post-title" — unique per author, no date suffix
-  body            String   // sanitized rich-editor HTML
-  excerpt         String   @default("")  // plain-text summary for cards and RSS
+  slug            String // "my-post-title" — unique per author, no date suffix
+  body            String // sanitized rich-editor HTML
+  excerpt         String          @default("") // plain-text summary for cards and RSS
   // Cover image, as a site-relative /api/v1/images/<id> path (see imagePathFor).
   // "" means none. Stored relative for the same reason embedded images are: it
   // survives the dev origin, a LAN address and the public domain unchanged.
-  heroImage       String   @default("")
+  heroImage       String          @default("")
   // The author's own labels for the post, lowercased and deduped on write (see
   // normalizeTags). A list rather than a relation for the same reason
   // FeedItem.categories is one: a tag here is a word, not a record — nothing
   // hangs off it, and the whole set is read and rewritten with the post.
-  tags            String[] @default([])
+  tags            String[]        @default([])
   // 'public' (anyone, incl. logged-out) | 'friends' (accepted friends) | 'private' (author only)
-  visibility      String   @default("private")
-  commentsEnabled Boolean  @default(true)
-  url             String   // absolute canonical URL
-  articleKey      String   @unique       // canonicalArticleKey(url) — joins to Comment
-  publishedAt     DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  visibility      String          @default("private")
+  commentsEnabled Boolean         @default(true)
+  url             String // absolute canonical URL
+  articleKey      String          @unique // canonicalArticleKey(url) — joins to Comment
+  publishedAt     DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   references      PostReference[]
 
   @@unique([userId, slug])
@@ -1065,7 +1154,7 @@ model Image {
   // Sniffed from the file's magic number on upload, never taken from the client
   mime      String
   data      Bytes
-  size      Int      // bytes, denormalised so quota sums don't read the blobs
+  size      Int // bytes, denormalised so quota sums don't read the blobs
   width     Int
   height    Int
   createdAt DateTime @default(now())
@@ -1094,28 +1183,41 @@ model ReadingFolder {
 }
 
 model ReadingListItem {
-  id       String   @id @default(cuid())
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  url      String
-  title    String
-  source   String
-  readTime String
-  tag      String
-  notes    String   @default("")
-  imageUrl String   @default("")
+  id         String         @id @default(cuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url        String
+  // canonicalArticleKey(url) — the key comments thread on and the archive is
+  // keyed by, so "this article is in somebody's reading list" is an indexed
+  // lookup rather than a canonicalisation of every row in JS.
+  //
+  // Nullable only for rows written before this column existed. SQL cannot
+  // compute the key faithfully (canonicalArticleKey strips tracking parameters
+  // and normalises the host in JS, and a wrong key would pin the wrong
+  // article), so the migration leaves old rows null rather than guessing and
+  // scripts/backfillArticleKeys.ts fills them in properly. A null here means
+  // "unknown", never "not referenced" — the retention sweep reads it that way.
+  articleKey String?
+  title      String
+  source     String
+  readTime   String
+  tag        String
+  notes      String         @default("")
+  imageUrl   String         @default("")
   // Moved out of the active reading list and into the Library. Was named
   // `archived` until the Library replaced the archive drawer.
-  inLibrary Boolean @default(false)
+  inLibrary  Boolean        @default(false)
   // Which Library shelf this sits on. Null is a real state, not a missing
   // value: it means Unsorted. Deleting a folder nulls this rather than
   // cascading, so losing a shelf never loses the articles on it.
-  folderId String?
-  folder   ReadingFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  savedAt  DateTime @default(now())
+  folderId   String?
+  folder     ReadingFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  savedAt    DateTime       @default(now())
 
   @@index([userId])
   @@index([folderId])
+  // The retention sweep's "is this article in anyone's reading list" guard.
+  @@index([articleKey])
 }
 
 // An append-only record of what an admin did to somebody else's account or
@@ -1139,24 +1241,24 @@ model ReadingListItem {
 //     is by convention rather than a database rule, which is the right weight for
 //     a single-instance deployment.
 model AdminAction {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
   actorId       String?
-  actor         User?    @relation("AdminActionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actor         User?   @relation("AdminActionActor", fields: [actorId], references: [id], onDelete: SetNull)
   actorUsername String
 
   // Dotted verb from ADMIN_ACTIONS in lib/adminAudit.ts, e.g. 'user.ban'
-  action        String
+  action String
 
-  targetType    String   // 'comment' | 'blogPost' | 'user'
-  targetId      String
-  targetLabel   String
+  targetType  String // 'comment' | 'blogPost' | 'user'
+  targetId    String
+  targetLabel String
 
   // Whatever makes the row legible later without the target: a before/after
   // visibility pair, a comment snippet, the counts a cascade destroyed.
-  metadata      Json?
+  metadata Json?
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([actorId, createdAt])

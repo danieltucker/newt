@@ -99,6 +99,37 @@ export const PROOFREAD: DepthConfig = {
 };
 
 /**
+ * Planning a post: a bounded list, on the author's chosen model.
+ *
+ * No depth either, for the opposite reason to proofreading. This one is a
+ * judgement call rather than a mechanical pass — telling a real angle from
+ * "explore the implications" is the whole job — so it runs on the model the
+ * account picked rather than the cheap utility one. What bounds the cost
+ * instead is the shape of the output: three to five angles and a handful of
+ * questions is a page, however much material went in, and a ceiling low enough
+ * to make writing the post outright impossible is a feature here.
+ */
+export const IDEAS: DepthConfig = {
+  effort: 'medium',
+  maxTokens: 3_000,
+  instruction: '',
+};
+
+/**
+ * Screening the articles Ideas found: a yes or a no on each, and one line why.
+ *
+ * On the utility model and a small budget, like the planner, because it is a
+ * filter rather than an answer — but roomier than PLANNER's 300, since this one
+ * has to read eight snippets before it decides and then write a line about each
+ * of the ones it keeps.
+ */
+export const RELEVANCE: DepthConfig = {
+  effort: 'low',
+  maxTokens: 1_000,
+  instruction: '',
+};
+
+/**
  * Working out what to search the feed for: one short list of search terms.
  *
  * The tightest budget in the file, because this is a routing decision and not

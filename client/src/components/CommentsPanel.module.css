@@ -379,6 +379,36 @@
   text-underline-offset: 2px;
 }
 
+/* An Explore link inside a comment body — what a persona's angles card is made
+   of, and what a reader typing one by hand gets too.
+
+   Matched on the href rather than a class because the sanitizer's allowedClasses
+   would strip anything new (see RICH_HTML_OPTIONS in server/src/lib/comments.ts),
+   and widening that list to style a link is not a trade worth making. The
+   consequence is that this styles *every* /explore link in a body, including a
+   person's own pasted one — which is the right answer anyway: they go to the
+   same place and should look like they do.
+
+   Not a filled button. These sit at the end of a sentence in a list, and a solid
+   accent block per line would out-shout the questions themselves, which are the
+   part worth reading. */
+.body a[href^='/explore?'] {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.body a[href^='/explore?']:hover {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
 .body blockquote {
   margin-left: 0;
   padding: 2px 0 2px 10px;

@@ -2,6 +2,322 @@
 
 Notable changes to Newt, newest first.
 
+## v1.24.0 - The consoles lose their sidebars, and feeds stop being punished for size
+
+**2026-08-19**
+
+The admin console had nine navigation rows in a rail of its own, sitting beside
+the navigation rail the rest of the app already has. Two columns of navigation
+side by side argue about which one is the navigation, and nine flat rows gave a
+report queue and a list of stat cards exactly the same weight. It is now **four
+sections** — Overview, Moderation, System, AI — in a row across the top, with a
+sub-nav underneath where a section holds more than one view.
+
+**Four is the number that matters.** It is the most that fits a narrow window
+without scrolling, which is the one thing the old rail could not offer at any
+width. That also retires the console's second screen: below 720px it used to
+become a drill-down — a list of tabs, then one tab with a back button — because
+a 180px rail and a table of users could not share a phone. Two rows of pills
+can, so there is one nav at every width now.
+
+**The grouping is by the job, not by the table.** Moderation holds Reports,
+Users, Comments and Posts, which were four unrelated nav rows and are in fact one
+workflow: you arrive from a report and act on a person, a comment or a post.
+System holds Feeds, Errors and the Audit log — Feeds and Errors adjacent on
+purpose, since the Errors table filters by a `feed` source and the Feeds tab
+keeps its own refresh log, so feed failures were already being rendered twice
+under two different nav rows with nothing to say they were the same events.
+
+**Every section pill carries a glyph** — a grid for Overview, a flag for
+Moderation, a cog for System, and Settings' own star for AI. Four words of much
+the same length and weight are harder to aim at than four shapes, and this is
+the row somebody crosses on the way to a table they use every day.
+
+**Sections are a grouping, not an address.** `/admin/users` is still
+`/admin/users`, and `/admin/reports/<id>` is still the way a report alert in the
+notification bell reaches one report. Which section a view belongs to is derived
+rather than written into the URL, so no existing link, bookmark or notification
+broke.
+
+**Overview answers "what needs me?" before "how big is the database?"** Open
+reports, failing feeds and errors in the last 24 hours now sit above the stat
+grid as a strip of ways *in*, rendered only when they are non-zero. Thirteen
+equally-weighted stat cards made "3 open reports" read exactly like "1,204
+bookmarks", when one is work waiting and the other is trivia.
+
+**And the console finally has a container.** The nav was a card and the content
+was bare, so the screen read as a floating sidebar with nothing attached to it.
+
+**It also says what it is now.** `Admin`, with a shield, in the left of the nav
+row — the pills name the section, the section names the job, and nothing named
+the console, so `/admin` read as another page of the app that happened to have a
+Users table on it. It rides in the row the pills were already leaving half empty
+rather than costing a strip of its own, and the browser tab reads
+`Reports · Admin · Newt`. Overview and AI have no sub-nav, and their pills used
+to sit directly on the nav's bottom border — a row with a rule ruled against it,
+which reads as a button that has grown a base. They have their own padding now.
+
+### Settings is the same console
+
+Two long-form configuration screens had arrived at two different answers — a
+232px rail with seven rows in Settings, a nine-row rail in Admin — so the two
+places you go to change how the app behaves had nothing in common but a
+scrollbar. Settings is now the same one-container, pills-across-the-top console,
+with the same wordmark, the same sliding lozenge and the same sub-nav.
+
+**Seven rail rows became five groups.** *New tab* holds Appearance and Search,
+which were two rows for one screen: the theme, the background and the bookmarks
+*are* the new tab, and so is the field in the middle of it. *Advanced* took
+Integrations whole — between them they held four blocks, and "advanced" versus
+"integrations" is not a distinction anybody was navigating by. Account, Reading
+and AI are one section each.
+
+**Groups are a grouping, not an address.** `/settings/appearance` is still
+`/settings/appearance`, and `/settings/reading#comments-sort` still lands on the
+switch it names. `/settings/integrations` resolves to Advanced rather than
+falling back to the index, because its settings did not go away — they moved,
+and their anchors came with them.
+
+**One nav at every width.** Below 720px Settings used to become a drill-down —
+the section list, then one section with a back button — because a rail and a
+column of setting blocks could not share a phone. A row of pills can, so the
+second screen, the chevrons and the back button are gone, and the row scrolls
+sideways with the lit pill kept in view.
+
+**The settings search is gone.** It was a field and a hand-maintained index of
+every switch with the words somebody might type looking for it — a second way to
+find things, kept in step by hand, for a screen that is now five groups deep. The
+*anchors* it used to produce are still here and still work:
+`/settings/reading#comments-sort` lands on the switch it names, flash and all.
+Nothing in the page emits one any more; a pasted or bookmarked one does.
+
+**Both consoles line up with the bookmarks rail again.** The shell lays the rail
+and the page column out as two grid siblings that begin on the same line, and
+both consoles carried 8px of top padding — an eighth of an inch of two panels of
+one app being out of true.
+
+### Feed history, in three tiers
+
+Feed articles used to be deleted seven days after they left a publisher's feed —
+and search read that same table, so the searchable corpus ended there too. So did
+Explore's grounding, which has been asking for a **365-day** window since it was
+written, against a table that could never hold more than a fortnight of anything.
+
+The obvious fix — raise the TTL — is the wrong one, and it is worth saying why.
+Three of the river's queries have no date bound at all: `fetchStories` sorts every
+item in every feed you follow before applying its `LIMIT`, `countStories` counts
+the same set with a correlated `NOT EXISTS` per row, and `countNewStories` groups
+it and *cannot* be pruned by an index, because `MIN()` per group has to see every
+row of the group — and that one polls on a timer. They are quick today only
+because the river is small, and it is small for a reason that has nothing to do
+with time: ingestion is capped at 50 items per feed per refresh, so the river is
+bounded by how many feeds you follow and stays flat forever. Raising the TTL
+would have bought search depth by making the front page slower every month.
+
+So there are three tiers now:
+
+- **Recent** — the river, unchanged. Still "as long as the publisher lists it,
+  plus seven days' grace", which adapts to publishing cadence for free; a fixed
+  window would have emptied the river for anyone following a monthly newsletter.
+- **Archive** — a new table, keyed on the canonical article key, written on
+  ingest, held for about three years. Only search and Explore read it.
+- **Pinned** — anything you commented on, cited in a post, or saved to your
+  reading list never expires at all.
+
+**Search got faster as well as deeper.** The archive is one row per article, so
+the `DISTINCT ON` both search paths needed is gone — the dedupe happens at write
+time now. That removes a full sort of every matching row from a query whose
+`LIMIT` is applied last and so could never cut it short.
+
+**Article bodies are kept.** They stay out of the search index for the reason
+they always did — boilerplate and "subscribe to our newsletter" footers make
+terrible search terms — but Explore quotes article text to the model, and
+grounding over a three-year archive with nothing but snippets would have been a
+poor trade.
+
+Searches stay scoped to your own subscriptions: the archive is deduped across the
+whole instance, so a join table records which feeds carried what.
+
+**Two one-off scripts after upgrading**, neither urgent and neither able to lose
+anything if skipped:
+
+- `npx ts-node scripts/seedArchiveFromFeedItems.ts` copies the articles already
+  in the river into the archive. Without it the archive still fills itself, but
+  only from the moment of deploy — whatever is in the river at that point is a
+  fortnight of history that would expire unrecorded. Run it once, soon after
+  deploying. Safe to re-run: it widens the sighting window and fills blank
+  columns, and will not overwrite a better copy written by live ingest.
+- `npx ts-node scripts/backfillArticleKeys.ts` gives reading-list rows written
+  before this release their canonical key, so "saved to my reading list" starts
+  pinning articles against expiry. The retention sweep reads a missing key as
+  "keep", so waiting only ever retains more than necessary.
+
+### Feeds were being dropped for being ordinary
+
+`MAX_FEED_BYTES` was 2 MB, justified in its own comment as "a few hundred KB at
+the high end" for a 50-item full-content feed. That estimate was wrong by an
+order of magnitude and it was quietly killing perfectly good feeds: **PCGamer's
+is 2.65 MB and 99% Invisible's is 3.45 MB.** Neither is exotic. 99PI had reached
+the 20-failure threshold and been switched off altogether for being large.
+
+The ceiling is now **10 MB**. The limit counts *decompressed* bytes, which is
+why gzip was no rescue — both feeds are under 400 KB on the wire — so this bounds
+heap rather than bandwidth, and at five concurrent fetches the worst case is
+about 50 MB of transient buffer.
+
+An oversize feed also **says so** now. node-fetch's own words for it are
+`content size at <url> over limit: 10000000`, which reads to an operator as a
+fault in Newt rather than as a feed bigger than we agreed to download.
+
+Feeds already disabled by this need re-enabling once from **Admin → System →
+Feeds**; nothing was deleted.
+
+### Making a heading no longer loses the caret
+
+Asking the editor for a heading on a **blank line** — `/h2` and Enter, or typing
+`## ` — took the caret with it. The line stopped looking selected and the
+formatting bar went blank, because the selection had been left pointing at the
+paragraph that had just been swapped out for the heading. On an empty line there
+is no text for the caret to be *in*, so it sits on the block itself, and that is
+the one boundary a block swap cannot carry across unaltered. It now follows the
+block onto its replacement. The same fix covers quotes and code blocks, which
+lost the caret the same way.
+
+### Explore cards take a click anywhere
+
+A conversation in the Explore index opened only if you hit its title, which is
+often one short line with obviously-clickable dead space either side of it.
+**The whole card opens the conversation** now; Share and Delete still take their
+own clicks. The card is one control, so it keeps a single focus ring and a
+single stop in the tab order.
+
+**Delete says "Delete".** It was a bare `×` sitting a few pixels from Share —
+a glyph you have to already know the meaning of, on the button that throws a
+conversation away. It stays quiet beside the outlined Share pill rather than
+being promoted by the label, and on touch screens it is now visible at all
+rather than waiting for a hover that never comes.
+
+### Ideas: the composer's answer to the blank page
+
+Proofread reads a draft once it exists. **Ideas** is for before that. Next to
+it in the composer's footer is a button that opens a box, you say a couple of
+sentences about the piece you have in mind, and you get back **angles to take,
+questions the piece would have to answer, and articles from your own feeds
+worth reading first**.
+
+**It will not write the post.** No outline of finished sentences, no
+introduction, no paragraph you could paste — and there is no Insert button,
+because the moment a composer hands you prose the post stops being yours. That
+is the same line Proofread holds by reporting instead of rewriting.
+
+**It reads what you have already gathered.** The brief is only the start of it:
+whatever is in the draft goes too, and so do the **first three links in it** —
+followed, read, and handed to the model as text. A reference card cites its
+source on `data-url` rather than in its `href`, so cards count as links; a
+pasted URL is read through the same SSRF gate and the same page cache Explore
+uses, so a link nobody has ever fetched costs one request and a link two drafts
+share costs none. The panel says how many it managed to read, because "it had
+your three sources" and "all three were behind a paywall" are very different
+reasons for a thin answer.
+
+**And it searches your archive.** The same planner Explore uses turns the brief
+into search terms and runs them over your subscriptions, which is the one source
+here that knows what happened last month. Titles, publications and dates come
+from your own archive rather than from the reply — a URL the model invents has
+no row to join to and is dropped rather than reaching you as a plausible link to
+a piece that does not exist.
+
+**Then a second opinion on every article before you see it.** A keyword search
+over a year of your reading turns up coincidences — a piece about a different
+story that happens to share a name — and the model that wrote the angles is not
+a good judge of them: the reading list is the last field of its own output,
+which is exactly where a model is most willing to be agreeable. So a separate,
+cheap pass reads the brief and the articles and answers one question about each:
+does this give *this* piece something. Keeping none is a real answer and is
+often the right one; an article you open, read and find has nothing to do with
+your post costs you more than the missing one would have.
+
+The button appears once a model is connected and **does not wait for you to have
+written something**, which is the case it was built for. It runs on your own
+model, on a ceiling low enough that writing the post outright is not an option
+it has.
+
+### Personas can point at a door instead of talking
+
+A persona could comment on an article, reply to somebody, or draft a post. All
+three are a character with an opinion, which is the part of a generated account
+that stays uncomfortable however honestly it is labelled — the badge says what it
+is, and it still reads as somebody's take.
+
+**There is a fourth verb now: Angles.** A persona reads the article and posts a
+short card of two to four places a reader could take it next — an open question
+the piece raises and does not settle, something in it that is easy to misread, a
+consequence it does not draw itself. Each entry ends in an **Explore this** link
+that opens Explore with the question already asked and the article already
+attached.
+
+**Nothing about it is trying to pass as a person.** It gives no verdict on the
+piece and it is not written to sound like a comment: a list of questions with
+links on the end is a thing only software would post, and reads as one. That is
+a sturdier disclosure than an instruction not to claim to be human, which is a
+layer the badge had been carrying on its own.
+
+**The persona's dials do more work here, not less.** A skeptical persona asks
+what the evidence was, an analytical one asks how the mechanism actually works,
+an enthusiast follows the interesting detail. Voice, formality and interests
+decide which door gets pointed at, rather than how an opinion gets phrased.
+
+**Comment, reply and draft a post all still exist.** Angles is an addition, and
+the menu says what each verb does before it does it: Angles and Comment both post
+publicly and straight away, while a post is still a draft that goes nowhere until
+somebody opens and publishes it.
+
+**Worth knowing before the first one is posted.** Explore runs on the reader's
+own model key while personas run on the instance's, so a reader who has not
+connected a model in Settings follows one of those links and is asked to connect
+one. The question is still there to read either way.
+
+### A post links back to the rest of them
+
+A post page had no route from the piece you are reading to the body of work it
+belongs to. The only thing pointing at the author was their avatar, which goes
+to a profile — the right destination for "who wrote this", the wrong one for
+"what else have they written". There is now a **Posts** button in the top bar:
+your own goes to the manage list where the drafts are, anybody else's to the
+Posts tab of their profile, which is the public list of the same thing.
+
+The bar is **two groups** now rather than one flat row. Ways out of the post sit
+on the left and things you can do to it on the right; as five equal children
+spread by `space-between`, Report ended up exactly as far from the edge as
+Follow and nothing distinguished a navigation control from an action.
+
+### The profile's overflow menu stopped being cut in half
+
+**Copy link** and **Copy RSS** live behind the ⋯ beside the button at the top of
+a profile, and on a phone the menu opened straight off the side of the card.
+Two things were wrong and both are fixed. The card clipped its own contents —
+`overflow: hidden`, there to keep the cover image inside the rounded corners,
+which also cropped anything opening downwards out of the last row; the cover
+now rounds and clips itself and the card stays open. And on a narrow screen the
+action row stretches to the full width, which left the ⋯ wherever the buttons
+before it happened to end while its menu stayed anchored to its right edge — so
+the menu unfolded leftwards past the edge of the card. The ⋯ is pushed to the
+far right there, and the menu opens back into the card at every width.
+
+### Editing a bookmark stopped resetting its colour
+
+Opening **Edit link** on a bookmark whose colour you had picked by hand, fixing
+a typo in the name, and saving would put the colour back to the one derived from
+the domain. The dialog opened with the colour picker on "auto" for every
+bookmark regardless — while the preview beside it showed the stored colour, so
+nothing looked wrong until the save had already happened, and the only way out
+was to re-pick the colour every time you edited anything else.
+
+The dialog now works out which of the two states it is in when it opens, and the
+preview shows the colour that will actually be stored. A colour that matches
+what the domain derives is still treated as auto, so it keeps following the
+domain if you retype the URL.
+
 ## v1.23.0 - Models move into the panel, and start reporting for duty
 
 **2026-08-17**

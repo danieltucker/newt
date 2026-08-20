@@ -8,119 +8,255 @@
    scroller never engaged. The panel's own `overflow: hidden` cropped the rest.
    Whichever tab was tallest looked worst, which is why AI was the one that
    showed it. None of that survives being a page: the document scrolls. */
+/* Zero at the top, not 8px. The shell lays this column and the bookmarks rail
+   out as two grid siblings with `align-items: start` (see .bodyGrid in
+   NewTabPage.module.css), so they begin on the same line - and any padding here
+   is the console starting below the rail beside it for no stated reason. The
+   8px was exactly that, and it was visible: two panels of one app, an eighth of
+   an inch out of true.
+
+   Only the resting position lines up. Scrolled, the rail pins 16px lower than
+   this nav does, and that is deliberate on both sides: the rail is a floating
+   card that wants air under the bar, while this is a header band that has to
+   butt against it - a gap above a sticky header is a slot the table underneath
+   scrolls through. See the `top` on .nav. */
 .page {
-  display: flex;
-  align-items: flex-start;
-  gap: 28px;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 8px 0 64px;
+  padding: 0 0 64px;
 }
 
-/* ── Left nav ── */
-.nav {
-  position: sticky;
-  /* Clears the shell bar, whose height ShellBar measures and publishes. */
-  top: calc(var(--shellbar-h, 56px) + 16px);
-  width: 190px;
-  flex-shrink: 0;
-  padding: 14px 10px 12px;
+/* ── The console ──
+
+   One container, which this page did not have. The nav was a card and the
+   content was bare, so the screen read as a floating sidebar with no body
+   attached to it. Outer surface, inner surface2 - the same two-level vocabulary
+   the stat cards and chart blocks were already speaking one level down. */
+.console {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Never taller than the space under the bar - the tab list takes the
-     overflow rather than the rail running off the bottom of a short window. */
-  max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
+  border-radius: 18px;
+  /* `clip`, emphatically not `hidden`. Both crop the nav's background to the
+     rounded corners, but `hidden` also makes this a scroll container, and a
+     `position: sticky` descendant sticks to its nearest scrollport - so the nav
+     below would have stuck to the top of this box and then scrolled away with
+     it, which looks exactly like sticky being ignored. `clip` establishes no
+     scrollport, so the nav keeps sticking to the viewport.
+
+     The nav carries matching top corners as well, so that a browser without
+     `clip` degrades to square corners rather than to a broken nav. */
+  overflow: clip;
 }
 
-.nav::-webkit-scrollbar { display: none; }
+/* ── Nav ──
 
-.navHeader {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 0 10px;
-  margin-bottom: 10px;
-}
-
-.navTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 10px;
-  margin-bottom: 10px;
-}
-
-.navTop .navHeader {
-  padding: 0;
-  margin-bottom: 0;
-}
-
-.navItem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border-radius: 10px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 14px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s, color 0.12s;
-}
-
-.navItem:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-
-.navActive {
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* ── Content ── */
-.content {
-  flex: 1;
-  min-width: 0;
-}
-
-/* The tab's title, and on a phone the way back to the list. Sticky under the
-   shell bar - same trick and same frosted vocabulary as the settings page - so
-   a long table never leaves you without either. */
-.contentHeader {
+   Sticky as a unit, so the section row and its sub-nav travel together and a
+   long table never scrolls away from either. This is the one thing here worth
+   making sticky: the heading it replaced was not, since a word restating the
+   lit pill beside it does not earn a fixed strip of screen. */
+.nav {
   position: sticky;
   top: var(--shellbar-h, 56px);
   z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 0 14px;
-  background: color-mix(in oklab, var(--bg) 94%, transparent);
+  padding: 14px 18px 0;
+  border-radius: 17px 17px 0 0;
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
 
-.title {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 19px;
-  font-weight: 600;
+/* The nav's bottom padding belongs to the sub-nav: the tabs carry it themselves
+   so their underline can land on the nav's own bottom border. Overview and AI
+   have no sub-nav, so there was nothing between a 34px pill and that border and
+   the row came out sitting on a rule - which reads as a button that has grown a
+   base rather than as a nav with a line under it.
+
+   14px rather than the sub-nav's full height. Matching it would hold the nav at
+   one height whichever section is lit, at the cost of a band of empty glass
+   under two of the four; a nav that changes height when its contents do is the
+   better of those two. Same value as the padding above the pills, so the row
+   sits centred in its own strip. */
+.navBare { padding-bottom: 14px; }
+
+/* ── The console's name ──
+
+   The one thing this screen never said out loud was where you were. The pills
+   name the section, the section names the job, and nothing named the console -
+   so /admin read as another page of the app that happened to have a Users table
+   on it. That matters more here than anywhere else, because this is the one
+   screen where a click bans somebody.
+
+   It rides in the nav row rather than above it. A row of its own would have
+   cost a permanent strip of sticky screen to say one word, and the pills were
+   leaving most of this row empty already. An eyebrow rather than a heading: a
+   20px title beside 14px pills turns the sections into its subtitle. */
+.navRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  height: 34px;
+  padding-right: 14px;
+  border-right: 1px solid var(--border);
   color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Not decoration: the shield is the part that reads at a glance, and at a
+   glance is how somebody notices they still have the console open. */
+.wordmarkIcon {
+  display: block;
+  color: var(--accent);
+}
+
+.sectionRow {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  /* Takes the rest of the row, so the wordmark stays put and the pills are what
+     scroll when a narrow window cannot hold them - see the foot of this file. */
+  flex: 1;
+  min-width: 0;
+}
+
+/* The rail's lozenge, running along the other axis. Painted behind the pills
+   rather than onto the active one, so moving between sections is one box
+   travelling rather than a colour appearing here and vanishing there. */
+.lozenge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.16s;
+  pointer-events: none;
+}
+
+.lozengeOn { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lozenge { transition: none; }
+}
+
+.sectionItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.sectionItem:hover { color: var(--text); }
+
+/* A glyph in front of each label. Four words of much the same length and
+   weight are harder to aim at than four shapes, and this is the row somebody
+   crosses on the way to a table they use every day. They inherit the pill's
+   colour rather than carrying their own, so the lit one is still the only
+   thing on this row wearing the accent - and they are the same size and slot
+   as Settings' (see .sectionIcon there), because two consoles that share a
+   layout should not disagree about what an icon is. */
+.sectionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.sectionActive,
+.sectionActive:hover {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Sub-nav ──
+
+   Quieter than the row above it, and underlined rather than filled so the two
+   are told apart by kind and not only by size. Two filled pill rows stacked
+   would read as one nav wrapped onto a second line. */
+.subRow {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.subRow::-webkit-scrollbar { display: none; }
+
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.subItem:hover { color: var(--text); }
+
+.subActive,
+.subActive:hover {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* Not the red pill the section carries. Down here the view is one click away
+   and already named, so the count is information rather than an alarm. */
+.subCount {
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.subActive .subCount {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+/* ── Content ── */
+.content {
+  min-width: 0;
+  padding: 0 18px;
 }
 
 /* No longer a scroller of its own - the document is. Horizontal overflow stays,
@@ -128,7 +264,70 @@
    inside its own box is better than a page that does. */
 .body {
   overflow-x: auto;
-  padding: 20px 0 0;
+  padding: 18px 0 22px;
+}
+
+/* ── Attention strip ──
+
+   What needs a person, above the census. Accent-tinted because these render
+   only when non-zero: an empty strip is no strip at all, so there is no resting
+   state for the colour to shout at. */
+.attention {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.attentionCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.14s, transform 0.14s;
+}
+
+.attentionCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+.attentionCard:active { transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .attentionCard { transition: border-color 0.14s; }
+  .attentionCard:hover { transform: none; }
+}
+
+.attentionCount {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.attentionLabel {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.attentionCue {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent);
 }
 
 .error {
@@ -891,7 +1090,10 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
    into a cell. */
 
 .navBadge {
-  margin-left: auto;
+  /* Was `auto`, which pushed the count to the far end of a full-width rail row.
+     In a pill that hugs its label there is no slack to push into, so the badge
+     just sits beside the word. */
+  margin-left: 0;
   min-width: 18px;
   padding: 1px 6px;
   border-radius: 20px;
@@ -1474,92 +1676,46 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
 .moreBtn:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 .moreBtn:disabled { opacity: 0.6; cursor: default; }
 
-/* ── Narrow: one column, list then tab ──
-   Eight tabs in a 180px rail beside a table of users needs about 900px before
-   either half is readable. Below 720px - the same break Settings uses, and the
-   same shape - the rail becomes a list you drill into, and the panel stops
-   being a card and becomes the screen. AdminPage.tsx renders one side or the
-   other; these rules only have to make each fill the width. */
-.compact .nav {
-  width: 100%;
-  border-right: none;
-  padding: 14px 10px 10px;
-}
+/* ── Narrow ──
 
-.compact .navItem {
-  padding: 12px;
-  font-size: 15px;
-  border-radius: 12px;
-}
+   The console used to become a different screen below 720px: the rail turned
+   into a list you drilled into, each row grew a chevron, and the content got a
+   back button. That existed because a 180px rail and a table of users could not
+   share the width. Two rows of pills can, so there is one nav at every width now
+   and the second screen, the chevrons and the back button are all gone.
 
-/* The chevron is the affordance, and CSS can add it to all eight without the
-   markup having to say so eight times. Placed before the badge's auto margin
-   would push it, so it stays at the end. */
-.compact .navItem::after {
-  content: '›';
-  margin-left: auto;
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.5;
-}
-
-/* Two auto margins in one flex row would split the slack between them and
-   strand the badge mid-row, so here the count sits against its label and the
-   chevron takes the whole gap. */
-.compact .navBadge { margin-left: 0; }
-
-.compact { display: block; padding: 4px 0 48px; }
-
-.compact .nav {
-  position: static;
-  max-height: none;
-  overflow: visible;
-}
-
-.compact .content { width: 100%; }
-
-.backBtn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 8px 14px 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface2);
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.backBtn span { font-size: 17px; line-height: 1; }
-.backBtn:hover { background: var(--border); color: var(--text); }
-
+   What is left is the same nav, tightened - and the section row allowed to
+   scroll, which four items will rarely need and nine always would have. */
 @media (max-width: 720px) {
-  .backdrop {
-    backdrop-filter: none;
-  }
+  .page { padding: 0 0 48px; }
 
-  .panel {
-    width: 100%;
-    height: 100%;
-    border: none;
+  /* Edge to edge: a 12px margin either side of a table that already scrolls
+     sideways buys nothing, and the rounded card reads as inset on a phone. */
+  .console {
     border-radius: 0;
-    box-shadow: none;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    border-left: none;
+    border-right: none;
   }
 
-  .contentHeader {
-    gap: 8px;
-    padding: 12px 14px;
+  .nav { padding: 10px 14px 0; border-radius: 0; }
+
+  /* After .nav, or the shorthand above would put the zero back. */
+  .navBare { padding-bottom: 10px; }
+
+  /* One word and a divider, and the pills scroll past it rather than under it.
+     Worth its ~70px here for the same reason it is worth a slot at all: a phone
+     is where "which app screen is this" is hardest to answer. */
+  .navRow { gap: 10px; }
+  .wordmark { padding-right: 10px; }
+
+  .sectionRow {
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
-  .title { flex: 1; min-width: 0; font-size: 17px; }
+  .sectionRow::-webkit-scrollbar { display: none; }
 
-  /* Wide tables are the one thing that can't be made to fit - they scroll
-     sideways in their own box rather than widening the panel. */
-  .body { padding-left: 14px; padding-right: 14px; }
+  .content { padding: 0 14px; }
+
+  .attention { grid-template-columns: 1fr; }
 }

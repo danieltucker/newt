@@ -1315,7 +1315,7 @@ export default function ResearchPage({
                         aria-label={`Delete ${t.title}`}
                         onClick={() => setConfirmDelete(t.id)}
                       >
-                        ×
+                        Delete
                       </button>
                     )}
                   </div>

@@ -1,260 +1,240 @@
 /* Settings is a page in the shell, not a panel over one: it scrolls with the
    document, the shell bar stays above it, and every section has an address.
-   What used to be the modal's own scroller is now just the page - the only
-   thing that stays put is the section rail, which pins under the bar so the
-   list is reachable however far a long section runs. */
+
+   It is also the same *shape* as the admin console next door, deliberately. Two
+   long-form configuration screens had arrived at two different answers - a 232px
+   rail with seven rows here, a nine-row rail there - so the two places you go to
+   change how the app behaves had nothing in common but a scrollbar. The long
+   form of the reasoning behind this arrangement lives in AdminPage.module.css;
+   below is the same idea with Settings' own furniture in it, and the two files
+   are meant to be read together when either changes. */
+/* Zero at the top, not 8px. The shell lays this column and the bookmarks rail
+   out as two grid siblings with `align-items: start` (see .bodyGrid in
+   NewTabPage.module.css), so they begin on the same line - and any padding here
+   is the console starting below the rail beside it for no stated reason. The
+   8px was exactly that, and it was visible: two panels of one app, an eighth of
+   an inch out of true.
+
+   Only the resting position lines up. Scrolled, the rail pins 16px lower than
+   this nav does, and that is deliberate on both sides: the rail is a floating
+   card that wants air under the bar, while this is a header band that has to
+   butt against it - a gap above a sticky header is a slot the table underneath
+   scrolls through. See the `top` on .nav. */
 .page {
-  display: flex;
-  align-items: flex-start;
-  gap: 28px;
   max-width: 980px;
   margin: 0 auto;
-  padding: 8px 0 64px;
+  padding: 0 0 64px;
 }
 
-/* ── The section list ──
-   A rail down the left while both columns fit; the whole page below that, as
-   a list you drill into (see .compact at the foot of this file). */
+/* ── The console ──
+
+   One container. The rail was a card and the section was a card, so the screen
+   read as two panels arguing about which one was the page. Outer surface, inner
+   surface2 - the two-level vocabulary the setting blocks below were already
+   speaking one level down. */
+.console {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  /* `clip`, not `hidden`. Both crop the nav's background to the rounded
+     corners, but `hidden` also makes this a scroll container, and a
+     `position: sticky` descendant sticks to its nearest scrollport - so the nav
+     below would stick to the top of this box and then scroll away with it,
+     which looks exactly like sticky being ignored. The long version of this is
+     in AdminPage.module.css. */
+  overflow: clip;
+}
+
+/* ── Nav ──
+
+   Sticky as a unit, so the group row and its sub-nav travel together and a long
+   section never scrolls away from either. */
 .nav {
   position: sticky;
   /* Clears the shell bar, whose height ShellBar measures and publishes. The
      fallback covers only the frame before that first measurement lands. */
-  top: calc(var(--shellbar-h, 56px) + 16px);
-  width: 232px;
-  flex-shrink: 0;
-  padding: 14px 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Never taller than the space under the bar - .navScroll takes the overflow
-     rather than the rail running off the bottom of a short window. */
-  max-height: calc(100vh - var(--shellbar-h, 56px) - 32px);
-  min-height: 0;
+  top: var(--shellbar-h, 56px);
+  z-index: 2;
+  padding: 14px 18px 0;
+  border-radius: 17px 17px 0 0;
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
 }
 
-.navTop {
+/* The nav's bottom padding belongs to the sub-nav, which carries it so the
+   tabs' underline can land on the nav's own bottom border. Four of the five
+   groups have no sub-nav, and without this there is nothing between a 34px pill
+   and that border - a row sitting on a rule, which reads as a button that has
+   grown a base rather than as a nav with a line under it. Same value as the
+   padding above the pills, so the row sits centred in its own strip. */
+.navBare { padding-bottom: 14px; }
+
+/* ── The screen's name ──
+
+   Riding in the nav row rather than above it: a row of its own would cost a
+   permanent strip of sticky screen to say one word, and the pills leave most of
+   this row empty. An eyebrow rather than a heading - a 20px title beside 14px
+   pills turns the groups into its subtitle. Same treatment, same slot and the
+   same 12px as the admin console, which is most of what makes these two read as
+   one pair of screens rather than as two designs. */
+.navRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 10px;
-  margin-bottom: 12px;
+  gap: 14px;
 }
 
-.navHeader {
-  font-size: 11px;
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  height: 34px;
+  margin: 0;
+  padding-right: 14px;
+  border-right: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  white-space: nowrap;
 }
 
-/* ── Search ── */
-.searchWrap {
+.wordmarkIcon {
+  display: block;
+  color: var(--accent);
+}
+
+.sectionRow {
   position: relative;
   display: flex;
-  align-items: center;
-  margin: 0 2px 10px;
+  gap: 2px;
+  /* Takes the rest of the row, so the wordmark stays put and the pills are what
+     scroll when a narrow window cannot hold them - see the foot of this file. */
+  flex: 1;
+  min-width: 0;
 }
 
-.searchIcon {
+/* The rail's lozenge, running along the other axis. Painted behind the pills
+   rather than onto the active one, so moving between groups is one box
+   travelling rather than a colour appearing here and vanishing there. */
+.lozenge {
   position: absolute;
-  left: 10px;
-  color: var(--muted);
+  top: 0;
+  left: 0;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.16s;
   pointer-events: none;
 }
 
-.searchInput {
-  width: 100%;
-  padding: 8px 28px 8px 30px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface2);
-  color: var(--text);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.15s;
-  -webkit-appearance: none;
-  appearance: none;
+.lozengeOn { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lozenge { transition: none; }
 }
 
-.searchInput:focus { border-color: var(--accent); }
-.searchInput::placeholder { color: var(--muted); }
-/* The browser's own clear affordance would sit on top of ours */
-.searchInput::-webkit-search-cancel-button { display: none; }
-
-.searchClear {
-  position: absolute;
-  right: 6px;
+.sectionItem {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.searchClear:hover { background: var(--border); color: var(--text); }
-
-/* The list itself scrolls, so the search field above it stays put */
-.navScroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.navItem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border-radius: 10px;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
   border: none;
   background: transparent;
+  border-radius: 10px;
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 14px;
   cursor: pointer;
-  text-align: left;
-  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  transition: color 0.12s;
 }
 
-.navItem:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
+.sectionItem:hover { color: var(--text); }
 
-.navLabel { flex: 1; min-width: 0; }
-
-.navActive {
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+.sectionActive,
+.sectionActive:hover {
   color: var(--accent);
   font-weight: 600;
 }
 
-.navActive:hover {
-  background: color-mix(in oklab, var(--accent) 16%, var(--surface2));
-  color: var(--accent);
-}
-
-.navIcon {
-  font-size: 16px;
-  width: 18px;
-  flex-shrink: 0;
+/* The icons the rail rows used to carry, kept: a row of five words of much the
+   same length is harder to aim at than one with a glyph in front of each. They
+   inherit the pill's colour rather than carrying their own, so the lit one is
+   still the only thing on this row wearing the accent. */
+.sectionIcon {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.navChevron {
+  width: 16px;
   flex-shrink: 0;
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.5;
-}
-
-.navEmpty {
-  padding: 10px;
-  font-size: 12.5px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-/* ── Search results ──
-   Each one names the section it lives in, because "New tab" alone doesn't say
-   whether it's about search results or bookmarks. */
-.resultItem {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
-}
-
-.resultItem:hover { background: var(--surface2); }
-
-.resultLabel {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  line-height: 1.3;
-}
-
-.resultSection {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-/* ── Compact: one column, list then section ── */
-.compact {
-  display: block;
-  padding: 4px 0 48px;
-}
-
-.compact .nav {
-  position: static;
-  width: 100%;
-  max-height: none;
-  padding: 14px 10px 10px;
-}
-
-.compact .navItem {
-  padding: 12px 12px;
   font-size: 15px;
-  border-radius: 12px;
+  line-height: 1;
 }
 
-.compact .resultItem { padding: 11px 12px; }
+/* ── Sub-nav ──
 
-.compact .content { width: 100%; }
+   Quieter than the row above it, and underlined rather than filled so the two
+   are told apart by kind and not only by size. Two filled pill rows stacked
+   would read as one nav wrapped onto a second line. Only New tab has one - a
+   sub-nav of one is a row that says nothing twice. */
+.subRow {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
 
-.backBtn {
+.subRow::-webkit-scrollbar { display: none; }
+
+.subItem {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 6px 12px 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface2);
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
   color: var(--muted);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
 }
 
-.backBtn span { font-size: 17px; line-height: 1; }
-.backBtn:hover { background: var(--border); color: var(--text); }
+.subItem:hover { color: var(--text); }
 
-/* Where a search result lands: a ring that fades, so you can see which of a
-   dozen near-identical rows you were sent to. An outline rather than a border
-   or a background - it follows whatever corner radius the target already has
-   and takes no space, so nothing under it moves. */
+.subActive,
+.subActive:hover {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* ── Content ── */
+.content {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+/* Where a deep link lands: a ring that fades, so you can see which of a dozen
+   near-identical rows you were sent to. An outline rather than a border or a
+   background - it follows whatever corner radius the target already has and
+   takes no space, so nothing under it moves.
+
+   Its one caller used to be the settings search. It is still here because the
+   #anchor outlived the field: /settings/reading#comments-sort is an address
+   somebody can paste, and landing on the right block without saying so is worse
+   than not scrolling at all. */
 .flash {
   outline: 2px solid transparent;
   outline-offset: 4px;
@@ -266,49 +246,11 @@
   100%    { outline-color: transparent; }
 }
 
-/* ── Right content ── */
-.content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-/* The section's title, and on a phone the way back to the list. Sticky under
-   the shell bar - same trick and same frosted vocabulary as the composer's
-   action bar - so a long section never leaves you without either. */
-.contentHeader {
-  position: sticky;
-  top: var(--shellbar-h, 56px);
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 0 14px;
-  /* Denser than the composer's action bar, which floats as a rounded chip with
-     its own border. This one is an edge-to-edge band, so anything showing
-     through reads as a smear behind the title rather than as glass. */
-  background: color-mix(in oklab, var(--bg) 94%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-}
-
-.contentTitle {
-  flex: 1;
-  min-width: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* The section itself no longer scrolls - the document does, which is what
    makes a deep link scroll into place on arrival and what puts one scrollbar
    on screen instead of two. */
 .contentBody {
-  padding: 24px 0 0;
+  padding: 18px 0 22px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -883,35 +825,53 @@
 }
 
 /* ── Responsive ──
-   The 720px break matches the one SettingsPage watches in JS: below it the
-   page is a single column and the rail becomes the drill-down list.
 
-   That is also where the rail and the section stop being cards. Down here they
-   have the screen to themselves, and spending width on a border whose only job
-   is to separate two columns that are never on screen together is width the
-   longest labels want back. */
+   720px used to be where the layout changed *kind*: a second screen holding the
+   section list, chevrons on every row and a back button to get out of it. That
+   existed because a 232px rail and a column of setting blocks could not share
+   the width. A row of pills can, so there is one nav at every width now and the
+   second screen, the chevrons and the back button are all gone - along with the
+   media query in SettingsPage.tsx that decided between them.
+
+   What is left is the same nav, tightened, and the group row allowed to scroll,
+   which five items will occasionally need and seven always would have. */
 @media (max-width: 720px) {
-  .nav {
-    border: none;
+  .page { padding: 0 0 48px; }
+
+  /* Edge to edge: a 12px margin either side buys nothing on a phone, and the
+     rounded card reads as inset. */
+  .console {
     border-radius: 0;
-    background: none;
-    padding-bottom: env(safe-area-inset-bottom);
+    border-left: none;
+    border-right: none;
   }
 
-  .contentHeader {
-    padding: 12px 14px;
-    gap: 8px;
+  .nav { padding: 10px 14px 0; border-radius: 0; }
+
+  /* One word and a divider, and the pills scroll past it rather than under it.
+     Worth its ~90px here for the same reason it is worth a slot at all: a phone
+     is where "which screen of the app is this" is hardest to answer. */
+  /* After .nav, or the shorthand above would put the zero back. */
+  .navBare { padding-bottom: 10px; }
+
+  .navRow { gap: 10px; }
+  .wordmark { padding-right: 10px; }
+
+  .sectionRow {
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
-  .contentTitle { font-size: 17px; }
+  .sectionRow::-webkit-scrollbar { display: none; }
 
-  .backBtn { padding: 8px 14px 8px 10px; }
+  .content { padding: 0 14px; }
 
   .contentBody {
-    padding: 16px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    padding-top: 16px;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
     gap: 14px;
   }
+
 
   .sectionBlock {
     padding: 16px;

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizePersonaConfig, personaVoicePrompt, personaOptions,
   parseGeneratedPost, parseIdentity, MAX_GUIDANCE, MAX_INTERESTS,
+  parseAngles, renderAngleComment, MAX_ANGLES, MAX_ANGLE_QUESTION, Angle,
 } from './personaPrompts';
 
 describe('normalizePersonaConfig', () => {
@@ -160,5 +161,96 @@ describe('parseIdentity', () => {
   it('returns null on malformed JSON', () => {
     expect(parseIdentity('not json at all')).toBeNull();
     expect(parseIdentity('{"username": broken}')).toBeNull();
+  });
+});
+
+describe('parseAngles', () => {
+  const good = JSON.stringify([
+    { kind: 'question', text: 'It blames latency and never measures it.', question: 'Was latency ever measured in the edge rollout?' },
+    { kind: 'clarify', text: '"Edge" here means CDN points of presence, not devices.', question: 'What does "edge" mean in CDN architecture?' },
+  ]);
+
+  it('parses a well-formed array', () => {
+    expect(parseAngles(good)).toEqual([
+      { kind: 'question', text: 'It blames latency and never measures it.', question: 'Was latency ever measured in the edge rollout?' },
+      { kind: 'clarify', text: '"Edge" here means CDN points of presence, not devices.', question: 'What does "edge" mean in CDN architecture?' },
+    ]);
+  });
+
+  it('finds the array inside a code fence or a preamble', () => {
+    expect(parseAngles('Sure! Here you go:\n```json\n' + good + '\n```')).toHaveLength(2);
+  });
+
+  // The point of dropping rather than failing: three usable angles and one the
+  // model mangled is still a usable card.
+  it('drops malformed entries and keeps the rest', () => {
+    const mixed = JSON.stringify([
+      { kind: 'question', text: 'ok', question: 'What is the actual throughput?' },
+      { kind: 'rant', text: 'wrong kind', question: 'q' },
+      { kind: 'insight', text: 'no question field' },
+      { kind: 'insight', text: '   ', question: 'blank text' },
+      'not an object',
+      null,
+    ]);
+    expect(parseAngles(mixed)).toEqual([
+      { kind: 'question', text: 'ok', question: 'What is the actual throughput?' },
+    ]);
+  });
+
+  it('accepts a kind in the wrong case', () => {
+    const raw = JSON.stringify([{ kind: ' Insight ', text: 't', question: 'q' }]);
+    expect(parseAngles(raw)[0].kind).toBe('insight');
+  });
+
+  it('stops at the cap rather than rendering an endless card', () => {
+    const many = JSON.stringify(
+      Array.from({ length: 12 }, (_, i) => ({ kind: 'question', text: `t${i}`, question: `q${i}` })),
+    );
+    expect(parseAngles(many)).toHaveLength(MAX_ANGLES);
+  });
+
+  it('truncates an over-long question rather than dropping the angle', () => {
+    const raw = JSON.stringify([{ kind: 'question', text: 't', question: 'q'.repeat(MAX_ANGLE_QUESTION + 200) }]);
+    expect(parseAngles(raw)[0].question).toHaveLength(MAX_ANGLE_QUESTION);
+  });
+
+  it('returns nothing for unparseable or non-array replies', () => {
+    expect(parseAngles('I could not think of anything.')).toEqual([]);
+    expect(parseAngles('[not json at all,]')).toEqual([]);
+    expect(parseAngles('{"kind":"question"}')).toEqual([]);
+  });
+});
+
+describe('renderAngleComment', () => {
+  const url = 'https://example.com/a?x=1';
+  const angles: Angle[] = [
+    { kind: 'question', text: 'It never measures latency.', question: 'Was latency measured?' },
+  ];
+
+  it('links each angle into Explore with the question and the article', () => {
+    const html = renderAngleComment(angles, url);
+    expect(html).toContain('href="/explore?q=Was+latency+measured%3F&amp;url=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1"');
+    expect(html).toContain('Explore this');
+  });
+
+  it('labels the entry by kind', () => {
+    expect(renderAngleComment(angles, url)).toContain('<strong>Open question</strong>');
+    expect(renderAngleComment([{ ...angles[0], kind: 'clarify' }], url)).toContain('<strong>Worth clarifying</strong>');
+    expect(renderAngleComment([{ ...angles[0], kind: 'insight' }], url)).toContain('<strong>Follow-on</strong>');
+  });
+
+  // The sanitizer at the route is the boundary, but there is no reason to hand
+  // it anything dirty — and a model quoting an article's markup is not exotic.
+  it('escapes markup in the angle text', () => {
+    const html = renderAngleComment([{ kind: 'insight', text: '<script>x</script> & co', question: 'q' }], url);
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('&amp; co');
+  });
+
+  // The fixed lead-in is what tells a reader skimming the thread that this is a
+  // card and not somebody's opinion.
+  it('opens with the lead-in line rather than an angle', () => {
+    expect(renderAngleComment(angles, url).startsWith('<p>Some places to take this:</p>')).toBe(true);
   });
 });

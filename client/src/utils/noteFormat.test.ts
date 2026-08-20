@@ -445,4 +445,31 @@ describe('applyBlockTag', () => {
     applyBlockTag(r, el, 'P');
     expect(el.innerHTML).toBe('<p><br></p>');
   });
+
+  // The reported symptom: "when I press enter the text area is deselected".
+  // Asking for a heading on a blank line - /h2 and Enter, or "## " - leaves the
+  // caret on the block itself rather than in a text node inside it, because
+  // there is no text yet. Replacing the block used to strand the selection on
+  // the node that had just been taken out of the document, so the line stopped
+  // looking focused and the next keystroke went nowhere.
+  it('keeps the caret in the document when a blank line becomes a heading', () => {
+    const el = editor('<p><br></p>');
+    document.body.appendChild(el);
+    try {
+      const r = document.createRange();
+      r.setStart(el.firstElementChild!, 0);
+      r.collapse(true);
+      const sel = window.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(r);
+
+      applyBlockTag(r, el, 'H2');
+
+      expect(el.innerHTML).toBe('<h2><br></h2>');
+      const anchor = window.getSelection()?.anchorNode ?? null;
+      expect(anchor && el.contains(anchor)).toBe(true);
+    } finally {
+      el.remove();
+    }
+  });
 });

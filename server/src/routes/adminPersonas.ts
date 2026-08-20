@@ -15,8 +15,8 @@ import { articleContextFor, renderContext } from '../lib/llm/articleContext';
 import { markdownToHtml } from '../lib/llm/markdown';
 import {
   personaOptions, normalizePersonaConfig, personaVoicePrompt,
-  COMMENT_TASK, REPLY_TASK, POST_TASK, IDENTITY_TASK,
-  parseGeneratedPost, parseIdentity, PersonaConfig,
+  COMMENT_TASK, REPLY_TASK, ANGLES_TASK, POST_TASK, IDENTITY_TASK,
+  parseGeneratedPost, parseIdentity, parseAngles, renderAngleComment, PersonaConfig,
 } from '../lib/llm/personaPrompts';
 import {
   canonicalArticleKey, sanitizeCommentHtml, isHttpUrl, isBlankHtml,
@@ -599,6 +599,82 @@ router.post('/:id/comment', generateLimiter, async (req: AuthRequest, res: Respo
     res.status(201).json({ id: created.id, body: html });
   } catch (err) {
     fail(res, err, 'Persona comment error');
+  }
+});
+
+/**
+ * POST /:id/angles — where to take the article, rather than what to think of it.
+ *
+ * Stored as an ordinary Comment row under the persona's name, because that is
+ * what it is: it lands in the same thread, in the same place, and moderation and
+ * deletion reach it the same way. What differs is the body — a list of questions
+ * with Explore links rather than an opinion — and that difference is the point
+ * of the route rather than a formatting choice. See ANGLES_TASK.
+ *
+ * Two failure paths a comment does not have. An empty parse means the model
+ * ignored the JSON format; an empty card means every entry it returned was
+ * unusable. Both 502 instead of posting an empty list into a thread, and both
+ * are worth retrying, since neither is anything the admin did.
+ */
+router.post('/:id/angles', generateLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { url, articleTitle } = req.body as Record<string, unknown>;
+  if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
+
+  try {
+    const persona = await writablePersona(req.params.id);
+    // Read as the persona and not as the admin, for the reason set out on the
+    // comment route above: a persona has no friends, so this is public comments
+    // and its own.
+    const ctx = await articleContextFor(url, persona.user.id);
+    if (!ctx) { res.status(404).json({ error: 'Newt has no record of that article.' }); return; }
+
+    const text = await generate({
+      cfg: persona, displayName: nameOf(persona.user), task: ANGLES_TASK,
+      context: renderContext(ctx), kind: 'angles',
+      siteModelId: persona.siteModelId, personaId: persona.id,
+    });
+    const angles = parseAngles(text);
+    if (angles.length === 0) {
+      res.status(502).json({ error: 'The model didn’t return anything usable. Try again.' });
+      return;
+    }
+
+    // ctx.url rather than the submitted one: every Explore link carries it, and
+    // a reader following one should land on the article Newt has a record of
+    // rather than on whichever tracking-tagged variant was in the address bar.
+    const html = sanitizeCommentHtml(renderAngleComment(angles, ctx.url));
+
+    const key = canonicalArticleKey(url as string);
+    const created = await prisma.$transaction(async tx => {
+      const comment = await tx.comment.create({
+        data: {
+          userId: persona.user.id,
+          articleKey: key,
+          articleUrl: url as string,
+          articleTitle: typeof articleTitle === 'string' ? articleTitle.slice(0, 500) : ctx.title.slice(0, 500),
+          body: html,
+          visibility: 'public',
+        },
+        select: { id: true },
+      });
+      await recordAdminAction(tx, {
+        actorId: req.userId!,
+        actorUsername: req.username ?? 'unknown',
+        action: ADMIN_ACTIONS.personaGenerate,
+        targetType: 'persona',
+        targetId: persona.id,
+        targetLabel: persona.user.username,
+        metadata: {
+          kind: 'angles', commentId: comment.id, count: angles.length,
+          url: (url as string).slice(0, 500),
+        },
+      });
+      return comment;
+    });
+
+    res.status(201).json({ id: created.id, body: html, angles });
+  } catch (err) {
+    fail(res, err, 'Persona angles error');
   }
 });
 

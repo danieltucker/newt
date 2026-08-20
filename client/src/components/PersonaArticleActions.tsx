@@ -1,26 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Persona, loadPersonaContext, personaComment, personaPost,
+  Persona, loadPersonaContext, personaComment, personaAngles, personaPost,
 } from '../services/personas';
 import { apiErrorText } from '../services/api';
 import PersonaBadge from './PersonaBadge';
 import styles from './PersonaArticleActions.module.css';
 
 /**
- * The admin control on an article: have a persona comment on it, or write a post
- * about it.
+ * The admin control on an article: have a persona comment on it, offer angles
+ * on it, or write a post about it.
  *
  * Renders nothing at all for a non-admin, which is almost everybody — the
  * persona list comes back empty for them (see loadPersonaContext), so this
  * costs an ordinary reader one memoised request per session and no pixels.
  *
- * **The two verbs land differently, and the UI has to say so.** A comment is
- * posted publicly and immediately, into the thread below. A post is created as a
- * *draft* under the persona's name and goes nowhere until somebody opens and
- * publishes it. That asymmetry is a server decision (routes/adminPersonas.ts);
- * this component's job is to make sure an admin is never surprised by which one
- * they just got, which is why the result line names the outcome rather than
- * saying "done".
+ * **The three verbs land differently, and the UI has to say so.** A comment and
+ * an angles card are both posted publicly and immediately, into the thread below.
+ * A post is created as a *draft* under the persona's name and goes nowhere until
+ * somebody opens and publishes it. That asymmetry is a server decision
+ * (routes/adminPersonas.ts); this component's job is to make sure an admin is
+ * never surprised by which one they just got, which is why the result line names
+ * the outcome rather than saying "done".
+ *
+ * Angles is the verb to reach for by default. It puts a short list of open
+ * questions in the thread, each one a link that opens Explore already asking it —
+ * which is a thing only software would post, and reads as such. Comment is the
+ * one that puts an opinion under a name, so it is the one worth thinking about
+ * before pressing.
  */
 
 interface Props {
@@ -30,7 +36,14 @@ interface Props {
   onCommented?: () => void;
 }
 
-type Verb = 'comment' | 'post';
+type Verb = 'comment' | 'angles' | 'post';
+
+/** What each verb does, said before it is done rather than after. */
+const MENU_NOTES: Record<Verb, string> = {
+  comment: 'Posts a public comment straight away.',
+  angles: 'Posts a public card of questions, each one an Explore link.',
+  post: 'Creates a draft post. Nothing is published.',
+};
 
 export default function PersonaArticleActions({ url, title, onCommented }: Props) {
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -76,6 +89,13 @@ export default function PersonaArticleActions({ url, title, onCommented }: Props
         await personaComment(p.id, url, title);
         setResult(`${p.user.displayName} commented.`);
         onCommented?.();
+      } else if (verb === 'angles') {
+        const { angles } = await personaAngles(p.id, url, title);
+        // The count, because it is the one thing the admin cannot see without
+        // scrolling to the thread, and a card of two is a different result from
+        // a card of four.
+        setResult(`${p.user.displayName} posted ${angles.length} ${angles.length === 1 ? 'angle' : 'angles'}.`);
+        onCommented?.();
       } else {
         const post = await personaPost(p.id, url);
         // Named as a draft, with where it went: the admin has to know this is
@@ -95,9 +115,7 @@ export default function PersonaArticleActions({ url, title, onCommented }: Props
   const menuFor = (verb: Verb) => (
     <div className={styles.menu} role="menu">
       <div className={styles.menuNote}>
-        {verb === 'comment'
-          ? 'Posts a public comment straight away.'
-          : 'Creates a draft post. Nothing is published.'}
+        {MENU_NOTES[verb]}
       </div>
       {personas.map(p => (
         <button
@@ -137,6 +155,20 @@ export default function PersonaArticleActions({ url, title, onCommented }: Props
           {busy && open === 'comment' ? 'Writing…' : 'Comment'}
         </button>
         {open === 'comment' && menuFor('comment')}
+      </span>
+
+      <span className={styles.slot}>
+        <button
+          type="button"
+          className={styles.btn}
+          disabled={!ready || busy}
+          aria-expanded={open === 'angles'}
+          onClick={() => setOpen(o => (o === 'angles' ? null : 'angles'))}
+          title={ready ? 'Have a persona suggest where to take this article' : 'No instance model is configured'}
+        >
+          {busy && open === 'angles' ? 'Reading…' : 'Angles'}
+        </button>
+        {open === 'angles' && menuFor('angles')}
       </span>
 
       <span className={styles.slot}>

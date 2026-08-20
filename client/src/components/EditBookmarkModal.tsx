@@ -2,14 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './AddLinkModal.module.css';
 import ownStyles from './EditBookmarkModal.module.css';
 import { Folder, Bookmark } from '../types';
-import { parseDomain, parseLink, deriveName, deriveColor, faviconUrl } from '../utils/color';
+import {
+  PALETTE, parseDomain, parseLink, deriveName, deriveColor, isAutoColor, faviconUrl,
+} from '../utils/color';
 import { apiErrorText } from '../services/api';
 import CloseButton from './CloseButton';
-
-const PALETTE = [
-  '#5E6AD2', '#FF4500', '#EA4C89', '#1DB954', '#F48024', '#A259FF',
-  '#E0479E', '#00A8E8', '#FF6600', '#24A0ED', '#7C5CFC', '#0FB57B',
-];
 
 interface Props {
   bookmark: Bookmark;
@@ -25,7 +22,17 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
   const [nameOverride, setNameOverride] = useState(bookmark.name);
   const [nameEdited, setNameEdited] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(bookmark.folderId);
-  const [colorOverride, setColorOverride] = useState<string | null>(null);
+  // Null means "auto" - follow the domain. Anything else is a colour the owner
+  // picked by hand, and opening the dialog has to recover which of the two this
+  // bookmark is. It used to start null for every bookmark while the preview
+  // read the stored colour, so a chosen colour looked intact right up until a
+  // save - made to fix a typo in the name - quietly wrote the derived one back.
+  // A stored colour that equals the derived one is treated as auto, correctly:
+  // they are the same colour, and it keeps following the domain if the URL is
+  // retyped.
+  const [colorOverride, setColorOverride] = useState<string | null>(
+    () => (isAutoColor(bookmark.domain, bookmark.color) ? null : bookmark.color),
+  );
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -41,7 +48,10 @@ export default function EditBookmarkModal({ bookmark, folders, onSave, onDelete,
   const domain = parseLink(url);
   const host = parseDomain(url);
   const autoColor = host ? deriveColor(host) : bookmark.color;
-  const color = colorOverride ?? bookmark.color;
+  // The same expression handleSave stores, so the preview is showing the colour
+  // that will actually be kept - including when the URL is retyped and auto
+  // follows it to the new domain.
+  const color = colorOverride ?? autoColor;
   const favicon = host ? faviconUrl(host) : null;
 
   // Auto-derive name only when the host changes - editing just the path leaves

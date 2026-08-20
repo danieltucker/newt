@@ -41,11 +41,15 @@
    decorative rule rather than a banner and gave an uploaded photo nowhere to
    be. Now the avatar sits *inside* it and the name begins immediately below,
    so the picture ends exactly where the person's name starts. */
+/* Deliberately not `overflow: hidden`. It was, to keep the cover's corners
+   inside the card's radius - and it also clipped the overflow menu, which opens
+   downwards from a button in the last row of this card and so had its lower half
+   cut off by the card's own edge. The clip belongs on the thing that needs
+   clipping, so .cover rounds and hides its own corners and the card stays open. */
 .header {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
-  overflow: hidden;
 }
 
 .cover {
@@ -56,6 +60,10 @@
   display: flex;
   align-items: flex-end;
   padding: 0 22px 16px;
+  /* 1px inside the card's 20px so the fill meets the border rather than
+     cutting across it - the same offset .hero uses on a post card. */
+  border-radius: 19px 19px 0 0;
+  overflow: hidden;
 }
 
 /* Two jobs, and both matter more now the cover can be a photograph: it darkens
@@ -907,6 +915,11 @@
   .avatarFallback { font-size: 32px; }
   /* The action row drops below the name rather than squeezing beside it */
   .identityRow { flex-direction: column; align-items: stretch; gap: 12px; }
+  /* Stretched to the full width, the row leaves the overflow button sitting
+     wherever the buttons before it happen to end - and its menu is anchored to
+     its right edge, so it opened leftwards off the side of the card. Pushed to
+     the far right, the menu unfolds back into the card at every width. */
+  .actions .overflowWrap { margin-left: auto; }
   .displayName { font-size: 21px; }
   /* The row scrolls sideways rather than wrapping - a wrapped tab row would put
      the travelling bar on a line the pointer isn't on. */

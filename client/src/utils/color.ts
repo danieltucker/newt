@@ -11,6 +11,25 @@ export function deriveColor(domain: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
+/**
+ * Whether a bookmark's stored colour is still the one its domain derives.
+ *
+ * The edit dialog needs this to open in the right state: "auto", which follows
+ * the domain, or a colour the owner picked. Getting it wrong is not cosmetic -
+ * the dialog saves whatever it is showing, so an edit made to fix a typo in the
+ * name used to write the derived colour back over a chosen one.
+ *
+ * A stored colour that happens to equal the derived one is auto. They are the
+ * same colour today, and treating it as auto means it keeps following the
+ * domain if the URL is retyped, which is the more useful of two identical
+ * answers.
+ */
+export function isAutoColor(domain: string, color: string): boolean {
+  if (!color) return true;
+  const host = parseDomain(domain);
+  return host !== null && deriveColor(host) === color;
+}
+
 // A host on its own is only a host if it looks like one, and what makes it look
 // like one depends on whether a scheme was typed.
 //

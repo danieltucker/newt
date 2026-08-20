@@ -16,6 +16,20 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+/* Ways out of this post on the left, things you can do to it on the right. Two
+   groups so space-between has two things to separate: as a flat row of five it
+   spread every button evenly across the bar, which put Report as far from the
+   edge as Follow and left no way to tell a navigation control from an action. */
+.navGroup,
+.actionGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 /* Everything in the top bar: back on the left, Follow and Report on the right.

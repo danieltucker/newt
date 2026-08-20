@@ -45,6 +45,12 @@ const MAX_SNIPPET_CHARS = 700;
  * Undated items are kept. A feed that omits pubDate is a bad feed, not an old
  * one, and dropping every article from it would be a silent hole in the search.
  */
+// A year of feed history to ground an answer in.
+//
+// This number was aspirational until v1.24.0: the query ran against FeedItem,
+// which holds an article for as long as its publisher lists it plus a week, so
+// asking for 365 days of anything was asking a fortnight-deep table for a year.
+// It reads ArticleArchive now, where the number means what it says.
 const MAX_AGE_DAYS = 365;
 
 export interface FeedHit {
@@ -152,17 +158,19 @@ export async function searchFeed(userId: string, queries: string[]): Promise<Fee
     let rows: SearchRow[];
     try {
       rows = await prisma.$queryRaw<SearchRow[]>`
-        SELECT * FROM (
-          SELECT DISTINCT ON (i."linkKey")
-            i."id", i."title", i."link", i."linkKey", i."feedId", i."pubDate", i."snippet", i."content",
-            ts_rank(i."searchVector", to_tsquery('english', ${tsq})) AS "rank"
-          FROM "FeedItem" i
-          WHERE i."feedId" = ANY(${feedIds}::text[])
-            AND i."searchVector" @@ to_tsquery('english', ${tsq})
-            AND (i."pubDate" IS NULL OR i."pubDate" >= ${since})
-          ORDER BY i."linkKey", "rank" DESC, i."pubDate" DESC NULLS LAST
-        ) s
-        ORDER BY s."rank" DESC, s."pubDate" DESC NULLS LAST
+        SELECT a."articleKey" AS "id", a."articleKey" AS "linkKey", a."title", a."link",
+               a."pubDate", a."snippet", a."content",
+               ts_rank(a."searchVector", to_tsquery('english', ${tsq})) AS "rank",
+               (SELECT f."feedId" FROM "ArticleArchiveFeed" f
+                 WHERE f."articleKey" = a."articleKey"
+                   AND f."feedId" = ANY(${feedIds}::text[]) LIMIT 1) AS "feedId"
+        FROM "ArticleArchive" a
+        WHERE EXISTS (SELECT 1 FROM "ArticleArchiveFeed" f
+                       WHERE f."articleKey" = a."articleKey"
+                         AND f."feedId" = ANY(${feedIds}::text[]))
+          AND a."searchVector" @@ to_tsquery('english', ${tsq})
+          AND (a."pubDate" IS NULL OR a."pubDate" >= ${since})
+        ORDER BY "rank" DESC, a."pubDate" DESC NULLS LAST
         LIMIT ${PER_QUERY}`;
     } catch {
       // A malformed tsquery is the only realistic failure and it is one
