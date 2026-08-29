@@ -1337,7 +1337,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
               <FeedPanel
                 onExplore={openExplore}
                 feedFolders={feedFolders}
-                subscriptionCount={subscriptions.length}
+                subscriptions={subscriptions}
                 onManageFeeds={() => setShowFeedManager(true)}
                 savedKeys={savedArticleKeys}
                 onUnsaveArticle={handleUnsaveArticle}
@@ -1405,7 +1405,6 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onOpenSite={goSite}
                 favoriteTags={settings.favoriteTags ?? []}
                 onToggleFavoriteTag={handleToggleFavoriteTag}
-                onSetFavoriteTags={handleSetFavoriteTags}
               />
             )}
           </div>

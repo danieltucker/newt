@@ -1,16 +1,62 @@
+/* The author's own view of their blog, and a console like the two next door.
+
+   It used to be the odd one out of the three: a bare 760px column - a width
+   nothing else in the app used - under a 26px Bricolage heading and a line of
+   counts, with the "New post" button floating beside them. Settings and Admin
+   had long since agreed on a console card with a sticky nav and a small
+   wordmark, and there was no reason a list of your posts should be a third
+   design. It is the same kind of screen: you come here to manage something.
+
+   So the chrome is styles/pageConsole.module.css now, shared with both of them,
+   and what is left in this file is the posts themselves - the rows, the draft
+   treatment, the chips.
+
+   The one thing this screen has that the other two do not is a verb. "New post"
+   sits in the nav's action slot, which means it is still there after forty
+   posts have scrolled past. See .navAction in the shared module. */
 .page {
+  composes: page from '../styles/pageConsole.module.css';
+  /* Settings' width rather than Admin's. These are rows of title-and-excerpt,
+     not tables: the excerpt clamps to two lines, and past about here those two
+     lines hold most of a post and the list stops being scannable. */
+  --console-max: 980px;
+}
+
+.console { composes: console from '../styles/pageConsole.module.css'; }
+.nav { composes: nav from '../styles/pageConsole.module.css'; }
+.navBare { composes: navBare from '../styles/pageConsole.module.css'; }
+.navRow { composes: navRow from '../styles/pageConsole.module.css'; }
+.wordmark { composes: wordmark from '../styles/pageConsole.module.css'; }
+.wordmarkIcon { composes: wordmarkIcon from '../styles/pageConsole.module.css'; }
+.sectionRow { composes: sectionRow from '../styles/pageConsole.module.css'; }
+.lozenge { composes: lozenge from '../styles/pageConsole.module.css'; }
+.lozengeOn { composes: lozengeOn from '../styles/pageConsole.module.css'; }
+.sectionItem { composes: sectionItem from '../styles/pageConsole.module.css'; }
+.sectionActive { composes: sectionActive from '../styles/pageConsole.module.css'; }
+.sectionIcon { composes: sectionIcon from '../styles/pageConsole.module.css'; }
+.navAction { composes: navAction from '../styles/pageConsole.module.css'; }
+.content { composes: content from '../styles/pageConsole.module.css'; }
+
+/* ── Standalone ──
+
+   /blog/mine reached directly rather than through the shell - no rail, no shell
+   bar, nothing above this. It supplies the page background and the way back
+   that the shell would otherwise be holding. Embedded, none of this renders. */
+.standalone {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  padding: 32px 16px 64px;
+  padding: 24px 16px 64px;
+  /* The console's nav pins itself below the shell bar. There is no shell bar
+     out here, so without this it would pin 56px down the window and leave a
+     strip of page scrolling past above it. */
+  --shellbar-h: 0px;
 }
 
-.wrap {
-  max-width: 760px;
-  margin: 0 auto;
+.topbar {
+  max-width: 980px;
+  margin: 0 auto 12px;
 }
-
-.topbar { margin-bottom: 16px; }
 
 .backBtn {
   display: inline-flex;
@@ -28,34 +74,51 @@
 }
 .backBtn:hover { color: var(--text); background: var(--surface2); }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-}
+/* ── Filter pills ──
 
-.heading {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 26px;
-  font-weight: 650;
-  color: var(--text);
-  margin: 0;
-  line-height: 1.2;
-}
+   The counts the old header stated in prose ("2 published · 1 draft"), turned
+   into the thing you were going to do with them. Drafts are the reason this
+   page exists - they are kept off the profile entirely - and looking for one in
+   a long list of published posts was the work the sentence left you to do.
 
-.sub {
-  margin: 4px 0 0;
-  font-size: 13px;
+   Client-side, over the array the page has already loaded, and not in the URL.
+   Settings' and Admin's sections are addresses because they are places you send
+   somebody; which of your own posts you are squinting at is not. */
+.filterCount {
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: var(--surface2);
   color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
 }
 
-/* Matches the chips below it, so the two read as the same fact stated twice. */
-.subDraft {
+.sectionActive .filterCount {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+/* Amber on the drafts pill for the same reason the row's spine is amber: it is
+   the one state here nobody else can see. Only when there are any - a zero in a
+   warning colour is an alarm about nothing. */
+.filterCountDraft {
+  background: color-mix(in oklab, var(--draft) 18%, transparent);
   color: var(--draft);
-  font-weight: 650;
+}
+
+.sectionActive .filterCountDraft {
+  background: color-mix(in oklab, var(--draft) 24%, transparent);
+  color: var(--draft);
+}
+
+/* ── Body ──
+
+   The console's content well. Matches the admin console's .body, which is the
+   same job: the padding between the sticky nav and what is under it. */
+.body {
+  padding: 18px 0 22px;
 }
 
 /* ── List ── */

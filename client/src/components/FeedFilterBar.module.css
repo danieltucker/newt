@@ -1,6 +1,12 @@
 /* Positioned so the narrow-screen rule at the foot of this file can hang the
    filter panel off the whole row rather than off one chip in it.
 
+   `nowrap` is the promise this component makes: the bar is one line at every
+   width. Everything that can give up room to keep that promise is listed at the
+   head of FeedFilterBar.tsx, in the order it gives it up. Nothing here may wrap
+   instead - a second line is not a graceful degradation on a bar that is stuck
+   to the top of the screen, it is twice as much screen permanently spent.
+
    No margin of its own. It used to carry `margin-bottom: 14px` for the gap to
    the article grid below it, which is fine when the bar is a row of its own but
    wrong when it is one item in a flex row: the reading list's toolbar centres
@@ -12,16 +18,52 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
+/* The compressible half. `min-width: 0` is load-bearing: without it a flex
+   item's automatic minimum size is its min-content width, so the chips would
+   refuse to give any width back and the row would overflow its box instead. */
 .left {
   display: flex;
   align-items: center;
   gap: 7px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* ── Who gives up width ───────────────────────────────────
+   The row is nowrap, so when it runs short something has to yield. If nothing
+   may yield, the flex items simply overflow .left and paint straight over the
+   actions - a silent overlap that the row's own scrollWidth cannot even see,
+   because the box never got any wider. That was the fault, and the fix has two
+   halves.
+
+   The first half is that nothing in this bar is unbounded any more. The active
+   filters used to be a row of removable pills of any width and any number, and
+   a pill cannot shrink past its own ✕ - so past a certain point they stopped
+   giving width back and started spilling. They are a read-out on the Filters
+   chip now, and a chip's text ellipsises.
+
+   The second half is this: everything left may shrink, so a threshold being
+   wrong again degrades to a truncated word rather than to controls stacked on
+   top of each other. The chips ellipsise via .chipText; .actions is `flex: 0 0
+   auto` and never yields, because the things that act are the things you least
+   want to have moved under your finger. */
+.left > * {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* And the order among them. The filters yield first and by a wide margin: what
+   a chip gives up is the tail of a category name, and its dropdown says the
+   whole of it. What the Unread chip would give up is the word "Unread", which
+   is the entire identity of the control - "Unr… 676" is a chip nobody can read
+   at a glance. So it shrinks last and, in practice, never. */
+.left > .filterSet,
+.left > .filterWrap {
+  flex-shrink: 100;
 }
 
 /* Matches the chips it replaced, so the row still reads as the same furniture.
@@ -31,6 +73,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   min-height: var(--ctl-h);
   padding: 0 12px;
   border-radius: 999px;
@@ -59,6 +102,65 @@
   font-weight: 600;
 }
 
+
+/* The Filters chip once the row can no longer spare the word. Square and
+   glyph-sized, matching every other icon-only control - the count badge stays,
+   because "two filters are on" is exactly what the value cannot say once the
+   word has gone too. */
+.glyphChip {
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: var(--ctl-r);
+}
+
+
+/* The word on a chip, and the only part of one that may be sacrificed. Chips
+   carry `white-space: nowrap`, so without a box of its own the text would push
+   the chip wide and refuse to give the width back; with one it ellipsises and
+   the count badge beside it survives, which is the half that still means
+   something at 40px. */
+.chipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* The unread chip's popover hangs off this, so it needs a positioned box of
+   its own the way each filter chip has one. */
+.unreadWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The chip's right-hand half: same furniture as .chipClear next door, but it
+   opens a menu rather than clearing anything, so it keeps the caret's own
+   resting opacity - a control that is always available should not look like
+   one that appears on hover. */
+.chipCaret {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 9px 0 5px;
+  border: none;
+  border-left: 1px solid color-mix(in oklab, currentColor 22%, transparent);
+  border-radius: 0 999px 999px 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+  flex: none;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.chipCaret:hover {
+  opacity: 1;
+  background: color-mix(in oklab, currentColor 10%, transparent);
+}
+
 .unreadChip { gap: 6px; }
 
 .chipCount {
@@ -79,7 +181,11 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  flex-wrap: wrap;
+  /* Nowrap for the same reason .bar is: a wrap in here is a second line in the
+     bar, arrived at by a different route. Below EXPAND_AT this whole set is
+     replaced by one Filters chip rather than allowed to stack. */
+  flex-wrap: nowrap;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -91,6 +197,7 @@
   padding: 0;
   gap: 0;
   max-width: 260px;
+  min-width: 0;
 }
 
 .splitTrigger,
@@ -142,7 +249,23 @@
 
 /* ── The dropdown ───────────────────────────────────────── */
 
-.filterWrap { position: relative; }
+/* `min-width: 0` is not decoration. A flex item's automatic minimum size is its
+   min-content width, so without this the wrapper refuses to shrink below the
+   whole of its chip's text - the ellipsis inside .chipValue never gets a chance
+   to happen, .filterSet overflows, and the last chip spills out over the
+   actions at the far end. That was the overlap between roughly 680px and 700px
+   of bar: three chips carrying values, none of them willing to give a pixel.
+   The chain has to be unbroken - .chip and .splitTrigger carry it too. */
+.filterWrap {
+  position: relative;
+  /* A flex box, not a block one. A block container does not squeeze its inline
+     children, so the chip inside would keep its full content width however
+     narrow this wrapper got - it would simply hang out of it and over the next
+     chip along. As a flex parent it passes the squeeze down, and .chip's own
+     min-width: 0 lets it accept. */
+  display: flex;
+  min-width: 0;
+}
 
 /* The last group's panel is the one with a right edge to run off - the set
    starts at the left of the bar, so everything before it has room. Anchoring
@@ -386,36 +509,203 @@
   text-align: center;
 }
 
-/* ── Active filter pills ────────────────────────────────── */
+/* ── The action end of the bar ──────────────────────────── */
 
-/* Same box as .chip - it sits in the same row and is the same kind of thing,
-   already-chosen rather than still-offered. */
-.activePill {
-  display: inline-flex;
+/* Everything in .left changes what you are looking at; everything in here does
+   something to it. Pushed to the far end and fenced off by .divider, because
+   the one thing these two sets have in common is the strip they ride on - and
+   one of them holds a write that cannot be undone. See the `actions` note in
+   FeedFilterBar.tsx for why they nonetheless share a row.
+
+   Wraps as a block rather than letting its buttons scatter into the chips: on a
+   phone this drops to a line of its own, right-aligned, and stays legible as
+   "the things that act" rather than becoming three more items in a chip row. */
+.actions {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Stretches to the row rather than taking a fixed height, so it measures the
+   same as whatever it is standing between at any control size. */
+.divider {
+  align-self: stretch;
+  width: 1px;
+  min-height: 20px;
+  margin-right: 2px;
+  background: color-mix(in oklab, var(--border) 85%, transparent);
+  flex: none;
+}
+
+
+/* Square, like every other icon-only control in the app - a round button reads
+   as a different kind of thing. See the shape rule in tokens.css. */
+.moreBtn {
+  display: grid;
+  place-items: center;
+  width: var(--ctl-h);
   min-height: var(--ctl-h);
-  padding: 0 10px 0 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
-  background: color-mix(in oklab, var(--accent) 14%, var(--surface2));
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--accent);
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--ctl-r);
+  background: var(--surface2);
+  color: var(--muted);
   cursor: pointer;
-  white-space: nowrap;
-  max-width: 200px;
-  transition: filter 0.12s;
+  transition: color 0.12s, border-color 0.12s;
 }
 
-.activePill:hover { filter: brightness(1.15); }
-
-.pillLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.moreBtn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
+
+/* One panel for both of the bar's menus - the unread chip's caret and the
+   folded actions' ⋯. Same surface and shadow as the filter panel, because they
+   are all menus hanging off one bar and should look it.
+
+   Anchored from the left by default, which is what the unread chip needs: it
+   sits at the start of the row, so a right-anchored panel would run off the
+   left edge of the page. The actions' copy flips it below.
+
+   `--action-label` is how a caller's icon-only button gets its words back in
+   here. Custom properties inherit across CSS-module boundaries where class
+   names cannot, so FeedPanel's `.actionLabel` can key its own display off this
+   without either file knowing the other's hashed names. */
+.menuPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  z-index: var(--z-content-overlay);
+  width: max-content;
+  min-width: 190px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px var(--shadow);
+  animation: pop 0.14s ease;
+  --action-label: inline;
+}
+
+/* The ⋯ is the last thing in the row and there is never room on its other
+   side, so its menu hangs the other way. */
+.actions .menuPanel {
+  left: auto;
+  right: 0;
+}
+
+/* The consumer's own buttons, restacked as menu rows. Their dress is left
+   alone - they arrive wearing the caller's classes and this component has no
+   business restyling them - but a pill floating in a menu at its natural width
+   reads as a stray control, so they are stretched and left-aligned into rows. */
+.menuPanel > * {
+  width: 100%;
+  justify-content: flex-start;
+
+}
+/* ── The group's own on/off filter ──────────────────────── */
+
+/* Favorites, at the head of the Topic list. Full width and the same height as
+   the rows under it, because it is one of them in every way that matters - it
+   is only separated by a rule because it selects by star rather than by name,
+   and because it composes with the selection below rather than replacing it. */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.toggleRow:hover:not(:disabled) { background: var(--surface2); }
+
+.toggleRow:disabled { opacity: 0.45; cursor: default; }
+
+/* The favourite colour, not the accent - it is a different axis from the topic
+   selected under it, and the two can be on at once. */
+.toggleRowOn {
+  background: color-mix(in oklab, var(--fav) 14%, transparent);
+  color: var(--fav);
+}
+
+.toggleRowOn:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--fav) 20%, transparent);
+}
+
+.toggleStar {
+  color: var(--fav);
+  flex: none;
+}
+
+/* ── Favourites with nothing left to match ──────────────── */
+
+.sectionHead {
+  padding: 10px 9px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  margin-top: 5px;
+}
+
+/* A row with a star and a label and nothing to press on the label: filtering to
+   a topic the feed no longer carries can only produce an empty list. The
+   padding moves onto the star for the same reason .optionStarrable's does. */
+.orphanRow {
+  padding: 0 9px 0 0;
+  gap: 2px;
+  color: var(--muted);
+  cursor: default;
+}
+
+.orphanRow:hover { background: none; }
+
+/* Favouriting something the feed hasn't published yet - the other half of what
+   the search box is for in a starrable group. An outline star, because pressing
+   it is what fills it in. */
+.addStar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--ctl-h);
+  margin-top: 4px;
+  padding: 6px 9px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--fav);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.addStar:hover { background: color-mix(in oklab, var(--fav) 12%, transparent); }
 
 /* ── Phones ─────────────────────────────────────────────────────────────
    The panel stops being a popover hung off the Filters chip and becomes a sheet
@@ -445,24 +735,22 @@
   .groupRow, .option { font-size: 14px; }
   .groupValue { font-size: 13px; max-width: 55%; }
   .clearAll { font-size: 13.5px; }
+  .toggleRow, .addStar { font-size: 14px; }
   .optionList { max-height: 50vh; }
 }
 
 /* ── Touch ──
-   Hover never fires, so nothing here can rely on it. The chip and pill heights
-   are not restated: --ctl-h has already grown them, which is the whole point of
-   the token - they can't drift apart here the way they did when each one
-   carried its own touch padding. What's left is type and the star, which are
-   about legibility and about a control that had no hover to appear on. */
+   Hover never fires, so nothing here can rely on it. The chip heights are not
+   restated: --ctl-h has already grown them, which is the whole point of the
+   token - they can't drift apart here the way they did when each one carried
+   its own touch padding. What's left is type and the star, which are about
+   legibility and about a control that had no hover to appear on. */
 @media (hover: none) {
-  .chip,
-  .activePill {
+  .chip {
     font-size: 13.5px;
     padding-left: 14px;
     padding-right: 14px;
   }
-
-  .activePill { padding-right: 11px; }
 
   /* .chip's padding above lands on the span, which has none to give - the two
      buttons inside it own the edges. Restated on them so a chip on a landscape
@@ -477,6 +765,18 @@
   }
 
   .chipCount { font-size: 11.5px; }
+
+  /* Kept tight against .chip's touch padding above: this one has no word to
+     pad away from, and a 14px inset on each side of a 12px glyph is a button
+     twice as wide as it needs to be in the row that can least afford it. */
+  .glyphChip { padding-left: 10px; padding-right: 10px; }
+
+  /* Same reasoning as .chipClear beside it: a caret with no hover to reveal it
+     is always at full strength, and it needs a thumb-sized edge to aim at. */
+  .chipCaret {
+    padding: 0 12px 0 6px;
+    opacity: 1;
+  }
 
   /* Height comes from stretching to the row, so only the width and the resting
      opacity need saying - there is no pointer here to reveal it. */

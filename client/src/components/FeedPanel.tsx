@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiFetch } from '../services/api';
 import { canonicalArticleKey } from '../utils/articleKey';
-import { FeedArticle, CommentPrefs, ReadingFolder, FeedFolder } from '../types';
+import { FeedArticle, CommentPrefs, ReadingFolder, FeedFolder, FeedSubscription } from '../types';
 import { faviconUrl } from '../utils/color';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
@@ -14,9 +14,9 @@ import ArticleDetailModal from './ArticleDetailModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FeedFilterBar, { FilterGroup } from './FeedFilterBar';
 import TagChip from './TagChip';
-import FavoritesControl from './FavoritesControl';
 import SaveButton, { SaveDestination } from './SaveButton';
 import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
+import { hideWithoutMovingThePage } from '../utils/scrollAnchor';
 import styles from './FeedPanel.module.css';
 
 export type RssLayout = 'list' | 'cards' | 'magazine';
@@ -50,10 +50,15 @@ const PAGE_STALE_MS = 15 * 60 * 1000;
 interface Props {
   /** The reader's own categories, offered as one of the filters. */
   feedFolders: FeedFolder[];
-  /** How many feeds are followed. Zero gets the "add some feeds" empty state
-      rather than the "nothing published yet" one - they are different problems
-      and only one of them has a button that helps. */
-  subscriptionCount: number;
+  /** Every feed followed, in the reader's own order.
+   *
+   *  The list, not a count, because the Site filter is built from it: the sites
+   *  worth offering are the ones subscribed to, not the ones that happen to have
+   *  dealt a card into the page on screen. Its length still decides the empty
+   *  state - zero gets "add some feeds" rather than "nothing published yet",
+   *  which are different problems and only one of them has a button that helps.
+   */
+  subscriptions: FeedSubscription[];
   /** Opens the feed manager. The feed is the only place that knows you're
       looking at feeds, so it's where managing them belongs. */
   onManageFeeds: () => void;
@@ -96,10 +101,10 @@ interface Props {
   onOpenSite?: (domain: string) => void;
   /** Tags worth flagging, as the user typed them. See utils/favoriteTags. */
   favoriteTags?: string[];
-  /** Star/unstar one tag, from a tag chip. */
+  /** Star/unstar one tag - from a tag chip on a card, or from the star beside
+      a topic in the filter bar. The feed has no whole-list editor of its own
+      any more; the Topic list is where you curate favourites now. */
   onToggleFavoriteTag?: (tag: string) => void;
-  /** Replace the whole list, from the manager behind the Favorites chip. */
-  onSetFavoriteTags?: (tags: string[]) => void;
 }
 
 function relativeDate(s: string | null): string {
@@ -247,7 +252,7 @@ function magazineVariants(articles: FeedArticle[]): MagVariant[] {
 // on this set, and a fresh empty one every render would re-run it every render.
 const NO_SAVED_KEYS: Set<string> = new Set();
 
-export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeeds, onSaveArticle, savedKeys = NO_SAVED_KEYS, onUnsaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onExplore, onOpenSite, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags }: Props) {
+export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, onSaveArticle, savedKeys = NO_SAVED_KEYS, onUnsaveArticle, readingFolders = [], onCreateFolder, refreshKey, pageSize = 10, layout = 'magazine', onLayoutChange, markReadOnScroll = true, onUnreadCountsChange, commentPrefs, onAllMarkedRead, onViewProfile, onExplore, onOpenSite, favoriteTags = [], onToggleFavoriteTag }: Props) {
   const [readIds, setReadIds]           = useState<Set<string>>(new Set());
   const [articles, setArticles]         = useState<FeedArticle[]>([]);
   const [total, setTotal]               = useState(0);
@@ -255,11 +260,15 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   const [loadingMore, setLoadingMore]   = useState(false);
   const [error, setError]               = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [activeSource, setActiveSource] = useState<string | null>(null);
-  // The category filter is the one that goes to the server. Site and topic sift
-  // what has already been fetched, the way they always have; a category has to
+  // A subscription id, not a source name. Site joined Category on the server
+  // in v1.25.0; see the scope note on `load` below for why it had to.
+  const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
+  // Category and site are the two filters that go to the server; topic still
+  // sifts what has already been fetched. The difference is that the first two
   // narrow the query itself, because `total` and `unread` are counted against
-  // it and paging measures against `total`.
+  // that query and paging measures against `total`. A topic is a property of an
+  // article rather than of a subscription, so there is no subscription set that
+  // expresses it and nothing for the scope to be narrowed to.
   const [activeFeedFolder, setActiveFeedFolder] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -330,14 +339,58 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     [articles]
   );
 
-  const allSources = useMemo(
-    () => Array.from(new Set(articles.map(a => a.source).filter(Boolean))).sort(),
-    [articles]
+  /**
+   * The sites offered by the Site filter: every feed followed, in the scope the
+   * category filter has set — not the sites the loaded page happens to contain.
+   *
+   * This is the whole of the fix. The list used to be `articles.map(a => a.source)`,
+   * which meant a publisher only appeared in the filter once it had already put
+   * an article in front of you: to narrow down to one that had been quiet for a
+   * few pages you had to page the river until it turned up, at which point you
+   * no longer needed the filter. Reading it off the subscriptions instead means
+   * a site is filterable because you follow it, which is the only thing that
+   * should ever have decided it.
+   *
+   * Narrowed by the active category, because that is the scope the request is
+   * already made in: offering a site from Local while Tech is selected would be
+   * offering a filter that resolves to nothing.
+   *
+   * The label matches what the cards say, and has to be derived the same way the
+   * server derives it (see the `source` field in routes/feeds.ts): the
+   * subscription's own name wins, then the publisher's title, then the host.
+   */
+  const siteOptions = useMemo(() => {
+    const inScope = activeFeedFolder
+      ? subscriptions.filter(sb => sb.feedFolderId === activeFeedFolder)
+      : subscriptions;
+    return inScope
+      .map(sb => ({
+        value: sb.id,
+        label: sb.name || sb.title || domainOf(sb.url) || sb.url,
+        hint: domainOf(sb.url),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [subscriptions, activeFeedFolder]);
+
+  // Favourites that nothing on screen is tagged with any more.
+  //
+  // The Topic list is the only place the feed lets you curate favourites now,
+  // and it can only offer a star against a topic it is showing - so a favourite
+  // that has stopped matching would have no star to switch off, on the very
+  // page it is affecting. These get listed at the foot of that list instead.
+  // `coveringFavorites([f], c)` asks the question the star asks: does this one
+  // favourite cover this one topic, broad matches included.
+  const orphanFavorites = useMemo(
+    () => favoriteTags.filter(f => !allCategories.some(c => coveringFavorites([f], c).length > 0)),
+    [favoriteTags, allCategories]
   );
 
+  // No site test here any more: when one is picked the request was scoped to it,
+  // so every article loaded is already from it. Testing `a.source` on top of that
+  // would also be wrong rather than merely redundant — two subscriptions are
+  // allowed to share a name, and the string cannot tell them apart.
   const displayed = articles.filter(a =>
     (!activeCategory || a.categories.includes(activeCategory)) &&
-    (!activeSource || a.source === activeSource) &&
     (!favoritesOnly || favHits.has(a.id)) &&
     (!unreadOnly || unreadPinned.has(a.id))
   );
@@ -348,11 +401,28 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     if (favoritesOnly && favorites.length === 0) setFavoritesOnly(false);
   }, [favoritesOnly, favorites.length]);
 
+  /**
+   * The category and site the river is being asked for, as query params.
+   *
+   * Both narrow the query rather than the response. A client-side site filter
+   * could only ever hide cards that had already been fetched, which is why the
+   * old one could not offer a site until the river had dealt one of its
+   * articles — and why filtering to a quiet publisher used to mean paging down
+   * until you found the thing you were trying to filter for.
+   *
+   * It also puts the counts right. `total` and `unread` come back measured
+   * against this scope, so the Unread chip counts that site's unread rather than
+   * the whole river's, and "Load more · N remaining" counts what is actually
+   * left to load rather than what is left before filtering.
+   */
+  const scope =
+    (activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '') +
+    (activeFeedId ? `&feed=${encodeURIComponent(activeFeedId)}` : '');
+
   const load = useCallback(async (offset = 0, existing: FeedArticle[] = []) => {
     offset === 0 ? setLoading(true) : setLoadingMore(true);
     setError('');
     try {
-      const scope = activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '';
       const r = await apiFetch(`/api/v1/feeds/articles?offset=${offset}&limit=${pageSize}${scope}`);
       if (!r.ok) { setError('Could not load feed'); return; }
       const data: { articles: FeedArticle[]; total: number; unread?: number; loadedAt?: string } = await r.json();
@@ -378,16 +448,40 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [activeFeedFolder, pageSize]);
+  }, [scope, pageSize]);
 
+  /**
+   * Switching category. Clears the narrower filters, because they were chosen
+   * against a list that no longer exists: a site in Tech usually isn't in Local
+   * at all, and a topic that was all over one category can be absent from the
+   * next.
+   *
+   * Done here rather than in the reload effect below, which is where it used to
+   * live. That effect now also fires when the *site* changes, and clearing the
+   * site from inside an effect the site triggers would either undo the pick or
+   * cost a second round trip to settle.
+   */
+  function changeCategory(v: string | null) {
+    setActiveFeedFolder(v);
+    setActiveFeedId(null);
+    setActiveCategory(null);
+  }
+
+  // Switching site. The topic goes for the same reason - it was picked off the
+  // topics the whole river was showing, and one publisher rarely carries them
+  // all. The category stays: a site is inside a category, not beside it.
+  function changeSite(v: string | null) {
+    setActiveFeedId(v);
+    setActiveCategory(null);
+  }
+
+  // A new scope is a different list, so nothing measured against the old one
+  // survives it: not the articles, not the read set the sweep compares against,
+  // not the unread snapshot, not the arrivals count.
   useEffect(() => {
     setArticles([]);
     setTotal(0);
     setReadIds(new Set());
-    // The client-side filters are cleared with the list they were filtering: a
-    // site or topic chosen in Tech usually isn't even present in Local.
-    setActiveCategory(null);
-    setActiveSource(null);
     setUnreadOnly(false);
     setUnreadPinned(new Set());
     unreadJudged.current = new Set();
@@ -396,7 +490,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     seenRef.current = new Set();
     setNewCount(0);
     load(0, []);
-  }, [activeFeedFolder, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFeedFolder, activeFeedId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Arrivals: counted here, inserted only when asked for ────────────────
 
@@ -420,7 +514,6 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // Counts what has landed since `loadedAt`. Never touches the list.
   const checkForNew = useCallback(async () => {
     if (!loadedAt) return;
-    const scope = activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '';
     try {
       const r = await apiFetch(`/api/v1/feeds/articles/new-count?since=${encodeURIComponent(loadedAt)}${scope}`);
       if (!r.ok) return;
@@ -430,7 +523,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       // A count that failed to arrive is not worth telling anyone about; the
       // next tick will have another go.
     }
-  }, [loadedAt, activeFeedFolder]);
+  }, [loadedAt, scope]);
 
   // ── The age of what's on screen ──
   //
@@ -517,7 +610,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     try {
       await apiFetch('/api/v1/feeds/refresh', {
         method: 'POST',
-        body: JSON.stringify({ folder: activeFeedFolder ?? 'all' }),
+        body: JSON.stringify({ folder: activeFeedFolder ?? 'all', feed: activeFeedId ?? 'all' }),
       });
     } catch {
       // Even a failed fetch is worth reloading after: the background refresher
@@ -665,7 +758,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       document.removeEventListener('visibilitychange', onHide);
       flushRef.current();
     };
-  }, [activeFeedFolder]);
+  }, [activeFeedFolder, activeFeedId]);
 
 
   const observeCard = useCallback((el: HTMLDivElement | null, id: string) => {
@@ -711,7 +804,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
     try {
       const r = await apiFetch('/api/v1/feeds/articles/read-all', {
         method: 'POST',
-        body: JSON.stringify({ folder: activeFeedFolder ?? 'all' }),
+        body: JSON.stringify({ folder: activeFeedFolder ?? 'all', feed: activeFeedId ?? 'all' }),
       });
       if (r.ok) {
         const data: { itemIds: string[]; bookmarks?: { id: string; unreadCount: number }[] } = await r.json();
@@ -800,6 +893,13 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
   // beside a row of every topic in the feed, which made the tags the loudest
   // thing on the page and left the controls scattered across it.
   //
+  // Favourites folded into Topic in v1.25.0 and stopped being a chip of its own.
+  // It was never a fourth axis - it selects topics, by star instead of by name -
+  // and it is the same list you star from, so the filter and the thing it
+  // filters on now live in one panel: Favorites at the head, then every topic
+  // with its star beside it, then the favourites this feed has stopped
+  // publishing. The two compose, so Favorites *and* one topic is still sayable.
+  //
   // Built here, above the early returns, because the control bar below is drawn
   // in every state - including the ones with no articles, where these groups
   // come out empty and FeedFilterBar folds them away on its own.
@@ -809,7 +909,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       label: 'Category',
       allLabel: 'All feeds',
       value: activeFeedFolder,
-      onChange: setActiveFeedFolder,
+      onChange: changeCategory,
       searchable: feedFolders.length > SEARCHABLE_AT,
       options: feedFolders.map(f => ({ value: f.id, label: f.name, color: f.color })),
     },
@@ -817,10 +917,10 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       id: 'site',
       label: 'Site',
       allLabel: 'All sites',
-      value: activeSource,
-      onChange: setActiveSource,
-      searchable: allSources.length > SEARCHABLE_AT,
-      options: allSources.map(s => ({ value: s, label: s })),
+      value: activeFeedId,
+      onChange: changeSite,
+      searchable: siteOptions.length > SEARCHABLE_AT,
+      options: siteOptions,
     },
     {
       id: 'topic',
@@ -828,90 +928,129 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
       allLabel: 'All topics',
       value: activeCategory,
       onChange: setActiveCategory,
-      searchable: allCategories.length > SEARCHABLE_AT,
-      options: allCategories.map(c => ({ value: c, label: c })),
+      // Searchable at any length once it's starrable: the box is also how you
+      // favourite a tag this feed hasn't published yet, which is what the
+      // Favorites chip's own text field used to be for.
+      searchable: allCategories.length > SEARCHABLE_AT || !!onToggleFavoriteTag,
+      onToggleStar: onToggleFavoriteTag,
+      orphanStars: onToggleFavoriteTag ? orphanFavorites : undefined,
+      // Offered whenever there is a list to manage, not only when something
+      // matches - otherwise a favourite that has stopped matching takes its own
+      // way out with it. The control disables its filter at zero hits.
+      toggle: onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0)
+        ? {
+            label: 'Favorites',
+            count: favHits.size,
+            active: favoritesOnly,
+            onToggle: () => setFavoritesOnly(v => !v),
+          }
+        : undefined,
+      options: allCategories.map(c => {
+        const covering = onToggleFavoriteTag ? coveringFavorites(favoriteTags, c) : [];
+        const starred = covering.length > 0;
+        return {
+          value: c,
+          label: c,
+          starred,
+          starTitle: starred
+            ? (covering[0].toLowerCase() !== c.toLowerCase()
+                ? `Matched by your favorite “${covering[0]}” - click to remove it`
+                : `Remove “${c}” from favorites`)
+            : `Favorite “${c}” - articles tagged this way get flagged`,
+        };
+      }),
     },
   ];
 
-  // ── Two bands, not one row ──
-  // Things that *do* something on top, right-aligned; things that change what
-  // you're looking at underneath, gathered into a box of their own.
+  // ── One bar, and it comes with you ──
+  // Everything that operates on the feed, in a single strip that sticks under
+  // the shell bar for as long as the feed is on screen.
   //
-  // They were all one row, which put "Mark all read" - which writes to every
-  // article you have - immediately beside a filter chip that only changes the
-  // view, dressed identically and reading as another chip. That is the wrong
-  // pairing to make, and it is why the double-tick had to be guessed at: on a
-  // narrow screen its label dropped and an unlabelled glyph was all that was
-  // left of an irreversible action.
+  // It was two bands before - actions above, filters in a box below - and both
+  // of them scrolled away the moment you started reading. Which is the moment
+  // they start being wanted: you notice a category is flooding the list, or that
+  // you've read everything worth reading, some way down the page, and the only
+  // route back to any of it was scrolling to the top.
   //
-  // So: two bands with different jobs and different looks, and the actions keep
-  // their words. The box is what makes the filters read as a set rather than as
-  // four unrelated buttons that happen to be adjacent.
+  // "Mark all read" is not one of the actions at the far end. It writes to every
+  // article you have, and it was sitting between "Manage feeds" and the layout
+  // switch - two controls that set the feed up and change how it is drawn, and
+  // neither of which touches a single article. It belongs to the Unread chip
+  // instead, on the same axis: one shows you what is unread, the other makes
+  // none of it unread. So it hangs off that chip's caret, the way the shell's
+  // avatar menu hangs off the avatar.
+  //
+  // That also took the widest control out of the row, which is most of what the
+  // row was short of - see the overlap note in FeedFilterBar's stylesheet.
+  //
+  // `menu` is undefined rather than an empty fragment when there is nothing to
+  // offer: FeedFilterBar draws no caret at all then, instead of one that opens
+  // on nothing.
+  const markAllRead = markReadOnScroll && articles.length > 0 ? (
+    <button
+      className={styles.actionBtnMain}
+      onClick={handleMarkAllRead}
+      disabled={markingAll || !unreadShowing}
+      title={activeFeedId
+        ? 'Mark every article from this site as read'
+        : activeFeedFolder
+          ? 'Mark every article in this category as read'
+          : 'Mark every article in your feed as read'}
+    >
+      <CheckAllIcon />
+      {markingAll ? 'Marking…' : 'Mark all read'}
+    </button>
+  ) : undefined;
+
+  // ── One bar, and it comes with you ──
+  // Everything that operates on the feed, in a single strip that sticks under
+  // the shell bar for as long as the feed is on screen.
+  //
+  // It was two bands before - actions above, filters in a box below - and both
+  // of them scrolled away the moment you started reading. Which is the moment
+  // they start being wanted: you notice a category is flooding the list, or that
+  // you've read everything worth reading, some way down the page, and the only
+  // route back to any of it was scrolling to the top.
   //
   // Drawn in every state, including the ones that render nothing else: "Manage
   // feeds" has to be reachable precisely when the feed is empty, which is when
-  // it is hardest to find.
+  // it is hardest to find. FeedFilterBar returns null on an empty bar unless it
+  // has actions, which is what keeps that true.
   const controlBar = (
     <div className={styles.controls}>
-      <div className={styles.actionRow}>
-        {markReadOnScroll && articles.length > 0 && (
-          <button
-            className={styles.actionBtnMain}
-            onClick={handleMarkAllRead}
-            disabled={markingAll || !unreadShowing}
-            title={activeFeedFolder
-              ? 'Mark every article in this category as read'
-              : 'Mark every article in your feed as read'}
-          >
-            <CheckAllIcon />
-            {markingAll ? 'Marking…' : 'Mark all read'}
-          </button>
-        )}
-
-        {/* The label goes on a narrow screen and the icon carries it - see
-            .actionLabel. This is the rarest of the three (you set your feeds
-            up once), so it is the one that can afford to be a glyph when the
-            row is short of room. The other two keep their words whatever
-            happens: both of them act on things, and one of them cannot be
-            undone. */}
-        <button
-          className={styles.manageBtn}
-          onClick={onManageFeeds}
-          title="Add, rename or remove feeds"
-          aria-label="Manage feeds"
-        >
-          <SlidersIcon />
-          <span className={styles.actionLabel}>Manage feeds</span>
-        </button>
-
-        {onLayoutChange && articles.length > 0 && (
-          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
-        )}
-      </div>
-
       <FeedFilterBar
         className={styles.filterBox}
         groups={filterGroups}
         // Read state is only tracked when read-on-scroll is on, so without it
-        // there is no such thing as unread here to filter to.
+        // there is no such thing as unread here to filter to - and nothing to
+        // mark as read either, which is why both halves of the chip are gated
+        // on the same setting.
         unread={markReadOnScroll
-          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly }
+          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly, menu: markAllRead }
           : undefined}
-        // Shown whenever there's a list to manage, not only when something
-        // matches - otherwise a favorite that has stopped matching becomes
-        // unreachable from the page it's affecting. The control disables its
-        // own filter at zero.
-        favorites={onToggleFavoriteTag && (favoriteTags.length > 0 || favHits.size > 0) ? (
-          <FavoritesControl
-            favorites={favoriteTags}
-            onChange={onSetFavoriteTags ?? (() => {})}
-            count={favHits.size}
-            filterOn={favoritesOnly}
-            onToggleFilter={() => setFavoritesOnly(v => !v)}
-            chipClassName={`${styles.chip} ${styles.favChip}`}
-            chipActiveClassName={styles.favChipActive}
-          />
-        ) : undefined}
+        actions={
+          <>
+            {/* Icon and a tooltip, at every width. This is the rarest control
+                in the bar - you set your feeds up once - and the sliders glyph
+                is the same one the feed manager itself wears, so the button
+                looks like the thing it opens. The words are still in the
+                accessibility tree, and they come back as a label inside the ⋯
+                menu, where there is room for them: see `--action-label`. */}
+            <button
+              className={styles.manageBtn}
+              onClick={onManageFeeds}
+              title="Manage feeds"
+              aria-label="Manage feeds"
+            >
+              <SlidersIcon />
+              <span className={styles.actionLabel}>Manage feeds</span>
+            </button>
+
+            {onLayoutChange && articles.length > 0 && (
+              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
+            )}
+          </>
+        }
       />
     </div>
   );
@@ -965,7 +1104,7 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
 
   // Following nothing and following feeds that haven't published are different
   // problems: only the first one has an answer the user can act on.
-  if (subscriptionCount === 0) return (
+  if (subscriptions.length === 0) return (
     <div className={styles.wrap}>
       {controlBar}
       <div className={styles.emptyPitch}>
@@ -986,10 +1125,15 @@ export default function FeedPanel({ feedFolders, subscriptionCount, onManageFeed
           since arrived is the one empty state with an answer in it. */}
       {newBanner}
       {floatingRefresh}
-      {activeFeedFolder ? (
+      {activeFeedId ? (
+        <div className={styles.status} style={{ opacity: 0.45 }}>
+          Nothing from {siteOptions.find(o => o.value === activeFeedId)?.label ?? 'this site'} yet.{' '}
+          <button className={styles.inlineBtn} onClick={() => changeSite(null)}>Show all sites</button>
+        </div>
+      ) : activeFeedFolder ? (
         <div className={styles.status} style={{ opacity: 0.45 }}>
           Nothing in this category yet.{' '}
-          <button className={styles.inlineBtn} onClick={() => setActiveFeedFolder(null)}>Show all feeds</button>
+          <button className={styles.inlineBtn} onClick={() => changeCategory(null)}>Show all feeds</button>
         </div>
       ) : (
         <div className={styles.status} style={{ opacity: 0.45 }}>No articles yet - feeds refresh every 30 minutes.</div>
@@ -1175,7 +1319,14 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
             no text of its own is noise to anyone not using a mouse.
             A broken image hides the link, not just the <img> - hiding only the
             picture would leave the link's negative margins pulling the card's
-            text up into its own padding. */}
+            text up into its own padding.
+
+            It hides it without moving the page, which is a different job: the
+            art is lazy, so it can fail seconds after its card was laid out and
+            long after the reader has scrolled past. Taking 170px out of a card
+            above the viewport slides the article being read up by 170px, and
+            Safari - alone among the engines - will not correct for it. That is
+            the feed "skipping content" on a phone. See utils/scrollAnchor. */}
         {showImage && article.imageUrl && (
           <a
             href={article.link}
@@ -1192,7 +1343,7 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
               className={styles.hero}
               loading="lazy"
               referrerPolicy="no-referrer"
-              onError={e => { const img = e.currentTarget; (img.parentElement ?? img).style.display = 'none'; }}
+              onError={e => { const img = e.currentTarget; hideWithoutMovingThePage(img.parentElement ?? img); }}
             />
           </a>
         )}

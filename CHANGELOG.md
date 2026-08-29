@@ -2,6 +2,191 @@
 
 Notable changes to Newt, newest first.
 
+## v1.25.0 - The feed's controls become one bar, and it comes with you
+
+**2026-08-20**
+
+Every control the feed has was arranged in two bands above the articles: the
+buttons that act on it in one row, the filters in a bordered box under it. Both
+of them scrolled off the top of the screen the moment you started reading, which
+is the moment they start being wanted. You notice that one category is flooding
+the list, or that you have read everything worth reading, some way down the
+page — and the only route back to any of it was scrolling all the way up.
+
+**It is one bar now, and it sticks under the shell bar for as long as the feed
+is on screen.** Unread and Filters at one end, then Mark all read, Manage feeds
+and the layout switch at the other. Cards pass underneath it through the same
+frosted glass the shell bar and the bookmarks rail already wear, so the strip
+reads as chrome rather than as a card that refuses to scroll.
+
+**The two bands were not an accident, and the reason they existed still holds.**
+"Mark all read" writes to every article you have and cannot be undone; a filter
+chip only changes what you are looking at. Dressing them identically and sitting
+them side by side was the fault that split them apart in v1.11.0. That is now
+settled *within* the row instead of by leaving it: the actions sit behind a rule
+at the far end and wear a solid fill against the chips' outlines.
+
+**One line, at every width, and never two.** The bar is `flex-wrap: nowrap`, and
+it sheds in a fixed order as it narrows rather than stacking: the active-filter
+pills give up width first and ellipsise, then the three filter chips fold into
+one Filters menu, then the actions fold into a single **⋯** menu, and finally
+the Filters chip drops its word for its funnel. At 320px that leaves Unread, a
+funnel and a ⋯ — three controls on one line with room to spare.
+
+**Nothing has to become an unlabelled glyph any more.** The old row answered
+pressure by dropping words: Manage feeds went icon-only below 620px, and the end
+of that road was "Mark all read" as a bare double-tick that clears every article
+you have. The ⋯ menu has room for sentences, so both keep their labels at every
+width — and the icon-only rule is deleted rather than merely unused.
+
+**The thresholds are the bar's own width, measured, not the window's.** The feed
+sits in a column beside a 248px rail, so bar width is not even monotonic in
+window width: a 900px window gives the bar 868px because the rail has just
+dropped away, and a 901px window gives it 563px because the rail is back. Every
+viewport threshold is wrong on one side of that jump, and the old one was
+wrong on exactly the side where three chips and three labelled buttons stopped
+fitting. A `ResizeObserver` asks the row instead (`useElementWidth`).
+
+`scripts/measure-filter-bar.mjs` sweeps the bar across eighteen widths and fails
+on either a wrap or an overflow — an overflowing row is the worse of the two,
+since a document wider than the viewport is what makes mobile Safari scale the
+whole page out. Run it with `--filtered` to sweep with two pills showing, which
+is the case that used to force the second line.
+
+**Favorites stopped being a chip and folded into Topic.** It was never a fourth
+axis — it selects topics, by star instead of by name — and it filters on exactly
+the list you star from, so the filter and the thing it filters on now live in one
+panel: Favorites at the head, then every topic in the feed with its star beside
+it. The two compose rather than replace each other, so "Favorites" and one topic
+at once is still sayable, and the chip says so: **Topic: Favorites · AMD**.
+
+**Nothing the old chip could do was lost in the fold.** Its text field is now
+the Topic list's search box, which offers to favourite whatever you typed when
+the feed has never published it — so a tag can still be favourited before it
+first turns up. And favourites the feed has *stopped* carrying are listed under
+"Favorites not in this feed" at the foot of the same panel, with a star and
+nothing else: a favourite that has quietly stopped matching has to stay
+switch-off-able from the page it is affecting, and filtering to a topic with no
+articles under it was never worth offering.
+
+That search box appears on short lists now, since a starrable group needs it
+whatever its length. It no longer takes focus on a touch device — autofocusing
+it threw a keyboard over the list you opened the menu to read.
+
+**The reading list's folders joined its filters in the same single bar.** Its
+shelves were a rail of their own above the filter row, which put three strips of
+chrome between the title and the first card — most of a phone screen before an
+article appeared. The shelves are a group in the filter bar now, alongside Topic
+and Site: **Shelf: To read**, with the pile at the head of the list and every
+folder under it carrying its own colour and count, exactly as the rail showed
+them. Add, Manage folders and the layout switch moved to the far end of that
+same row, behind the rule, and fold into the **⋯** with their words intact.
+
+**A shelf is not a filter, and the bar knows the difference.** Picking a folder
+does not narrow the pile, it swaps the pile — so the shelf stays out of the
+filter count, out of the read-out, and out of "Clear all filters", which now
+means *show me everything on this shelf* rather than *walk me off it*. Its chip
+says where you are at all times and carries no ✕, because there is no such thing
+as no shelf; you leave one by picking another.
+
+That also deleted the rail's own measuring apparatus, which laid out a hidden
+copy of every shelf chip to work out how many fit. The bar already answers that
+question once, for everything in the row, off its own width.
+
+**The site filter offers every site you follow, not just the ones on screen.**
+It was built from the articles the page happened to be holding, so a publisher
+only became filterable once it had already dealt you a card. Narrowing to one
+that had been quiet for a page or two meant scrolling the river until one of its
+articles turned up — and by then you had found the thing you wanted the filter
+for. The list now comes from your subscriptions, so a site is filterable because
+you follow it, which is the only thing that should ever have decided it.
+
+Picking one narrows the query rather than the response: `&feed=<id>` alongside
+the category's `&folder=`, composing with it. That also puts the numbers right,
+because they are counted against the same scope — the Unread chip counts that
+site's unread, "Load more · N remaining" counts what is actually left of it, and
+"Mark all read" clears that site rather than everything you have. Each row
+carries its host beside the name, and the search box matches either: "ABC News"
+and `abc.com` are the same row, and which one you reach for is up to you.
+
+**Long URLs stop stretching their cards off the page.** A headline or a snippet
+containing a bare link had nowhere to break, and a grid item is never narrower
+than its own longest word — so one article posted with its URL as its title
+pushed its column past its track and the grid past the window. Measured at a
+430px viewport, the document came out 603px wide, which is what makes mobile
+Safari scale the whole page out. The words may break now (`overflow-wrap:
+anywhere`) and the boxes may be narrower than their words (`min-width: 0`);
+both halves are needed, since a break nothing asks for never happens.
+
+**Artwork that fails to load no longer moves the page under you.** Hero images
+are lazy, so on a slow connection one can fail seconds after its card was laid
+out — long after the reader has scrolled past it. Hiding it then takes ~170px
+out of a card above the viewport and slides everything below it up by that much,
+which reads as the feed skipping content. Chrome, Firefox and current Safari
+absorb this with scroll anchoring; measured on this feed, the card being read
+moves 0px where the engine anchors and 166px where it doesn't. iOS versions
+predating WebKit's support are still a large share of real phones, so the scroll
+offset is now put back by hand — but only where the engine won't do it itself,
+since compensating on top of the browser's own correction would double the jump
+instead of cancelling it. The reading list's thumbnails go the same way.
+
+**Half the magazine cards were 0px wide between 601px and 620px.** Two rules
+disagreed about where the grid stops having two columns: the grid went to a
+single column at 620px, and the wide feature card stopped spanning two columns
+at 600px. In the twenty pixels between them a card asked for two columns of a
+one-column grid, which makes an implicit second track with nothing in it to
+size against — so the track resolved to 0px and every card the dense packer
+put there resolved to 0px with it. Measured at a 610px window: tracks of
+`562px 0px`, card widths alternating 562, 0, 562, 0, and 112px of the document
+hanging off the right-hand edge. Both rules now read 620px, and the comment on
+each says it has to match the other.
+
+Several other suspects were measured and cleared, so they don't get looked at
+again: appending a page moves no card already on screen (0px at phone widths,
+3px at desktop), marking a card read doesn't change its height, and the magazine
+variants are stable under appends by construction.
+
+**Sticky, not fixed.** `position: fixed` inside `.bodyGrid` is clamped to the
+grid's box rather than the viewport — the grid's finished entrance animation
+leaves a transform behind, which makes it the containing block for everything
+fixed inside it. Sticky is also what this actually wants: the bar belongs to the
+feed and should leave with it rather than ride over the reading list above.
+
+### Posts becomes a console, and the console becomes one file
+
+v1.24.0 gave Admin and Settings the same shape — a card with a sticky nav, a row
+of section pills and a small wordmark saying which screen you were on. Posts
+never got the memo. It was a bare 760px column, a width nothing else in the app
+used, under a 26px heading and a line of counts, with New post floating beside
+them. Three screens you go to in order to manage something, three designs.
+
+**Posts is the third console.** Same card, same sticky nav, same wordmark
+eyebrow, and it lines up with the bookmarks rail like the other two. Explore is
+deliberately left alone: it is a stack of two cards on the rail's own glass, and
+the offset between them is what makes clicking off a conversation a way back.
+
+**The counts became the filter.** "2 published · 1 draft" was a sentence that
+told you there was a draft in the list and then left you to find it. It is now
+three pills — All, Published, Drafts — with the counts inside them, drafts in
+amber like the row spine they match. Client-side over a list already loaded, and
+not in the URL: Settings' and Admin's sections are addresses because they are
+places you send somebody; which of your own posts you are squinting at is not.
+
+**New post moved into the nav.** The nav is the part that stays, so the button
+is as reachable at the bottom of forty posts as at the top — which is the thing
+a floating action button usually gets bolted on to achieve.
+
+**The chrome is one file now.** Seventeen classes were duplicated byte-for-byte
+across `SettingsPage.module.css` and `AdminPage.module.css`, which is two places
+for one design to drift — and it had. Admin's wordmark is an `<h1>`, the app
+ships no global reset, and its `margin: 0` had gone missing, so the browser's
+default `0.67em` margins made the admin nav row **16px taller** than the
+identical nav in Settings. Both now compose from
+`client/src/styles/pageConsole.module.css`, measured identical on every chrome
+dimension. The one thing the three screens don't share is width, and that is now
+a `--console-max` variable each sets for itself: 1100px for Admin's tables,
+980px for Settings' rows and for Posts.
+
 ## v1.24.0 - The consoles lose their sidebars, and feeds stop being punished for size
 
 **2026-08-19**

@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import styles from './ReadingList.module.css';
 import { ReadingListItem, ReadingFolder, CommentPrefs } from '../types';
 import { parseDomain } from '../utils/color';
@@ -16,12 +16,13 @@ import {
   prepareFavorites, favoritesFor, isFavoriteTag, coveringFavorites, PreparedFavorite,
 } from '../utils/favoriteTags';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
-import FeedFilterBar from './FeedFilterBar';
+import FeedFilterBar, { FilterOption } from './FeedFilterBar';
 import SaveButton, { SaveDestination } from './SaveButton';
 import CloseButton from './CloseButton';
 import ReadingListLauncher from './ReadingListLauncher';
 import { totalMinutes, formatDuration } from '../utils/readingTime';
 import { loadVisited, markVisited } from '../utils/visitedArticles';
+import { hideWithoutMovingThePage } from '../utils/scrollAnchor';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
@@ -387,7 +388,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             className={styles.hero}
             loading="lazy"
             referrerPolicy="no-referrer"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            onError={e => hideWithoutMovingThePage(e.currentTarget)}
           />
         )}
         {tags.length > 0 && (
@@ -415,7 +416,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             className={styles.sourceFavicon}
             src={`https://www.google.com/s2/favicons?domain=${item.source}&sz=32`}
             alt=""
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            onError={e => hideWithoutMovingThePage(e.currentTarget)}
           />
           {/* The domain comes from the URL, not from `source`: an article saved
               off a feed card carries that feed's display name ("Ars Technica")
@@ -643,33 +644,32 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     return m;
   }, [items]);
 
-  // The rail, as one flat list: the pile, then the Library's shelves. Flat
-  // because the rail has to decide how many of these fit on a line, and that is
-  // a question about a sequence rather than about two nested groups.
-  const railShelves = useMemo<Shelf[]>(() => {
-    const list: Shelf[] = [{
-      key: PILE,
-      label: 'Reading list',
-      count: shelfCounts.get(PILE) ?? 0,
-      color: 'var(--accent)',
-    }];
-    if (filedCount === 0 && readingFolders.length === 0) return list;
-    list.push({
-      key: libKey(null),
-      label: 'Unsorted',
-      count: shelfCounts.get(libKey(null)) ?? 0,
-      color: 'var(--muted)',
-      hollow: true,
-    });
-    for (const f of readingFolders) {
-      list.push({
-        key: libKey(f.id),
+  // Everywhere you can be *other* than the pile, as rows for the shelf group.
+  // The pile itself is the group's "all" row rather than an option, because
+  // that is the row the bar already draws first and already treats as the one
+  // you fall back to - see allColor/allHint in FeedFilterBar.
+  //
+  // Empty until there is somewhere to go: with nothing filed and no folders
+  // made, the only shelf is the pile, and the bar drops a group whose choices
+  // amount to where you already are.
+  const shelfOptions = useMemo<FilterOption[]>(() => {
+    if (filedCount === 0 && readingFolders.length === 0) return [];
+    return [
+      // Unsorted's dot is --muted rather than a colour of its own: it is the
+      // Library shelf for things you filed without saying where.
+      {
+        value: libKey(null),
+        label: 'Unsorted',
+        hint: String(shelfCounts.get(libKey(null)) ?? 0),
+        color: 'var(--muted)',
+      },
+      ...readingFolders.map(f => ({
+        value: libKey(f.id),
         label: f.name,
-        count: shelfCounts.get(libKey(f.id)) ?? 0,
+        hint: String(shelfCounts.get(libKey(f.id)) ?? 0),
         color: f.color,
-      });
-    }
-    return list;
+      })),
+    ];
   }, [shelfCounts, filedCount, readingFolders]);
 
   // A folder can be deleted from the Library page while its shelf is the one on
@@ -928,34 +928,49 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         <CloseButton onClick={close} label="Close reading list" />
       </div>
 
-      {/* ── The shelves ──
-          The pile first, then everything filed. This is the half of the ask a
-          collapsible section could never carry: what you kept and where you put
-          it, in one place, rather than a list here and folders on the profile.
-          Browsing them happens here; making, renaming and colouring them stays
-          on the Library page, which is already built for it. */}
-      <ShelfRail
-        shelves={railShelves}
-        active={shelfKey}
-        onSelect={setShelfKey}
-        onManage={onOpenLibrary && (() => { close(); onOpenLibrary(); })}
-      />
+      {/* ── One bar: where you are, what you're narrowing to, what you can do ──
+          The shelves used to be a rail of their own above this row, which made
+          three bands of chrome between the title and the first card - and on a
+          phone that is most of the screen before an article appears. They are a
+          group in the filter bar now, the same one the feed uses, so the whole
+          surface is controlled from a single line that folds down to one chip
+          and a ⋯ rather than stacking.
 
-      {/* One control strip: what you're narrowing to on the left, how it's drawn
-          and how to add to it on the right. The filters used to sit inside the
-          scrolling body, which meant they left the screen as soon as you started
-          reading and there was no way back to them but scrolling up. */}
+          Folding the rail in also deleted its whole measuring apparatus: it
+          used to lay out a hidden copy of every chip to work out how many fit.
+          FeedFilterBar already answers that question once, for everything in
+          the row, and answers it off the bar's own width. See useElementWidth.
+
+          A shelf is not a filter, and the bar knows it: `scope: true` keeps it
+          out of the filter count and out of "Clear all filters", which must
+          show you everything on this shelf rather than walking you off it. */}
       <div className={styles.modalToolbar}>
-        {/* Same control the feed uses, for the same reason: a row of every tag in
-            the list was the loudest thing on screen and put the filters in a
-            different shape on each surface. Topics keep their stars here - the
-            tags printed on a card aren't buttons (see ReadingCard), so this is
-            still the reading list's favoriting surface. */}
-        <div className={styles.toolbarFilters}>
-          {(allTags.length > 0 || allSources.length > 1) && (
-            <FeedFilterBar
-          className={styles.toolbarFilterBar}
+        <FeedFilterBar
           groups={[
+            /* Where you are. First in the row because the two filters after it
+               are built out of whatever it lands on - the topics and sites
+               offered are the ones on this shelf, not in the whole list. */
+            {
+              id: 'shelf',
+              label: 'Shelf',
+              scope: true,
+              allLabel: 'Reading list',
+              // The pile is a shelf like the others and carries its own colour
+              // and count, so its row lines up with the folders below it rather
+              // than reading as "no folder".
+              allColor: 'var(--accent)',
+              allHint: String(shelfCounts.get(PILE) ?? 0),
+              value: shelfKey === PILE ? null : shelfKey,
+              onChange: v => setShelfKey(v ?? PILE),
+              searchable: shelfOptions.length > SEARCHABLE_AT,
+              options: shelfOptions,
+            },
+            /* Same control the feed uses, for the same reason: a row of every
+               tag in the list was the loudest thing on screen and put the
+               filters in a different shape on each surface. Topics keep their
+               stars here - the tags printed on a card aren't buttons (see
+               ReadingCard), so this is still the reading list's favoriting
+               surface. */
             {
               id: 'topic',
               label: 'Topic',
@@ -1000,26 +1015,50 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
               chipActiveClassName={styles.favChipActive}
             />
           ) : undefined}
-            />
-          )}
-        </div>
+          /* The far end of the same bar: the things that act on the list rather
+             than narrow it. Fenced off by a rule and wearing a solid fill, and
+             below FOLD_ACTIONS_AT they go behind one ⋯ with their words intact
+             - see the `actions` note in FeedFilterBar for why the two halves
+             share a row but must not be mistakable for each other. */
+          actions={
+            <>
+              {/* "Add", not "+ Save article": every other Save in here files an
+                  article you already have onto a shelf, and this one is the only
+                  control on the surface that brings a new article in. Shaped
+                  like the controls it shares the row with, because it is another
+                  control in that row and was reading as a stray link. */}
+              {!expanded ? (
+                <button className={styles.addBtn} onClick={() => setExpanded(true)} title="Add an article by URL">
+                  <PlusIcon />
+                  Add
+                </button>
+              ) : (
+                <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
+              )}
 
-        {onLayoutChange && (
-          <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
-        )}
-        {/* "Add", not "+ Save article": every other Save in here files an
-            article you already have onto a shelf, and this one is the only
-            control on the surface that brings a new article in. Shaped like the
-            chips and the layout switch it shares the row with, because it is
-            another control in that row and was reading as a stray link. */}
-        {!expanded ? (
-          <button className={styles.addBtn} onClick={() => setExpanded(true)} title="Add an article by URL">
-            <PlusIcon />
-            Add
-          </button>
-        ) : (
-          <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
-        )}
+              {/* Where the shelves come from, next to the things that act
+                  rather than inside the shelf list - it leaves the reading list
+                  for another page, which is not something a row in a dropdown
+                  should do. Icon and a tooltip in the bar, its words back in
+                  the ⋯ menu, exactly as the feed's "Manage feeds" behaves. */}
+              {onOpenLibrary && (
+                <button
+                  className={styles.manageBtn}
+                  onClick={() => { close(); onOpenLibrary(); }}
+                  title="Manage folders"
+                  aria-label="Manage folders"
+                >
+                  <FolderIcon size={13} />
+                  <span className={styles.actionLabel}>Manage folders</span>
+                </button>
+              )}
+
+              {onLayoutChange && (
+                <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Reading list layout" />
+              )}
+            </>
+          }
+        />
       </div>
 
       <div className={styles.modalBody}>
@@ -1159,251 +1198,5 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
         />
       )}
     </>
-  );
-}
-
-// A dot in the folder's own colour, its name, and how much is on it - the same
-// three things the Library page's rail shows, because they are the same shelves
-// and recognising them by colour only works if the colour follows them here.
-interface Shelf {
-  key: ShelfKey;
-  label: string;
-  count: number;
-  color: string;
-  /** Unsorted has no colour of its own - an outline says "no folder". */
-  hollow?: boolean;
-}
-
-const ShelfChevron = () => (
-  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M2.5 4.5L6 8l3.5-3.5" />
-  </svg>
-);
-
-// Shared by the chips, the overflow trigger and the hidden copy the rail
-// measures itself against - three things that have to come out exactly the same
-// width for the measuring to mean anything.
-function ShelfBody({ shelf }: { shelf: Shelf }) {
-  return (
-    <>
-      <span
-        className={`${styles.shelfDot} ${shelf.hollow ? styles.shelfDotHollow : ''}`}
-        style={shelf.hollow ? undefined : { background: shelf.color }}
-      />
-      <span className={styles.shelfName}>{shelf.label}</span>
-      <span className={styles.shelfCount}>{shelf.count}</span>
-    </>
-  );
-}
-
-// One shelf in the rail.
-function ShelfChip({ shelf, active, onClick }: {
-  shelf: Shelf;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`${styles.shelfChip} ${active ? styles.shelfChipActive : ''}`}
-      style={{ '--shelf': shelf.color } as React.CSSProperties}
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      <ShelfBody shelf={shelf} />
-    </button>
-  );
-}
-
-/**
- * The row of shelves, and what to do when there are more of them than there is
- * room for.
- *
- * It used to scroll sideways. That is fine under a thumb and close to invisible
- * under a mouse: no scrollbar, no arrows, no shadow at the edge - nothing at all
- * saying the row carried on past the last chip you could see, so a folder off
- * the end of it was a folder you didn't have. Nothing in here scrolls now. The
- * rail measures what it can show and folds the rest into a "N more" menu at the
- * end, which is the shelf you're on when the shelf you're on is one of them.
- */
-function ShelfRail({ shelves, active, onSelect, onManage }: {
-  shelves: Shelf[];
-  active: ShelfKey;
-  onSelect: (key: ShelfKey) => void;
-  /** Absent leaves the Library link off the rail entirely. */
-  onManage?: () => void;
-}) {
-  const railRef = useRef<HTMLDivElement>(null);
-  const mirrorRef = useRef<HTMLDivElement>(null);
-  const manageRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  // How many chips are on the rail. Everything past this is in the menu.
-  const [fit, setFit] = useState(shelves.length);
-  const [open, setOpen] = useState(false);
-
-  const activeShelf = shelves.find(s => s.key === active) ?? shelves[0];
-
-  // Widths come off a hidden copy of the whole rail rather than the visible one:
-  // a chip that has been folded into the menu is no longer in the DOM to be
-  // measured, so measuring what's on screen would mean each pass depending on
-  // the last one's answer, which is how these things end up oscillating.
-  const sig = JSON.stringify(shelves.map(s => [s.key, s.label, s.count]));
-
-  const measure = useCallback(() => {
-    const rail = railRef.current;
-    const mirror = mirrorRef.current;
-    if (!rail || !mirror) return;
-    const chips = Array.from(mirror.querySelectorAll<HTMLElement>('[data-chip]'));
-    if (chips.length === 0) return;
-
-    const cs = getComputedStyle(rail);
-    const gap = parseFloat(cs.columnGap) || 0;
-    let avail = rail.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    // The Library link is pinned to the far end, so it is width the chips never
-    // had in the first place.
-    if (manageRef.current) avail -= manageRef.current.offsetWidth + gap;
-
-    // Right edge of every chip in a rail that is showing all of them, dividers
-    // and gaps included - so "does this one fit" is one comparison per chip.
-    const edges = chips.map(c => c.offsetLeft + c.offsetWidth);
-    if (edges[edges.length - 1] <= avail) { setFit(chips.length); return; }
-
-    // Both labels the trigger can carry are in the mirror and the wider one is
-    // what gets reserved. Which one it actually shows depends on how many chips
-    // fit, and that must not depend back on how much room it was given.
-    const triggers = Array.from(mirror.querySelectorAll<HTMLElement>('[data-more]'));
-    const budget = avail - Math.max(0, ...triggers.map(t => t.offsetWidth)) - gap;
-
-    let n = 0;
-    while (n < edges.length && edges[n] <= budget) n++;
-    // The pile stays on the rail whatever happens: it is the shelf the list
-    // opens onto, and a rail with nothing on it but a menu says nothing at all.
-    setFit(Math.max(1, n));
-  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useLayoutEffect(() => {
-    measure();
-    const rail = railRef.current;
-    const mirror = mirrorRef.current;
-    if (typeof ResizeObserver === 'undefined' || !rail || !mirror) return;
-    // The rail for the room it has; the mirror for what wants to go in it - a
-    // renamed folder or a font arriving late changes the second, not the first.
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(rail);
-    ro.observe(mirror);
-    return () => ro.disconnect();
-  }, [measure]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    // Captured, and the event stops here: the reading list closes on Escape from
-    // a listener of its own, and dismissing a menu should not also shut the room
-    // it was opened in.
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
-
-  const shown = shelves.slice(0, fit);
-  const hidden = shelves.slice(fit);
-  // The menu is where the current shelf went, so the trigger wears its name and
-  // its colour rather than a count - the rail still has to say where you are.
-  const activeHidden = hidden.find(s => s.key === active) ?? null;
-
-  // The pile and the Library's shelves are different kinds of thing, so there is
-  // a hairline between them wherever the second one starts.
-  const divider = <span className={styles.railDivider} aria-hidden />;
-
-  return (
-    <div className={styles.shelfRail} ref={railRef} role="group" aria-label="Shelves">
-      {shown.map((s, i) => (
-        <Fragment key={s.key}>
-          {i === 1 && divider}
-          <ShelfChip shelf={s} active={s.key === active} onClick={() => onSelect(s.key)} />
-        </Fragment>
-      ))}
-
-      {hidden.length > 0 && (
-        <div className={styles.moreWrap} ref={menuRef}>
-          <button
-            type="button"
-            className={`${styles.shelfChip} ${styles.moreChip} ${activeHidden ? styles.shelfChipActive : ''}`}
-            style={{ '--shelf': activeHidden?.color ?? 'var(--muted)' } as React.CSSProperties}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            title={`${hidden.length} more shelf${hidden.length === 1 ? '' : 'ves'}`}
-            onClick={() => setOpen(v => !v)}
-          >
-            {activeHidden
-              ? <ShelfBody shelf={activeHidden} />
-              : <span className={styles.shelfName}>{hidden.length} more</span>}
-            <ShelfChevron />
-          </button>
-
-          {open && (
-            <div className={styles.moreMenu} role="menu">
-              {hidden.map(s => (
-                <button
-                  key={s.key}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={s.key === active}
-                  className={`${styles.moreRow} ${s.key === active ? styles.moreRowActive : ''}`}
-                  style={{ '--shelf': s.color } as React.CSSProperties}
-                  onClick={() => { onSelect(s.key); setOpen(false); }}
-                >
-                  <span
-                    className={`${styles.shelfDot} ${s.hollow ? styles.shelfDotHollow : ''}`}
-                    style={s.hollow ? undefined : { background: s.color }}
-                  />
-                  <span className={styles.moreName}>{s.label}</span>
-                  <span className={styles.shelfCount}>{s.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {onManage && (
-        <button ref={manageRef} className={styles.manageLink} onClick={onManage}>
-          Manage folders <span aria-hidden>→</span>
-        </button>
-      )}
-
-      {/* The measuring copy: every chip at its natural width, plus both labels
-          the trigger can carry. Out of the layout, out of the tab order and out
-          of the accessibility tree - it exists to be read with offsetWidth. */}
-      <div className={styles.railMirror} ref={mirrorRef} aria-hidden>
-        {shelves.map((s, i) => (
-          <Fragment key={s.key}>
-            {i === 1 && divider}
-            <span data-chip className={styles.shelfChip}><ShelfBody shelf={s} /></span>
-          </Fragment>
-        ))}
-        <span data-more className={`${styles.shelfChip} ${styles.moreChip}`}>
-          <span className={styles.shelfName}>{shelves.length} more</span>
-          <ShelfChevron />
-        </span>
-        {activeShelf && (
-          <span data-more className={`${styles.shelfChip} ${styles.moreChip}`}>
-            <ShelfBody shelf={activeShelf} />
-            <ShelfChevron />
-          </span>
-        )}
-      </div>
-    </div>
   );
 }

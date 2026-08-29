@@ -5,6 +5,7 @@ import { faviconUrl } from '../utils/color';
 import { articlePathFor } from '../utils/articleUrl';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
+import { copyShareLink } from '../utils/shareLink';
 import CommentsPanel from './CommentsPanel';
 import PersonaArticleActions from './PersonaArticleActions';
 import ExploredPaths from './ExploredPaths';
@@ -100,8 +101,25 @@ export default function ArticleDetailModal({
   // link leaves the link behind as an invisible clickable gap above the title.
   const [heroFailed, setHeroFailed] = useState(false);
 
+  // What the Share button currently says. Empty means "Share" - it only ever
+  // holds the outcome of a copy that has just happened, because a copy leaves
+  // nothing on screen to look at and a button that never answers looks broken.
+  const [shareMsg, setShareMsg] = useState('');
+  const shareTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (shareTimer.current) clearTimeout(shareTimer.current); }, []);
+
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  function share() {
+    // Guarded on the message: a second press while the outcome is still up
+    // would restart the timer and leave the label stuck on it.
+    if (shareMsg) return;
+    copyShareLink(url).then(({ text, holdMs }) => {
+      setShareMsg(text);
+      shareTimer.current = setTimeout(() => setShareMsg(''), holdMs);
+    });
+  }
 
   // Escape closes; the page behind must not scroll while the reader is up
   useEffect(() => {
@@ -295,57 +313,76 @@ export default function ArticleDetailModal({
               the one neighbour a save should never have. Down here they share a
               row with the conversation, which is the other thing you do when
               you've finished reading. */}
-          {(actions || !readOnly) && (
-            <div className={styles.actionBar}>
-              {actions}
-              {/* Reposting writes a post as this reader, so it needs an account -
-                  the same reason the comment composer is read-only signed out.
-                  It carries whatever the reader resolved rather than what the
-                  card was opened with, so the card quotes the better title. */}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className={styles.repostBtn}
-                  title="Write a post quoting this article"
-                  onClick={() => startRepost({
+          <div className={styles.actionBar}>
+            {actions}
+            {/* Reposting writes a post as this reader, so it needs an account -
+                the same reason the comment composer is read-only signed out.
+                It carries whatever the reader resolved rather than what the
+                card was opened with, so the card quotes the better title. */}
+            {!readOnly && (
+              <button
+                type="button"
+                className={styles.repostBtn}
+                title="Write a post quoting this article"
+                onClick={() => startRepost({
+                  title: displayTitle,
+                  embed: articleEmbed({
+                    url,
                     title: displayTitle,
-                    embed: articleEmbed({
-                      url,
-                      title: displayTitle,
-                      source: displaySource || domain,
-                      imageUrl: heroImage,
-                      readTime: readText,
-                    }),
-                  })}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                    <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                  </svg>
-                  Repost
-                </button>
-              )}
-              {/* Sits beside Repost because it is the same kind of decision:
-                  something you do *after* reading, to take the article further.
-                  Absent entirely when no model is connected — an AI button that
-                  only ever opens a settings screen is an advert, not a feature. */}
-              {!readOnly && onExplore && (
-                <button
-                  type="button"
-                  className={styles.repostBtn}
-                  title="Go deeper on this article with your model"
-                  onClick={() => onExplore(url, displayTitle)}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-                  </svg>
-                  Explore
-                </button>
-              )}
-            </div>
-          )}
+                    source: displaySource || domain,
+                    imageUrl: heroImage,
+                    readTime: readText,
+                  }),
+                })}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+                Repost
+              </button>
+            )}
+            {/* Sits beside Repost because it is the same kind of decision:
+                something you do *after* reading, to take the article further.
+                Absent entirely when no model is connected — an AI button that
+                only ever opens a settings screen is an advert, not a feature. */}
+            {!readOnly && onExplore && (
+              <button
+                type="button"
+                className={styles.repostBtn}
+                title="Go deeper on this article with your model"
+                onClick={() => onExplore(url, displayTitle)}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+                </svg>
+                Explore
+              </button>
+            )}
+            {/* Not gated on an account, unlike the two above: the reader a
+                shared link lands a signed-out visitor in is exactly where
+                passing it on again matters most. Copies this instance's page
+                for the article - the one carrying the conversation - rather
+                than the publisher's URL; see shareLinkFor. */}
+            <button
+              type="button"
+              className={styles.repostBtn}
+              title="Copy a link to this page"
+              onClick={share}
+            >
+              {/* A chain link rather than a share arrow: this puts a URL on the
+                  clipboard, and the arrow promises a share sheet. Same glyph as
+                  the card's Share row, which is the same action reached earlier. */}
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+              </svg>
+              {shareMsg || 'Share'}
+            </button>
+          </div>
 
           {/* Admin only, and self-hiding: it draws nothing unless the viewer has
               personas to summon. Its own row under the action bar rather than a

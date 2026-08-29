@@ -712,15 +712,31 @@ async function storyItemIds(itemIds: string[]): Promise<string[]> {
   return [...new Set([...itemIds, ...siblings.map(s => s.id)])];
 }
 
-async function scopedFeeds(userId: string, folderParam: unknown) {
-  const where: { userId: string; feedFolderId?: string | null } = { userId };
+async function scopedFeeds(userId: string, folderParam: unknown, feedParam?: unknown) {
+  const where: { userId: string; feedFolderId?: string | null; id?: string } = { userId };
   if (typeof folderParam === 'string' && folderParam && folderParam !== 'all') {
     where.feedFolderId = folderParam === 'none' ? null : folderParam;
+  }
+  // One subscription, by id — what the Site filter picks.
+  //
+  // That filter used to sift the loaded page in the client, so it could only
+  // offer sites it had already dealt a card from: narrowing to a publisher that
+  // had been quiet for a page or two meant paging the river until one of its
+  // articles turned up, and by then the filter was only reachable *because* you
+  // had already found the thing you wanted it for.
+  //
+  // It narrows the query instead, on the same axis as `folder` and composing
+  // with it, so `total` and `unread` are counted against the site exactly the
+  // way they are counted against a category and paging measures against the
+  // right number. An id belonging to someone else simply matches nothing, which
+  // is the right answer and is why this needs no separate ownership check.
+  if (typeof feedParam === 'string' && feedParam && feedParam !== 'all') {
+    where.id = feedParam;
   }
   const subs = await prisma.feedSubscription.findMany({
     where,
     orderBy: { position: 'asc' },
-    select: { url: true, name: true, feedFolderId: true },
+    select: { id: true, url: true, name: true, feedFolderId: true },
   });
   return subs;
 }
@@ -909,7 +925,7 @@ router.get('/articles', async (req: AuthRequest, res: Response): Promise<void> =
   const loadedAt   = new Date();
 
   try {
-    const subs = await scopedFeeds(req.userId!, req.query.folder);
+    const subs = await scopedFeeds(req.userId!, req.query.folder, req.query.feed);
     if (subs.length === 0) {
       res.json({ articles: [], total: 0, unread: 0, hasMore: false, loadedAt: loadedAt.toISOString() });
       return;
@@ -1003,7 +1019,7 @@ router.get('/articles/new-count', async (req: AuthRequest, res: Response): Promi
   }
 
   try {
-    const subs = await scopedFeeds(req.userId!, req.query.folder);
+    const subs = await scopedFeeds(req.userId!, req.query.folder, req.query.feed);
     if (subs.length === 0) { res.json({ count: 0 }); return; }
 
     // ensureFeeds, not a plain lookup: it records the demand that keeps the
@@ -1026,15 +1042,16 @@ router.get('/articles/new-count', async (req: AuthRequest, res: Response): Promi
 // it is to find out whether there is anything new, so returning before looking
 // would make it a button that lies.
 //
-// Scoped to the active category for the same reason mark-all-read is: what you
-// are looking at is what you meant.
+// Scoped to the active category and site for the same reason mark-all-read is:
+// what you are looking at is what you meant. Filtered to one publisher, this
+// goes and asks that publisher rather than fanning out across the whole list.
 //
 // `refresh-all` above stays admin-only and is a different thing: it forces every
 // feed on the instance. This one is bounded by one account's subscriptions, and
 // metered by the same per-user limiter as every other feed write.
 router.post('/refresh', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const subs = await scopedFeeds(req.userId!, req.body?.folder ?? req.query.folder);
+    const subs = await scopedFeeds(req.userId!, req.body?.folder ?? req.query.folder, req.body?.feed ?? req.query.feed);
     if (subs.length === 0) { res.json({ checked: 0 }); return; }
 
     const feeds = await ensureFeeds(subs.map(s => s.url));
@@ -1106,7 +1123,7 @@ router.post('/articles/read', async (req: AuthRequest, res: Response): Promise<v
 // silently clear the news you hadn't got to.
 router.post('/articles/read-all', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const subs = await scopedFeeds(req.userId!, req.body?.folder ?? req.query.folder);
+    const subs = await scopedFeeds(req.userId!, req.body?.folder ?? req.query.folder, req.body?.feed ?? req.query.feed);
     if (subs.length === 0) { res.json({ itemIds: [], bookmarks: [] }); return; }
 
     const feeds = await ensureFeeds(subs.map(s => s.url));

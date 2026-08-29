@@ -85,251 +85,25 @@
   color: var(--muted);
 }
 
-/* ── Shelf rail ──
-   The pile, then everything filed. One line, always: a rail that grows a second
-   row pushes the cards down the screen every time a folder is added, and on a
-   phone it would take half the viewport.
+/* ── The one control strip ──
+   Where you are, what you're narrowing to, and what you can do about it - the
+   shelves, the filters, Add, Manage folders and the layout switch, all on one
+   line. It was two bands: a rail of shelf chips above a row of everything else,
+   which put three strips of chrome between the title and the first card.
 
-   It used to hold that line by scrolling sideways, which is workable under a
-   thumb and invisible under a mouse - no scrollbar, no arrows, nothing to say
-   the row continued past the edge. It measures itself now and folds the
-   overflow into a menu (see .moreWrap and ShelfRail), so nothing here scrolls
-   and nothing here is out of reach. --rail-gap is read back in JS to work out
-   what fits, and the hidden measuring copy lays itself out with the same
-   number. */
-.shelfRail {
-  --rail-gap: 7px;
-
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--rail-gap);
-  flex-shrink: 0;
-  padding: 0 20px 12px;
-}
-
-/* Out of the layout entirely, and sized to its contents rather than to the rail
-   - the whole point is to hold every chip at the width it would have if there
-   were room for it. max-content, or an absolutely positioned box would be
-   clamped to the rail it is measuring against. */
-.railMirror {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: max-content;
-  display: flex;
-  align-items: center;
-  gap: var(--rail-gap);
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.railDivider {
-  flex-shrink: 0;
-  width: 1px;
-  height: 20px;
-  margin: 0 3px;
-  background: var(--border);
-}
-
-.shelfChip {
-  --shelf: var(--muted);
-
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  min-height: var(--ctl-h);
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface2);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
-}
-
-.shelfChip:hover {
-  color: var(--text);
-  border-color: color-mix(in oklab, var(--shelf) 45%, transparent);
-}
-
-.shelfChipActive {
-  color: var(--text);
-  background: color-mix(in oklab, var(--shelf) 14%, var(--surface2));
-  border-color: color-mix(in oklab, var(--shelf) 55%, transparent);
-}
-
-.shelfDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.shelfDotHollow {
-  background: none;
-  border: 1.5px solid var(--muted);
-}
-
-.shelfName {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shelfCount {
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--shelf) 18%, transparent);
-  color: var(--shelf);
-  font-variant-numeric: tabular-nums;
-}
-
-.shelfChipActive .shelfCount {
-  background: color-mix(in oklab, var(--shelf) 28%, transparent);
-}
-
-/* ── The overflow menu ──
-   Whatever didn't fit on the rail. The trigger is a chip like the ones beside
-   it - it is one more way to pick a shelf, not a piece of chrome about the rail
-   - and it wears the current shelf's name and colour when that shelf is one of
-   the ones inside it. */
-.moreWrap {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-}
-
-.moreChip {
-  gap: 6px;
-}
-
-/* Never squeezed: the chip is measured with the chevron on it, and a chevron
-   that can shrink makes that measurement a lie. */
-.moreChip svg {
-  flex-shrink: 0;
-  opacity: 0.75;
-}
-
-/* Left-anchored: the trigger sits at the end of the chips, so opening leftward
-   from its right edge would run the panel off the front of a narrow rail, where
-   there may be nothing to its left but the pile. */
-.moreMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 200px;
-  max-width: 260px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 12px 30px var(--shadow);
-}
-
-.moreRow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: var(--ctl-h);
-  padding: 0 10px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.moreRow:hover {
-  background: var(--surface2);
-}
-
-.moreRowActive {
-  font-weight: 600;
-  background: color-mix(in oklab, var(--shelf) 14%, transparent);
-}
-
-.moreName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Sits at the tail of the rail because it is about the shelves, not one of
-   them. Making and renaming folders stays on the Library page. Borderless, but
-   the same height as the chips it shares the rail with - a text button that is
-   shorter than its neighbours is still a control you have to aim at. */
-.manageLink {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-left: auto;
-  min-height: var(--ctl-h);
-  padding: 0 11px;
-  border: none;
-  border-radius: 999px;
-  background: none;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 0.12s;
-}
-
-.manageLink:hover { color: var(--accent); }
-
+   A plain block holding a single child, not a flex row. The bar inside it is
+   `flex-wrap: nowrap` and does its own shedding, and it decides how to shed by
+   measuring itself - so its width has to come from this box rather than from
+   its own contents, or the measurement chases the thing it is measuring. See
+   the note on useElementWidth. */
 .modalToolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
   flex-shrink: 0;
   padding: 0 20px 12px;
-}
-
-/* Takes the slack so the layout switch and the add button stay pinned right
-   whether or not there are any filters to show. */
-.toolbarFilters {
-  flex: 1;
-  min-width: 0;
-}
-
-/* The filter bar sits *in* this row rather than above it, so it drops the gap
-   it would otherwise leave beneath itself. See the note on .bar in
-   FeedFilterBar: a bottom margin on a centred flex item lifts its contents by
-   half the margin, which is what put the favorites and Filters chips above the
-   layout switch instead of level with it. */
-.toolbarFilterBar {
-  margin-bottom: 0;
 }
 
 /* The only thing in here that scrolls. Everything above it - the title, the
-   nudge, the rail, the layout switch - stays put, so changing shelf never means
-   scrolling back up to find the rail again. */
+   nudge, the toolbar - stays put, so changing shelf never means scrolling back
+   up to find the shelves again. */
 .modalBody {
   flex: 1;
   min-height: 0;
@@ -343,6 +117,46 @@
   overflow-x: hidden;
   padding: 16px 20px 24px;
   border-top: 1px solid var(--border);
+}
+
+/* The way back to the Library, where folders are made, renamed and coloured.
+   Icon-only in the bar and captioned inside the ⋯ menu, off the one declaration
+   below: FeedFilterBar's .menuPanel sets --action-label, which inherits through
+   the DOM into this stylesheet's rules without either file having to know the
+   other's hashed class names. Same arrangement as the feed's "Manage feeds",
+   because it is the same control on a different surface.
+
+   Square rather than a pill, like every other icon-only control in the app. */
+.manageBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--ctl-h);
+  min-height: var(--ctl-h);
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--ctl-r);
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.manageBtn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* The word, hidden wherever nothing has asked for it. It stays in the markup at
+   every width - the aria-label needs something to label, and a title alone is
+   not reliably announced. */
+.actionLabel {
+  display: var(--action-label, none);
 }
 
 /* Both of these share the toolbar with the layout switch and the filter chips,
@@ -535,10 +349,10 @@
   font-weight: 600;
 }
 
-/* The Library doorway that used to sit under the grid is the shelf rail now -
-   the folders are in here, so a link out to them was a door to the room you
-   were already standing in. What remains on the Library page is making and
-   renaming them, which .manageLink still reaches. */
+/* The Library doorway that used to sit under the grid is the shelf group in the
+   toolbar now - the folders are in here, so a link out to them was a door to
+   the room you were already standing in. What remains on the Library page is
+   making and renaming them, which .manageBtn still reaches. */
 .libraryCard {
   border-style: dashed;
 }
@@ -1340,24 +1154,7 @@
   .modalTitle { font-size: 20px; }
   .modalNudge { font-size: 13.5px; }
 
-  .shelfRail {
-    padding: 0 16px 10px;
-  }
-
-  .shelfChip {
-    padding: 8px 13px;
-    font-size: 13px;
-  }
-
-  /* There is rarely room for more than the pile down here, so the menu holds
-     most of the shelves and wants the width to say their names. */
-  .moreMenu {
-    min-width: 220px;
-    max-width: calc(100vw - 48px);
-  }
-
   .modalToolbar {
-    justify-content: space-between;
     padding: 0 16px 10px;
   }
 

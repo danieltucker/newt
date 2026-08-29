@@ -7,233 +7,40 @@
    not zero, so the body could never shrink below what was in it and the
    scroller never engaged. The panel's own `overflow: hidden` cropped the rest.
    Whichever tab was tallest looked worst, which is why AI was the one that
-   showed it. None of that survives being a page: the document scrolls. */
-/* Zero at the top, not 8px. The shell lays this column and the bookmarks rail
-   out as two grid siblings with `align-items: start` (see .bodyGrid in
-   NewTabPage.module.css), so they begin on the same line - and any padding here
-   is the console starting below the rail beside it for no stated reason. The
-   8px was exactly that, and it was visible: two panels of one app, an eighth of
-   an inch out of true.
+   showed it. None of that survives being a page: the document scrolls.
 
-   Only the resting position lines up. Scrolled, the rail pins 16px lower than
-   this nav does, and that is deliberate on both sides: the rail is a floating
-   card that wants air under the bar, while this is a header band that has to
-   butt against it - a gap above a sticky header is a slot the table underneath
-   scrolls through. See the `top` on .nav. */
+   The chrome itself - the console card, the sticky nav, the wordmark eyebrow,
+   the section pills and their travelling lozenge - is now
+   styles/pageConsole.module.css, shared with Settings and the posts list. It
+   was duplicated here byte-for-byte, and had already drifted: this file's
+   wordmark had lost its `margin: 0`, so an unreset `<h1>` was making the whole
+   nav row 16px taller than the identical nav in Settings. What is left here is
+   the console's own furniture: the tables, the stat cards, the report queue. */
 .page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0 0 64px;
+  composes: page from '../styles/pageConsole.module.css';
+  /* The one width the three screens do not share. Wider than Settings because
+     the tables genuinely need it - a users table at 980px starts dropping
+     columns behind a horizontal scroll on a laptop. */
+  --console-max: 1100px;
 }
 
-/* ── The console ──
+.console { composes: console from '../styles/pageConsole.module.css'; }
+.nav { composes: nav from '../styles/pageConsole.module.css'; }
+.navBare { composes: navBare from '../styles/pageConsole.module.css'; }
+.navRow { composes: navRow from '../styles/pageConsole.module.css'; }
+.wordmark { composes: wordmark from '../styles/pageConsole.module.css'; }
+.wordmarkIcon { composes: wordmarkIcon from '../styles/pageConsole.module.css'; }
+.sectionRow { composes: sectionRow from '../styles/pageConsole.module.css'; }
+.lozenge { composes: lozenge from '../styles/pageConsole.module.css'; }
+.lozengeOn { composes: lozengeOn from '../styles/pageConsole.module.css'; }
+.sectionItem { composes: sectionItem from '../styles/pageConsole.module.css'; }
+.sectionActive { composes: sectionActive from '../styles/pageConsole.module.css'; }
+.sectionIcon { composes: sectionIcon from '../styles/pageConsole.module.css'; }
+.subRow { composes: subRow from '../styles/pageConsole.module.css'; }
+.subItem { composes: subItem from '../styles/pageConsole.module.css'; }
+.subActive { composes: subActive from '../styles/pageConsole.module.css'; }
+.content { composes: content from '../styles/pageConsole.module.css'; }
 
-   One container, which this page did not have. The nav was a card and the
-   content was bare, so the screen read as a floating sidebar with no body
-   attached to it. Outer surface, inner surface2 - the same two-level vocabulary
-   the stat cards and chart blocks were already speaking one level down. */
-.console {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  /* `clip`, emphatically not `hidden`. Both crop the nav's background to the
-     rounded corners, but `hidden` also makes this a scroll container, and a
-     `position: sticky` descendant sticks to its nearest scrollport - so the nav
-     below would have stuck to the top of this box and then scrolled away with
-     it, which looks exactly like sticky being ignored. `clip` establishes no
-     scrollport, so the nav keeps sticking to the viewport.
-
-     The nav carries matching top corners as well, so that a browser without
-     `clip` degrades to square corners rather than to a broken nav. */
-  overflow: clip;
-}
-
-/* ── Nav ──
-
-   Sticky as a unit, so the section row and its sub-nav travel together and a
-   long table never scrolls away from either. This is the one thing here worth
-   making sticky: the heading it replaced was not, since a word restating the
-   lit pill beside it does not earn a fixed strip of screen. */
-.nav {
-  position: sticky;
-  top: var(--shellbar-h, 56px);
-  z-index: 2;
-  padding: 14px 18px 0;
-  border-radius: 17px 17px 0 0;
-  background: color-mix(in oklab, var(--surface) 92%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-}
-
-/* The nav's bottom padding belongs to the sub-nav: the tabs carry it themselves
-   so their underline can land on the nav's own bottom border. Overview and AI
-   have no sub-nav, so there was nothing between a 34px pill and that border and
-   the row came out sitting on a rule - which reads as a button that has grown a
-   base rather than as a nav with a line under it.
-
-   14px rather than the sub-nav's full height. Matching it would hold the nav at
-   one height whichever section is lit, at the cost of a band of empty glass
-   under two of the four; a nav that changes height when its contents do is the
-   better of those two. Same value as the padding above the pills, so the row
-   sits centred in its own strip. */
-.navBare { padding-bottom: 14px; }
-
-/* ── The console's name ──
-
-   The one thing this screen never said out loud was where you were. The pills
-   name the section, the section names the job, and nothing named the console -
-   so /admin read as another page of the app that happened to have a Users table
-   on it. That matters more here than anywhere else, because this is the one
-   screen where a click bans somebody.
-
-   It rides in the nav row rather than above it. A row of its own would have
-   cost a permanent strip of sticky screen to say one word, and the pills were
-   leaving most of this row empty already. An eyebrow rather than a heading: a
-   20px title beside 14px pills turns the sections into its subtitle. */
-.navRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.wordmark {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  height: 34px;
-  padding-right: 14px;
-  border-right: 1px solid var(--border);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* Not decoration: the shield is the part that reads at a glance, and at a
-   glance is how somebody notices they still have the console open. */
-.wordmarkIcon {
-  display: block;
-  color: var(--accent);
-}
-
-.sectionRow {
-  position: relative;
-  display: flex;
-  gap: 2px;
-  /* Takes the rest of the row, so the wordmark stays put and the pills are what
-     scroll when a narrow window cannot hold them - see the foot of this file. */
-  flex: 1;
-  min-width: 0;
-}
-
-/* The rail's lozenge, running along the other axis. Painted behind the pills
-   rather than onto the active one, so moving between sections is one box
-   travelling rather than a colour appearing here and vanishing there. */
-.lozenge {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 34px;
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
-  opacity: 0;
-  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
-              width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
-              opacity 0.16s;
-  pointer-events: none;
-}
-
-.lozengeOn { opacity: 1; }
-
-@media (prefers-reduced-motion: reduce) {
-  .lozenge { transition: none; }
-}
-
-.sectionItem {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 14px;
-  border: none;
-  background: transparent;
-  border-radius: 10px;
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.12s;
-}
-
-.sectionItem:hover { color: var(--text); }
-
-/* A glyph in front of each label. Four words of much the same length and
-   weight are harder to aim at than four shapes, and this is the row somebody
-   crosses on the way to a table they use every day. They inherit the pill's
-   colour rather than carrying their own, so the lit one is still the only
-   thing on this row wearing the accent - and they are the same size and slot
-   as Settings' (see .sectionIcon there), because two consoles that share a
-   layout should not disagree about what an icon is. */
-.sectionIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  flex-shrink: 0;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.sectionActive,
-.sectionActive:hover {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* ── Sub-nav ──
-
-   Quieter than the row above it, and underlined rather than filled so the two
-   are told apart by kind and not only by size. Two filled pill rows stacked
-   would read as one nav wrapped onto a second line. */
-.subRow {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.subRow::-webkit-scrollbar { display: none; }
-
-.subItem {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px 10px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s;
-}
-
-.subItem:hover { color: var(--text); }
-
-.subActive,
-.subActive:hover {
-  color: var(--text);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
-}
 
 /* Not the red pill the section carries. Down here the view is one click away
    and already named, so the count is information rather than an alarm. */
@@ -251,12 +58,6 @@
 .subActive .subCount {
   background: color-mix(in oklab, var(--accent) 16%, transparent);
   color: var(--accent);
-}
-
-/* ── Content ── */
-.content {
-  min-width: 0;
-  padding: 0 18px;
 }
 
 /* No longer a scroller of its own - the document is. Horizontal overflow stays,
@@ -1687,35 +1488,9 @@ button.statCard:hover { border-color: color-mix(in oklab, var(--accent) 45%, tra
    What is left is the same nav, tightened - and the section row allowed to
    scroll, which four items will rarely need and nine always would have. */
 @media (max-width: 720px) {
-  .page { padding: 0 0 48px; }
-
-  /* Edge to edge: a 12px margin either side of a table that already scrolls
-     sideways buys nothing, and the rounded card reads as inset on a phone. */
-  .console {
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-  }
-
-  .nav { padding: 10px 14px 0; border-radius: 0; }
-
-  /* After .nav, or the shorthand above would put the zero back. */
-  .navBare { padding-bottom: 10px; }
-
-  /* One word and a divider, and the pills scroll past it rather than under it.
-     Worth its ~70px here for the same reason it is worth a slot at all: a phone
-     is where "which app screen is this" is hardest to answer. */
-  .navRow { gap: 10px; }
-  .wordmark { padding-right: 10px; }
-
-  .sectionRow {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .sectionRow::-webkit-scrollbar { display: none; }
-
-  .content { padding: 0 14px; }
+  /* The console's own phone rules - edge-to-edge card, scrolling pills, the
+     wordmark keeping its slot - are in styles/pageConsole.module.css with the
+     rest of the chrome. Only this screen's own furniture is below. */
 
   .attention { grid-template-columns: 1fr; }
 }

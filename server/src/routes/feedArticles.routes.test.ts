@@ -137,3 +137,86 @@ describe('GET /feeds/articles — the story page query', () => {
     expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The Site filter narrows the query, not the response.
+ *
+ * It used to sift the loaded page in the client, which meant it could only ever
+ * offer a site it had already dealt a card from - so filtering down to a
+ * publisher that had been quiet for a few pages meant paging the river until one
+ * of its articles appeared, at which point the filter had nothing left to do.
+ *
+ * These assert the scope reaches the subscription lookup, because that is what
+ * everything downstream is derived from: the feed ids the page query runs
+ * against, and the totals the client pages by.
+ */
+describe('feed scope — the Site filter', () => {
+  const scopeArg = () => prismaMock.feedSubscription.findMany.mock.calls.at(-1)![0].where;
+
+  function rawResults() {
+    prismaMock.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+      const sql = strings.join(' ');
+      if (/DISTINCT ON/.test(sql)) return Promise.resolve([]);
+      return Promise.resolve([{ total: BigInt(0), unread: BigInt(0) }]);
+    });
+  }
+
+  it('narrows the subscriptions to the requested feed', async () => {
+    rawResults();
+    await request(app).get('/api/v1/feeds/articles?feed=sub-7').set(auth).expect(200);
+    expect(scopeArg()).toMatchObject({ userId: ME, id: 'sub-7' });
+  });
+
+  // A site lives inside a category rather than beside one, so the two filters
+  // intersect. Dropping either would answer a question nobody asked.
+  it('composes with the category filter', async () => {
+    rawResults();
+    await request(app).get('/api/v1/feeds/articles?folder=f1&feed=sub-7').set(auth).expect(200);
+    expect(scopeArg()).toMatchObject({ userId: ME, feedFolderId: 'f1', id: 'sub-7' });
+  });
+
+  // The scope is always tied to the signed-in user, so a subscription id
+  // belonging to someone else matches nothing rather than leaking their feed.
+  // That is why there is no separate ownership check to forget.
+  it('keeps the scope bound to the caller', async () => {
+    rawResults();
+    await request(app).get('/api/v1/feeds/articles?feed=someone-elses-sub').set(auth).expect(200);
+    expect(scopeArg().userId).toBe(ME);
+  });
+
+  it('leaves the whole river unscoped when no site is picked', async () => {
+    rawResults();
+    await request(app).get('/api/v1/feeds/articles').set(auth).expect(200);
+    expect(scopeArg()).not.toHaveProperty('id');
+  });
+
+  // 'all' is what the client sends for "no site", the same sentinel `folder`
+  // already uses. Treating it as an id would filter to a subscription that
+  // cannot exist and answer with an empty feed.
+  it('treats "all" as no site at all', async () => {
+    rawResults();
+    await request(app).get('/api/v1/feeds/articles?feed=all').set(auth).expect(200);
+    expect(scopeArg()).not.toHaveProperty('id');
+  });
+
+  // A filter that narrows what you are reading has to narrow what a button does
+  // to it: "mark all read" from inside one site must not clear every other one.
+  it('scopes mark-all-read to the site as well as the category', async () => {
+    prismaMock.feedItem.findMany.mockResolvedValue([]);
+    await request(app)
+      .post('/api/v1/feeds/articles/read-all')
+      .set(auth)
+      .send({ folder: 'f1', feed: 'sub-7' })
+      .expect(200);
+    expect(scopeArg()).toMatchObject({ userId: ME, feedFolderId: 'f1', id: 'sub-7' });
+  });
+
+  it('scopes the new-article count to the site', async () => {
+    prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    await request(app)
+      .get('/api/v1/feeds/articles/new-count?since=2026-08-01T00:00:00.000Z&feed=sub-7')
+      .set(auth)
+      .expect(200);
+    expect(scopeArg()).toMatchObject({ userId: ME, id: 'sub-7' });
+  });
+});

@@ -1,0 +1,344 @@
+/* ── The console: the shared shape of every in-shell management screen ──
+ *
+ * Settings, Admin and Posts are all the same kind of screen - a long-form
+ * surface you go to in order to change something, reached from the rail, with
+ * an address per section. They had arrived at three different answers to that:
+ * a 232px rail with seven rows, a nine-row rail, and a bare 760px list with a
+ * 26px heading on it. Nothing about the three said they were one app.
+ *
+ * This is the answer all three now share, and it is the reason this file is not
+ * three files. Settings and Admin had already converged on it by hand, which
+ * meant seventeen classes duplicated byte-for-byte across two modules and two
+ * places for them to drift apart - and they had: Admin's `.page` was 120px
+ * wider for its tables (legitimate, and now a variable) and its `<h1>` wordmark
+ * had lost the `margin: 0`, so the whole nav row sat 16px taller than the same
+ * nav next door.
+ *
+ * Import it with `composes` and set --console-max to the width the screen's
+ * content actually needs:
+ *
+ *   .page {
+ *     composes: page from '../styles/pageConsole.module.css';
+ *     --console-max: 980px;
+ *   }
+ *
+ * Everything that is genuinely one screen's own - Admin's nav badges, the
+ * setting blocks, the post rows - stays in that screen's module.
+ *
+ * Explore is deliberately not here. It is a stack of two cards on the
+ * bookmarks rail's own glass, and the offset between them is what makes
+ * clicking off a conversation read as a way back; see ResearchPage.module.css.
+ */
+
+/* Zero at the top, not 8px. The shell lays this column and the bookmarks rail
+   out as two grid siblings with `align-items: start` (see .bodyGrid in
+   NewTabPage.module.css), so they begin on the same line - and any padding here
+   is the console starting below the rail beside it for no stated reason. The
+   8px was exactly that, and it was visible: two panels of one app, an eighth of
+   an inch out of true.
+
+   Only the resting position lines up. Scrolled, the rail pins 16px lower than
+   this nav does, and that is deliberate on both sides: the rail is a floating
+   card that wants air under the bar, while this is a header band that has to
+   butt against it - a gap above a sticky header is a slot the table underneath
+   scrolls through. See the `top` on .nav.
+
+   The fallback is what a screen gets for not naming a width. It sits between
+   Settings' 980 and Admin's 1100 on purpose: wide enough to be obviously a
+   console rather than a reading column, narrow enough that forgetting to set
+   the property is not how you find out. */
+.page {
+  max-width: var(--console-max, 1000px);
+  margin: 0 auto;
+  padding: 0 0 64px;
+}
+
+/* ── The console ──
+
+   One container. Before this the pattern kept coming out as two: a nav that was
+   a card and a body that was bare, or a rail card beside a section card, and
+   either way the screen read as two panels arguing about which one was the
+   page. Outer surface, inner surface2 - the two-level vocabulary the stat
+   cards, the setting blocks and the post rows are all already speaking one
+   level down. */
+.console {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  /* `clip`, emphatically not `hidden`. Both crop the nav's background to the
+     rounded corners, but `hidden` also makes this a scroll container, and a
+     `position: sticky` descendant sticks to its nearest scrollport - so the nav
+     below would have stuck to the top of this box and then scrolled away with
+     it, which looks exactly like sticky being ignored. `clip` establishes no
+     scrollport, so the nav keeps sticking to the viewport.
+
+     The nav carries matching top corners as well, so that a browser without
+     `clip` degrades to square corners rather than to a broken nav. */
+  overflow: clip;
+}
+
+/* ── Nav ──
+
+   Sticky as a unit, so the section row and its sub-nav travel together and a
+   long table never scrolls away from either. This is the one thing here worth
+   making sticky: a heading that restates the lit pill beside it does not earn a
+   fixed strip of screen. */
+.nav {
+  position: sticky;
+  /* Clears the shell bar, whose height ShellBar measures and publishes. The
+     fallback covers only the frame before that first measurement lands. */
+  top: var(--shellbar-h, 56px);
+  z-index: 2;
+  padding: 14px 18px 0;
+  border-radius: 17px 17px 0 0;
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The nav's bottom padding belongs to the sub-nav, which carries it so the tabs'
+   underline can land on the nav's own bottom border. Most sections have no
+   sub-nav, and without this there is nothing between a 34px pill and that
+   border - a row sitting on a rule, which reads as a button that has grown a
+   base rather than as a nav with a line under it.
+
+   14px rather than the sub-nav's full height. Matching it would hold the nav at
+   one height whichever section is lit, at the cost of a band of empty glass
+   under the sections that have none; a nav that changes height when its
+   contents do is the better of those two. Same value as the padding above the
+   pills, so the row sits centred in its own strip. */
+.navBare { padding-bottom: 14px; }
+
+/* ── The screen's name ──
+
+   The one thing these screens never said out loud was where you were. The pills
+   name the section, the section names the job, and nothing named the console -
+   so /admin read as another page of the app that happened to have a Users table
+   on it. That matters more there than anywhere else, because that is the one
+   screen where a click bans somebody.
+
+   It rides in the nav row rather than above it. A row of its own would cost a
+   permanent strip of sticky screen to say one word, and the pills leave most of
+   this row empty already. An eyebrow rather than a heading: a 20px title beside
+   14px pills turns the sections into its subtitle.
+
+   `margin: 0` is load-bearing, which is how it was found missing. This is an
+   `<h1>` and the app ships no global reset, so without it the browser's default
+   0.67em block margins apply to a flex item and the whole nav row comes out
+   16px taller than the identical nav on the screen next door. */
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  height: 34px;
+  margin: 0;
+  padding-right: 14px;
+  border-right: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Not decoration: the glyph is the part that reads at a glance, and at a glance
+   is how somebody notices they still have the admin console open. */
+.wordmarkIcon {
+  display: block;
+  color: var(--accent);
+}
+
+.navRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sectionRow {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  /* Takes the rest of the row, so the wordmark stays put and the pills are what
+     scroll when a narrow window cannot hold them - see the foot of this file. */
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── The one action ──
+
+   Optional, and deliberately singular: the far end of the nav row holds the one
+   thing the screen exists to let you do, or it holds nothing. Posts is the only
+   caller today ("New post"), because Settings and Admin have no such verb - you
+   go to them to change something that is already there.
+
+   It sits in the nav rather than over a list because the nav is the part that
+   stays: the button is as reachable at the bottom of forty posts as at the top,
+   which is exactly what a floating action button is usually bolted on to
+   achieve. `flex-shrink: 0` keeps it whole while the pills beside it scroll. */
+.navAction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.navAction:hover { filter: brightness(1.08); }
+
+/* The rail's lozenge, running along the other axis. Painted behind the pills
+   rather than onto the active one, so moving between sections is one box
+   travelling rather than a colour appearing here and vanishing there. Its
+   position comes from useRailMarker, which all three screens measure with. */
+.lozenge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.16s;
+  pointer-events: none;
+}
+
+.lozengeOn { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lozenge { transition: none; }
+}
+
+.sectionItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.sectionItem:hover { color: var(--text); }
+
+.sectionActive,
+.sectionActive:hover {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* The icons the rails used to carry, kept: a row of five words of much the same
+   length is harder to aim at than one with a glyph in front of each. They
+   inherit the pill's colour rather than carrying their own, so the lit one is
+   still the only thing on this row wearing the accent. */
+.sectionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+/* ── Sub-nav ──
+
+   Quieter than the row above it, and underlined rather than filled so the two
+   are told apart by kind and not only by size. Two filled pill rows stacked
+   would read as one nav wrapped onto a second line. Rendered only where there
+   is a choice - a sub-nav of one is a row that says nothing twice. */
+.subRow {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.subRow::-webkit-scrollbar { display: none; }
+
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.subItem:hover { color: var(--text); }
+
+.subActive,
+.subActive:hover {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* ── Content ── */
+.content {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+/* ── Phone ──
+
+   Edge to edge: a 12px margin either side buys nothing on a phone - least of
+   all beside a table that already scrolls sideways - and the rounded card reads
+   as inset. The wordmark keeps its slot for the same reason it is worth a slot
+   at all: a phone is where "which screen of the app is this" is hardest to
+   answer. The pills scroll past it rather than under it. */
+@media (max-width: 720px) {
+  .page { padding: 0 0 48px; }
+
+  .console {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .nav { padding: 10px 14px 0; border-radius: 0; }
+
+  /* After .nav, or the shorthand above would put the zero back. */
+  .navBare { padding-bottom: 10px; }
+
+  .navRow { gap: 10px; }
+  .wordmark { padding-right: 10px; }
+  .navAction { padding: 0 10px; }
+
+  .sectionRow {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sectionRow::-webkit-scrollbar { display: none; }
+
+  .content { padding: 0 14px; }
+}

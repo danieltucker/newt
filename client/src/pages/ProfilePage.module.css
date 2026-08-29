@@ -540,8 +540,10 @@
   margin-top: 10px;
 }
 /* .commentTime carries a top margin for the post cards, which have nothing
-   under them; in this row the flex gap already does that job. */
-.commentFoot .commentTime { margin-top: 0; }
+   under them; in these rows the flex gap already does that job, and the margin
+   would drop the time below the centre line the rest of the row sits on. */
+.commentFoot .commentTime,
+.commentTop .commentTime { margin-top: 0; }
 
 .openHint {
   display: inline-flex;

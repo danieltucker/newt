@@ -2,45 +2,55 @@
   margin-top: 26px;
 }
 
-/* ── The control bands ──
-   Two rows with two different jobs: what acts on the feed, then what narrows it.
-   They were briefly one row, which dressed "Mark all read" as a filter chip and
-   sat it next to actual filter chips - see the controlBar note in FeedPanel.tsx
-   for why that had to come apart again. */
+/* ── The control bar ──
+   One strip holding everything that operates on the feed, stuck under the shell
+   bar for as long as the feed is on screen.
+
+   It was two bands - actions above, filters in a box below - and both scrolled
+   away as soon as you began reading, which is exactly when they start being
+   wanted. Sticky rather than fixed: `position: fixed` inside .bodyGrid is
+   clamped to the grid's box (its finished `rise` animation leaves a transform
+   behind, which makes it the containing block), and sticky is what this wants
+   anyway - the bar belongs to the feed and should leave with it rather than
+   ride over the reading list above.
+
+   --shellbar-h is published by ShellBar from its own measured height; the
+   fallback only covers the frame before that first measurement lands. Same
+   --z-sticky band as the shell bar itself, which never overlaps this because
+   the offset above already clears it, and as .newBanner, which is later in the
+   document and so wins the tie - correctly, since it is the more urgent of the
+   two. */
 .controls {
+  position: sticky;
+  top: calc(var(--shellbar-h, 56px) + 8px);
+  z-index: var(--z-sticky);
   margin-bottom: 14px;
 }
 
-/* Right-aligned, because the band underneath is a full-width box: the two share
-   the right edge, which is what stops this reading as a strip floating over a
-   page-wide gap (the fault the single row was introduced to fix). Wraps rather
-   than shrinking - these buttons keep their words. */
-.actionRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-/* The filter band. A box, so four controls read as one set of controls for one
-   purpose rather than as four buttons that happen to be adjacent - which is the
-   whole ask. Padding rather than a background alone: the outline is what draws
-   the boundary, and it needs room inside it to be a boundary of anything.
+/* The bar's own surface. Frosted rather than the near-transparent tint it wore
+   as a static box: cards now pass underneath it, and the same liquid-glass
+   vocabulary as the shell bar and the bookmarks rail is what makes the strip
+   read as chrome rather than as a card that refuses to scroll.
 
    No `overflow` of any kind. The Filters dropdown is absolutely positioned
    against this box on a narrow screen (see .panel in FeedFilterBar), and any
    overflow value but `visible` would clip it into a sliver. */
 .filterBox {
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--surface2) 45%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 88%, transparent),
+    color-mix(in oklab, var(--surface) 72%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 6px 22px color-mix(in oklab, var(--shadow) 45%, transparent);
 }
 
 /* No rule is needed for the nothing-to-filter case: FeedFilterBar returns null
-   when it has no chips and no groups, so the box is never drawn empty. */
+   when it has no chips, no groups and no actions - and the feed always gives it
+   actions, so on this surface the bar is always drawn. */
 
 /* The card's action strip: read/comment on the left, save on the right,
    separated from the card meta by a hairline. Wraps rather than squeezes - on a
@@ -284,25 +294,44 @@
   .floatingRefresh { animation: none; }
 }
 
-/* Same shape as Mark all read - it belongs to the same strip of feed-level
-   actions, and lives here because this is the only place you're looking at
-   feeds. It is present in every state, empty ones included. */
+/* Icon and a tooltip in the bar; icon and a label in the ⋯ menu.
+
+   Square rather than a pill, because that is what the shape rule in tokens.css
+   asks of an icon-only control - a round button reads as a different kind of
+   thing. It stays square in the menu too, where it is a full-width row and a
+   999px row would read as a stray pill that had wandered in.
+
+   The size comes from min-width plus padding rather than a fixed width, so the
+   same rule serves both: nothing to override when the label appears, and no
+   fight with the `width: 100%` the menu puts on its rows. */
 .manageBtn {
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--ctl-h);
   min-height: var(--ctl-h);
-  padding: 0 13px;
-  border-radius: 999px;
+  padding: 0 9px;
+  border-radius: var(--ctl-r);
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+/* The word, hidden wherever nothing has asked for it. `--action-label` is set
+   by FeedFilterBar's .menuPanel and nowhere else, so this reads as an icon in
+   the bar and as "Manage feeds" in the menu, off one declaration and without
+   the two stylesheets having to share a class name. It stays in the markup
+   either way - the aria-label needs something to be labelling, and a title
+   alone is not reliably announced. */
+.actionLabel {
+  display: var(--action-label, none);
 }
 
 .manageBtn:hover {
@@ -322,53 +351,11 @@
   flex-shrink: 0;
 }
 
-/* ── Filter chips ──
-   Category, site and topic stopped being a row of chips in v1.11.0 - they are
-   one FeedFilterBar dropdown now, and the wrapper, the active state and the
-   count badge went with them. What is left is the chip itself, still worn by
-   the favourites filter below. */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--ctl-h);
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-  white-space: nowrap;
-}
+/* The chip rules that used to live here are gone. Category, site and topic
+   stopped being a row of chips in v1.11.0, and the favourites chip - the last
+   thing wearing `.chip` on this surface - folded into the Topic list in
+   v1.25.0. Both dress themselves from FeedFilterBar's own stylesheet now. */
 
-.chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* The favorites filter - a different axis from the topic chips beside it, so it
-   wears the favorite colour rather than the accent. */
-.favChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--fav);
-  border-color: color-mix(in oklab, var(--fav) 30%, transparent);
-}
-
-.favChip:hover {
-  border-color: var(--fav);
-  color: var(--fav);
-}
-
-.favChipActive {
-  background: color-mix(in oklab, var(--fav) 14%, var(--surface2));
-  border-color: color-mix(in oklab, var(--fav) 50%, transparent);
-  font-weight: 600;
-}
 
 /* ── Cards layout (default) - masonry, cols auto-size from container ── */
 .grid {
@@ -492,8 +479,22 @@
   overflow: visible;
 }
 
-/* A two-column feature can't fit once the grid drops to one column */
-@media (max-width: 600px) {
+/* A two-column feature can't fit once the grid drops to one column.
+
+   This number must stay equal to the one on the phone block far below, which
+   is where .gridMagazine becomes `grid-template-columns: 1fr`. It was 600px
+   against that rule's 620px, and the 20px between them was a real hole: the
+   grid had one column, this card still asked for two, and a span-2 item in a
+   one-column grid makes an implicit second track with nothing in it to size
+   against. That track came out 0px wide, so every card the dense packer put
+   into it was 0px wide too - measured at a 610px window, tracks of `562px 0px`
+   and alternating card widths of 562, 0, 562, 0. A card cannot shrink to
+   nothing (.cardRight is flex-shrink: 0), so they hung 112px past the right
+   edge of the document, which is what makes mobile Safari scale the page out.
+
+   One number, therefore, and it belongs to whichever rule takes the grid down
+   to a single column. */
+@media (max-width: 620px) {
   .featureWrap { grid-column: auto; }
 }
 
@@ -535,6 +536,20 @@
   container-type: inline-size;
   position: relative;
   break-inside: avoid;
+  /* A grid item's min-width is `auto`, which means "no narrower than my own
+     min-content" - and the min-content of a headline containing a bare URL is
+     the whole URL, because there is nowhere in it to break. So one article
+     posted with its link as its title stretched its own magazine column past
+     the track it was given, and the grid past the page: measured at a 430px
+     viewport, the document came out 603px wide. That is the fault that makes
+     mobile Safari scale the entire page down to fit.
+
+     The words are told they may break (`overflow-wrap: anywhere` on .title and
+     .snippet below) and the boxes are told they may be narrower than their
+     words. Both halves are needed: without the break there is nothing the
+     narrower box can do but overflow, and without this the break never gets
+     asked for, since the track was already sized to fit the unbroken token. */
+  min-width: 0;
   margin-bottom: 12px;
   transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -547,6 +562,9 @@
 .card {
   display: flex;
   flex-direction: column;
+  /* Same reason as .cardWrap: in the magazine layout this is a flex item
+     (`flex: 1`), and flex items default to min-width: auto too. */
+  min-width: 0;
   gap: 8px;
   padding: 14px 16px;
   border-radius: 14px;
@@ -664,12 +682,17 @@
   border-color: color-mix(in oklab, var(--fav) 32%, transparent);
 }
 
+.cats .cat {
+  overflow-wrap: anywhere;
+}
+
 .cats .cat:hover {
   border-color: color-mix(in oklab, var(--fav) 45%, transparent);
 }
 
 .title {
   font-family: 'Bricolage Grotesque', sans-serif;
+  overflow-wrap: anywhere;
   font-size: 15px;
   font-weight: 500;
   color: var(--text);
@@ -686,6 +709,7 @@
 
 .snippet {
   margin: 4px 0 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
   color: var(--muted);
   opacity: 0.7;
@@ -947,47 +971,11 @@
   .domain { opacity: 0.7; }
   .favicon { width: 16px; height: 16px; }
 
-  /* ── Manage feeds goes icon-only, and only it ──
-     Something has to give at this width, and this is the control that can
-     afford to: you set your feeds up once. Mark all read keeps its words at
-     every size - it acts on something, irreversibly, and an unlabelled
-     double-tick that clears every article you have is precisely the control
-     nobody could identify. The words here stay in the accessibility tree; see
-     the title and aria-label in FeedPanel.tsx.
-
-     This lives here, in the narrow block that was already styling these
-     buttons, rather than in one of its own further up the file: two blocks at
-     the same width and specificity meant the later one silently won, and the
-     later one was this. */
-  .actionLabel {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  /* Square once the label goes, so it reads as an icon button rather than as a
-     pill that lost its text. */
-  .manageBtn {
-    width: var(--ctl-h);
-    padding: 0;
-    justify-content: center;
-    border-radius: var(--ctl-r);
-  }
-
-  /* Now that the glyph is the whole button it gets a glyph's size - a little
-     over half the button, which is what every other icon button here does. */
-  .manageBtn svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* Stays labelled, so it only needs the type bump everything else at this
-     width gets. */
+  /* "Mark all read" only ever appears inside a menu now - it lives behind the
+     Unread chip's caret - so this is the type for a menu row rather than for a
+     button in the bar. `.manageBtn` is not restated: it is icon-only at every
+     width and its size comes from --ctl-h, which has already grown for a
+     thumb. */
   .actionBtnMain { font-size: 13px; }
 
   .newBanner,
@@ -1032,6 +1020,4 @@
     font-size: 11px;
     padding: 5px 10px;
   }
-
-  .chip { font-size: 13.5px; padding: 0 14px; }
 }
