@@ -110,6 +110,35 @@
   display: var(--pill-label-extra, inline);
 }
 
+/* ── The count beside a label ──
+   How many people saved the article, on the Save pill. A badge rather than more
+   label, because it is data of a different kind from the word next to it: the
+   label says what the button does, the badge says what everyone else did.
+
+   Never shrinks and never ellipsises - it is two or three characters and the
+   only place the number appears. The label is what gives way instead, which is
+   why this sits outside `.label` and its overflow. It stays through the narrow
+   step that drops `.labelExtra`: that rule drops a word restating an icon, and
+   there is nothing here restating anything.
+
+   Tabular figures so the badge doesn't twitch a pixel wider when a 1 becomes a
+   7, and a neutral tint rather than an accent one. The pill it sits on is
+   already washed in accent at three different strengths - 10% under the
+   pointer, 16% held on for a saved article - and a badge tinted the same way
+   disappears into two of them. Mixed from --text, it reads on all three, in
+   both themes, without competing with the pill's own state. */
+.count {
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--text) 12%, transparent);
+  color: inherit;
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
 /* ── The menu ──
    Fixed and portalled to <body>, with the side and the offsets worked out in
    SplitMenuButton.tsx when it opens. It cannot be absolute: these buttons live
@@ -328,4 +357,21 @@
 .sheet .item {
   min-height: var(--ctl-h-lg);
   font-size: 15px;
+}
+
+/* A row that removes rather than files - "Unsave" at the foot of the Save menu.
+   --danger is the same token the reading list's delete control uses, so the one
+   destructive row in a menu of destinations is the colour destructive things
+   are everywhere else in the app.
+
+   Tinted rather than filled, and only on hover does it take a wash: a red block
+   sitting permanently at the bottom of a menu you open to file things reads as
+   a warning about the menu, not about the row. */
+.itemDanger {
+  color: var(--danger);
+}
+
+.itemDanger:hover,
+.itemDanger:focus-visible {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }

@@ -64,13 +64,33 @@ interface Props {
   /** The filled counterpart of `icon`. Falls back to `icon` when absent. */
   savedIcon?: ReactNode;
   onUnsave?: () => void;
+  /**
+   * Whether the menu offers "Unsave". Defaults to `saved`, which is the right
+   * answer on a feed card: the pill's own state says whether there is a save
+   * to take back.
+   *
+   * The reading list passes it explicitly, because there the two come apart -
+   * every card in the list is a saved article, but its pill still reads "Save"
+   * and files onto a shelf when pressed, so `saved` is false while unsaving is
+   * very much available.
+   */
+  canUnsave?: boolean;
+  /**
+   * How many people have saved this article, shown as a badge on the pill.
+   * Undefined or 0 draws nothing - see the note in SplitMenuButton.
+   *
+   * It is a count of people, not of copies: one reader filing the same piece
+   * onto two shelves is one save. The server is what guarantees that; this only
+   * shows what it returns.
+   */
+  saveCount?: number;
 }
 
 export default function SaveButton({
   label, defaultId, destinations, onSelect, icon, currentId,
   menuLabel = 'Save to…', className = '',
   onCreateDestination, createLabel = 'New folder…',
-  saved = false, savedLabel = 'Saved', savedIcon, onUnsave,
+  saved = false, savedLabel = 'Saved', savedIcon, onUnsave, saveCount, canUnsave,
 }: Props) {
   // The name being typed, or null while the row is still just a row.
   const [newName, setNewName] = useState<string | null>(null);
@@ -81,6 +101,15 @@ export default function SaveButton({
   // Only a caller that can undo a save gets the toggle; without onUnsave the
   // button would say "Saved" and then save it again when pressed.
   const isOn = saved && !!onUnsave;
+
+  // Un-saving reached the menu in v1.27.0. It used to be available only by
+  // pressing a pill that already read "Saved", which meant the reading list -
+  // where every card is saved but the pill still says "Save" - had no way to
+  // offer it at all, and clearing an article off the list was the only route
+  // out. Now that clearing archives rather than deletes, taking a save back
+  // needs somewhere of its own to live, and the caret's menu is where the
+  // article's other placement decisions already are.
+  const showUnsave = !!onUnsave && (canUnsave ?? saved);
 
   // Naming a folder here is not filing under "somewhere to put things later",
   // it is filing this article - so the caller does both and this just closes.
@@ -101,6 +130,8 @@ export default function SaveButton({
     <SplitMenuButton
       className={className}
       label={isOn ? savedLabel : label}
+      count={saveCount}
+      countLabel={saveCount === 1 ? 'Saved by 1 person' : `Saved by ${saveCount} people`}
       icon={isOn ? (savedIcon ?? icon) : icon}
       active={isOn}
       onPrimary={() => { if (isOn) onUnsave!(); else if (target) onSelect(target.id); }}
@@ -171,6 +202,27 @@ export default function SaveButton({
                     </button>
                   </div>
                 )}
+              </>
+            )}
+
+            {showUnsave && (
+              <>
+                <MenuSeparator />
+                {/* Last, under a rule, and away from the list of places this
+                    article could go - it is the one row here that takes the
+                    article out rather than putting it somewhere. `danger` is
+                    what makes it read that way.
+
+                    It really does un-save: the row goes and the article's save
+                    count comes down with it. That is the difference between
+                    this and clearing a card off the reading list, which files
+                    it onto Archived and leaves the count alone. */}
+                <MenuItem
+                  label="Unsave"
+                  icon={<span className={styles.unsaveIcon} aria-hidden>×</span>}
+                  danger
+                  onClick={() => { close(); onUnsave!(); }}
+                />
               </>
             )}
           </>

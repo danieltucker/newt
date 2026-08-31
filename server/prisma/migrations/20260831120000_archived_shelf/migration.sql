@@ -1,0 +1,33 @@
+-- The Archived shelf: removing an article from the reading list stops deleting
+-- it.
+--
+-- Deleting was the only way to clear something off the list, and it took the
+-- row with it. That was fine while a saved article was a private note to self.
+-- It stopped being fine in v1.26.0, when the Save pill grew a count of how many
+-- people had saved the article: COUNT(DISTINCT "userId") over this table is now
+-- a number other people can see, and "I have finished with this" was silently
+-- decrementing it. Finishing with an article is not the same as never having
+-- saved it, and the count should not confuse the two.
+--
+-- So the list's remove action files the article onto a shelf named Archived
+-- instead. The row survives, the count holds, and the article is somewhere the
+-- user can still find and move back out of.
+--
+-- ── Why a column rather than a name ──
+-- Archived is an ordinary "ReadingFolder" in every respect but two: it cannot
+-- be deleted, and the archive action has to be able to find it. Matching on
+-- name would break the moment somebody renamed it, and would collide with a
+-- shelf a user had already made and called Archived by hand. This column is the
+-- identity instead, so the folder stays findable under any name.
+--
+-- NULL for every ordinary shelf, and NULL is the overwhelmingly common case, so
+-- this is deliberately not an enum or a boolean pair: it is a discriminator
+-- with room for whatever other system shelf turns out to be worth having.
+ALTER TABLE "ReadingFolder" ADD COLUMN "system" TEXT;
+
+-- One Archived shelf per user, enforced here rather than in the route, because
+-- the find-or-create in the archive path is two statements and two archives
+-- arriving together would otherwise both find nothing and both create. NULLs
+-- are distinct in a Postgres unique index, so this constrains the system
+-- shelves without saying anything at all about ordinary ones.
+CREATE UNIQUE INDEX "ReadingFolder_userId_system_key" ON "ReadingFolder"("userId", "system");

@@ -95,5 +95,20 @@ export function useReadingFolders(accessToken: string | null) {
     ));
   }, []);
 
-  return { folders, createFolder, updateFolder, deleteFolder, reorderFolders, adjustCount, reloadFolders: load };
+  /**
+   * Fold in a shelf the server made on its own account: the Archived shelf,
+   * which is created lazily by the first archive rather than by anything the
+   * user pressed in the Library. Without this it would not appear in the
+   * sidebar until the next reload.
+   *
+   * Upsert rather than append, because archiving the second article returns the
+   * same shelf as the first and the sidebar must not grow a duplicate.
+   */
+  const upsertFolder = useCallback((folder: ReadingFolder) => {
+    setFolders(prev => prev.some(f => f.id === folder.id)
+      ? prev.map(f => f.id === folder.id ? { ...f, ...folder } : f)
+      : [...prev, folder]);
+  }, []);
+
+  return { folders, createFolder, updateFolder, deleteFolder, reorderFolders, adjustCount, upsertFolder, reloadFolders: load };
 }

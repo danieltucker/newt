@@ -236,10 +236,24 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // binding so its Library tab shares this exact list instead of loading a
   // second copy that would drift from it.
   const readingListBinding = useReadingList(accessToken);
-  const { items: readingList, saveItem, updateItem, setInLibrary, removeItem, restoreItem, moveToFolder } = readingListBinding;
+  const { items: readingList, saveItem, updateItem, setInLibrary, removeItem, restoreItem, moveToFolder, archiveItem } = readingListBinding;
   // Shelves, so an article filed from the reading list can be dropped straight
   // onto one without a detour through the Library.
-  const { folders: readingFolders, createFolder: createReadingFolder } = useReadingFolders(accessToken);
+  const { folders: readingFolders, createFolder: createReadingFolder, upsertFolder: upsertReadingFolder } = useReadingFolders(accessToken);
+
+  /**
+   * Clearing an article off the reading list. Archives rather than deletes, so
+   * the row - and with it the article's save count - survives.
+   *
+   * The shelf comes back because this may be the call that created it: the
+   * Archived shelf is made on first use, and without folding it in here the
+   * Library sidebar would not show it until the next reload.
+   */
+  const handleArchiveReadingItem = useCallback(async (id: string) => {
+    const folder = await archiveItem(id);
+    if (folder) upsertReadingFolder(folder);
+    return folder;
+  }, [archiveItem, upsertReadingFolder]);
 
   // Naming a shelf from a card's Save menu. The colour isn't asked for there -
   // that menu is one field wide and the point is not to break the save you were
@@ -1311,6 +1325,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onAddToLibrary={setInLibrary}
                 onDelete={removeItem}
                 onRestore={restoreItem}
+                onArchive={handleArchiveReadingItem}
                 readingFolders={readingFolders}
                 onCreateFolder={handleCreateReadingFolder}
                 onMoveToFolder={moveToFolder}

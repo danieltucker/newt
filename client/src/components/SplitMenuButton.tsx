@@ -26,6 +26,19 @@ interface Props {
    * "3 comments", leaving the 3. See the collapse note in the stylesheet.
    */
   labelExtra?: string;
+  /**
+   * A number the pill reports alongside its label, in a badge of its own - how
+   * many people have saved this article, on the Save pill.
+   *
+   * Separate from `labelExtra` because it is not a tail on the label and must
+   * not be dropped with one: the word in "3 comments" restates the icon next to
+   * it, but this is the only place the number appears at all. It sits outside
+   * the ellipsising label so a long label eats itself before the badge, and it
+   * needs `countLabel` to say what it counts out loud - "12" alone is no name.
+   */
+  count?: number;
+  /** How the count reads to a screen reader, e.g. "saved by 12 people". */
+  countLabel?: string;
   icon?: ReactNode;
   /** What pressing the label does. */
   onPrimary: () => void;
@@ -79,7 +92,7 @@ export function MenuSeparator() {
   return <div className={styles.sep} role="presentation" />;
 }
 
-export function MenuItem({ label, icon, hint, current, muted, onClick }: {
+export function MenuItem({ label, icon, hint, current, muted, danger, onClick }: {
   label: string;
   icon?: ReactNode;
   /** Small right-hand note - "Default", or where the thing is now. */
@@ -88,6 +101,13 @@ export function MenuItem({ label, icon, hint, current, muted, onClick }: {
   current?: boolean;
   /** A row that makes something rather than picking something. */
   muted?: boolean;
+  /**
+   * A row that takes something away rather than choosing where it goes -
+   * "Unsave" on the Save menu. Tinted with --danger, and it is the only
+   * variant here that is about consequence rather than about state, so it is
+   * deliberately the last row and under a separator wherever it is used.
+   */
+  danger?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -98,6 +118,7 @@ export function MenuItem({ label, icon, hint, current, muted, onClick }: {
         styles.item,
         current ? styles.itemCurrent : '',
         muted ? styles.itemMuted : '',
+        danger ? styles.itemDanger : '',
       ].filter(Boolean).join(' ')}
       onClick={onClick}
     >
@@ -111,7 +132,7 @@ export function MenuItem({ label, icon, hint, current, muted, onClick }: {
 }
 
 export default function SplitMenuButton({
-  label, labelExtra, icon, onPrimary, active = false, primaryTitle, menuLabel,
+  label, labelExtra, count, countLabel, icon, onPrimary, active = false, primaryTitle, menuLabel,
   className = '', menu, onOpenChange,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -137,6 +158,8 @@ export default function SplitMenuButton({
    * reach them rather than at the top of the reach.
    */
   const asSheet = useMediaQuery('(max-width: 640px)');
+
+  const showCount = count !== undefined && count > 0;
 
   /**
    * Where the popover goes, in viewport coordinates.
@@ -254,8 +277,13 @@ export default function SplitMenuButton({
           // Spelled out rather than left to whatever survived the collapse: on
           // a narrow card the visible text is a number, or nothing at all, and
           // the button's name should not change with the width of the card it
-          // happens to be in.
-          aria-label={labelExtra ? `${label} ${labelExtra}` : label}
+          // happens to be in. The count is read as its own clause after a
+          // comma, so "Save" and what other people did with the article don't
+          // run together into one phrase.
+          aria-label={[
+            [label, labelExtra].filter(Boolean).join(' '),
+            showCount ? countLabel : null,
+          ].filter(Boolean).join(', ')}
         >
           {icon && <span className={styles.icon} aria-hidden>{icon}</span>}
           <span className={styles.label} aria-hidden>
@@ -264,6 +292,10 @@ export default function SplitMenuButton({
                 and the pill doesn't keep a gap where the label was. */}
             {labelExtra && <span className={styles.labelExtra}> {labelExtra}</span>}
           </span>
+          {/* Zero is not drawn. "Saved by 0 people" is a fact about an article
+              nobody has got to yet, not something to put on every new card in
+              the river. */}
+          {showCount && <span className={styles.count} title={countLabel} aria-hidden>{count}</span>}
         </button>
         <button
           type="button"

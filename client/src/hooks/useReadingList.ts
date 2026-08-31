@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
-import { ReadingListItem } from '../types';
+import { ReadingListItem, ReadingFolder } from '../types';
 
 export function useReadingList(accessToken: string | null) {
   const [items, setItems] = useState<ReadingListItem[]>([]);
@@ -78,6 +78,36 @@ export function useReadingList(accessToken: string | null) {
     setItems(prev => prev.map(i => dropped.has(i.id) ? { ...i, folderId: null } : i));
   }, []);
 
+  /**
+   * Clear an article off the reading list without un-saving it: the row moves
+   * onto the Archived shelf instead of being deleted.
+   *
+   * This is what the list's remove control does now. Deleting the row would
+   * take the article's save count down with it, and having finished reading
+   * something is not the same as never having kept it - see the note on the
+   * endpoint. Un-saving still deletes, and that is `removeItem` below.
+   *
+   * Resolves with the shelf, which the caller needs because this may be the
+   * request that created it: the Archived shelf is made on first use, so the
+   * Library sidebar learns about it here or not until a reload.
+   */
+  const archiveItem = useCallback(async (id: string) => {
+    const { item, folder } = await apiPost<{ item: ReadingListItem; folder: ReadingFolder }>(
+      `/api/v1/reading-list/${id}/archive`, {});
+    // Replaced by id rather than filtered out: the article is still saved and
+    // still in the Library, just on a different shelf. The list itself shows
+    // only rows with inLibrary false, so it leaves the list on its own.
+    //
+    // The id can change when the server merged this row into a copy already on
+    // the shelf, so the old row is dropped and the survivor spliced in.
+    setItems(prev => {
+      const rest = prev.filter(i => i.id !== id && i.id !== item.id);
+      return [...rest, item].sort((a, b) =>
+        new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+    });
+    return folder;
+  }, []);
+
   const removeItem = useCallback(async (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
     try {
@@ -119,7 +149,7 @@ export function useReadingList(accessToken: string | null) {
     return created;
   }, []);
 
-  return { items, saveItem, updateItem, setInLibrary, moveToFolder, clearFolder, removeItem, restoreItem };
+  return { items, saveItem, updateItem, setInLibrary, moveToFolder, clearFolder, archiveItem, removeItem, restoreItem };
 }
 
 /**

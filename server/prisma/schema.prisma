@@ -1176,9 +1176,20 @@ model ReadingFolder {
   name      String
   color     String
   position  Int
+  // Marks a shelf the app owns rather than the user: currently only
+  // "archived", the shelf the reading list's remove action files into. Null for
+  // every shelf a person made, which is nearly all of them.
+  //
+  // The identity lives here rather than in `name` so the shelf stays findable
+  // after a rename, and so a user who makes their own shelf called "Archived"
+  // gets an ordinary one. A system shelf cannot be deleted - see the guard in
+  // routes/readingFolders.ts - because the rows on it are what hold the save
+  // counts up.
+  system    String?
   items     ReadingListItem[]
   createdAt DateTime          @default(now())
 
+  @@unique([userId, system])
   @@index([userId])
 }
 

@@ -94,12 +94,23 @@
    lives here is where the thresholds are, which is a fact about this layout.
    Both land a little before the text would actually collide, because a long
    count - "128 comments" - is wider than the "3 comments" you would measure
-   against, and a step early is invisible where a step late is not. */
-@container (max-width: 330px) {
+   against, and a step early is invisible where a step late is not.
+
+   Both moved up in v1.26.0, when the Save pill grew a badge for how many people
+   have saved the article. That badge is about 25px the row did not have to find
+   before, and the old thresholds had roughly 4px of slack: measured on a saved
+   article showing "Saved 128" beside "128 in the discussion", the row overflowed
+   its card at 340-360px, which is the band immediately above where the noun used
+   to come back. The step that drops the noun now happens while there is still
+   room for it, and the step to one column follows it up. Both are sized for the
+   badge whether or not the card has one, for the same reason the "128 comments"
+   case sets step 1: it is the width that breaks, and a step early costs a word
+   while a step late costs the page. */
+@container (max-width: 380px) {
   .commentRow { --pill-label-extra: none; }
 }
 
-@container (max-width: 255px) {
+@container (max-width: 275px) {
   .commentRow {
     grid-template-columns: 1fr;
     --pill-label-extra: inline;
@@ -107,13 +118,13 @@
 }
 
 /* A thumb gets bigger pills - more padding and a point of type - so both steps
-   arrive about 30px earlier. */
+   arrive about 40px earlier. */
 @media (hover: none) {
-  @container (max-width: 360px) {
+  @container (max-width: 425px) {
     .commentRow { --pill-label-extra: none; }
   }
 
-  @container (max-width: 290px) {
+  @container (max-width: 315px) {
     .commentRow {
       grid-template-columns: 1fr;
       --pill-label-extra: inline;
@@ -363,22 +374,87 @@
   column-gap: 12px;
 }
 
-/* ── List layout - single column of roomy rows, persistent inline actions ── */
+/* ── List layout - a table, not a column of cards ──
+   Rewritten in v1.27.0. It used to be the card layout laid on its side: every
+   article still had its own rounded, bordered, shadowed surface, 16px of
+   padding and a 12px gap to the next one, so a row cost about 62px and a
+   1080px screen held eleven articles. The point of a list is to see a lot at
+   once, and it was losing to the Cards view on exactly that.
+
+   So the surface goes. There is one hairline between rows and nothing else:
+   no border, no radius, no shadow, no lift on hover, no gap. A row is about
+   26px now, which is roughly thirty articles in the same screen. The nearest
+   thing it looks like is a spreadsheet, which is the intent - this is the view
+   for scanning a lot of headlines, and every pixel spent on making one row
+   look like an object is a pixel not spent on showing another row.
+
+   ── Why the columns line up ──
+   Each row is its own grid with the same explicit template, rather than the
+   whole list being one grid with rows of `display: contents`. Both align the
+   columns; this one keeps each row a containing block of its own, which the
+   hover wash, the unread bar and the container query below all need. The
+   fixed tracks are what make sources and dates form real columns - with `auto`
+   they would size to their own row's content and the eye would get a ragged
+   edge down the page, which is the thing that stops a list reading as a table.
+
+   Source and date are capped rather than sized to content for the same reason:
+   one article from a host with a very long name should not set the column
+   width for the other twenty-nine. */
 .gridList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  border-top: 1px solid var(--border);
 }
 
 .gridList .cardWrap {
   margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+  /* The lift is a card gesture and there are no cards here. Rows underline on
+     hover instead, which is what a table row does. */
+  transform: none;
+  transition: background 0.12s ease;
+}
+
+.gridList .cardWrap:hover {
+  transform: none;
+  background: var(--surface2);
 }
 
 .gridList .card {
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 140px) 208px 76px;
   align-items: center;
-  gap: 14px;
-  padding: 16px 20px;
+  gap: 0 12px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  /* The pills come down with the row. --ctl-h is what SplitMenuButton sizes
+     its group from, so one property here shrinks the Save pill and the comment
+     pill together and keeps them matched to each other. The droppable noun in
+     "3 comments" goes at every width in this view - the row is dense on
+     purpose and the number is the part that carries information. */
+  --ctl-h: 23px;
+  --pill-label-extra: none;
+}
+
+/* The card's own hover treatment is a card's: a shadow and an accent border on
+   a surface that no longer exists. The row above handles hover instead. */
+.gridList .cardWrap:hover .card {
+  box-shadow: none;
+  border-color: transparent;
+  background: none;
+}
+
+/* Unread, at list density. The card version tints the whole surface and rings
+   it in accent; at 26px tall that is a solid accent stripe down the page and
+   unreadable with it. A bar in the gutter says the same thing and costs 3px. */
+.gridList .unread .card {
+  background: none;
+  border: none;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .gridList .cats,
@@ -386,29 +462,64 @@
 .gridList .readTime { display: none; }
 
 .gridList .title {
-  flex: 1;
   min-width: 0;
-  font-size: 14px;
-  -webkit-line-clamp: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.9;
+  /* One line, hard. The clamp the card layouts use needs a flex context to
+     measure in and would let a long headline take two rows here, which breaks
+     the constant row height the whole view is built on. */
+  display: block;
+  -webkit-line-clamp: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Dissolved so its two children become cells of the row's grid rather than a
+   nested flex box - `.meta` and `.cardRight` are columns of the table, and a
+   wrapper around them would make them one. */
 .gridList .cardBottom {
-  margin-top: 0;
-  flex-shrink: 0;
-  gap: 12px;
+  display: contents;
 }
 
-.gridList .domain { max-width: 180px; }
+/* Source, actions, date. The grid places by source order, and the DOM has the
+   date (inside .cardBottom) before the actions, so the two are swapped here
+   rather than in the markup - the card layouts want the order the DOM has. */
+.gridList .title { order: 1; }
+.gridList .meta { order: 2; min-width: 0; overflow: hidden; }
+.gridList .commentRow { order: 3; }
+.gridList .cardRight { order: 4; justify-content: flex-end; }
 
-/* In a row the action strip isn't a strip - it's the tail of the row, so it
-   drops the hairline that separates it from the meta above in a card. */
+.gridList .domain,
+.gridList .handle {
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In a row the action strip isn't a strip - it's a cell, and it drops the
+   hairline that separated it from the meta above in a card.
+
+   It stays a grid, and its column is a fixed width rather than `auto`, and
+   both of those are about the same thing: every pill has to start at the same
+   x down the whole page. An `auto` track is sized per row, because each row is
+   its own grid - so a row whose comment count is "3" gave a narrower cell than
+   one reading "128", and the strip wandered left and right down the list. The
+   halves are uneven because the two pills are: the comment pill holds a number
+   and the Save pill holds a word, a number and a caret. */
 .gridList .commentRow {
-  flex-shrink: 0;
-  flex-wrap: nowrap;
+  grid-template-columns: 84px 1fr;
+  gap: 4px;
   margin-top: 0;
   padding-top: 0;
   border-top: none;
 }
+
+/* The date column, and the unread dot or Read tick that shares it. */
+.gridList .date { font-size: 11px; }
+.gridList .readChip { font-size: 10.5px; padding: 0 5px; }
 
 /* ── Magazine layout - editorial grid: wide features, full-text briefs,
    and a mix of image/text cards. Rows stay aligned; meta anchors to the
@@ -925,46 +1036,76 @@
   .snippet,
   .gridMagazine .snippet { font-size: 14.5px; opacity: 0.85; -webkit-line-clamp: 3; }
 
-  /* ── The list stays a list ──
-     This used to read "a row with no width to spare is just a card - let it
-     stack", and stack it did: full-size headline, meta on its own line, and the
-     action strip back with its hairline. The result was a card, so List and
-     Cards were the same view on a phone - and a phone is where a dense list is
-     worth the most, since it is where the least fits on screen.
+  /* ── The table folds to two rows, and stays a table ──
+     Four columns do not fit in 390px, and the answer is not to let the row
+     become a card again: a phone is where a dense list is worth the most,
+     since it is where the least fits on screen.
 
-     It stays a row that wraps: the headline takes the full width and everything
-     else shares the line under it. Two lines per article instead of one, which
-     is the honest cost of a 390px screen, against the eight or so a card takes.
+     So the headline takes a row of its own and the other three columns share
+     the row under it. Two lines per article against the eight or so a card
+     takes, and the source, actions and date still line up down the page
+     because they are still grid tracks - which is the difference between this
+     and the wrapped flex row it replaced.
 
-     `flex-wrap` on the row is what does it - the title is given `flex-basis:
-     100%` so it always claims its own line, and the meta, the actions and the
-     dismiss button fall in beside each other underneath. */
+     Type comes up a little from the desktop 12.5px: this view is scanned with
+     a thumb at arm's length, and the row is already earning its density from
+     having no card around it rather than from the smallest type that fits. */
+  /* Explicit tracks, not `auto`, and the date moves up beside the headline.
+
+     Left to size themselves the two pills take whatever they want and the
+     byline gets what is left, which at 390px was about 40px - "planets…" for
+     planetscale.com, which is worse than no byline at all. 212px is what the
+     pair actually measures at this control size, and it is given rather than
+     asked for: a track narrower than the pills does not shrink them, it lets
+     them overflow onto whatever is beside them, because a pill is
+     min-content-sized and nothing in it may ellipsise under its label.
+
+     That leaves the date, and putting it on the headline's line rather than
+     the byline's is what buys the byline a readable width - about 140px
+     instead of 80px, which is a hostname rather than four letters and a
+     dot. It also fixes the second ragged column: the status cell holds an
+     unread dot on one row and a "Read" tick on the next, so an `auto` track
+     there is a different width on every row, and a 1fr byline sized from
+     what is left of a varying track varies with it.
+
+     Every cell is placed by hand below, because the two rows do not divide
+     the same way: the headline takes two tracks and the action strip takes
+     the other two. */
   .gridList .card {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 3px 10px;
-    padding: 10px 12px;
+    grid-template-columns: minmax(0, 1fr) 154px 58px;
+    gap: 1px 8px;
+    padding: 7px 12px;
+    --ctl-h: 26px;
   }
 
-  .gridList .cardBottom { flex: 1 1 auto; margin-top: 0; gap: 8px; }
-  .gridList .domain { max-width: none; }
+  .gridList .title { grid-column: 1 / 3; grid-row: 1; }
+  .gridList .cardRight { grid-column: 3; grid-row: 1; }
+  .gridList .meta { grid-column: 1; grid-row: 2; }
+  .gridList .commentRow { grid-column: 2 / 4; grid-row: 2; }
 
-  /* Claims the whole first line, and stays a headline rather than becoming the
-     18px display type the grouped rule above gives every other layout - at that
-     size two lines of title is most of a screenful. Two lines, because one
-     truncates most real headlines to uselessness at this width. */
+  /* The comment pill only ever holds a number here, so it gives its width to
+     the Save pill, which holds a word, a number and a caret. */
+  .gridList .commentRow { grid-template-columns: 66px 1fr; }
+
+  /* Placement is up with the other cells; this is only the type. */
   .gridList .title {
-    flex: 1 1 100%;
-    font-size: 14.5px;
-    line-height: 1.32;
+    font-size: 14px;
+    line-height: 1.35;
+    /* Two lines here, not one: at this width a single line truncates most real
+       headlines to uselessness, and the row height is no longer load-bearing
+       now that every row is two lines anyway. */
+    display: -webkit-box;
     -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
   }
+
+  .gridList .domain, .gridList .handle { max-width: none; }
 
   /* The pills shrink instead of the row growing. They keep their words - these
      are the two things you do to an article, and an unlabelled bookmark glyph
      is exactly the sort of guess the feed's toolbar was just rid of. */
-  .gridList .commentRow { flex: 0 0 auto; gap: 5px; }
+  .gridList .commentRow { gap: 5px; }
   .gridList .commentRow button { font-size: 12px; }
   .domain, .handle, .date, .readTime { font-size: 13px; }
   .readChip { font-size: 12px; }

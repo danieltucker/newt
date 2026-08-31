@@ -122,6 +122,17 @@ export interface ReadingFolder {
   position: number;
   /** Library items on this shelf, computed server-side. */
   itemCount: number;
+  /**
+   * Set on a shelf the app owns rather than the user - only "archived" so far,
+   * the shelf the reading list files an article onto when it is cleared off the
+   * list. Null on every shelf a person made.
+   *
+   * What it changes here is that the shelf cannot be deleted: its rows are what
+   * hold up the save count on an article the user has finished with. Renaming
+   * and recolouring are still theirs, and the identity survives both because it
+   * lives in this field rather than in the name.
+   */
+  system?: string | null;
 }
 
 export type CommentVisibility = 'public' | 'friends' | 'private';

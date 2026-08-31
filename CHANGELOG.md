@@ -2,6 +2,104 @@
 
 Notable changes to Newt, newest first.
 
+## v1.27.0 - The list becomes a list, and finishing with an article stops deleting it
+
+**2026-08-31**
+
+**List view is a table now.** It was the card layout laid on its side: every
+article still carried its own rounded, bordered, shadowed surface with 16px of
+padding and a 12px gap to the next one, so a row cost about 62px and a 1080px
+screen held eleven articles. The point of a list is to see a lot at once, and it
+was losing to the Cards view on exactly that.
+
+The surface is gone. One hairline between rows and nothing else - no border, no
+radius, no shadow, no lift on hover, no gap - and a row is about 31px, which is
+twenty-six articles in the same screen instead of eleven. Title, source, the two
+pills and the date are real columns that line up down the page, because each row
+is a grid with the same explicit tracks rather than a flex row that sizes to its
+own contents. Unread stops being a tinted card and becomes a 3px accent bar in
+the gutter, which is legible at this height where a wash is not.
+
+Both list views changed - the feed's and the Library's - because they are the
+same control strip on the same kind of object, and only doing one would have
+left a saved article looking nothing like the feed article it came from. On a
+phone the table folds to two rows an article rather than three: the headline
+takes a line with the date, and the byline and the controls share the line under
+it.
+
+**The list asks for three times as many articles a page.** The per-page setting
+(Settings → 5, 10, 20 or 50) was picked looking at cards, and a list row is less
+than half the height of one - so ten articles went from filling the screen to
+covering about a third of it, and you were left staring at empty space until the
+infinite scroll had fired three times. In list view the setting is scaled rather
+than overridden, so it still means what it says relative to itself: 5 is still
+the smallest bite and 50 still the largest. Cards and magazine are unchanged.
+
+**Clearing an article off the reading list archives it instead of deleting it.**
+The Save pill learned to show how many people have saved an article in v1.26.0,
+and that made the old behaviour wrong: the count is `COUNT(DISTINCT "userId")`
+over the reading list, so pressing the ✕ on something you had finished reading
+quietly took a number down that other people can see. Having finished with an
+article is not the same as never having kept it.
+
+So the article moves onto a shelf called **Archived** - an ordinary Library shelf
+in every respect but one, which is that it cannot be deleted. Deleting a shelf
+tips its articles into Unsorted, and allowing that here would empty the whole
+archive back into the Library in a single press. You can still rename it,
+recolour it, browse it, and move anything back off it onto another shelf
+whenever you like. It is made the first time you archive something rather than
+handed to every account up front.
+
+**Un-saving moved into the Save menu.** It used to be reachable only by pressing
+a pill that already read "Saved", which meant the reading list - where every card
+is a saved article but the pill still says "Save", because pressing it files onto
+a shelf - had no way to offer it at all. Now that clearing a card archives rather
+than deletes, taking a save back needs somewhere of its own: it is the last row
+of the caret's menu, under a rule, in the colour destructive things are
+everywhere else. That one really does delete, and the article's save count comes
+down with it - which is the whole difference between the two actions.
+## v1.26.0 - An article says how many people kept it
+
+**2026-08-31**
+
+**Every Save pill now carries a number: how many people have saved that
+article.** It sits on the pill itself, in the feed, in the Library and in the
+reader, next to the comment count that has always said how much was *said* about
+a piece. Saving is the quieter signal of the two — most people who keep an
+article never write a word about it — and until now it left no mark at all,
+which meant a piece forty people had put away looked exactly like one nobody had
+touched.
+
+**It counts people, not saves.** Filing the same article onto two Library
+shelves is allowed and is a real thing to want, so counting rows would have let
+one reader run the number up alone; the count is `COUNT(DISTINCT "userId")`. It
+counts by canonical key too, so the copy saved from the bookmarklet and the copy
+saved from the river with a `?utm_source=` on the end are one article — the same
+key that decides which comment thread those two share.
+
+**It is an aggregate and it stays one.** A Library is self-only — the absence of
+a visibility column on `ReadingFolder` is what guarantees that — and the endpoint
+answers with a number per URL and nothing else: no names, no shelves, no dates.
+Your own save is inside the number rather than excluded from it, because a count
+that doesn't move when you press Save reads as broken.
+
+**The number moves when you do.** Save and it goes up, unsave and it comes back
+down, without waiting for a round-trip — and filing an article you had already
+saved onto a second shelf leaves it alone, since that is the same person twice.
+
+The counts for a whole screenful come back in one request
+(`POST /api/v1/reading-list/counts`), the same way comment counts do, and the
+badge holds its width with tabular figures so a card doesn't twitch when a 9
+becomes a 10.
+
+**The card's two narrowing steps moved up to make room for it.** The badge is
+about 25px the action strip did not have to find before, and the old thresholds
+had roughly 4px of slack — measured on a saved article showing "Saved 128" next
+to "128 in the discussion", the strip overflowed its card between 340px and
+360px, which is the band just above where the noun in "128 in the discussion"
+used to come back. The noun now goes at 380px and the strip becomes one column
+at 275px (425px and 315px for touch), so nothing overflows at any card width.
+
 ## v1.25.0 - The feed's controls become one bar, and it comes with you
 
 **2026-08-20**

@@ -7,6 +7,7 @@ import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { profilePathFor } from '../utils/profileUrl';
 import { sitePathFor } from '../utils/siteUrl';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { useSaveCounts } from '../hooks/useSaveCounts';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import { CommentBar } from './CommentsPanel';
@@ -419,11 +420,28 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
     (activeFeedFolder ? `&folder=${encodeURIComponent(activeFeedFolder)}` : '') +
     (activeFeedId ? `&feed=${encodeURIComponent(activeFeedId)}` : '');
 
+  /**
+   * How many articles to ask for per page.
+   *
+   * `pageSize` is the reader's own setting (Settings - 5, 10, 20 or 50), and
+   * they picked it looking at cards. A list row is less than half the height of
+   * a card, so from v1.27.0 the same number covers about a third of the screen
+   * it used to: ten articles is 310px of a 900px column, a page that ends well
+   * before the fold and leaves the reader looking at empty space until the
+   * infinite scroll has fired three times.
+   *
+   * Scaled rather than overridden, so the setting still means what it says
+   * relative to itself - 5 is still the smallest bite and 50 still the largest,
+   * and someone who set it low to keep requests small still gets a small page.
+   * Only the list is dense enough to need it; cards and magazine are unchanged.
+   */
+  const effectivePageSize = layout === 'list' ? pageSize * 3 : pageSize;
+
   const load = useCallback(async (offset = 0, existing: FeedArticle[] = []) => {
     offset === 0 ? setLoading(true) : setLoadingMore(true);
     setError('');
     try {
-      const r = await apiFetch(`/api/v1/feeds/articles?offset=${offset}&limit=${pageSize}${scope}`);
+      const r = await apiFetch(`/api/v1/feeds/articles?offset=${offset}&limit=${effectivePageSize}${scope}`);
       if (!r.ok) { setError('Could not load feed'); return; }
       const data: { articles: FeedArticle[]; total: number; unread?: number; loadedAt?: string } = await r.json();
       const merged = offset === 0 ? data.articles : [...existing, ...data.articles];
@@ -448,7 +466,7 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [scope, pageSize]);
+  }, [scope, effectivePageSize]);
 
   /**
    * Switching category. Clears the narrower filters, because they were chosen
@@ -780,9 +798,14 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
     return () => obs.disconnect();
   }, [hasMore, loading, loadingMore, articles, load]);
 
-  const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(
-    useMemo(() => articles.map(a => a.link), [articles])
-  );
+  // One list of links, counted two ways: both hooks batch a screenful into a
+  // single request, so they take the same memo rather than each rebuilding it.
+  const links = useMemo(() => articles.map(a => a.link), [articles]);
+
+  const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(links);
+
+  // How many people have saved each article. An aggregate - never who.
+  const { counts: saveCounts, adjust: adjustSaveCount } = useSaveCounts(links);
 
   // The article open in the reader modal
   const [reading, setReading] = useState<FeedArticle | null>(null);
@@ -861,8 +884,12 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
     onSaveArticle(
       { id: a.id, url: a.link, title: a.title, source: a.source, categories: a.categories, readTime: a.readTime, imageUrl: a.imageUrl },
       {
-        markSaved: () => setSavedFlag(a.link, true),
-        restore: () => setSavedFlag(a.link, was),
+        // The save count moves with the button, and only when this press
+        // actually adds the viewer to it: filing an article they had already
+        // saved onto a second shelf is a second row but the same person, which
+        // is what the server counts.
+        markSaved: () => { setSavedFlag(a.link, true); if (!was) adjustSaveCount(a.link, 1); },
+        restore: () => { setSavedFlag(a.link, was); if (!was) adjustSaveCount(a.link, -1); },
       },
       dest ? { folderId: dest.folderId } : undefined
     );
@@ -874,6 +901,11 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
   function handleUnsave(a: FeedArticle) {
     if (!onUnsaveArticle) return;
     setSavedFlag(a.link, false);
+    // Follows the button for the same reason the button doesn't wait: a number
+    // that only moves after a round-trip reads as one that ignored you. There
+    // is no failure callback on this path, so a delete that fails leaves the
+    // count one low until the next load refetches it.
+    adjustSaveCount(a.link, -1);
     onUnsaveArticle(a.link);
   }
 
@@ -1173,6 +1205,7 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
             readingFolders={readingFolders}
             onCreateFolder={onCreateFolder}
             commentCount={commentCounts[a.link] ?? 0}
+            saveCount={saveCounts[a.link] ?? 0}
             onOpenReader={() => { markRead([a.id]); setReading(a); }}
             onOpenLink={() => markRead([a.id])}
             onViewProfile={onViewProfile}
@@ -1223,6 +1256,7 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
               savedIcon={<BookmarkFilledIcon />}
               saved={isSaved(reading.link)}
               onUnsave={onUnsaveArticle && (() => handleUnsave(reading))}
+              saveCount={saveCounts[reading.link] ?? 0}
               menuLabel="Save to…"
               defaultId={READING_LIST_DEST}
               destinations={destinationsFor(readingFolders)}
@@ -1241,7 +1275,7 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
   );
 }
 
-function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, onUnsave, readingFolders = [], onCreateFolder, commentCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, onExplore, favHits, favoriteTags = [], onToggleFavoriteTag }: {
+function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, onUnsave, readingFolders = [], onCreateFolder, commentCount, saveCount, onOpenReader, onOpenLink, onViewProfile, onOpenSite, onExplore, favHits, favoriteTags = [], onToggleFavoriteTag }: {
   article: FeedArticle; variant?: MagVariant; isNew?: boolean;
   /**
    * You have read this one - scrolled past it, opened the reader on it, or
@@ -1260,6 +1294,8 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
   readingFolders?: ReadingFolder[];
   onCreateFolder?: (name: string) => Promise<string>;
   commentCount: number;
+  /** How many people have saved this article. 0 draws no badge. */
+  saveCount: number;
   onOpenReader: () => void;
   /** Followed the article out to its own site - counts as having viewed it. */
   onOpenLink?: () => void;
@@ -1475,6 +1511,7 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
             savedIcon={<BookmarkFilledIcon />}
             saved={saved}
             onUnsave={onUnsave}
+            saveCount={saveCount}
             menuLabel="Save to…"
             defaultId={READING_LIST_DEST}
             destinations={destinations}

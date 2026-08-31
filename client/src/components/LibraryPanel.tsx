@@ -152,16 +152,25 @@ export default function LibraryPanel({
                     <path d="M7.5 1.5l2 2L3 10H1v-2L7.5 1.5z" />
                   </svg>
                 </button>
-                <button
-                  className={`${styles.shelfIcon} ${styles.shelfDelete}`}
-                  aria-label={`Delete ${f.name}`}
-                  title="Delete folder"
-                  onClick={() => handleDeleteFolder(f)}
-                >
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                    <path d="M1 1l10 10M11 1L1 11" />
-                  </svg>
-                </button>
+                {/* Archived has no delete control. It is where clearing an
+                    article off the reading list puts it, and deleting a shelf
+                    tips its articles into Unsorted - which would empty the
+                    archive back into the Library in one press. Renaming and
+                    recolouring are still the user's; the shelf itself stays.
+                    The server refuses it too, so this is the polite half of
+                    the rule rather than the whole of it. */}
+                {!f.system && (
+                  <button
+                    className={`${styles.shelfIcon} ${styles.shelfDelete}`}
+                    aria-label={`Delete ${f.name}`}
+                    title="Delete folder"
+                    onClick={() => handleDeleteFolder(f)}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                      <path d="M1 1l10 10M11 1L1 11" />
+                    </svg>
+                  </button>
+                )}
               </>
             )}
           </div>

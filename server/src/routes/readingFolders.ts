@@ -38,6 +38,10 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     color: f.color,
     position: f.position,
     itemCount: f._count.items,
+    // "archived" for the shelf the reading list files into, null for a shelf
+    // the user made. The client needs it to hide that shelf's delete control;
+    // the server does not trust it to, hence the guard on DELETE below.
+    system: f.system,
   })));
 });
 
@@ -108,9 +112,20 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
   try {
     const folder = await prisma.readingFolder.findFirst({
       where: { id: req.params.id, userId: req.userId! },
-      select: { id: true },
+      select: { id: true, system: true },
     });
     if (!folder) { res.status(404).json({ error: 'Not found' }); return; }
+
+    // A system shelf is not the user's to delete. Archived is where removing an
+    // article from the reading list puts it, and deleting a shelf drops its
+    // articles into Unsorted — which would put every archived article back in
+    // the Library proper, and hand the user a one-click way to undo the whole
+    // point of archiving. Rename it, recolour it, empty it by moving things
+    // off it; it stays.
+    if (folder.system) {
+      res.status(400).json({ error: 'The Archived shelf can’t be deleted.' });
+      return;
+    }
 
     const orphaned = await prisma.readingListItem.findMany({
       where: { folderId: folder.id },

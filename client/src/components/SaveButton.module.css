@@ -6,6 +6,16 @@
   line-height: 1;
 }
 
+/* The multiplication sign in the "Unsave" row, sized to sit in the same 16px
+   icon well as the + above it so the two rows at the foot of the menu line up
+   with the folder names over them. A glyph rather than an SVG for the same
+   reason .plus is one: it is one character and it inherits the row's colour,
+   which for this row is --danger. */
+.unsaveIcon {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .newRow {
   display: flex;
   align-items: center;

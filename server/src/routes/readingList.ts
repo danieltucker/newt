@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
 import prisma from '../lib/prisma';
+import logger from '../lib/logger';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { perUserLimiter } from '../lib/rateLimit';
-import { canonicalArticleKey } from '../lib/comments';
+import { canonicalArticleKey, isHttpUrl } from '../lib/comments';
 
 const router = Router();
 router.use(requireAuth);
@@ -18,7 +19,10 @@ const readingWriteLimiter = perUserLimiter({
   message: 'Too many changes — please slow down for a moment.',
 });
 router.use((req, res, next) => {
-  if (req.method === 'GET') { next(); return; }
+  // `/counts` is a POST that reads: a body is the only sane way to send a
+  // screenful of URLs. It must not spend the write budget, or scrolling the
+  // feed would eventually lock a user out of saving anything.
+  if (req.method === 'GET' || req.path === '/counts') { next(); return; }
   readingWriteLimiter(req, res, next);
 });
 
@@ -29,6 +33,62 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     take: 500,
   });
   res.json(items);
+});
+
+// POST /api/v1/reading-list/counts  { urls: [...] }
+//   -> { counts: { "<url>": n } }
+//
+// How many people have saved each article, for a screenful of cards in one
+// round-trip — the same shape, and the same reasons, as the comment counts
+// endpoint next door.
+//
+// ── What the number counts, and what it deliberately doesn't ──
+// People, not rows. Filing one article onto two Library shelves is allowed and
+// is a real thing to want (see findCopyIn below), but it says nothing about
+// how widely the piece was saved — counting rows would let one reader run the
+// number up on their own. Hence COUNT(DISTINCT "userId").
+//
+// It is an aggregate and stays one: no names, no folders, no dates. A Library
+// is self-only — the absence of a visibility column on ReadingFolder is that
+// guarantee — and nothing here weakens it. The viewer's own save is included,
+// because "3 people saved this" that silently excludes you reads as a bug the
+// moment you save something and the number doesn't move.
+//
+// Counted by canonical key, so the copy saved from the bookmarklet and the one
+// saved from the river with a `?utm_source=` on it are one article. Rows whose
+// articleKey is still null predate the column and cannot be counted without
+// guessing at a key — scripts/backfillArticleKeys.ts is what fixes those, not
+// this query.
+const MAX_URLS_PER_COUNT = 200;
+
+router.post('/counts', async (req: AuthRequest, res: Response): Promise<void> => {
+  const urls: unknown = req.body?.urls;
+  if (!Array.isArray(urls)) { res.status(400).json({ error: 'urls must be an array' }); return; }
+
+  const valid = (urls as unknown[]).filter(isHttpUrl).slice(0, MAX_URLS_PER_COUNT);
+  if (valid.length === 0) { res.json({ counts: {} }); return; }
+
+  try {
+    // Several URLs can share one key, so count by key and fan back out.
+    const keyByUrl = new Map(valid.map(u => [u, canonicalArticleKey(u)]));
+    const keys = [...new Set(keyByUrl.values())];
+    // Raw, because a distinct count is the whole point and Prisma's groupBy
+    // can only count rows. Cast in SQL so this comes back as a number rather
+    // than the bigint COUNT() otherwise yields.
+    const rows = await prisma.$queryRaw<{ articleKey: string; n: number }[]>`
+      SELECT "articleKey", COUNT(DISTINCT "userId")::int AS "n"
+      FROM "ReadingListItem"
+      WHERE "articleKey" = ANY(${keys}::text[])
+      GROUP BY "articleKey"`;
+
+    const byKey = new Map(rows.map(r => [r.articleKey, r.n]));
+    const counts: Record<string, number> = {};
+    for (const [url, key] of keyByUrl) counts[url] = byKey.get(key) ?? 0;
+    res.json({ counts });
+  } catch (err) {
+    logger.error(err, 'Save counts error');
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Empty string is allowed (no image); otherwise must be a sane http(s) URL
@@ -243,6 +303,120 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(item);
 });
 
+// The Archived shelf.
+//
+// Named in the database rather than matched by name, so it survives a rename
+// and so a shelf the user made and called "Archived" stays an ordinary one.
+// See the migration and the ReadingFolder.system comment for why.
+const ARCHIVED_SYSTEM = 'archived';
+const ARCHIVED_NAME = 'Archived';
+// Slate. The one shelf colour that reads as "put away" rather than as a label
+// the user chose, and the last entry in SHELF_COLORS so a hand-made shelf is
+// unlikely to have taken it first.
+const ARCHIVED_COLOR = '#8B8D98';
+
+/**
+ * The caller's Archived shelf, made on the spot the first time they archive
+ * something.
+ *
+ * Lazy rather than created with the account: a user who never archives anything
+ * should not have a shelf they did not ask for sitting in their Library, and
+ * making it on demand means no backfill over existing accounts.
+ *
+ * The unique index on (userId, system) is what makes the race safe — two
+ * archives arriving together both find nothing, both insert, and one loses —
+ * so the create is caught and re-read rather than guarded by a transaction.
+ *
+ * Deliberately not subject to MAX_FOLDERS: there is exactly one of these, the
+ * app is what creates it, and a user who has filled their shelf quota should
+ * still be able to clear their reading list.
+ */
+async function archivedShelf(userId: string) {
+  const existing = await prisma.readingFolder.findFirst({
+    where: { userId, system: ARCHIVED_SYSTEM },
+  });
+  if (existing) return existing;
+
+  const position = await prisma.readingFolder.count({ where: { userId } });
+  try {
+    return await prisma.readingFolder.create({
+      data: { userId, name: ARCHIVED_NAME, color: ARCHIVED_COLOR, position, system: ARCHIVED_SYSTEM },
+    });
+  } catch {
+    // Lost the race; the winner's row is the answer.
+    const won = await prisma.readingFolder.findFirst({
+      where: { userId, system: ARCHIVED_SYSTEM },
+    });
+    if (won) return won;
+    throw new Error('Could not open the Archived shelf');
+  }
+}
+
+// POST /api/v1/reading-list/:id/archive  ->  { item, folder }
+//
+// What the reading list's remove action does now, in place of DELETE.
+//
+// Removing an article used to delete the row. Since v1.26.0 the Save pill shows
+// how many people have saved the article, counted over this table, so deleting
+// on "I have finished with this" was quietly taking a number down that other
+// people can see. Finishing with something is not un-saving it. The row moves
+// onto a shelf instead: the count holds, and the article is somewhere the user
+// can still see it and move it back out of.
+//
+// Un-saving still deletes, and still should — that is the action that means "I
+// do not want this saved", and DELETE below is what serves it.
+//
+// The folder comes back with the item because this may be the request that
+// created it, and the client's Library sidebar would otherwise not know it
+// exists until the next reload.
+router.post('/:id/archive', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const existing = await prisma.readingListItem.findFirst({
+      where: { id: req.params.id, userId: req.userId! },
+    });
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const folder = await archivedShelf(req.userId!);
+    if (existing.folderId === folder.id) {
+      // Already archived. Nothing to do, and saying so with the row it is
+      // already on keeps the client's state correct.
+      res.json({ item: existing, folder });
+      return;
+    }
+
+    // A copy of this article is already on the shelf — the article was saved
+    // twice, to two places, and both have now been archived. One copy per
+    // destination is the rule everywhere else here, so the row being archived
+    // is dropped rather than moved onto a duplicate.
+    //
+    // Safe for the save count in a way a plain delete is not: the count is
+    // COUNT(DISTINCT "userId") and this user still has a row for the article,
+    // so removing the duplicate cannot move the number.
+    const clash = await findCopyIn(req.userId!, folder.id, existing.url);
+    if (clash && clash.id !== existing.id) {
+      await prisma.readingListItem.delete({ where: { id: existing.id } });
+      res.json({ item: clash, folder, merged: true });
+      return;
+    }
+
+    const item = await prisma.readingListItem.update({
+      where: { id: existing.id },
+      data: { folderId: folder.id, inLibrary: true },
+    });
+    res.json({ item, folder });
+  } catch (err) {
+    logger.error(err, 'Archive reading list item error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Un-saving: the row goes, and the article's save count goes down with it.
+//
+// This is the narrow action now. Clearing something off the reading list
+// archives it (POST /:id/archive above) precisely so that finishing with an
+// article does not read as never having saved it; what is left here is the
+// case where the user means it — the Save pill pressed a second time, or
+// "Unsave" chosen from its menu.
 router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const result = await prisma.readingListItem.deleteMany({
     where: { id: req.params.id, userId: req.userId! },

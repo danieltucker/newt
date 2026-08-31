@@ -5,6 +5,7 @@ import { parseDomain } from '../utils/color';
 import { sitePathFor, siteDomainOf } from '../utils/siteUrl';
 import { apiFetch } from '../services/api';
 import { useCommentCounts } from '../hooks/useCommentCounts';
+import { useSaveCounts } from '../hooks/useSaveCounts';
 import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import { CommentBar } from './CommentsPanel';
@@ -146,12 +147,17 @@ function ClockIcon() {
   );
 }
 
-// A card that has left the list - deleted, or filed into the Library - but is
-// still drawn in its old spot, greyed out, until the page is reloaded. Both
-// actions commit straight away; this is only a placeholder, so that removing one
-// article doesn't shuffle every card below it under a cursor that's already
+// A card that has left the list - archived, un-saved, or filed into the Library
+// - but is still drawn in its old spot, greyed out, until the page is reloaded.
+// All three commit straight away; this is only a placeholder, so that removing
+// one article doesn't shuffle every card below it under a cursor that's already
 // moving toward the next one. See the ghost handling in ReadingList below.
-type GhostKind = 'deleted' | 'shelved';
+//
+// 'archived' and 'deleted' look alike and are not: archiving files the article
+// onto the Archived shelf and the row survives, which is what keeps its save
+// count up, while un-saving really does delete it. The list's own remove
+// control does the first; the second is reachable only from the Save menu.
+type GhostKind = 'deleted' | 'shelved' | 'archived';
 
 interface Ghost {
   /** The item as it was when it left the list, for the placeholder and Undo. */
@@ -199,9 +205,21 @@ interface Props {
    *  flagged `duplicate`, since an article is only saved to a place once. */
   onSave: (item: Omit<ReadingListItem, 'id' | 'savedAt' | 'inLibrary' | 'folderId' | 'notes' | 'duplicate'>) => Promise<ReadingListItem>;
   onUpdate: (id: string, patch: Partial<Pick<ReadingListItem, 'title' | 'tag' | 'notes'>>) => Promise<void>;
+  /**
+   * Un-save: deletes the row, and takes the article's save count down with it.
+   * Reached from the Save menu only - the card's own remove control archives.
+   */
   onDelete: (id: string) => void;
   /** Undo of onDelete. The row is already gone, so this re-creates it. */
   onRestore?: (item: ReadingListItem) => Promise<unknown>;
+  /**
+   * Clear an article off the list without un-saving it: the row moves onto the
+   * Archived shelf. This is what the card's remove control does.
+   *
+   * Resolves with the shelf, which may have just been created - the Archived
+   * shelf is made on first use - so the Library sidebar can learn about it.
+   */
+  onArchive?: (id: string) => Promise<ReadingFolder | void> | void;
   onAddToLibrary: (id: string, inLibrary: boolean) => Promise<void>;
   /** Library shelves, for filing a just-shelved article without leaving here. */
   readingFolders?: ReadingFolder[];
@@ -285,11 +303,16 @@ interface CardProps {
   /** You've opened this one. Dims the card and prints a tick in its meta line. */
   visited?: boolean;
   onOpened?: (id: string) => void;
-  onDelete: (id: string) => void;
+  /** Clear this off the list - files it onto Archived, does not delete it. */
+  onArchive: (id: string) => void;
+  /** Take the save back for real. Offered in the Save menu, not on the card. */
+  onUnsave?: () => void;
   onUndo: (id: string) => void;
   articleOpenMode?: 'new-tab' | 'same-tab' | 'iframe';
   onOpenArticle?: (url: string) => void;
   commentCount: number;
+  /** How many people have saved this article. */
+  saveCount: number;
   onOpenReader: () => void;
   /** Favorites this item matched - the list did the matching. */
   favHits?: string[];
@@ -301,7 +324,7 @@ interface CardProps {
   onExplore?: (url: string, title: string) => void;
 }
 
-function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onDelete, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite, onExplore }: CardProps) {
+function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onArchive, onUnsave, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, saveCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite, onExplore }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
 
@@ -356,7 +379,15 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
         <div className={styles.ghostOverlay}>
           <div className={styles.ghostPill}>
             {ghost.kind === 'deleted' ? (
-              <span className={styles.ghostLabel}>Deleted</span>
+              <span className={styles.ghostLabel}>Unsaved</span>
+            ) : ghost.kind === 'archived' ? (
+              <>
+                <span className={styles.ghostFolderIcon} aria-hidden><FolderFilledIcon size={13} /></span>
+                {/* Says where it went, like the shelved placeholder does, because
+                    that is the whole difference from the old Deleted: the article
+                    is still saved and still somewhere you can go and get it. */}
+                <span className={styles.ghostLabel}>Archived</span>
+              </>
             ) : (
               <>
                 <span className={styles.ghostFolderIcon} aria-hidden><FolderFilledIcon size={13} /></span>
@@ -473,10 +504,17 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             is there for the times you know which shelf. Either way the card
             leaves a "Saved to <shelf>" placeholder with an Undo, which is what
             makes committing on one press safe. */}
+        {/* `canUnsave` rather than `saved`: every card in this list is a saved
+            article, but the pill still reads "Save" because pressing it files
+            onto a shelf. The two states come apart here in a way they do not on
+            a feed card, which is why the menu needs telling. */}
         <SaveButton
           className={styles.rowSave}
           label="Save"
           icon={<FolderIcon size={13} />}
+          saveCount={saveCount}
+          canUnsave={!!onUnsave}
+          onUnsave={onUnsave}
           menuLabel="Save to…"
           defaultId={item.folderId ?? ''}
           destinations={shelves}
@@ -496,11 +534,15 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
           {/* Editing lives in the article reader now - a pencil on every card
               was a third control competing for a corner that only ever gets
               used for filing and deleting. */}
+          {/* Archives rather than deletes. The article leaves the list, keeps
+              its row, and lands on the Archived shelf - so the count of how
+              many people saved it does not drop because one of them finished
+              reading it. Un-saving is still available, in the Save menu. */}
           <button
             className={`${styles.actionBtn} ${styles.deleteBtn}`}
-            aria-label="Remove article"
-            title="Delete"
-            onClick={() => onDelete(item.id)}
+            aria-label="Archive article"
+            title="Archive"
+            onClick={() => onArchive(item.id)}
           >
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M1 1l10 10M11 1L1 11"/>
@@ -513,7 +555,7 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
   );
 }
 
-export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, commentPrefs, onViewProfile, onExplore, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
+export default function ReadingList({ items, onSave, onUpdate, onDelete, onRestore, onArchive, onAddToLibrary, readingFolders = [], onMoveToFolder, onOpenLibrary, articleOpenMode, onOpenArticle, layout = 'magazine', onLayoutChange, commentPrefs, onViewProfile, onExplore, favoriteTags = [], onToggleFavoriteTag, onSetFavoriteTags, onCreateFolder, onOpenSite }: Props) {
   // The list is a room you go into now, not a drawer under the feed. See
   // ReadingListLauncher for why.
   const [open, setOpen] = useState(false);
@@ -523,9 +565,16 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   // the moment the list re-lays out. Keyed by the id the item had at the time.
   const [ghosts, setGhosts] = useState<Map<string, Ghost>>(new Map());
 
-  const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(
-    useMemo(() => items.map(i => i.url), [items])
-  );
+  // One list of URLs, counted two ways - see the note on the same pair in
+  // FeedPanel.
+  const urls = useMemo(() => items.map(i => i.url), [items]);
+
+  const { counts: commentCounts, setCount: setCommentCount } = useCommentCounts(urls);
+
+  // How many people have saved each article. Every card here is one the viewer
+  // saved, so the number is never 0 and the badge always draws - which is the
+  // point: a shelf shows which of the things you kept other people kept too.
+  const { counts: saveCounts } = useSaveCounts(urls);
 
   // A pre-comments note has been folded into the thread - drop it from the item
   // so it can't be migrated twice
@@ -549,7 +598,21 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
     setGhosts(prev => { const m = new Map(prev); m.delete(id); return m; });
   }
 
-  function requestDelete(id: string) {
+  // The card's remove control. Files the article onto Archived rather than
+  // deleting it: the row is what holds the article's save count up, and having
+  // finished with something is not the same as never having saved it.
+  //
+  // Falls back to un-saving when no archive handler was given, so a caller that
+  // has not been wired up for it still gets a working control rather than a
+  // dead one.
+  function requestArchive(id: string) {
+    if (!onArchive) { requestUnsave(id); return; }
+    addGhost(id, 'archived');
+    void onArchive(id);
+  }
+
+  // Un-saving, from the Save menu. Deletes for real - see the ghost note above.
+  function requestUnsave(id: string) {
     addGhost(id, 'deleted');
     onDelete(id);
   }
@@ -572,11 +635,12 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
   function undoGhost(id: string) {
     const ghost = ghosts.get(id);
     if (!ghost) return;
-    if (ghost.kind === 'shelved') {
+    if (ghost.kind === 'shelved' || ghost.kind === 'archived') {
       // Still the same row - pulling it back out of the Library is enough, and
       // that update is optimistic, so the real card is there in the same commit.
       // The server clears folderId alongside inLibrary, so this also takes it
-      // back off the shelf it was just filed onto.
+      // back off the shelf it was just filed onto, Archived included: an
+      // archive is a move, so undoing one is a move back.
       dropGhost(id);
       onAddToLibrary(id, false);
       return;
@@ -1134,11 +1198,13 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             onConfirmFiling={confirmFiling}
             visited={visited.has(item.id)}
             onOpened={markOpened}
-            onDelete={requestDelete}
+            onArchive={requestArchive}
+            onUnsave={() => requestUnsave(item.id)}
             onUndo={undoGhost}
             articleOpenMode={articleOpenMode}
             onOpenArticle={onOpenArticle}
             commentCount={commentCounts[item.url] ?? 0}
+            saveCount={saveCounts[item.url] ?? 0}
             onOpenReader={() => setReading(item)}
             favHits={favHits.get(item.id)}
             favorites={favorites}
@@ -1183,6 +1249,9 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             <SaveButton
               label="Save"
               icon={<FolderIcon size={13} />}
+              saveCount={saveCounts[reading.url] ?? 0}
+              canUnsave
+              onUnsave={() => { setReading(null); requestUnsave(reading.id); }}
               menuLabel="Save to…"
               defaultId={reading.folderId ?? ''}
               currentId={reading.inLibrary ? (reading.folderId ?? '') : undefined}
