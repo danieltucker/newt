@@ -4,6 +4,16 @@ import logger from './lib/logger';
 import { startFeedScheduler, stopFeedScheduler } from './lib/feedScheduler';
 import { backfillExploredPaths } from './lib/exploredPaths';
 import { backfillArticleArchive } from './lib/archiveBackfill';
+import { startAiQueue, stopAiQueue } from './lib/ai/queue';
+import { startScheduledPass, stopScheduledPass } from './lib/ai/triggers';
+// Imported for their side effect: each registers its handler with the queue.
+// Without these two lines the queue runs, finds jobs, and skips every one of
+// them with "no handler for this task kind" — which is a confusing way to
+// discover a missing import, so they are named rather than pulled in
+// transitively by whatever happened to need them first.
+import './lib/ai/explore';
+import './lib/ai/moderate';
+import './lib/ai/relate';
 
 // Process entry point. Everything that binds a port, opens a timer or installs a
 // signal handler belongs here; the app itself is assembled in app.ts so tests can
@@ -28,11 +38,20 @@ const server = app.listen(PORT, () => {
   // chance to keep that window before it expires. Both are no-ops once done,
   // and neither blocks the server from serving (see archiveBackfill.ts).
   void backfillArticleArchive();
+  // The AI task queue and its daily pass. Same switch as the feed scheduler and
+  // for the same reason: with several instances behind one database, only one
+  // should be draining the queue, or two workers race for the same GPU.
+  if (process.env.AI_QUEUE !== 'false') {
+    startAiQueue();
+    startScheduledPass();
+  }
 });
 
 function shutdown(signal: string) {
   logger.info({ signal }, 'Shutting down gracefully');
   stopFeedScheduler();
+  stopAiQueue();
+  stopScheduledPass();
   server.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);

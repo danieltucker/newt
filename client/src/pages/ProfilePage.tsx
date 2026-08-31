@@ -13,7 +13,6 @@ import { blogPathFor } from '../utils/blogUrl';
 import { POST_VIS_META } from '../components/VisibilityMeta';
 import PostBody from '../components/PostBody';
 import PostTags from '../components/PostTags';
-import PersonaBadge from '../components/PersonaBadge';
 import SiteFooter from '../components/SiteFooter';
 import FollowBlogButton from '../components/FollowBlogButton';
 import FriendsPanel from '../components/FriendsPanel';
@@ -558,7 +557,6 @@ function ProfileHeader({ profile, accessToken, navigate, onEditProfile, onRelati
               <span className={styles.handle}>@{profile.username}</span>
               {/* First tag in the row, ahead of You and the relation: what kind
                   of account this is outranks how you relate to it. */}
-              {profile.isPersona && <PersonaBadge />}
               {profile.isSelf && <span className={styles.youTag}>You</span>}
               {!profile.isSelf && relationTag(profile.relation, accessToken) && (
                 <span className={styles.relTag}>{relationTag(profile.relation, accessToken)}</span>

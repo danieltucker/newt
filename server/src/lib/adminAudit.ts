@@ -18,16 +18,29 @@ export const ADMIN_ACTIONS = {
   feedDelete: 'feed.delete',
   domainBlock: 'domain.block',
   domainUnblock: 'domain.unblock',
-  // Personas. Creating one mints an account, and every generation puts words
-  // under a name real readers will reply to — so both are recorded here rather
-  // than only in the content itself. `persona.generate` is the one action in
-  // this table that is *routine*: it fires on every comment, reply and post a
-  // persona writes, which is exactly why it is worth having when someone asks
-  // "who told it to say that".
-  personaCreate: 'persona.create',
-  personaUpdate: 'persona.update',
-  personaDelete: 'persona.delete',
-  personaGenerate: 'persona.generate',
+  // AI tasks. Editing one changes a system prompt the instance will run
+  // unattended, which is the whole of what an admin controls here, so the
+  // config actions are recorded as carefully as the generations were.
+  //
+  // `ai.run` is the one action in this table that is *routine*: it fires on
+  // every job the queue completes. That was true of `persona.generate` before
+  // it and for the same reason — it is what answers "who told it to publish
+  // that", and the answer being "the nightly pass, under this prompt" is
+  // exactly as worth recording as a person having pressed a button.
+  aiTaskCreate: 'task.create',
+  aiTaskUpdate: 'task.update',
+  aiTaskDelete: 'task.delete',
+  aiRun: 'task.run',
+  // Publishing a generated explore. Separate from ai.run because it is the
+  // human decision in the loop: a thread is a page with a URL and a search
+  // footprint, and the row that says who made it public is the one that
+  // matters six months later.
+  aiPublish: 'task.publish',
+  // Pulling or deleting a model on the operator's own box. Destructive-adjacent
+  // in both directions — a pull writes gigabytes to the host's disk, a delete
+  // takes a model out from under whatever was configured to use it.
+  modelPull: 'model.pull',
+  modelDelete: 'model.purge',
   // The instance's own model endpoints. Recorded because changing which model
   // the site writes with, or pointing it at a different box, is a change to what
   // the server does on the network — not a preference.
@@ -42,7 +55,7 @@ export const ADMIN_ACTIONS = {
 export type AdminActionName = (typeof ADMIN_ACTIONS)[keyof typeof ADMIN_ACTIONS];
 
 export type AdminTargetType =
-  'comment' | 'blogPost' | 'user' | 'report' | 'feed' | 'domain' | 'persona' | 'siteModel';
+  'comment' | 'blogPost' | 'user' | 'report' | 'feed' | 'domain' | 'persona' | 'siteModel' | 'aiTask';
 
 export interface AdminActionInput {
   actorId: string;
@@ -93,10 +106,21 @@ const ACTION_LABELS: Record<string, string> = {
   'feed.delete': 'Deleted feed',
   'domain.block': 'Blocked domain',
   'domain.unblock': 'Unblocked domain',
+  // Personas were removed in v1.28.0 and these four verbs are no longer
+  // written. They stay because the rows do: an audit trail that renders its own
+  // history as blank cells is worse than one carrying four dead keys, which is
+  // the same bargain actionLabel's fallback makes below.
   'persona.create': 'Created persona',
   'persona.update': 'Edited persona',
   'persona.delete': 'Deleted persona',
   'persona.generate': 'Persona wrote',
+  'task.create': 'Created AI task',
+  'task.update': 'Edited AI task',
+  'task.delete': 'Deleted AI task',
+  'task.run': 'AI task ran',
+  'task.publish': 'Published generated explore',
+  'model.pull': 'Downloaded a model',
+  'model.purge': 'Deleted a downloaded model',
   'model.create': 'Added site model',
   'model.update': 'Edited site model',
   'model.delete': 'Removed site model',
@@ -116,8 +140,11 @@ export function isDestructive(action: string): boolean {
   return action === ADMIN_ACTIONS.commentDelete
     || action === ADMIN_ACTIONS.userDelete
     || action === ADMIN_ACTIONS.feedDelete
-    // Deleting a persona takes its account with it, and with the account go its
-    // posts and comments — the same reach as user.delete, which is why it sits
-    // with the destructive ones rather than with the other persona verbs.
-    || action === ADMIN_ACTIONS.personaDelete;
+    // A local model delete takes gigabytes off the operator's disk and pulls
+    // the model out from under whatever was configured to use it. Nothing in
+    // Newt can put it back — only another multi-gigabyte download can.
+    || action === ADMIN_ACTIONS.modelDelete
+    // Retained so historical persona.delete rows still render as destructive.
+    // That verb is no longer written; see ACTION_LABELS.
+    || action === 'persona.delete';
 }

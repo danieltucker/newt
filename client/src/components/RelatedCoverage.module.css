@@ -1,0 +1,73 @@
+/* Above Explored paths, and quieter than it: this is a set of outbound links to
+   other people's sites, not something anybody here made. Same tokens as the
+   rest of the article view — nothing hard-codes a colour. */
+.wrap {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.note {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.link {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  text-decoration: none;
+  /* A headline is long and this column is narrow inside the modal. */
+  overflow-wrap: anywhere;
+}
+
+.link:hover { text-decoration: underline; }
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.host {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dot { opacity: 0.5; }
+
+.reason {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

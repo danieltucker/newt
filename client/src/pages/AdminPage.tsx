@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, Fragment, ReactNode 
 import { apiGet, apiPost, apiPatch, apiDelete } from '../services/api';
 import { formatBytes } from '../utils/formatBytes';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import PersonasPanel from '../components/PersonasPanel';
+import AiTasksPanel from '../components/AiTasksPanel';
 import styles from './AdminPage.module.css';
 import {
   ADMIN_TABS, ADMIN_SECTIONS, adminPathFor, sectionForTab, tabsInSection,
@@ -2907,7 +2907,7 @@ export default function AdminPage({
               open and drops it on leave. Unlike the tabs above, none of this
               panel's state belongs to AdminPage — it owns its list, its form
               and its errors. */}
-          {tab === 'ai' && <PersonasPanel />}
+          {tab === 'ai' && <AiTasksPanel />}
 
           {tab === 'feeds' && (
             <div className={styles.body}>

@@ -103,8 +103,22 @@ export interface ExploredPath {
   snippet: string;
   /** 'public' | 'friends'. Never 'private': those are not in the list. */
   visibility: string;
-  /** The same author shape every other surface sends - see toPublicUser. */
+  /**
+   * The same author shape every other surface sends - see toPublicUser.
+   *
+   * Null for a generated explore, which has no owner at all. `origin` below is
+   * what the UI keys on rather than the absence of this: "no author" and "the
+   * instance wrote it" are different facts, and rendering the first as an
+   * anonymous byline is how an AI-written page ends up looking like a person's.
+   */
   author: ReturnType<typeof toPublicUser> | null;
+  /**
+   * 'user' - a person wrote it. 'auto' - an AiTask generated it.
+   *
+   * Carried to the client so the byline can name the instance. Posts are always
+   * 'user': nothing generates one.
+   */
+  origin: 'user' | 'auto';
   /** Whether the viewer wrote it, so their own can be marked as theirs. */
   own: boolean;
   /** Turns in the conversation. Explores only - null for a post. */
@@ -191,6 +205,7 @@ export async function exploredPathsFor(url: string, viewerId?: string): Promise<
       take: MAX_PATHS,
       select: {
         id: true, title: true, visibility: true, sharedAt: true, userId: true,
+        origin: true,
         user: { select: PUBLIC_USER_SELECT },
         _count: { select: { messages: true } },
         messages: {
@@ -234,6 +249,7 @@ export async function exploredPathsFor(url: string, viewerId?: string): Promise<
       snippet: clamp(plainish(t.messages[0]?.body ?? ''), SNIPPET_CHARS),
       visibility: t.visibility,
       author: t.user ? toPublicUser(t.user as PublicUser) : null,
+      origin: t.origin === 'auto' ? 'auto' : 'user',
       own: !!viewerId && t.userId === viewerId,
       // Turns, not rows: a question and its answer are one exchange, and "12
       // messages" reads as twice as much conversation as there was.
@@ -260,6 +276,8 @@ export async function exploredPathsFor(url: string, viewerId?: string): Promise<
       snippet: clamp(p.excerpt ?? '', SNIPPET_CHARS),
       visibility: p.visibility,
       author: p.user ? toPublicUser(p.user as PublicUser) : null,
+      // A post always has a human author; nothing generates one.
+      origin: 'user',
       own: !!viewerId && p.userId === viewerId,
       turns: null,
       at: p.publishedAt.toISOString(),

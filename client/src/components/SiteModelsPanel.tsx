@@ -8,7 +8,7 @@ import { apiErrorText } from '../services/api';
 import styles from './SiteModelsPanel.module.css';
 
 /**
- * Admin → Personas → Models. The endpoints the instance writes with.
+ * Admin → AI → Models. The endpoints the instance writes with.
  *
  * The screen has one job beyond CRUD: making the **private-host rule** legible
  * before it bites. An admin typing a LAN address needs to know, at that moment,
@@ -46,6 +46,10 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [found, setFound] = useState<string[] | null>(null);
+  // Typing a name even though the box reported a list. Not persisted: it is a
+  // per-edit choice, and defaulting back to the list on the next open is right
+  // — the list is the answer nearly every time.
+  const [freeText, setFreeText] = useState(false);
   const [probing, setProbing] = useState(false);
 
   const load = useCallback(async () => {
@@ -67,6 +71,7 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
     setEditingId(null);
     setShowForm(false);
     setFound(null);
+    setFreeText(false);
   }
 
   async function probe() {
@@ -76,6 +81,8 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
     try {
       const { models } = await probeModels(draft.baseUrl, draft.apiKey || undefined);
       setFound(models);
+      // A fresh list supersedes a previous decision to type one out.
+      setFreeText(false);
       if (models.length === 0) setNotice('That endpoint reported no models. Pull one first.');
     } catch (e) {
       setError(apiErrorText(e, 'Could not read the model list.'));
@@ -116,6 +123,7 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
     // dots would invite an edit that silently rewrites the key with the dots.
     setDraft({ label: m.label, baseUrl: m.baseUrl, model: m.model, apiKey: '', isDefault: m.isDefault });
     setFound(null);
+    setFreeText(false);
     setShowForm(true);
   }
 
@@ -167,7 +175,7 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
 
       <p className={styles.blurb}>
         Endpoints the instance generates with. These are paid for by you, not by the account
-        using them, and are used only by AI personas — everyone’s research and proofreading
+        using them, and are used only by the instance’s AI tasks — everyone’s research and proofreading
         still runs on their own key.
       </p>
 
@@ -237,14 +245,41 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Model</span>
             <div className={styles.modelRow}>
-              <input
-                className={styles.input}
-                value={draft.model ?? ''}
-                onChange={e => setDraft(d => ({ ...d, model: e.target.value }))}
-                placeholder="llama3.1:8b"
-                spellCheck={false}
-                list="site-model-options"
-              />
+              {/* A real <select> once the endpoint has been asked, not a
+                  datalist on a text box.
+
+                  The datalist this replaces did not work: a browser offers its
+                  own autofill list on a text input, that list wins, and what
+                  opened on click was saved form history rather than the models
+                  the box reported. ModelPicker had already learned the same
+                  thing for the user-facing picker — its doc block records the
+                  first version being exactly this control — and this panel was
+                  simply never brought across.
+
+                  A select also states the thing a datalist hides: these options
+                  came off the box, so a name that is not among them is a name
+                  it does not serve. */}
+              {found && found.length > 0 && !freeText ? (
+                <select
+                  className={styles.input}
+                  value={found.includes(draft.model ?? '') ? (draft.model ?? '') : ''}
+                  onChange={e => setDraft(d => ({ ...d, model: e.target.value }))}
+                >
+                  <option value="" disabled>Choose a model…</option>
+                  {found.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              ) : (
+                <input
+                  className={styles.input}
+                  value={draft.model ?? ''}
+                  onChange={e => setDraft(d => ({ ...d, model: e.target.value }))}
+                  placeholder="qwen3:30b-a3b"
+                  spellCheck={false}
+                  // Without this the browser's saved-value dropdown covers the
+                  // field, which is the bug that took the datalist out.
+                  autoComplete="off"
+                />
+              )}
               <button
                 className={styles.secondary}
                 onClick={() => void probe()}
@@ -254,15 +289,22 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
                 {probing ? 'Asking…' : 'List models'}
               </button>
             </div>
+
+            {/* The escape hatch stays, for the same reason ModelPicker keeps
+                one: a model pulled onto the box a minute ago should be usable
+                without re-probing, and a name Newt has never seen is not an
+                error — SiteModel.model is free text on purpose. */}
             {found && found.length > 0 && (
-              <>
-                <datalist id="site-model-options">
-                  {found.map(m => <option key={m} value={m} />)}
-                </datalist>
-                <span className={styles.fieldHint}>
-                  {found.length} available — click the field for the list.
-                </span>
-              </>
+              <span className={styles.fieldHint}>
+                {found.length} model{found.length === 1 ? '' : 's'} on that endpoint.{' '}
+                <button
+                  type="button"
+                  className={styles.linkBtn}
+                  onClick={() => setFreeText(f => !f)}
+                >
+                  {freeText ? 'Choose from the list' : 'Type a name instead'}
+                </button>
+              </span>
             )}
           </label>
 
@@ -272,7 +314,7 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
               checked={draft.isDefault ?? false}
               onChange={e => setDraft(d => ({ ...d, isDefault: e.target.checked }))}
             />
-            <span>Use this by default for every persona</span>
+            <span>Use this by default for every task</span>
           </label>
 
           <div className={styles.formActions}>
@@ -304,7 +346,7 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
               {confirmId === m.id ? (
                 <div className={styles.confirm}>
                   <span>
-                    Remove <strong>{m.label || m.baseUrl}</strong>? Personas using it fall back to
+                    Remove <strong>{m.label || m.baseUrl}</strong>? Tasks using it fall back to
                     the default. Its usage history is kept.
                   </span>
                   <div className={styles.itemActions}>
@@ -312,10 +354,10 @@ export default function SiteModelsPanel({ onChanged }: { onChanged?: () => void 
                       className={styles.danger}
                       disabled={busyId === m.id}
                       onClick={() => void act(m.id, async () => {
-                        const { personasAffected } = await deleteSiteModel(m.id);
+                        const { tasksAffected } = await deleteSiteModel(m.id);
                         setConfirmId(null);
-                        setNotice(personasAffected > 0
-                          ? `Removed. ${personasAffected} persona${personasAffected === 1 ? '' : 's'} moved to the default.`
+                        setNotice(tasksAffected > 0
+                          ? `Removed. ${tasksAffected} task${tasksAffected === 1 ? '' : 's'} moved to the default.`
                           : 'Removed.');
                       })}
                     >

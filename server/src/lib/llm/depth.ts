@@ -108,10 +108,18 @@ export const PROOFREAD: DepthConfig = {
  * instead is the shape of the output: three to five angles and a handful of
  * questions is a page, however much material went in, and a ceiling low enough
  * to make writing the post outright impossible is a feature here.
+ *
+ * The ceiling covers thinking *and* answer together (see buildBody in chat.ts),
+ * and that is what 3,000 was too tight for. On a reasoning model at medium
+ * effort the thinking alone can eat the budget, and what reaches parseIdeas is
+ * then a JSON object with no closing brace — indistinguishable, from the panel,
+ * from a model that ignored the format. 6,000 leaves the answer room behind the
+ * worst realistic think, and still cannot buy a finished post: the cap that
+ * makes writing one impossible is the *shape* asked for, not the token count.
  */
 export const IDEAS: DepthConfig = {
   effort: 'medium',
-  maxTokens: 3_000,
+  maxTokens: 6_000,
   instruction: '',
 };
 

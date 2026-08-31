@@ -14,6 +14,8 @@ import {
 } from '../lib/comments';
 import { deleteCommentPreservingThread } from '../lib/commentDeletion';
 import { friendIdsOf } from '../lib/friends';
+import { screenNewComment } from '../lib/ai/moderate';
+import { onCommentPosted } from '../lib/ai/triggers';
 import { blockWallOf, notWalledWhere } from '../lib/blocks';
 import { Visibility, isVisibility, visibilityWhere, canModerateComment } from '../lib/commentVisibility';
 import { assembleThread } from '../lib/commentTree';
@@ -71,11 +73,6 @@ const AUTHOR_SELECT = {
   firstName: true,
   lastName: true,
   avatar: true,
-  // Every comment says whether its author is an AI persona. Selected here rather
-  // than looked up when rendering, because this is the one query in the app that
-  // returns hundreds of authors at once and the badge must never be the thing
-  // that got left off. See User.isPersona.
-  isPersona: true,
 } as const;
 
 type CommentRow = {
@@ -89,7 +86,7 @@ type CommentRow = {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null; isPersona: boolean };
+  user: { id: string; username: string; firstName: string | null; lastName: string | null; avatar: string | null };
 };
 
 interface CommentNode {
@@ -107,10 +104,7 @@ interface CommentNode {
   // can never be conjured up by a non-admin editing their own state — and so a
   // comment you wrote yourself offers the ordinary Delete, not a mod action.
   canModerate: boolean;
-  // isPersona travels with the author on every node, replies included. The
-  // client draws the "AI" badge from it; nothing else in the payload discloses
-  // that the writer is a persona.
-  author: { username: string; displayName: string; avatar: string | null; isPersona: boolean };
+  author: { username: string; displayName: string; avatar: string | null };
   replies: CommentNode[];
 }
 
@@ -135,7 +129,7 @@ function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = f
       updatedAt: row.updatedAt,
       mine: false,
       canModerate: false,
-      author: { username: '', displayName: '[deleted]', avatar: null, isPersona: false },
+      author: { username: '', displayName: '[deleted]', avatar: null },
       replies: [],
     };
   }
@@ -156,7 +150,6 @@ function toNode(row: CommentRow, viewerId: string | undefined, viewerIsAdmin = f
       username: row.user.username,
       displayName: displayName(row.user),
       avatar: row.user.avatar,
-      isPersona: row.user.isPersona === true,
     },
     replies: [],
   };
@@ -284,6 +277,10 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const rows = await prisma.comment.findMany({
       where: {
         articleKey: key,
+        // A comment hidden by a moderation run is withheld from everybody but
+        // an admin. Not deleted — see Comment.hiddenAt — so clearing the flag
+        // brings it back into the thread intact.
+        ...(req.isAdmin ? {} : { hiddenAt: null }),
         ...visibilityWhere(req.userId, showPublic, friendIds),
         ...notWalledWhere(wall),
       },
@@ -446,6 +443,14 @@ router.post('/', requireAuth, commentBurstLimiter, commentHourlyLimiter, async (
     );
 
     res.status(201).json(toNode(created as CommentRow, req.userId!));
+
+    // After the response, never before it. Both of these can enqueue work for a
+    // GPU that is busy, and a community where posting a comment waits on model
+    // inference is one where posting feels broken. Neither can fail the post:
+    // the comment is the author's, the screening and the explore are the
+    // operator's, and only one of those three people is waiting.
+    void screenNewComment(created.id);
+    if (vis === 'public') void onCommentPosted(key, url);
   } catch (err) {
     logger.error(err, 'Create comment error');
     res.status(500).json({ error: 'Server error' });

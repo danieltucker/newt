@@ -6,6 +6,8 @@
  * like the same product, and a prompt that lives next to its route drifts.
  */
 
+import { jsonValues } from './jsonReply';
+
 // ── Research ────────────────────────────────────────────────────────────────
 
 /**
@@ -66,20 +68,15 @@ export const PLANNER_SYSTEM = (
 );
 
 export function parsePlan(raw: string): string[] {
-  const json = extractJson(raw);
-  if (!json) return [];
-  try {
-    const parsed = JSON.parse(json) as Record<string, unknown>;
-    if (parsed.search === false) return [];
-    if (!Array.isArray(parsed.queries)) return [];
-    return parsed.queries
-      .filter((q): q is string => typeof q === 'string')
-      .map(q => q.trim())
-      .filter(q => q.length > 1 && q.length <= 80)
-      .slice(0, 3);
-  } catch {
-    return [];
-  }
+  const parsed = jsonObject(raw);
+  if (!parsed) return [];
+  if (parsed.search === false) return [];
+  if (!Array.isArray(parsed.queries)) return [];
+  return parsed.queries
+    .filter((q): q is string => typeof q === 'string')
+    .map(q => q.trim())
+    .filter(q => q.length > 1 && q.length <= 80)
+    .slice(0, 3);
 }
 
 export function researchSystemPrompt(source?: { title: string; url: string }): string {
@@ -226,11 +223,8 @@ export interface CondensedPost {
  * Returns null only when there is genuinely no object to find.
  */
 export function parseCondensed(raw: string): CondensedPost | null {
-  const json = extractJson(raw);
-  if (!json) return null;
-
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(json) as Record<string, unknown>; } catch { return null; }
+  const parsed = jsonObject(raw);
+  if (!parsed) return null;
 
   const title = typeof parsed.title === 'string' ? parsed.title.trim() : '';
   const body = typeof parsed.body === 'string' ? parsed.body.trim() : '';
@@ -279,11 +273,8 @@ export interface ProofreadReport {
 const KINDS: ProofreadKind[] = ['spelling', 'grammar', 'clarity', 'consistency', 'style'];
 
 export function parseProofread(raw: string): ProofreadReport | null {
-  const json = extractJson(raw);
-  if (!json) return null;
-
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(json) as Record<string, unknown>; } catch { return null; }
+  const parsed = jsonObject(raw);
+  if (!parsed) return null;
 
   const rawIssues = Array.isArray(parsed.issues) ? parsed.issues : [];
   const issues: ProofreadIssue[] = [];
@@ -358,6 +349,14 @@ export interface IdeaAngle {
   detail: string;
 }
 
+/** The first of several candidate fields that holds a non-empty string. */
+function firstString(...values: unknown[]): string {
+  for (const v of values) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
 /** The model's pick from the feed: a URL it was shown, and why it chose it. */
 export interface IdeaPick {
   url: string;
@@ -381,18 +380,28 @@ export interface IdeasReport {
  * asked for ideas rather than for a reading list.
  */
 export function parseIdeas(raw: string): IdeasReport | null {
-  const json = extractJson(raw);
-  if (!json) return null;
-
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(json) as Record<string, unknown>; } catch { return null; }
+  const parsed = jsonObject(raw);
+  if (!parsed) return null;
 
   const angles: IdeaAngle[] = [];
   for (const item of Array.isArray(parsed.angles) ? parsed.angles : []) {
+    // A bare string is an angle with no detail, and a common enough reply to be
+    // worth taking: asked for {title, detail} pairs, a smaller model will often
+    // send `["RSS never died", …]`. Dropping those emptied the whole panel and
+    // told the author "nothing came back worth showing", which is a lie about
+    // an answer that arrived — the titles are the half that carries the idea.
+    if (typeof item === 'string') {
+      const only = item.trim();
+      if (only) angles.push({ title: only.slice(0, 160), detail: '' });
+      if (angles.length >= 6) break;
+      continue;
+    }
     if (typeof item !== 'object' || item === null) continue;
     const it = item as Record<string, unknown>;
-    const title = typeof it.title === 'string' ? it.title.trim() : '';
-    const detail = typeof it.detail === 'string' ? it.detail.trim() : '';
+    // `heading`/`body` is the other shape that turns up, from a model
+    // paraphrasing the field names rather than copying them.
+    const title = firstString(it.title, it.heading, it.angle);
+    const detail = firstString(it.detail, it.body, it.description);
     // A title with no detail is still an idea. Detail with no title is a
     // paragraph with nothing to hang it on, so it stands as its own heading
     // rather than being dropped over a missing field.
@@ -478,11 +487,8 @@ export interface RelevanceKeep {
  * happened. Deciding to show nothing and failing to decide are not the same.
  */
 export function parseRelevance(raw: string, count: number): RelevanceKeep[] | null {
-  const json = extractJson(raw);
-  if (!json) return null;
-
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(json) as Record<string, unknown>; } catch { return null; }
+  const parsed = jsonObject(raw);
+  if (!parsed) return null;
   if (!Array.isArray(parsed.keep)) return null;
 
   const kept: RelevanceKeep[] = [];
@@ -501,31 +507,26 @@ export function parseRelevance(raw: string, count: number): RelevanceKeep[] | nu
 }
 
 /**
- * Find the JSON object in a reply that was supposed to contain only one.
+ * The JSON object in a reply that was supposed to contain only one.
  *
- * Brace-counting rather than a regex, and string-aware, because a post body
- * inside `{"body": "…"}` routinely contains braces and escaped quotes — a
- * greedy `\{.*\}` match gets it right by accident and a lazy one truncates.
+ * The brace-counting this used to do by hand now lives in jsonReply.ts, shared
+ * with the persona parsers, which needed the same walk for arrays and had a
+ * broken copy of it. Two things came back with the move: reasoning blocks are
+ * stripped before the scan, and a brace-balanced run that turns out not to be
+ * JSON no longer ends the search — the reply is read on to the next candidate
+ * rather than abandoned.
+ *
+ * Returns the parsed object, not its text. Every caller parsed the string
+ * immediately and carried its own try/catch to do it; the scanner has already
+ * parsed the value to know it was worth returning, so doing it twice only
+ * created a second place for the two to disagree.
  */
-function extractJson(raw: string): string | null {
-  const text = raw.trim();
-  const start = text.indexOf('{');
-  if (start === -1) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\') { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+function jsonObject(raw: string): Record<string, unknown> | null {
+  for (const value of jsonValues(raw, '{')) {
+    // Arrays and primitives can't appear here — the scanner was given '{' — but
+    // `null` parses as an object to typeof and would reach the callers as one.
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
     }
   }
   return null;

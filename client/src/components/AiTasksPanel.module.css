@@ -1,0 +1,331 @@
+/* Admin → AI. Replaces PersonasPanel.module.css, and shares its vocabulary of
+   tokens so the screen still looks like the rest of the console: surfaces and
+   borders from the theme, --danger for destructive verbs, --on-accent on the
+   filled button. Nothing here hard-codes a colour. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 24px;
+}
+
+/* ── Section nav ───────────────────────────────────────────────────────── */
+
+.subnav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.subnavBtn {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.subnavBtn:hover { color: var(--text); }
+
+.subnavActive {
+  background: var(--surface2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ── Headings and messages ─────────────────────────────────────────────── */
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 6px;
+}
+
+.sectionNote {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.notice,
+.error,
+.empty {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.error {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.empty {
+  border: 1px dashed var(--border);
+  color: var(--muted);
+}
+
+/* ── Rows ──────────────────────────────────────────────────────────────── */
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  /* A long URL in a job row must not push the badges off the right-hand end. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kind,
+.status,
+.paused,
+.shadow,
+.enforcing {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kind {
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.paused,
+.status {
+  background: var(--surface2);
+  color: var(--muted);
+}
+
+/* Shadow and enforcing must be tellable apart at a glance: one is recording,
+   the other is hiding real people's comments. */
+.shadow {
+  background: var(--surface2);
+  color: var(--muted);
+}
+
+.enforcing {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.status_failed { color: var(--danger); }
+.status_running { color: var(--text); }
+
+.model {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.triggers {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.rowActions,
+.actions,
+.formActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.formActions { justify-content: flex-end; }
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
+
+.btn,
+.primary,
+.addBtn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  /* `Read it` is an anchor styled as a button; keep it on the same baseline. */
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.btn:hover:not(:disabled),
+.addBtn:hover:not(:disabled) { background: var(--surface3); }
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn:disabled,
+.primary:disabled,
+.addBtn:disabled { opacity: 0.55; cursor: default; }
+
+.select,
+.input,
+.num,
+.textarea {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.num { width: 90px; }
+
+/* ── Form ──────────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.field,
+.numField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* The job in flight, marked out from the history below it. The left edge is
+   the whole signal — an operator scanning this screen is looking for "is
+   anything happening", and that reads faster than any label. */
+.runningRow {
+  border-left: 3px solid var(--accent);
+}
+
+.idle {
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Matches the dismiss affordance SiteModelsPanel's notice already uses, so the
+   two panels behave the same way on the same screen. */
+.noticeDismiss {
+  margin-left: 10px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.noticeDismiss:hover { color: var(--text); }
+
+/* A button that reads as a link, for the reset-to-default affordance beside the
+   prompt. Matches SiteModelsPanel's, and a real button rather than an anchor
+   because it goes nowhere. */
+.linkBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkBtn:hover { opacity: 0.8; }

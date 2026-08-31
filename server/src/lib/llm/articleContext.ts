@@ -82,6 +82,99 @@ function clamp(text: string, max: number): string {
  *
  * Returns null when the URL isn't one Newt has any record of.
  */
+/**
+ * Everything readable about one URL to *nobody in particular*.
+ *
+ * What a generated explore is given. It is a separate exported function rather
+ * than `articleContextFor(url, null)` on purpose, and the reason is the whole
+ * privacy argument for auto-explore.
+ *
+ * `articleContextFor` feeds the model the viewer's own comments — **including
+ * the `private` tier the UI calls a Personal Note** — and, when no article text
+ * can be found, their reading-list notes. That is fine when the output is a
+ * private thread only that reader can open, which is exactly why explores
+ * default to private. A generated explore is destined to be *published on the
+ * article page*, so the same context assembly would take somebody's note to
+ * self and publish it.
+ *
+ * Making that a parameter of one function would mean a single wrong argument,
+ * anywhere, ever, publishes private writing. Two functions means the unsafe one
+ * cannot be reached without naming a viewer, and this one has no `userId` to
+ * pass — there is no argument that could turn it back on.
+ *
+ * So: public comments only, no reading-list fallback, no friends tier, no
+ * per-user settings. An article Newt holds no public record of yields null, and
+ * a null here means the job is skipped rather than run on thin material.
+ */
+export async function publicArticleContext(url: string): Promise<ArticleContext | null> {
+  const key = canonicalArticleKey(url);
+  if (!key) return null;
+
+  let title = '';
+  let text = '';
+  let source: TextSource = 'none';
+
+  // A public post at this URL is the original text. A non-public one is not
+  // readable by "nobody", so it is skipped rather than falling through to the
+  // feed copy — the feed copy of a private post does not exist.
+  const post = await prisma.blogPost.findUnique({
+    where: { articleKey: key },
+    select: { title: true, body: true, excerpt: true, visibility: true },
+  });
+  if (post) {
+    if (post.visibility !== 'public') return null;
+    title = post.title;
+    text = htmlToText(post.body) || post.excerpt;
+    source = text ? 'stored' : 'none';
+  } else {
+    const item = await prisma.feedItem.findFirst({
+      where: { linkKey: key },
+      orderBy: { fetchedAt: 'desc' },
+      select: { title: true, content: true, snippet: true },
+    });
+    if (!item) return null;
+    title = item.title;
+    text = htmlToText(item.content || '') || (item.snippet ?? '');
+    source = text ? 'stored' : 'none';
+  }
+
+  // No reading-list fallback here, unlike the viewer path: those notes are one
+  // person's private writing and there is no person in this call.
+  if (!title) return null;
+
+  if (!post && text.length < THIN_TEXT_CHARS) {
+    const fetched = await articleTextFor(url, key).catch(() => '');
+    if (fetched.length > text.length) {
+      text = fetched;
+      source = 'fetched';
+    } else if (text) {
+      source = 'summary';
+    }
+  }
+
+  // Public, undeleted comments only. No viewer means no friends tier and no
+  // block wall to apply — and a `private` comment is not reachable from here by
+  // construction, since the filter names the one tier that is.
+  const rows = await prisma.comment.findMany({
+    where: { articleKey: key, deletedAt: null, visibility: 'public' },
+    orderBy: { createdAt: 'asc' },
+    take: MAX_COMMENTS,
+    select: { body: true, user: { select: { username: true } } },
+  });
+
+  const comments: { author: string; body: string }[] = [];
+  let spent = 0;
+  for (const row of rows) {
+    const body = htmlToText(row.body);
+    if (!body) continue;
+    if (spent + body.length > MAX_COMMENT_CHARS) break;
+    spent += body.length;
+    comments.push({ author: row.user?.username ?? 'someone', body });
+  }
+
+  return { title, url, source, text: clamp(text, MAX_ARTICLE_CHARS), comments };
+}
+
 export async function articleContextFor(url: string, userId: string): Promise<ArticleContext | null> {
   const key = canonicalArticleKey(url);
   if (!key) return null;

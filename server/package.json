@@ -14,7 +14,6 @@
     "make-admin": "ts-node --transpile-only scripts/makeAdmin.ts",
     "seed-comments": "ts-node --transpile-only scripts/seedComments.ts",
     "seed-deep-threads": "ts-node --transpile-only scripts/seedDeepThreads.ts",
-    "seed-personas": "ts-node --transpile-only scripts/seedPersonas.ts",
     "seed-recent-chatter": "ts-node --transpile-only scripts/seedRecentChatter.ts",
     "seed-showcase": "ts-node --transpile-only scripts/seedShowcase.ts",
     "test": "vitest run",

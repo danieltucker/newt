@@ -7,8 +7,9 @@ import { articleEmbed } from '../utils/noteEmbed';
 import { startRepost } from '../utils/composerSeed';
 import { copyShareLink } from '../utils/shareLink';
 import CommentsPanel from './CommentsPanel';
-import PersonaArticleActions from './PersonaArticleActions';
+import ExploreTaskButton from './ExploreTaskButton';
 import ExploredPaths from './ExploredPaths';
+import RelatedCoverage from './RelatedCoverage';
 import CloseButton from './CloseButton';
 import styles from './ArticleDetailModal.module.css';
 
@@ -93,7 +94,7 @@ export default function ArticleDetailModal({
 }: Props) {
   const [article, setArticle] = useState<DetailArticle | null>(null);
   const [loading, setLoading] = useState(true);
-  // Bumped to remount the comment thread after a persona comments from the
+  // Bumped to remount the comment thread after a moderation action from the
   // admin row. See the `key` on CommentsPanel below.
   const [threadKey, setThreadKey] = useState(0);
   // A lead image that 404s drops out of the layout entirely rather than being
@@ -384,16 +385,12 @@ export default function ArticleDetailModal({
             </button>
           </div>
 
-          {/* Admin only, and self-hiding: it draws nothing unless the viewer has
-              personas to summon. Its own row under the action bar rather than a
-              pill inside it — see PersonaArticleActions.module.css. */}
+          {/* Admin only, and self-hiding: it draws nothing unless the viewer
+              has explore tasks configured. Its own row under the action bar
+              rather than a pill inside it — see ExploreTaskButton.module.css. */}
           {!readOnly && (
             <div className={styles.actionBar}>
-              <PersonaArticleActions
-                url={url}
-                title={displayTitle}
-                onCommented={() => setThreadKey(k => k + 1)}
-              />
+              <ExploreTaskButton url={url} title={displayTitle} />
             </div>
           )}
 
@@ -406,12 +403,13 @@ export default function ArticleDetailModal({
               it sits in; see .pathsWrap. The wrapper is gutters only, so an
               article with no paths still costs nothing. */}
           <div className={styles.pathsWrap}>
+            <RelatedCoverage articleUrl={url} />
             <ExploredPaths articleUrl={url} />
           </div>
 
           <div className={styles.commentsWrap}>
             <CommentsPanel
-              // Bumped when a persona comments from the row above, which remounts
+              // Bumped when the thread needs rereading from the row above, which remounts
               // the thread so the new comment appears. A remount rather than a
               // callback into the panel because the panel owns its fetching and
               // there is nothing to preserve: the composer is closed at the

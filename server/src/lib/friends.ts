@@ -7,12 +7,6 @@ export const PUBLIC_USER_SELECT = {
   firstName: true,
   lastName: true,
   avatar: true,
-  // Carried on every public shape of a user, not fetched where a badge happens
-  // to be drawn. Disclosure that an author is an AI persona has to be a property
-  // of "here is a user" — the moment it is opt-in per surface, some surface will
-  // be added later that forgets it, and the failure mode of forgetting is an
-  // undisclosed AI account. See User.isPersona in schema.prisma.
-  isPersona: true,
 } as const;
 
 export type PublicUser = {
@@ -21,7 +15,6 @@ export type PublicUser = {
   firstName: string | null;
   lastName: string | null;
   avatar: string | null;
-  isPersona?: boolean;
 };
 
 export function displayNameOf(u: PublicUser): string {
@@ -35,7 +28,6 @@ export function toPublicUser(u: PublicUser) {
     username: u.username,
     displayName: displayNameOf(u),
     avatar: u.avatar,
-    isPersona: u.isPersona === true,
   };
 }
 

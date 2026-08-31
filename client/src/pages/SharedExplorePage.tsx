@@ -82,7 +82,19 @@ export default function SharedExplorePage({ threadId, navigate }: Props) {
         </div>
         <h1 className={styles.title}>{thread.title}</h1>
         <div className={styles.byline}>
-          {thread.author && (
+          {thread.origin === 'auto' ? (
+            <>
+              {/* No profile to link to: the instance is not an account. Named
+                  and labelled in one breath, because "Newt" alone beside a
+                  transcript reads as a person's handle. */}
+              <span className={styles.author}>Newt</span>
+              <span className={styles.dot}>·</span>
+              <span title="Written by this instance's own model, not by a person">
+                generated
+              </span>
+              <span className={styles.dot}>·</span>
+            </>
+          ) : thread.author && (
             <>
               {/* Built the same way every other profile link is: usernames
                   aren't charset-restricted, so the segment must be encoded. */}

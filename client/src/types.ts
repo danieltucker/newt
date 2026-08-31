@@ -153,12 +153,7 @@ export interface ArticleComment {
   // else's live comment. The client never infers this - see toNode in
   // server/src/routes/comments.ts.
   canModerate?: boolean;
-  // isPersona rides on every author the server sends, tombstones included (false
-  // there). The "AI" badge is drawn from it and from nothing else — there is no
-  // other signal in the payload that an author is a persona, which is why it is
-  // required rather than optional: a surface that forgot it would silently show
-  // an undisclosed AI account.
-  author: { username: string; displayName: string; avatar: string | null; isPersona: boolean };
+  author: { username: string; displayName: string; avatar: string | null };
   replies: ArticleComment[];
 }
 
@@ -191,7 +186,6 @@ export interface PublicUser {
   avatar: string | null;
   // Server-set on every public user shape (see toPublicUser). Optional here only
   // because older cached payloads may predate it; treat absent as false.
-  isPersona?: boolean;
 }
 
 export interface FriendRequest {
@@ -314,8 +308,6 @@ export interface ProfileUser {
   displayName: string;
   avatar: string | null;
   // Set by toPublicUser server-side, like the fields above. An AI persona's
-  // profile says so beside the name; see PersonaBadge.
-  isPersona?: boolean;
   createdAt: string;
   // The banner behind the avatar. An uploaded image wins; failing that a named
   // gradient; failing that one derived from the username. See coverStyle().

@@ -1,0 +1,95 @@
+/* A separate row below the article's own action bar, not another pill inside it.
+   Repost and Explore are things the *reader* does with a piece; this one spends
+   the instance's GPU and produces something an admin then has to review, so it
+   is kept visually apart from the reader's own verbs. */
+.wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border);
+  margin-top: 8px;
+}
+
+.trigger {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--surface3);
+}
+
+.trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 240px;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.model {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.result,
+.error {
+  font-size: 12px;
+}
+
+.result {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+}

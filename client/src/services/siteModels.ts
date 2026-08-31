@@ -59,8 +59,8 @@ export function updateSiteModel(id: string, patch: SiteModelDraft): Promise<Site
   return apiPatch<SiteModel>(`${BASE}/${id}`, patch);
 }
 
-export function deleteSiteModel(id: string): Promise<{ ok: true; personasAffected: number }> {
-  return apiDelete<{ ok: true; personasAffected: number }>(`${BASE}/${id}`);
+export function deleteSiteModel(id: string): Promise<{ ok: true; tasksAffected: number }> {
+  return apiDelete<{ ok: true; tasksAffected: number }>(`${BASE}/${id}`);
 }
 
 /**
@@ -99,11 +99,11 @@ export interface UsageStats {
     medianMs: number | null;
     outputTokens: number;
   }[];
-  byPersona: { personaId: string | null; name: string; calls: number; failed: number }[];
+  byTask: { taskId: string | null; name: string; calls: number; failed: number }[];
   byDay: { date: string; calls: number; failed: number }[];
   recent: {
     id: string; kind: string; outcome: string; label: string; model: string;
-    personaName: string; durationMs: number; inputTokens: number; outputTokens: number;
+    taskLabel: string; durationMs: number; inputTokens: number; outputTokens: number;
     error: string; createdAt: string;
   }[];
 }

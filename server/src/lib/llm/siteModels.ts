@@ -61,7 +61,7 @@ export function toPublicSiteModel(row: {
 
 /**
  * The environment fallback, kept so that upgrading from v1.22.0 does not switch
- * personas off the moment site models exist.
+ * AI tasks off the moment site models exist.
  *
  * Used only when the table has no usable row. Surfaced to the panel as a
  * read-only entry: a row the UI cannot edit, pretending to be editable, is worse
@@ -107,34 +107,34 @@ function decryptKey(row: { keyCipher: string; keyIv: string; keyTag: string }): 
 }
 
 /**
- * The endpoint a persona should be written by.
+ * The endpoint an AI task should be run on.
  *
- * Order: the persona's own choice, then the instance default, then the single
+ * Order: the task's own choice, then the instance default, then the single
  * oldest enabled row, then the environment. The third step matters more than it
  * looks — an admin who adds exactly one endpoint and never thinks about the word
- * "default" should not find personas broken, which is the same accommodation
+ * "default" should not find its tasks broken, which is the same accommodation
  * resolveCredential makes for a user with one key.
  *
- * A persona pointing at a *disabled* endpoint falls back rather than failing.
+ * A task pointing at a *disabled* endpoint falls back rather than failing.
  * Disabling is the operator saying "stop dialling this box", and the useful
- * response to that is for the personas on it to keep working via the default,
+ * response to that is for the tasks on it to keep working via the default,
  * not for them to go silent until somebody notices.
  */
-export async function resolveSiteModel(personaSiteModelId?: string | null): Promise<ResolvedSiteModel> {
+export async function resolveSiteModel(taskSiteModelId?: string | null): Promise<ResolvedSiteModel> {
   const rows = await prisma.siteModel.findMany({
     where: { enabled: true },
     orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
   });
 
   const chosen =
-    (personaSiteModelId ? rows.find(r => r.id === personaSiteModelId) : undefined)
+    (taskSiteModelId ? rows.find(r => r.id === taskSiteModelId) : undefined)
     ?? rows[0];
 
   if (!chosen) {
     const env = envSiteModel();
     if (env) return env;
     throw new LlmError(
-      'No site model is configured. Add one in Admin → Personas to use AI personas.',
+      'No site model is configured. Add one in Admin → AI to run AI tasks.',
       400,
     );
   }
@@ -154,7 +154,7 @@ export async function resolveSiteModel(personaSiteModelId?: string | null): Prom
   };
 }
 
-/** Whether personas can generate at all right now. */
+/** Whether any AI task can run at all right now. */
 export async function siteModelConfigured(): Promise<boolean> {
   const count = await prisma.siteModel.count({ where: { enabled: true } });
   return count > 0 || envSiteModel() !== null;
@@ -172,12 +172,12 @@ export async function siteModelConfigured(): Promise<boolean> {
  */
 export const USAGE_RETENTION_DAYS = 30;
 
-export type UsageKind = 'comment' | 'reply' | 'angles' | 'post' | 'identity' | 'test';
+export type UsageKind = 'explore' | 'moderate' | 'relate' | 'test';
 
 export interface UsageRecord {
   siteModel: ResolvedSiteModel;
-  personaId?: string | null;
-  personaName?: string;
+  taskId?: string | null;
+  taskLabel?: string;
   kind: UsageKind;
   outcome: 'success' | 'failed';
   usage?: Usage;
@@ -204,8 +204,8 @@ export async function recordUsage(rec: UsageRecord): Promise<void> {
         siteModelId: rec.siteModel.id,
         modelLabel: rec.siteModel.label.slice(0, 200),
         modelName: rec.siteModel.model.slice(0, 200),
-        personaId: rec.personaId ?? null,
-        personaName: (rec.personaName ?? '').slice(0, 200),
+        taskId: rec.taskId ?? null,
+        taskLabel: (rec.taskLabel ?? '').slice(0, 200),
         kind: rec.kind,
         outcome: rec.outcome,
         inputTokens: rec.usage?.input ?? 0,
@@ -250,11 +250,11 @@ export interface UsageStats {
     medianMs: number | null;
     outputTokens: number;
   }[];
-  byPersona: { personaId: string | null; name: string; calls: number; failed: number }[];
+  byTask: { taskId: string | null; name: string; calls: number; failed: number }[];
   byDay: { date: string; calls: number; failed: number }[];
   recent: {
     id: string; kind: string; outcome: string; label: string; model: string;
-    personaName: string; durationMs: number; inputTokens: number; outputTokens: number;
+    taskLabel: string; durationMs: number; inputTokens: number; outputTokens: number;
     error: string; createdAt: string;
   }[];
 }
@@ -324,10 +324,10 @@ export async function usageStats(windowDays = 7): Promise<UsageStats> {
     })
     .sort((a, b) => b.calls - a.calls);
 
-  const byPersona = [...group(r => r.personaId ?? r.personaName).entries()]
+  const byTask = [...group(r => r.taskId ?? r.taskLabel).entries()]
     .map(([, list]) => ({
-      personaId: list[0].personaId,
-      name: list[0].personaName || '(none)',
+      taskId: list[0].taskId,
+      name: list[0].taskLabel || '(none)',
       calls: list.length,
       failed: list.filter(r => r.outcome === 'failed').length,
     }))
@@ -353,7 +353,7 @@ export async function usageStats(windowDays = 7): Promise<UsageStats> {
       tokensPerSecond,
     },
     byModel,
-    byPersona,
+    byTask,
     byDay,
     recent: rows.slice(0, 50).map(r => ({
       id: r.id,
@@ -361,7 +361,7 @@ export async function usageStats(windowDays = 7): Promise<UsageStats> {
       outcome: r.outcome,
       label: r.modelLabel || '(unnamed)',
       model: r.modelName,
-      personaName: r.personaName,
+      taskLabel: r.taskLabel,
       durationMs: r.durationMs,
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,

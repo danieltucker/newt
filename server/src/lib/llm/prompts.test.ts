@@ -219,6 +219,26 @@ describe('parseIdeas', () => {
     expect(parseIdeas('{not json')).toBeNull();
   });
 
+  // The shapes a smaller model sends when asked for {title, detail} pairs. All
+  // of these used to empty the panel, which then told the author nothing came
+  // back worth showing — a lie about an answer that did arrive.
+  it('takes a bare string as an angle with no detail', () => {
+    const report = parseIdeas('{"angles":["RSS never died","The cost of the algorithm"]}')!;
+    expect(report.angles).toEqual([
+      { title: 'RSS never died', detail: '' },
+      { title: 'The cost of the algorithm', detail: '' },
+    ]);
+  });
+
+  it('accepts the field names a model paraphrases into', () => {
+    const report = parseIdeas('{"angles":[{"heading":"One","body":"Two"}]}')!;
+    expect(report.angles).toEqual([{ title: 'One', detail: 'Two' }]);
+  });
+
+  it('skips a reasoning block on its way to the object', () => {
+    expect(parseIdeas(`<think>{"angles": []} — no, better than that</think>\n${full}`)?.angles).toHaveLength(2);
+  });
+
   it('keeps an angle that only came with detail, as its own heading', () => {
     const report = parseIdeas('{"angles":[{"detail":"Compare it with Usenet."}]}')!;
     expect(report.angles).toEqual([{ title: 'Compare it with Usenet.', detail: '' }]);

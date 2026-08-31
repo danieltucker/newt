@@ -220,3 +220,22 @@ code {
   padding: 20px 0;
   text-align: center;
 }
+
+/* A button that reads as a link: the free-text escape hatch beside the model
+   list. A real button rather than an anchor because it goes nowhere. */
+.linkBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkBtn:hover { opacity: 0.8; }
+
+/* The select inherits .input, which is sized for a text box; give it the room
+   a native dropdown arrow needs so a long model id is not clipped by it. */
+.modelRow select.input { padding-right: 28px; }

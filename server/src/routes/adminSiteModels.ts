@@ -242,7 +242,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
   try {
     const row = await prisma.siteModel.findUnique({
       where: { id: req.params.id },
-      select: { id: true, label: true, baseUrl: true, isDefault: true, _count: { select: { personas: true } } },
+      select: { id: true, label: true, baseUrl: true, isDefault: true, _count: { select: { tasks: true } } },
     });
     if (!row) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -254,7 +254,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
         targetType: 'siteModel',
         targetId: row.id,
         targetLabel: row.label || row.baseUrl,
-        metadata: { personasAffected: row._count.personas },
+        metadata: { tasksAffected: row._count.tasks },
       });
       // Personas on it fall back to the default (SET NULL), and its usage rows
       // survive with their denormalised label — see the schema.
@@ -271,7 +271,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
       }
     });
 
-    res.json({ ok: true, personasAffected: row._count.personas });
+    res.json({ ok: true, tasksAffected: row._count.tasks });
   } catch (err) {
     fail(res, err, 'Delete site model error');
   }

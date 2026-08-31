@@ -28,7 +28,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       select: {
         id: true, title: true, sourceUrl: true, sourceTitle: true,
         visibility: true, sharedAt: true, createdAt: true, updatedAt: true,
-        userId: true,
+        userId: true, origin: true,
         user: { select: PUBLIC_USER_SELECT },
       },
     });
@@ -40,7 +40,10 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
     const own = !!req.userId && thread.userId === req.userId;
     let allowed = own || thread.visibility === 'public';
-    if (!allowed && thread.visibility === 'friends' && req.userId) {
+    // A generated thread (origin 'auto') has no owner, so there is nobody to be
+    // friends with — the friends tier is unreachable for one by construction,
+    // and the null check below is what makes that explicit rather than implicit.
+    if (!allowed && thread.visibility === 'friends' && req.userId && thread.userId) {
       allowed = (await friendIdsOf(req.userId)).has(thread.userId);
     }
     // A private thread is unreachable here even for its author: the owner reads
@@ -51,7 +54,9 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
     // A block hides the thread in both directions, the same mutual wall the
     // rest of the app raises.
-    if (!own && await isWalledOff(req.userId, thread.userId)) {
+    // No owner means no block relationship to check: a generated thread is not
+    // anybody's, so it cannot be walled off from anybody.
+    if (!own && thread.userId && await isWalledOff(req.userId, thread.userId)) {
       res.status(404).json({ error: 'Not found' });
       return;
     }
@@ -76,6 +81,10 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         createdAt: thread.createdAt.toISOString(),
         updatedAt: thread.updatedAt.toISOString(),
         author: thread.user ? toPublicUser(thread.user as PublicUser) : null,
+        // A generated thread has no author, and the page must say so rather
+        // than simply omitting the byline — an unattributed transcript reads as
+        // anonymous rather than as machine-written.
+        origin: thread.origin === 'auto' ? 'auto' : 'user',
         own,
       },
       messages: messages.map(m => ({

@@ -297,7 +297,7 @@ newt/
 │   ├── prisma/
 │   │   ├── schema.prisma
 │   │   └── migrations/
-│   ├── scripts/            # make-admin, showcase and persona seeds
+│   ├── scripts/            # make-admin and showcase seeds
 │   └── Dockerfile
 │
 ├── scripts/                # shots.mjs, marketing and HTML checks

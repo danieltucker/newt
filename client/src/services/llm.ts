@@ -197,6 +197,8 @@ export interface SharedExplore {
   createdAt: string;
   updatedAt: string;
   author: { id: string; username: string; displayName: string; avatar: string | null } | null;
+  /** 'auto' means the instance generated it and there is no author to name. */
+  origin: 'user' | 'auto';
   own: boolean;
 }
 
@@ -220,11 +222,26 @@ export interface ExploredPath {
   snippet: string;
   visibility: CommentVisibility;
   author: { id: string; username: string; displayName: string; avatar: string | null } | null;
+  /** 'auto' means the instance generated it and there is no author to name. */
+  origin: 'user' | 'auto';
   own: boolean;
   /** Exchanges in the conversation. Explores only; null for a post. */
   turns: number | null;
   at: string | null;
 }
+
+export interface RelatedArticle {
+  url: string;
+  title: string;
+  /** The site it came from, lowercased and www-stripped by the server. */
+  host: string;
+  /** One line on what the shared story is, in the model's words. */
+  reason: string;
+  at: string;
+}
+
+export const getRelatedArticles = (url: string) =>
+  apiGet<{ related: RelatedArticle[] }>(`/api/v1/articles/related?url=${encodeURIComponent(url)}`);
 
 export const getExploredPaths = (url: string) =>
   apiGet<{ paths: ExploredPath[] }>(`/api/v1/articles/paths?url=${encodeURIComponent(url)}`);

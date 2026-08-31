@@ -4,6 +4,7 @@ import logger from '../lib/logger';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { perUserLimiter } from '../lib/rateLimit';
 import { canonicalArticleKey, isHttpUrl } from '../lib/comments';
+import { onArticleSaved } from '../lib/ai/triggers';
 
 const router = Router();
 router.use(requireAuth);
@@ -234,6 +235,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     },
   });
   res.status(201).json(item);
+
+  // After the response. The trigger counts *distinct savers* and will not fire
+  // below a floor of three, so one person saving something never causes a
+  // public explore to appear on it — a save is private, and an explore that
+  // followed a single one would announce that somebody had made it.
+  void onArticleSaved(url);
 });
 
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {

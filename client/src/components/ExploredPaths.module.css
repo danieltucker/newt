@@ -130,6 +130,15 @@
 
 .dot { opacity: 0.5; }
 
+/* The machine-written marker. Deliberately quiet — it is a fact about the row,
+   not a warning about it — but it keeps the muted colour rather than fading
+   further, because a disclosure nobody can read is not a disclosure. */
+.generated {
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
 .tier {
   display: inline-flex;
   align-items: center;

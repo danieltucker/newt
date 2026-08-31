@@ -77,4 +77,49 @@ router.get('/paths', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 });
 
+/**
+ * GET /related?url= — other sites' coverage of the same story.
+ *
+ * Public in the sense that everything here is: the pairs are built from feed
+ * items, which nobody owns and every signed-in reader can already see in the
+ * river. No visibility filtering, because there is nothing to filter — unlike
+ * /paths, which is mostly visibility logic.
+ *
+ * A pair is one row with sorted keys (see ArticleRelation), so "what relates to
+ * this article" is two indexed lookups and a fold: the article can be on either
+ * side, and which side it is on decides which half of the row to return.
+ */
+router.get('/related', async (req: AuthRequest, res: Response): Promise<void> => {
+  const url = req.query.url;
+  if (!isHttpUrl(url)) { res.status(400).json({ error: 'url must be an http(s) URL' }); return; }
+
+  try {
+    const key = canonicalArticleKey(url);
+    const rows = await prisma.articleRelation.findMany({
+      where: { OR: [{ keyA: key }, { keyB: key }] },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    });
+
+    res.json({
+      related: rows.map(r => {
+        // The *other* half of the pair. Getting this backwards would show the
+        // reader a link to the page they are already on, which is the one
+        // failure mode this shape makes easy.
+        const mine = r.keyA === key;
+        return {
+          url: mine ? r.urlB : r.urlA,
+          title: mine ? r.titleB : r.titleA,
+          host: mine ? r.hostB : r.hostA,
+          reason: r.reason,
+          at: r.createdAt.toISOString(),
+        };
+      }).filter(x => x.url && x.title),
+    });
+  } catch (err) {
+    logger.error(err, 'Related articles error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

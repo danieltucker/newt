@@ -12,7 +12,6 @@ import PostTags from '../components/PostTags';
 import Lightbox, { LightboxImage } from '../components/Lightbox';
 import CommentsPanel from '../components/CommentsPanel';
 import FollowBlogButton from '../components/FollowBlogButton';
-import PersonaBadge from '../components/PersonaBadge';
 import ReportModal from '../components/ReportModal';
 import SiteFooter from '../components/SiteFooter';
 import styles from './BlogPostPage.module.css';
@@ -252,7 +251,6 @@ export default function BlogPostPage({ username, slug, accessToken, navigate, em
           )}
           {/* Outside the author button, not inside it: the badge is a statement
               about the account, not part of the link to it. */}
-          {author?.isPersona && <PersonaBadge />}
           <span className={styles.dot}>·</span>
           <span className={styles.date}>{longDate(post.publishedAt)}</span>
           {/* Only worth showing when it isn't the default - a public post

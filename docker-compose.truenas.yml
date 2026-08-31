@@ -64,10 +64,10 @@ services:
       # pages in — the client container, over the internal network. Only change it
       # if the client service is renamed.
       SHELL_ORIGIN: ${SHELL_ORIGIN:-http://client}
-      # ── AI personas: which private hosts the site model may reach ────────────
+      # ── AI tasks: which private hosts the site model may reach ───────────────
       # THE ONE SETTING THAT MUST LIVE HERE RATHER THAN IN THE ADMIN PANEL.
       #
-      # Endpoints themselves are configured in Admin → Personas → Models, which
+      # Endpoints themselves are configured in Admin → AI → Models, which
       # is a convenience: switching model or adding a box shouldn't need a shell.
       # But the site model is the only call in Newt permitted to reach an address
       # inside your network, and *that* capability stays gated on host access —
@@ -84,9 +84,9 @@ services:
       # Leave blank and the panel accepts only public HTTPS endpoints.
       OPERATOR_LLM_PRIVATE_HOSTS: ${OPERATOR_LLM_PRIVATE_HOSTS:-}
       # ── Legacy single-endpoint config (still honoured) ───────────────────────
-      # How personas were configured before the admin panel existed. Used as a
+      # How the operator model was configured before the admin panel existed. Used as a
       # fallback when no endpoint has been added there, so an upgrade doesn't
-      # switch personas off. Its host is allowlisted automatically. Prefer the
+      # switch the AI tasks off. Its host is allowlisted automatically. Prefer the
       # panel for anything new.
       OPERATOR_LLM_BASE_URL: ${OPERATOR_LLM_BASE_URL:-}
       OPERATOR_LLM_MODEL: ${OPERATOR_LLM_MODEL:-}
@@ -109,11 +109,11 @@ services:
       - server
     restart: unless-stopped
 
-  # ── Optional: the instance's own model, for AI personas ─────────────────────
+  # ── Optional: the instance's own model, for AI tasks ────────────────────────
   #
   # Commented out by default because it is a real resource commitment, not a
   # flag: model weights are gigabytes, and CPU-only inference on a NAS is slow
-  # enough that you want to measure it before relying on it. Personas write
+  # enough that you want to measure it before relying on it. Moderation writes
   # short comments, which is the workload this suits best.
   #
   # WHY IT IS A SEPARATE SERVICE AND NOT PART OF THE SERVER IMAGE:
@@ -134,13 +134,19 @@ services:
   #   2. Set in .env:  OPERATOR_LLM_PRIVATE_HOSTS=ollama
   #      (Without this the admin panel refuses the address — by design.)
   #   3. sudo docker compose -f docker-compose.truenas.yml up -d
-  #   4. Pull a model once:
-  #        sudo docker compose -f docker-compose.truenas.yml exec ollama \
-  #          ollama pull llama3.1:8b
-  #      (Until this is done, generation fails with a model-not-found error.)
-  #   5. In Admin → Personas → Models, add:
+  #   4. In Admin → AI → Models, add:
   #        Base URL  http://ollama:11434/v1
-  #        Model     llama3.1:8b        ("List models" reads them off the box)
+  #        Model     qwen3:30b-a3b      ("List models" reads them off the box)
+  #   5. Download a model from Admin → AI → Models → Downloaded models. Newt
+  #      drives Ollama's /api/pull itself now, so this is the fallback:
+  #        sudo docker compose -f docker-compose.truenas.yml exec ollama \
+  #          ollama pull qwen3:30b-a3b
+  #      (Until a model exists, generation fails with a model-not-found error.)
+  #
+  #      A pull writes several GB to the volume below and **Newt cannot see how
+  #      much space is left on it** — this process has no filesystem access to
+  #      the Ollama container's host. That check has to be yours; a pull onto a
+  #      full dataset takes Postgres down with it.
   #
   # Sizing, for a 24GB card: an 8B at q4 is ~5GB and fast; a 24-32B at q4 is
   # ~15-20GB and writes noticeably better prose; a 70B at q4 is ~40GB and will

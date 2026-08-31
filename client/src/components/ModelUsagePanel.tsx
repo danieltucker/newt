@@ -4,7 +4,7 @@ import { apiErrorText } from '../services/api';
 import styles from './ModelUsagePanel.module.css';
 
 /**
- * Admin → Personas → Usage. What the instance's models have actually been doing.
+ * Admin → AI → Usage. What the instance's models have actually been doing.
  *
  * **This panel is not about money.** A local GPU bills nothing, so the numbers
  * that matter to a self-hosted operator are different ones: is the box
@@ -124,7 +124,7 @@ export default function ModelUsagePanel() {
           {totals.medianMs !== null && totals.p95Ms !== null && totals.p95Ms > totals.medianMs * 4 && (
             <p className={styles.insight}>
               The slowest calls take far longer than the typical one. On a single GPU that
-              usually means the model is being unloaded and reloaded — check whether personas
+              usually means the model is being unloaded and reloaded — check whether tasks
               are split across two models on the same endpoint.
             </p>
           )}
@@ -178,15 +178,15 @@ export default function ModelUsagePanel() {
             </table>
           </div>
 
-          <div className={styles.sectionTitle}>By persona</div>
+          <div className={styles.sectionTitle}>By task</div>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
-                <tr><th>Persona</th><th className={styles.numCol}>Calls</th><th className={styles.numCol}>Failed</th></tr>
+                <tr><th>Task</th><th className={styles.numCol}>Calls</th><th className={styles.numCol}>Failed</th></tr>
               </thead>
               <tbody>
-                {stats.byPersona.map(p => (
-                  <tr key={p.personaId ?? p.name}>
+                {stats.byTask.map(p => (
+                  <tr key={p.taskId ?? p.name}>
                     <td>{p.name}</td>
                     <td className={styles.numCol}>{num(p.calls)}</td>
                     <td className={`${styles.numCol} ${p.failed > 0 ? styles.bad : ''}`}>{num(p.failed)}</td>
@@ -201,7 +201,7 @@ export default function ModelUsagePanel() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>When</th><th>Persona</th><th>Kind</th><th>Model</th>
+                  <th>When</th><th>Task</th><th>Kind</th><th>Model</th>
                   <th className={styles.numCol}>Took</th><th>Result</th>
                 </tr>
               </thead>
@@ -209,7 +209,7 @@ export default function ModelUsagePanel() {
                 {stats.recent.map(r => (
                   <tr key={r.id}>
                     <td title={new Date(r.createdAt).toLocaleString()}>{relTime(r.createdAt)}</td>
-                    <td>{r.personaName || '—'}</td>
+                    <td>{r.taskLabel || '—'}</td>
                     <td>{r.kind}</td>
                     <td><code>{r.model}</code></td>
                     <td className={styles.numCol}>{ms(r.durationMs || null)}</td>

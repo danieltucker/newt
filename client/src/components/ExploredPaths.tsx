@@ -74,10 +74,31 @@ export default function ExploredPaths({ articleUrl, navigate }: Props) {
                 {p.snippet && <span className={styles.snippet}>{p.snippet}</span>}
                 <span className={styles.meta}>
                   {/* Whose it is comes first: on a page about somebody else's
-                      article, who took it further is the useful part. */}
+                      article, who took it further is the useful part.
+
+                      A generated explore is named for the instance rather than
+                      falling through to "Someone". That fallback was written for
+                      a deleted account — a person who was there and now is not —
+                      and reusing it here would present a machine-written page as
+                      an anonymous human one, which is the single thing the
+                      labelling rules across this app exist to prevent. `origin`
+                      is what decides it, not the absence of an author. */}
                   <span className={styles.who}>
-                    {p.own ? 'You' : p.author?.displayName || 'Someone'}
+                    {p.origin === 'auto'
+                      ? 'Newt'
+                      : p.own ? 'You' : p.author?.displayName || 'Someone'}
                   </span>
+                  {/* Said out loud, not left to be inferred from the name. Sits
+                      in the same meta row as the "Friends" marker and works the
+                      same way: only the case that needs stating is stated. */}
+                  {p.origin === 'auto' && (
+                    <>
+                      <span className={styles.dot}>·</span>
+                      <span className={styles.generated} title="Written by this instance's own model, not by a person">
+                        generated
+                      </span>
+                    </>
+                  )}
                   {p.turns != null && (
                     <>
                       <span className={styles.dot}>·</span>

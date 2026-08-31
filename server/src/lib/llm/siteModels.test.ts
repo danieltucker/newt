@@ -29,8 +29,8 @@ function row(over: Record<string, unknown> = {}) {
     siteModelId: 'm1',
     modelLabel: '3090 box',
     modelName: 'llama3.1:8b',
-    personaId: 'p1',
-    personaName: 'Rae',
+    taskId: 'p1',
+    taskLabel: 'Rae',
     kind: 'comment',
     outcome: 'success',
     inputTokens: 100,
@@ -113,12 +113,12 @@ describe('usageStats', () => {
     expect(s.byModel[0].siteModelId).toBeNull();
   });
 
-  it('groups by persona and by day', async () => {
-    rows.push(row({ personaId: 'p1', personaName: 'Rae', createdAt: new Date('2026-08-16T10:00:00Z') }));
-    rows.push(row({ personaId: 'p2', personaName: 'Kit', createdAt: new Date('2026-08-17T10:00:00Z') }));
-    rows.push(row({ personaId: 'p2', personaName: 'Kit', createdAt: new Date('2026-08-17T11:00:00Z') }));
+  it('groups by task and by day', async () => {
+    rows.push(row({ taskId: 'p1', taskLabel: 'Rae', createdAt: new Date('2026-08-16T10:00:00Z') }));
+    rows.push(row({ taskId: 'p2', taskLabel: 'Kit', createdAt: new Date('2026-08-17T10:00:00Z') }));
+    rows.push(row({ taskId: 'p2', taskLabel: 'Kit', createdAt: new Date('2026-08-17T11:00:00Z') }));
     const s = await usageStats(7);
-    expect(s.byPersona[0]).toMatchObject({ name: 'Kit', calls: 2 });
+    expect(s.byTask[0]).toMatchObject({ name: 'Kit', calls: 2 });
     expect(s.byDay).toEqual([
       { date: '2026-08-16', calls: 1, failed: 0 },
       { date: '2026-08-17', calls: 2, failed: 0 },
