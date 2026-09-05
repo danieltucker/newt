@@ -202,9 +202,25 @@
 }
 
 /* Z-index scale - every overlay picks a band; never use raw numbers.
-   background(0) < page(1) < sticky < content-overlay < modal < top < detached */
+   background(0) < page(1) < page-sticky < page-float < sticky <
+   content-overlay < modal < top < detached */
 :root {
-  --z-sticky: 40;           /* sticky search bar */
+  /* A bar that sticks inside the page body - the feed's control strip. It gets
+     a band under the shell bar rather than sharing one with it, because the
+     shell bar's dropdowns are anchored inside .bar, and .bar's own
+     backdrop-filter makes it a stacking context: a menu in there can never
+     paint above its own bar's band, however high its z-index goes. Level with
+     the feed's bar the winner fell to document order, and the feed is later in
+     the document - which is how the account menu ended up under the filter
+     bar. */
+  --z-page-sticky: 30;
+  /* A control that floats over the page rather than sitting in it: the feed's
+     "6 new articles" and its refresh pill, back-to-top, the feed offer. Above
+     the page-sticky bar, because arrivals and a way back to the top are the
+     more urgent of the two, and below the shell bar, which is chrome they
+     scroll under rather than over. */
+  --z-page-float: 35;
+  --z-sticky: 40;           /* the shell bar, and so everything hanging off it */
   --z-content-overlay: 50;  /* dropdown menus and panels inside page content */
   --z-modal: 200;           /* standard dialogs (settings, editors, admin) */
   --z-top: 300;             /* fullscreen overlays: console, reader, import */

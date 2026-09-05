@@ -61,7 +61,11 @@
   border-radius: 14px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   overflow: hidden;
-  z-index: 100;
+  /* Anchored inside the shell bar, which is a stacking context of its own, so
+     this only ever sorts against the rest of the bar - the band it picks is the
+     one the bar carries. It said 100 for long enough to look like it was
+     fighting something. */
+  z-index: var(--z-content-overlay);
 }
 
 .result {

@@ -7,7 +7,7 @@
   position: fixed;
   left: max(24px, env(safe-area-inset-left, 0px));
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  z-index: 40;
+  z-index: var(--z-page-float);
   display: flex;
   align-items: center;
   gap: 12px;

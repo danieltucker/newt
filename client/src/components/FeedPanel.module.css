@@ -15,15 +15,19 @@
    ride over the reading list above.
 
    --shellbar-h is published by ShellBar from its own measured height; the
-   fallback only covers the frame before that first measurement lands. Same
-   --z-sticky band as the shell bar itself, which never overlaps this because
-   the offset above already clears it, and as .newBanner, which is later in the
-   document and so wins the tie - correctly, since it is the more urgent of the
-   two. */
+   fallback only covers the frame before that first measurement lands.
+
+   --z-page-sticky, one band below the shell bar. The bars themselves never
+   overlap - the offset above already clears it - but the menus hanging off the
+   shell bar reach down over this one, and those are stuck at their bar's band
+   whatever z-index they carry (see the scale in tokens.css). Sharing a band
+   with it left the winner to document order, which the feed wins, which is how
+   the account menu ended up under the filter bar. .newBanner is higher still,
+   correctly: it is the more urgent of the two. */
 .controls {
   position: sticky;
   top: calc(var(--shellbar-h, 56px) + 8px);
-  z-index: var(--z-sticky);
+  z-index: var(--z-page-sticky);
   margin-bottom: 14px;
 }
 
@@ -200,15 +204,16 @@
    appear whenever it likes.
 
    It rides under the shell bar, whose height ShellBar measures and publishes as
-   --shellbar-h; the fallback only covers the frame before that lands. z-index
-   matches BackToTop - above the page, below every modal, because a reader open
-   over the top of this has nothing to do with it. */
+   --shellbar-h; the fallback only covers the frame before that lands.
+   --z-page-float, the band BackToTop and the refresh pill below share - above
+   the page and its control bar, below every modal, because a reader open over
+   the top of this has nothing to do with it. */
 .newBanner {
   position: fixed;
   top: calc(var(--shellbar-h, 56px) + 14px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 40;
+  z-index: var(--z-page-float);
   display: flex;
   align-items: center;
   gap: 7px;
@@ -252,15 +257,15 @@
 
    Bottom *centre* specifically: the right-hand column of that edge is spoken
    for by the back-to-top button and the notes launcher, which stack there (see
-   BackToTop.module.css). Same glass and the same z-index as those - above the
-   page, below every modal, since a reader open over the top of this has nothing
-   to do with it. */
+   BackToTop.module.css). Same glass as those, and the same --z-page-float band
+   - above the page, below every modal, since a reader open over the top of this
+   has nothing to do with it. */
 .floatingRefresh {
   position: fixed;
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 40;
+  z-index: var(--z-page-float);
   display: flex;
   align-items: center;
   gap: 7px;

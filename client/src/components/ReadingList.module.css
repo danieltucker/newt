@@ -1088,6 +1088,15 @@
   white-space: nowrap;
 }
 
+/* "· multiple saves", after the read time. Holds its ground the same way, and
+   for the same reason: it is short, and the publisher's name is the thing in
+   this line with room to give. Not tinted apart from the rest of the meta -
+   what other people did with the article is context, not a badge. */
+.saves {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .sourceFavicon {
   width: 14px;
   height: 14px;

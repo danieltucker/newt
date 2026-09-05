@@ -24,6 +24,7 @@ import ReadingListLauncher from './ReadingListLauncher';
 import { totalMinutes, formatDuration } from '../utils/readingTime';
 import { loadVisited, markVisited } from '../utils/visitedArticles';
 import { hideWithoutMovingThePage } from '../utils/scrollAnchor';
+import { saveCountLabel } from '../utils/saveCount';
 
 export type ReadingListLayout = 'list' | 'cards' | 'magazine';
 
@@ -327,6 +328,7 @@ interface CardProps {
 function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFiling, visited, onOpened, onArchive, onUnsave, onUndo, articleOpenMode = 'new-tab', onOpenArticle, commentCount, saveCount, onOpenReader, favHits, favorites = [], readingFolders = [], onCreateFolder, onOpenSite, onExplore }: CardProps) {
   const tags = parseTags(item.tag);
   const isGhost = !!ghost;
+  const savesText = saveCountLabel(saveCount);
 
   const shelves = shelvesFor(item.folderId, readingFolders);
   // Where a shelved placeholder says it went. Null (and an id whose folder has
@@ -467,6 +469,10 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
             </a>
           ) : <span>{item.source}</span>}
           {item.readTime ? <span className={styles.readTime}>· {item.readTime}</span> : null}
+          {/* What everyone else did with the article, next to how long it takes
+              to read - both are facts about the piece rather than things this
+              card can do, which is why neither belongs on the Save pill. */}
+          {savesText ? <span className={styles.saves}>· {savesText}</span> : null}
           {/* Last in the line, so it reads as a note about the article rather
               than part of its byline. The card is dimmed too (see .visitedCard);
               this is the part that survives being colour-blind or looking at one
@@ -512,7 +518,6 @@ function ReadingCard({ item, variant, ghost, filing, onCancelFiling, onConfirmFi
           className={styles.rowSave}
           label="Save"
           icon={<FolderIcon size={13} />}
-          saveCount={saveCount}
           canUnsave={!!onUnsave}
           onUnsave={onUnsave}
           menuLabel="Save to…"
@@ -1234,6 +1239,7 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
           categories={parseTags(reading.tag)}
           readTime={reading.readTime || null}
           pubDate={reading.savedAt}
+          saveCount={saveCounts[reading.url] ?? 0}
           prefs={commentPrefs}
           onCountChange={setCommentCount}
           legacyNote={reading.notes}
@@ -1249,7 +1255,6 @@ export default function ReadingList({ items, onSave, onUpdate, onDelete, onResto
             <SaveButton
               label="Save"
               icon={<FolderIcon size={13} />}
-              saveCount={saveCounts[reading.url] ?? 0}
               canUnsave
               onUnsave={() => { setReading(null); requestUnsave(reading.id); }}
               menuLabel="Save to…"

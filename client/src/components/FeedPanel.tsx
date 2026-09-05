@@ -18,6 +18,7 @@ import TagChip from './TagChip';
 import SaveButton, { SaveDestination } from './SaveButton';
 import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
 import { hideWithoutMovingThePage } from '../utils/scrollAnchor';
+import { saveCountLabel } from '../utils/saveCount';
 import styles from './FeedPanel.module.css';
 
 export type RssLayout = 'list' | 'cards' | 'magazine';
@@ -1239,6 +1240,7 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
           categories={reading.categories}
           readTime={reading.readTime != null ? `${reading.readTime} min read` : null}
           pubDate={reading.pubDate}
+          saveCount={saveCounts[reading.link] ?? 0}
           prefs={commentPrefs}
           onCountChange={setCommentCount}
           onClose={() => setReading(null)}
@@ -1256,7 +1258,6 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
               savedIcon={<BookmarkFilledIcon />}
               saved={isSaved(reading.link)}
               onUnsave={onUnsaveArticle && (() => handleUnsave(reading))}
-              saveCount={saveCounts[reading.link] ?? 0}
               menuLabel="Save to…"
               defaultId={READING_LIST_DEST}
               destinations={destinationsFor(readingFolders)}
@@ -1319,6 +1320,14 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
   const favicon = blogAuthor ? '' : domain ? faviconUrl(domain) : feedDomain ? faviconUrl(feedDomain) : '';
 
   const destinations = destinationsFor(readingFolders);
+
+  // One line for both, dot-joined only where there are two things to join.
+  const readLine = [
+    article.readTime != null
+      ? (article.readTime === 1 ? '1 minute read' : `${article.readTime} minute read`)
+      : null,
+    saveCountLabel(saveCount),
+  ].filter(Boolean).join(' · ');
 
   // Following the article out is a view, so the card reports it. Middle click
   // opens a background tab without firing onClick, which is exactly the habit a
@@ -1408,11 +1417,11 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
         {showSnippet && (
           <p className={styles.snippet}>{article.snippet}</p>
         )}
-        {article.readTime != null && (
-          <span className={styles.readTime}>
-            {article.readTime === 1 ? '1 minute read' : `${article.readTime} minute read`}
-          </span>
-        )}
+        {/* How long it takes, and what everyone else did with it. Both are
+            facts about the article rather than things the card can do, which is
+            why the save count reads here and not as a badge on the Save pill -
+            see saveCountLabel for why the small numbers stay unprinted. */}
+        {readLine && <span className={styles.readTime}>{readLine}</span>}
         <div className={styles.cardBottom}>
           <div className={styles.meta}>
             {favicon && <img src={favicon} alt="" className={styles.favicon} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
@@ -1511,7 +1520,6 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
             savedIcon={<BookmarkFilledIcon />}
             saved={saved}
             onUnsave={onUnsave}
-            saveCount={saveCount}
             menuLabel="Save to…"
             defaultId={READING_LIST_DEST}
             destinations={destinations}

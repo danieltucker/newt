@@ -110,35 +110,6 @@
   display: var(--pill-label-extra, inline);
 }
 
-/* ── The count beside a label ──
-   How many people saved the article, on the Save pill. A badge rather than more
-   label, because it is data of a different kind from the word next to it: the
-   label says what the button does, the badge says what everyone else did.
-
-   Never shrinks and never ellipsises - it is two or three characters and the
-   only place the number appears. The label is what gives way instead, which is
-   why this sits outside `.label` and its overflow. It stays through the narrow
-   step that drops `.labelExtra`: that rule drops a word restating an icon, and
-   there is nothing here restating anything.
-
-   Tabular figures so the badge doesn't twitch a pixel wider when a 1 becomes a
-   7, and a neutral tint rather than an accent one. The pill it sits on is
-   already washed in accent at three different strengths - 10% under the
-   pointer, 16% held on for a saved article - and a badge tinted the same way
-   disappears into two of them. Mixed from --text, it reads on all three, in
-   both themes, without competing with the pill's own state. */
-.count {
-  flex-shrink: 0;
-  margin-left: 2px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--text) 12%, transparent);
-  color: inherit;
-  font-size: 0.92em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.5;
-}
-
 /* ── The menu ──
    Fixed and portalled to <body>, with the side and the offsets worked out in
    SplitMenuButton.tsx when it opens. It cannot be absolute: these buttons live

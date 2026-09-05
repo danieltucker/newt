@@ -11,6 +11,7 @@ import ExploreTaskButton from './ExploreTaskButton';
 import ExploredPaths from './ExploredPaths';
 import RelatedCoverage from './RelatedCoverage';
 import CloseButton from './CloseButton';
+import { saveCountLabel } from '../utils/saveCount';
 import styles from './ArticleDetailModal.module.css';
 
 // The article reader. Opened from a card's comment strip, it shows the full
@@ -43,6 +44,12 @@ interface Props {
   categories?: string[];
   readTime?: string | null;
   pubDate?: string | null;
+  /**
+   * How many people have saved this article. Reported in the meta line rather
+   * than on the Save button, which is about what *you* do with the article -
+   * see saveCountLabel for why the small numbers are not printed.
+   */
+  saveCount?: number;
   prefs: CommentPrefs;
   onCountChange?: (url: string, next: number) => void;
   legacyNote?: string;
@@ -88,7 +95,7 @@ function longDate(iso: string | null | undefined): string {
 }
 
 export default function ArticleDetailModal({
-  url, title, source, imageUrl, categories, readTime, pubDate,
+  url, title, source, imageUrl, categories, readTime, pubDate, saveCount,
   prefs, onCountChange, legacyNote, onLegacyNoteMigrated, actions, onExplore, onClose, onViewProfile, readOnly,
   focusCommentId,
 }: Props) {
@@ -196,6 +203,7 @@ export default function ArticleDetailModal({
   const readText = article?.readTime != null
     ? `${article.readTime} min read`
     : (readTime || '');
+  const savesText = saveCountLabel(saveCount);
 
   // The stored article can arrive with a different image than the card opened
   // with, and the new one deserves its own chance to load.
@@ -283,6 +291,7 @@ export default function ArticleDetailModal({
               {displaySource && <span>{displaySource}</span>}
               {dateText && <><span className={styles.metaDot}>·</span><span>{dateText}</span></>}
               {readText && <><span className={styles.metaDot}>·</span><span>{readText}</span></>}
+              {savesText && <><span className={styles.metaDot}>·</span><span>{savesText}</span></>}
             </div>
 
             {loading ? (

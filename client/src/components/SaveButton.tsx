@@ -75,22 +75,13 @@ interface Props {
    * very much available.
    */
   canUnsave?: boolean;
-  /**
-   * How many people have saved this article, shown as a badge on the pill.
-   * Undefined or 0 draws nothing - see the note in SplitMenuButton.
-   *
-   * It is a count of people, not of copies: one reader filing the same piece
-   * onto two shelves is one save. The server is what guarantees that; this only
-   * shows what it returns.
-   */
-  saveCount?: number;
 }
 
 export default function SaveButton({
   label, defaultId, destinations, onSelect, icon, currentId,
   menuLabel = 'Save to…', className = '',
   onCreateDestination, createLabel = 'New folder…',
-  saved = false, savedLabel = 'Saved', savedIcon, onUnsave, saveCount, canUnsave,
+  saved = false, savedLabel = 'Saved', savedIcon, onUnsave, canUnsave,
 }: Props) {
   // The name being typed, or null while the row is still just a row.
   const [newName, setNewName] = useState<string | null>(null);
@@ -130,8 +121,6 @@ export default function SaveButton({
     <SplitMenuButton
       className={className}
       label={isOn ? savedLabel : label}
-      count={saveCount}
-      countLabel={saveCount === 1 ? 'Saved by 1 person' : `Saved by ${saveCount} people`}
       icon={isOn ? (savedIcon ?? icon) : icon}
       active={isOn}
       onPrimary={() => { if (isOn) onUnsave!(); else if (target) onSelect(target.id); }}
