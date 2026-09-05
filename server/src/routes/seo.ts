@@ -71,6 +71,10 @@ router.get('/robots.txt', (_req: Request, res: Response): void => {
     // fetches one has spent a request to receive the empty app shell.
     'Disallow: /blog',
     'Disallow: /settings',
+    // Signed-in like the rest of these, and unbounded besides: every query
+    // somebody has ever run is a distinct ?q=, so a crawler that started
+    // following them would walk an infinite space of empty app shells.
+    'Disallow: /search',
     'Disallow: /signin',
     'Disallow: /signup',
     '',

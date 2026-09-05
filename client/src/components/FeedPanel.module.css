@@ -2,55 +2,11 @@
   margin-top: 26px;
 }
 
-/* ── The control bar ──
-   One strip holding everything that operates on the feed, stuck under the shell
-   bar for as long as the feed is on screen.
-
-   It was two bands - actions above, filters in a box below - and both scrolled
-   away as soon as you began reading, which is exactly when they start being
-   wanted. Sticky rather than fixed: `position: fixed` inside .bodyGrid is
-   clamped to the grid's box (its finished `rise` animation leaves a transform
-   behind, which makes it the containing block), and sticky is what this wants
-   anyway - the bar belongs to the feed and should leave with it rather than
-   ride over the reading list above.
-
-   --shellbar-h is published by ShellBar from its own measured height; the
-   fallback only covers the frame before that first measurement lands.
-
-   --z-page-sticky, one band below the shell bar. The bars themselves never
-   overlap - the offset above already clears it - but the menus hanging off the
-   shell bar reach down over this one, and those are stuck at their bar's band
-   whatever z-index they carry (see the scale in tokens.css). Sharing a band
-   with it left the winner to document order, which the feed wins, which is how
-   the account menu ended up under the filter bar. .newBanner is higher still,
-   correctly: it is the more urgent of the two. */
-.controls {
-  position: sticky;
-  top: calc(var(--shellbar-h, 56px) + 8px);
-  z-index: var(--z-page-sticky);
-  margin-bottom: 14px;
-}
-
-/* The bar's own surface. Frosted rather than the near-transparent tint it wore
-   as a static box: cards now pass underneath it, and the same liquid-glass
-   vocabulary as the shell bar and the bookmarks rail is what makes the strip
-   read as chrome rather than as a card that refuses to scroll.
-
-   No `overflow` of any kind. The Filters dropdown is absolutely positioned
-   against this box on a narrow screen (see .panel in FeedFilterBar), and any
-   overflow value but `visible` would clip it into a sliver. */
-.filterBox {
-  padding: 8px 10px;
-  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
-  border-radius: 14px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--surface) 88%, transparent),
-    color-mix(in oklab, var(--surface) 72%, transparent)
-  );
-  backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow: 0 6px 22px color-mix(in oklab, var(--shadow) 45%, transparent);
-}
+/* The control bar's surface and its stickiness moved into FeedFilterBar itself
+   (.frame / .sticky there). They were only ever this file's because the feed was
+   the only surface with a bar; the search page arriving with the same bar and
+   none of the chrome is what showed that they belonged to the component. This
+   file now passes `sticky` and says nothing about how the bar looks. */
 
 /* No rule is needed for the nothing-to-filter case: FeedFilterBar returns null
    when it has no chips, no groups and no actions - and the feed always gives it
@@ -624,6 +580,16 @@
   border-radius: 16px 16px 0 0;
   overflow: hidden;
   background: var(--surface2);
+}
+
+/* The bleed is the card's own padding, negated - so it has to be restated
+   wherever the padding differs. Magazine's 16/18 is above; a cards-layout card
+   is 14/16, and using magazine's numbers there would leave the artwork 2px shy
+   of the edge on one axis and 2px past it on the other. */
+.grid .heroLink {
+  width: calc(100% + 32px);
+  margin: -14px -16px 2px;
+  border-radius: 14px 14px 0 0;
 }
 
 .hero {

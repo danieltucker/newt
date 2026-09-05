@@ -266,7 +266,9 @@ describe('GET /a/:id — a thread on somebody else\'s article', () => {
     // is a way to ask Google to drop *their* article. The canonical must stay
     // pointed at us.
     expect(res.text).not.toContain('canonical" href="https://example.com/article"');
-    expect(res.text).toMatch(/<link rel="canonical" href="[^"]*\/a\//);
+    // On us, and specifically at the readable spelling of this page: the two
+    // routes are one document, and the canonical is where that gets settled.
+    expect(res.text).toContain('<link rel="canonical" href="http://localhost:5173/s/example.com/article">');
   });
 
   it('still renders unfurl meta, since a link preview ignores robots', async () => {
@@ -397,6 +399,56 @@ describe('GET /e/:id — a shared explore', () => {
   it('404s an id that is not a thread id, without asking the database', async () => {
     await request(app).get('/e/not%2Fan%2Fid').expect(404);
     expect(prismaMock.researchThread.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /s/:domain/* — the readable form of the same thread', () => {
+  const PATH = '/s/example.com/2026/09/05/a-slug';
+
+  it('renders the same document as the /a/ link it replaces', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue({ articleTitle: 'A headline' });
+    prismaMock.comment.count.mockResolvedValue(1);
+
+    const res = await request(app).get(PATH).expect(200);
+
+    expect(res.text).toContain('<title>A headline · Newt</title>');
+    expect(res.text).toContain('content="noindex, follow"');
+    expect(res.text).toContain(`<link rel="canonical" href="http://localhost:5173${PATH}">`);
+  });
+
+  it('keys the thread on the article the path names, not on the path', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue(null);
+    prismaMock.comment.count.mockResolvedValue(0);
+    prismaMock.feedItem.findFirst.mockResolvedValue(null);
+
+    await request(app).get(PATH).expect(200);
+
+    // https:// plus the two halves, which is the whole contract of the format.
+    expect(prismaMock.comment.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ articleKey: 'example.com/2026/09/05/a-slug' }),
+      }),
+    );
+  });
+
+  it('keeps ?c= out of the canonical - it aims at a comment, not a page', async () => {
+    prismaMock.comment.findFirst.mockResolvedValue({ articleTitle: 'A headline' });
+    prismaMock.comment.count.mockResolvedValue(1);
+
+    const res = await request(app).get(`${PATH}?c=abc123`).expect(200);
+
+    expect(res.text).toContain(`<link rel="canonical" href="http://localhost:5173${PATH}">`);
+    expect(res.text).not.toContain('c=abc123');
+  });
+
+  it('404s on a first segment that is not a hostname', async () => {
+    await request(app).get('/s/localhost/x').expect(404);
+    await request(app).get('/s/not%20a%20host/x').expect(404);
+  });
+
+  it('does not shadow the publisher page one segment up', async () => {
+    const res = await request(app).get('/s/arstechnica.com').expect(200);
+    expect(res.text).toContain('<title>arstechnica.com · Newt</title>');
   });
 });
 

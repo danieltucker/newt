@@ -126,8 +126,14 @@ export interface ExploredPath {
   at: string | null;
 }
 
-/** Markdown, roughly de-marked, for a preview line. */
-function plainish(markdown: string): string {
+/**
+ * Markdown, roughly de-marked, for a preview line.
+ *
+ * Exported for the search results, which preview the same two kinds of thing
+ * this file lists and must clamp them identically — a snippet that ends mid-word
+ * on one surface and mid-sentence on the other reads as two different features.
+ */
+export function plainish(markdown: string): string {
   return markdown
     // Fenced code says nothing useful in a one-line preview.
     .replace(/```[\s\S]*?```/g, ' ')
@@ -141,7 +147,7 @@ function plainish(markdown: string): string {
     .trim();
 }
 
-function clamp(s: string, n: number): string {
+export function clamp(s: string, n: number): string {
   if (s.length <= n) return s;
   return s.slice(0, n).replace(/\s+\S*$/, '') + '…';
 }
@@ -167,8 +173,14 @@ function clamp(s: string, n: number): string {
  * from the same rules. If these two ever disagree, a card promises three
  * responses and the page shows two - and the reader is left assuming something
  * was hidden from them.
+ *
+ * Exported for a third caller with the same requirement: the search page, which
+ * reaches posts and explores by text rather than by article. Search is the one
+ * surface where a visibility mistake is not a wrong count but a stranger's
+ * private writing in somebody's results, so it does not get its own copy of
+ * these rules.
  */
-async function viewerScope(viewerId?: string) {
+export async function viewerScope(viewerId?: string) {
   const [friendIds, wall] = await Promise.all([
     viewerId ? friendIdsOf(viewerId) : Promise.resolve(new Set<string>()),
     blockWallOf(viewerId),
@@ -181,7 +193,16 @@ async function viewerScope(viewerId?: string) {
   }
   if (viewerId) tiers.push({ userId: viewerId });
 
-  return { tiers, notWalled: wall.size > 0 ? { userId: { notIn: [...wall] } } : {} };
+  return {
+    tiers,
+    notWalled: wall.size > 0 ? { userId: { notIn: [...wall] } } : {},
+    // The set itself, because `notWalled` above is only correct for a table
+    // whose userId is NOT NULL. ResearchThread's is nullable — a generated
+    // explore belongs to nobody — and `NULL NOT IN (…)` is NULL, so applying
+    // that filter would silently drop every generated thread from anyone who
+    // has ever blocked anybody. See lib/search, which spells the guard out.
+    wall,
+  };
 }
 
 export async function exploredPathsFor(url: string, viewerId?: string): Promise<ExploredPath[]> {

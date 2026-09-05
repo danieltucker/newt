@@ -16,6 +16,7 @@ import EditBookmarkModal from '../components/EditBookmarkModal';
 import EditFolderModal from '../components/EditFolderModal';
 import type { UserProfile } from './SettingsPage';
 import { SETTINGS_PATH, settingsPathFor, type SettingsSection } from '../utils/settingsUrl';
+import { searchPathFor, type SearchFilter } from '../utils/searchUrl';
 import { ADMIN_PATH, adminPathFor, type AdminTab } from '../utils/adminUrl';
 import ImportBookmarksModal from '../components/ImportBookmarksModal';
 import ArticleModal from '../components/ArticleModal';
@@ -31,6 +32,11 @@ import ProfilePage from './ProfilePage';
 import BlogPostPage from './BlogPostPage';
 import MyBlogPage from './MyBlogPage';
 import SitePage from './SitePage';
+// Eager, unlike the lazy four below. This is where a plain query in the search
+// box now lands, which makes it one of the most-reached pages in the shell -
+// putting a network round trip between pressing Enter and seeing results would
+// undo the point of searching here rather than at a search engine.
+import SearchPage, { type SaveFields } from './SearchPage';
 // ── Split out of the main bundle ──────────────────────────────────────────
 // Three of the heaviest things this shell can show, none of which an ordinary
 // new tab ever opens: the admin panel is ~3,400 lines that only an admin sees,
@@ -113,6 +119,11 @@ export type ShellView =
   | { kind: 'profile'; username: string; tab?: string | null; tag?: string | null }
   | { kind: 'post'; username: string; slug: string }
   | { kind: 'site'; domain: string }
+  // The search page. In the shell rather than standalone because half of what
+  // it searches - your notes, your bookmarks, your saves - is held by the shell
+  // and filtered in the page, and because a search is a step in the middle of
+  // something rather than somewhere you go.
+  | { kind: 'search'; query: string; filter: SearchFilter }
   | { kind: 'myblog' }
   | { kind: 'editor'; postId: string | null }
   // Settings, which used to be a modal over whatever you were reading. As a
@@ -346,7 +357,11 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // which reaches the whole archive instead of whatever had been loaded.
 
   // Pending feed article save (shows SaveArticleModal)
-  type PendingSave = { id: string; url: string; title: string; source: string; categories: string[]; readTime: number | null; imageUrl: string | null; markSaved: () => void };
+  // The article the save dialog is open on. Exactly SaveFields plus the button
+  // to fill in once it commits — the article's own id used to be in here too
+  // and was never read, which mattered once the search results started sending
+  // articles that have no feed-item id to send.
+  type PendingSave = SaveFields & { markSaved: () => void };
   const [savingArticle, setSavingArticle] = useState<PendingSave | null>(null);
 
   // Bookmarklet mode - true when this window was opened by a bookmarklet
@@ -359,10 +374,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const [showImport, setShowImport] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const { unread: notifUnread, notifications, loading: notifLoading, loadList: loadNotifications, markAllRead: markNotificationsRead } = useNotifications(accessToken);
-  // The thread reader: opened on a shared article link (/a/<id>) the app was
+  // The thread reader: opened on a shared article link the app was
   // loaded at, or from a comment card on a profile, which also names the comment
   // to land on. It is an overlay rather than a shell view, so it carries its own
-  // state instead of routing - ArticleDetailModal owns the /a/<id> history entry
+  // state instead of routing - ArticleDetailModal owns the reader history entry
   // while it is up, and putting it in the router as well would leave two things
   // pushing the same URL.
   const [thread, setThread] = useState<{ url: string; commentId?: string } | null>(() => {
@@ -394,13 +409,82 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   // you scroll and can link to, not an overlay over the one you were on.
   const goSite = useCallback((domain: string) => navigate(sitePathFor(domain)), [navigate]);
 
+  // Where a plain query in the search box goes. A route rather than an overlay,
+  // for the reason the site page is one: results are a page you read, scroll and
+  // can send to somebody, and the tab you picked is part of the address.
+  /**
+   * Saving an article, from wherever the reader found it.
+   *
+   * Named rather than inline on the feed, because the search results offer
+   * the same Save button and must make the same write - including the parts
+   * that are policy rather than plumbing: whether a save stops for the dialog,
+   * and that a shelf skips the reading list. Two copies of that would be two
+   * answers to what Save means, decided by which list you found the article in.
+   */
+  const handleSaveArticle = useCallback(async (
+    a: SaveFields,
+    card: { markSaved: () => void; restore: () => void },
+    dest?: { folderId: string | null },
+  ) => {
+              const fields = {
+                url: a.url,
+                title: a.title,
+                source: a.source,
+                readTime: a.readTime != null ? `${a.readTime} min` : '',
+                tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
+                imageUrl: a.imageUrl ?? '',
+              };
+              // Both committed paths fill the card's Save button in first
+              // and talk to the server after. They used to wait for the
+              // round trip - two of them, for a shelf - which left the card
+              // looking untouched for as long as the network took, so the
+              // press read as having missed. Every other write in the
+              // reading list already commits locally and reconciles behind
+              // the scenes (see useReadingList); this is the one that
+              // didn't.
+              //
+              // Picking a shelf is already a decision about this article, so
+              // it never stops for the dialog - and it skips the reading
+              // list, since filing it there first would only mean fishing it
+              // back out again.
+              if (dest) {
+                card.markSaved();
+                try {
+                  // One request, filed where it was sent: the create used to
+                  // be followed by a move, which is two round trips and a
+                  // window where the article sat in the reading list.
+                  await saveItem(fields, dest);
+                } catch {
+                  card.restore();
+                }
+                return;
+              }
+              if ((settings.saveArticleMode ?? 'instant') === 'instant') {
+                // Save with the article's own metadata - no dialog
+                card.markSaved();
+                try {
+                  await saveItem(fields);
+                } catch {
+                  card.restore();
+                }
+              } else {
+                // The dialog is its own feedback: it holds the screen while
+                // it saves and stays open if that fails. So this one waits
+                // for the real answer - by the time the dialog is out of the
+                // way the card behind it already reads as saved.
+                setSavingArticle({ ...a, markSaved: card.markSaved });
+              }
+  }, [saveItem, settings.saveArticleMode]);
+
+  const openSearchPage = useCallback((q: string) => navigate(searchPathFor(q)), [navigate]);
+
   // The Explore button on an article. Undefined when no model is connected, so
   // every surface that takes it (the reader, the feed, the reading list) hides
   // the button rather than offering one that opens a settings screen.
   //
   // The article travels in the URL rather than in state, so the thread that
   // comes back is a page you can reload, share with yourself, or reach with the
-  // back button — the same treatment /a/<id> gets.
+  // back button — the same treatment the reader path gets.
   const goExplore = useCallback(
     (url: string, title: string) => navigate(exploreArticlePath(url, title)),
     [navigate],
@@ -701,7 +785,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
     if (intent === 'save-article') {
       let source = '';
       try { source = new URL(url).hostname.replace(/^www\./, ''); } catch {}
-      setSavingArticle({ id: '', url, title, source, categories: [], readTime: null, imageUrl: null, markSaved: () => { if (window.opener) window.close(); } });
+      setSavingArticle({ url, title, source, categories: [], readTime: null, imageUrl: null, markSaved: () => { if (window.opener) window.close(); } });
     } else if (intent === 'add-bookmark') {
       setBookmarkletAddUrl(url);
       setShowAddLink(true);
@@ -1080,6 +1164,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       onOpenArticle={openSearchResult}
       onAsk={llm.hasModel ? askInExplore : undefined}
       onReference={llm.hasModel ? referenceInExplore : undefined}
+      onSearch={openSearchPage}
     />
   );
 
@@ -1214,6 +1299,43 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onFollowSite={handleFollowSite}
                 layout={settings.siteLayout ?? 'list'}
                 onLayoutChange={l => updateSetting({ siteLayout: l })}
+              />
+            )}
+            {view.kind === 'search' && (
+              // The three corpora the shell already holds are handed over
+              // rather than fetched again: these are the same arrays the search
+              // box's dropdown filters, and a second copy would be a second
+              // answer to "what have I saved".
+              <SearchPage
+                query={view.query}
+                filter={view.filter}
+                navigate={navigate}
+                bookmarks={[...Object.values(bookmarksByFolder).flat(), ...pinnedBookmarks]}
+                readingItems={readingList}
+                notes={(settings.noteDocs ?? []).filter(n => !n.deletedAt)}
+                onOpenArticle={openSearchResult}
+                onOpenNote={openNoteFromSearch}
+                // Its own layout setting, like the site page's. Results are a
+                // mix of kinds rather than one publisher's river, so the shape
+                // that suits them is not necessarily the one that suits either.
+                layout={settings.searchLayout ?? 'list'}
+                onLayoutChange={l => updateSetting({ searchLayout: l })}
+                // The source under a result headline goes where every other
+                // byline in the app goes.
+                onOpenSite={goSite}
+                // Save and Discuss, on the same handlers the feed is given: an
+                // article kept from a result and one kept from the river are
+                // the same write, including whether it stops for the dialog.
+                savedKeys={savedArticleKeys}
+                readingFolders={readingFolders}
+                onSaveArticle={handleSaveArticle}
+                onUnsaveArticle={handleUnsaveArticle}
+                onCreateFolder={handleCreateReadingFolder}
+                onExplore={openExplore}
+                // The Topic filter stars the same words the feed's does, into
+                // the same list - a favourite is one thing, not one per page.
+                favoriteTags={settings.favoriteTags ?? []}
+                onToggleFavoriteTag={handleToggleFavoriteTag}
               />
             )}
             {view.kind === 'myblog' && (
@@ -1356,56 +1478,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 onManageFeeds={() => setShowFeedManager(true)}
                 savedKeys={savedArticleKeys}
                 onUnsaveArticle={handleUnsaveArticle}
-                onSaveArticle={async (a, card, dest) => {
-                  const fields = {
-                    url: a.url,
-                    title: a.title,
-                    source: a.source,
-                    readTime: a.readTime != null ? `${a.readTime} min` : '',
-                    tag: a.categories.map(c => c.trim().toLowerCase()).filter(Boolean).join(','),
-                    imageUrl: a.imageUrl ?? '',
-                  };
-                  // Both committed paths fill the card's Save button in first
-                  // and talk to the server after. They used to wait for the
-                  // round trip - two of them, for a shelf - which left the card
-                  // looking untouched for as long as the network took, so the
-                  // press read as having missed. Every other write in the
-                  // reading list already commits locally and reconciles behind
-                  // the scenes (see useReadingList); this is the one that
-                  // didn't.
-                  //
-                  // Picking a shelf is already a decision about this article, so
-                  // it never stops for the dialog - and it skips the reading
-                  // list, since filing it there first would only mean fishing it
-                  // back out again.
-                  if (dest) {
-                    card.markSaved();
-                    try {
-                      // One request, filed where it was sent: the create used to
-                      // be followed by a move, which is two round trips and a
-                      // window where the article sat in the reading list.
-                      await saveItem(fields, dest);
-                    } catch {
-                      card.restore();
-                    }
-                    return;
-                  }
-                  if ((settings.saveArticleMode ?? 'instant') === 'instant') {
-                    // Save with the article's own metadata - no dialog
-                    card.markSaved();
-                    try {
-                      await saveItem(fields);
-                    } catch {
-                      card.restore();
-                    }
-                  } else {
-                    // The dialog is its own feedback: it holds the screen while
-                    // it saves and stays open if that fails. So this one waits
-                    // for the real answer - by the time the dialog is out of the
-                    // way the card behind it already reads as saved.
-                    setSavingArticle({ ...a, markSaved: card.markSaved });
-                  }
-                }}
+                onSaveArticle={handleSaveArticle}
                 readingFolders={readingFolders}
                 onCreateFolder={handleCreateReadingFolder}
                 refreshKey={feedRefreshKey}
@@ -1617,7 +1690,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
         />
       )}
 
-      {/* Reader opened from a shared /a/<id> link, or from a comment card on a
+      {/* Reader opened from a shared article link, or from a comment card on a
           profile - resolves content by URL either way. */}
       {thread && (
         <ArticleDetailModal

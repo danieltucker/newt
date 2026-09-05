@@ -31,6 +31,7 @@ import seoRoutes from './routes/seo';
 import llmRoutes from './routes/llm';
 import researchRoutes from './routes/research';
 import exploreRoutes from './routes/explores';
+import searchRoutes from './routes/search';
 import { errorHandler } from './middleware/errorHandler';
 
 // The wired-up Express app, with no side effects: no port bound, no background
@@ -187,6 +188,10 @@ app.use('/api/v1/research', apiLimiter, researchRoutes);
 // behind auth and never calls a model — a link to a public thread has to open
 // for someone with no account.
 app.use('/api/v1/explores', apiLimiter, exploreRoutes);
+// The search page: the feed archive, posts and explores in one answer. Separate
+// from /feeds/search, which is the search box's dropdown and stays scoped to
+// articles — a keystroke should not cost three index lookups.
+app.use('/api/v1/search', apiLimiter, searchRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

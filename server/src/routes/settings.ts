@@ -31,6 +31,7 @@ export interface UserSettings {
   rssLayout?: 'list' | 'cards' | 'magazine';
   readingListLayout?: 'list' | 'cards' | 'magazine';
   siteLayout?: 'list' | 'cards' | 'magazine';
+  searchLayout?: 'list' | 'cards' | 'magazine';
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
@@ -77,6 +78,7 @@ const DEFAULTS: UserSettings = {
   rssLayout: 'magazine',
   readingListLayout: 'magazine',
   siteLayout: 'list',
+  searchLayout: 'list',
   rssEnabled: true,
   // Saving is one click by default: the dialog is there for the reader who
   // wants to tag and retitle on the way in, not for the common case.
@@ -124,7 +126,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 const NOTE_KEYS = ['noteDocs', 'noteFolders', 'noteTreeOrder'] as const;
 
 router.patch('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'notesRev', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded', 'aiDepth', 'aiFeedSearch', 'aiShowCost']);
+  const allowed = new Set(['searchEngine', 'searchNewTab', 'theme', 'consoleEnabled', 'notes', 'noteDocs', 'noteFolders', 'noteTreeOrder', 'noteSidebarWidth', 'notesRev', 'articleOpenMode', 'readingListOpenMode', 'bookmarkOpenMode', 'bookmarkLayout', 'backgroundGradient', 'rssFeedUrls', 'rssFeedPageSize', 'rssLayout', 'readingListLayout', 'siteLayout', 'searchLayout', 'rssEnabled', 'saveArticleMode', 'markReadOnScroll', 'commentsShowPublic', 'commentsDefaultPublic', 'commentsDefaultVisibility', 'commentsSort', 'commentsAutoExpand', 'favoriteTags', 'feedOnboarded', 'aiDepth', 'aiFeedSearch', 'aiShowCost']);
   const incoming = req.body as Record<string, unknown>;
 
   // Validate keys

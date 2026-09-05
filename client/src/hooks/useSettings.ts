@@ -54,6 +54,10 @@ export interface UserSettings {
       the feed's: a site page is one publisher's output, which people read
       differently from the river. */
   siteLayout?: 'list' | 'cards' | 'magazine';
+  /** How the search page draws its results. Its own setting for the same
+      reason siteLayout is: a page of things you went looking for is read
+      differently from a river you are skimming. */
+  searchLayout?: 'list' | 'cards' | 'magazine';
   rssEnabled?: boolean;
   saveArticleMode?: 'dialog' | 'instant';
   markReadOnScroll?: boolean;
@@ -101,6 +105,10 @@ const DEFAULTS: UserSettings = {
   rssLayout: 'magazine',
   readingListLayout: 'magazine',
   siteLayout: 'list',
+  // List by default. Results are heterogeneous - an article, a post, a note -
+  // and the thing that tells them apart is the line of text, not the picture
+  // most of them do not have.
+  searchLayout: 'list',
   rssEnabled: true,
   saveArticleMode: 'instant',
   markReadOnScroll: true,

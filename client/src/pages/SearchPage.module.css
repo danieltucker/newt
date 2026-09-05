@@ -1,0 +1,648 @@
+/* The search page. Rendered inside the app shell, so there is no full-height
+   background or page padding here - the shell already draws both, the same
+   bargain the embedded profile and the site page strike.
+
+   ── Why the numbers below are the feed's ──
+   A result *is* a feed card: the same article, the same two controls, found a
+   different way. So this file does not invent a card - it carries FeedPanel's
+   own measurements across, rule for rule, and the values are deliberately
+   identical rather than merely similar:
+
+     list      a table, not a column of cards. Four columns on the same
+               template - headline, byline, actions, date - at 3px/10px padding
+               with --ctl-h: 23px, so a row is about 26px here too.
+     cards     CSS columns at 200px with a 12px gutter, and no artwork. Cards is
+               the feed's text view; the pictures live in magazine.
+     magazine  a 250px auto-fill grid at 16px, features spanning two tracks
+               under a 21:9 banner, standard cards under 16:9.
+
+   Where the two differ they differ for a stated reason, and there is only one:
+   a result carries a badge saying which corpus it came from, which the feed has
+   no equivalent of because the feed is one corpus.
+
+   If FeedPanel.module.css changes shape, this is the file that has to follow.
+   Two views of one object that drift apart are worse than one view. */
+
+/* No max-width. The feed does not clamp its column either - it fills whatever
+   the shell's body grid gives it - and a results page half a column narrower
+   than the river it is searching reads as a different app. The grids inside
+   pack themselves to whatever width they get. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 26px;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.query {
+  color: var(--accent);
+}
+
+/* ── Sections ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sectionCount {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface2);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.seeAll {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.seeAll:hover { text-decoration: underline; }
+
+/* ── The card, and the wrap that lifts it ──
+   FeedPanel's .cardWrap / .card, at the same numbers. */
+.cardWrap {
+  container-type: inline-size;
+  position: relative;
+  break-inside: avoid;
+  /* A grid item's min-width is `auto` - "no narrower than my own min-content" -
+     and the min-content of a headline containing a bare URL is the whole URL.
+     Both halves are needed: the words are told they may break (.title below)
+     and the box is told it may be narrower than its words. */
+  min-width: 0;
+  margin-bottom: 12px;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.cardWrap:hover {
+  transform: translateY(-3px);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: box-shadow 0.35s ease, border-color 0.35s ease, background 0.35s ease;
+}
+
+.cardWrap:hover .card {
+  box-shadow: 0 12px 28px var(--shadow);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardWrap,
+  .cardWrap:hover { transform: none; transition: none; }
+}
+
+/* The headline is a link, or - for a note, which has no address of its own - a
+   button. It needs the reset either way. */
+.title {
+  display: -webkit-box;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 0.12s;
+}
+.title:hover { color: var(--accent); }
+
+.snippet {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Bottom row: byline on the left, date and badge on the right ── */
+.cardBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.favicon {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+/* The publisher, as a link to its page here. Quiet until hovered: the headline
+   is the card's link, and two competing ones would be noise. */
+.domain {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.domain:hover {
+  opacity: 0.85;
+  text-decoration: underline;
+}
+
+/* An @handle where a hostname would otherwise sit. Full opacity and the accent
+   colour because, unlike a domain, it names a person - it is the byline, not a
+   technical footnote. */
+.handle {
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--accent) 85%, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.date {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+/* Which corpus a result came from. The one thing on this card the feed has no
+   equivalent of, because the feed is one corpus. */
+.badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── The action strip ──
+   FeedPanel's .commentRow: two equal halves under a hairline. */
+.actionRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Getting narrower, in two deliberate steps ──
+   Asked of the card rather than the window, and at the same two widths the feed
+   asks at - a result card in the columns above is between 200px and 400px wide
+   whatever the window is doing, so a viewport query never sees the case that
+   actually breaks, a narrow card on a wide screen.
+
+     1. The noun in "3 comments" goes, leaving "3" beside the speech bubble.
+        The count is the only part of that label that is data; the word is
+        restating an icon.
+     2. The halves become rows. Each control now has the full width of the card,
+        so the noun comes back - there is nothing to save it for.
+
+   Step 1 is read by the pill itself (see SplitMenuButton.module.css); this sets
+   the property it reads. Without these two the strip stays one row in a 232px
+   card and the result card comes out ~38px shorter than the feed card beside
+   it, which is exactly how two views of one object drift. */
+@container (max-width: 380px) {
+  .actionRow { --pill-label-extra: none; }
+}
+
+@container (max-width: 275px) {
+  .actionRow {
+    grid-template-columns: 1fr;
+    --pill-label-extra: inline;
+  }
+}
+
+/* A thumb gets bigger pills - more padding and a point of type - so both steps
+   arrive about 40px earlier. */
+@media (hover: none) {
+  @container (max-width: 425px) {
+    .actionRow { --pill-label-extra: none; }
+  }
+
+  @container (max-width: 315px) {
+    .actionRow {
+      grid-template-columns: 1fr;
+      --pill-label-extra: inline;
+    }
+  }
+}
+
+/* ── Cards - CSS columns, text only ──
+   The feed's Cards view carries no artwork; the pictures are magazine's. Same
+   200px column width and 12px gutter, so a result column and a feed column are
+   the same column. */
+.grid {
+  column-width: 200px;
+  column-gap: 12px;
+}
+
+/* ── Magazine - the editorial grid ── */
+.gridMagazine {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-auto-flow: dense;
+  gap: 16px;
+}
+
+.gridMagazine .cardWrap {
+  margin-bottom: 0;
+  display: flex;
+}
+
+.gridMagazine .card {
+  flex: 1;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+}
+
+.gridMagazine .title {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  -webkit-line-clamp: 4;
+}
+
+.gridMagazine .snippet {
+  font-size: 13px;
+  -webkit-line-clamp: 3;
+}
+
+/* The bottom row anchors to the foot of a stretched card, so a short result
+   beside a long one still reads as deliberate. */
+.gridMagazine .cardBottom {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+/* Long reads with artwork span two columns under a wide banner. */
+.featureWrap {
+  grid-column: span 2;
+}
+
+.featureWrap .hero {
+  aspect-ratio: 21 / 9;
+}
+
+.featureWrap .title {
+  font-size: 21px;
+  line-height: 1.25;
+  -webkit-line-clamp: 3;
+}
+
+/* No artwork, so give the words more room. */
+.textWrap .snippet {
+  -webkit-line-clamp: 6;
+}
+
+@media (max-width: 620px) {
+  .featureWrap { grid-column: auto; }
+  .featureWrap .title { font-size: 18px; line-height: 1.3; }
+}
+
+/* Cover image - bleeds to the card edges above the text. The bleed lives on the
+   link rather than the picture so the artwork and its hit area are the same
+   shape; the image just fills it. The negative margins are magazine's padding,
+   which is the only layout here that draws one. */
+.heroLink {
+  display: block;
+  width: calc(100% + 36px);
+  margin: -16px -18px 2px;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+/* The bleed is the card's own padding, negated - so it has to be restated
+   wherever the padding differs. Magazine's 16/18 is above; a cards-layout card
+   is 14/16. */
+.grid .heroLink {
+  width: calc(100% + 32px);
+  margin: -14px -16px 2px;
+  border-radius: 14px 14px 0 0;
+}
+
+.hero {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.cardWrap:hover .heroLink .hero {
+  transform: scale(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardWrap:hover .heroLink .hero { transform: none; }
+}
+
+/* ── List - a table, not a column of cards ──
+   FeedPanel's .gridList, at the same template and the same density: a row is
+   about 26px, which is what makes a list worth having over cards. */
+.gridList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--border);
+}
+
+.gridList .cardWrap {
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+  /* The lift is a card gesture and there are no cards here. Rows wash on hover
+     instead, which is what a table row does. */
+  transform: none;
+  transition: background 0.12s ease;
+}
+
+.gridList .cardWrap:hover {
+  transform: none;
+  background: var(--surface2);
+}
+
+.gridList .card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 140px) 208px 76px;
+  align-items: center;
+  gap: 0 12px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  /* The pills come down with the row. --ctl-h is what SplitMenuButton sizes its
+     group from, so one property here shrinks the Save pill and the comment pill
+     together and keeps them matched to each other. */
+  --ctl-h: 23px;
+  --pill-label-extra: none;
+}
+
+.gridList .cardWrap:hover .card {
+  box-shadow: none;
+  border-color: transparent;
+  background: none;
+}
+
+/* What a 26px row has no room for. The badge goes with them: which corpus a
+   result came from is what the section heading above it already says. */
+.gridList .snippet,
+.gridList .badge,
+.gridList .heroLink { display: none; }
+
+.gridList .title {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.9;
+  /* One line, hard. The clamp the card layouts use needs a flex context to
+     measure in and would let a long headline take two rows here, which breaks
+     the constant row height the whole view is built on. */
+  display: block;
+  -webkit-line-clamp: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Dissolved so its children become cells of the row's grid rather than a nested
+   flex box - the byline and the date are columns of the table. */
+.gridList .cardBottom {
+  display: contents;
+}
+
+.gridList .title { order: 1; }
+.gridList .meta { order: 2; min-width: 0; overflow: hidden; }
+.gridList .actionRow { order: 3; }
+.gridList .cardRight { order: 4; justify-content: flex-end; }
+
+.gridList .domain,
+.gridList .handle {
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In a row the action strip isn't a strip - it's a cell, and it drops the
+   hairline that separated it from the meta above in a card.
+
+   Its column is a fixed width rather than `auto` because every pill has to
+   start at the same x down the whole page: an `auto` track is sized per row, so
+   a row whose comment count is "3" would give a narrower cell than one reading
+   "128" and the strip would wander. The halves are uneven because the two pills
+   are - the comment pill holds a number, the Save pill a word and a caret. */
+.gridList .actionRow {
+  grid-template-columns: 84px 1fr;
+  gap: 4px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.gridList .date { font-size: 11px; }
+
+/* The way to the next page. FeedPanel's .moreBtn, at the same numbers - the
+   sentinel above it loads the page on scroll, and this is what says there is
+   one to load. */
+.moreBtn {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  text-align: center;
+}
+
+.moreBtn:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+.moreBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* Every message this page has to say to a reader with no results, one style:
+   the empty search, the too-short query, the failed request. */
+.note {
+  margin: 4px 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* The feed's own narrow breakpoint, at the same width and with the same fold.
+   Four columns do not fit in 390px, and the answer is not to let the row become
+   a card again: a phone is where a dense list is worth the most, since it is
+   where the least fits on screen. So the headline takes a row of its own and
+   the other three columns share the row under it, still as grid tracks - which
+   is the difference between this and a wrapped flex row. */
+@media (max-width: 620px) {
+  .grid { columns: 1; column-width: auto; }
+
+  .gridMagazine { grid-template-columns: 1fr; }
+
+  .card { padding: 16px 18px; }
+
+  /* Each layout sets its own headline size with a two-class selector, so
+     bumping .title alone would leave list and magazine cards behind. */
+  .title,
+  .gridList .title,
+  .gridMagazine .title,
+  .featureWrap .title { font-size: 18px; line-height: 1.3; }
+
+  .snippet,
+  .gridMagazine .snippet { font-size: 14.5px; opacity: 0.85; -webkit-line-clamp: 3; }
+
+  .gridList .card {
+    grid-template-columns: minmax(0, 1fr) 154px 58px;
+    gap: 1px 8px;
+    padding: 7px 12px;
+    --ctl-h: 26px;
+  }
+
+  .gridList .title { grid-column: 1 / 3; grid-row: 1; }
+  .gridList .cardRight { grid-column: 3; grid-row: 1; }
+  .gridList .meta { grid-column: 1; grid-row: 2; }
+  .gridList .actionRow { grid-column: 2 / 4; grid-row: 2; }
+
+  /* The comment pill only ever holds a number here, so it gives its width to
+     the Save pill, which holds a word, a number and a caret. */
+  .gridList .actionRow {
+    grid-template-columns: 66px 1fr;
+    gap: 5px;
+  }
+  .gridList .actionRow button { font-size: 12px; }
+
+  /* Placement is up with the other cells; this is only the type. */
+  .gridList .title {
+    font-size: 14px;
+    line-height: 1.35;
+    /* Two lines here, not one: at this width a single line truncates most real
+       headlines to uselessness, and the row height is no longer load-bearing
+       now that every row is two lines anyway. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+  }
+
+  .gridList .domain,
+  .gridList .handle { max-width: none; }
+
+  .domain, .handle, .date { font-size: 13px; }
+  .domain { opacity: 0.7; }
+  .favicon { width: 16px; height: 16px; }
+
+  /* The card is the full width now, so the two pills sit side by side again and
+     each is wide enough to hit.
+
+     Cards only - and the `.gridList` reset under it is why. The list layout
+     stays a row at this width rather than folding into a card, so it keeps the
+     tight, hairline-less strip from its own rules above; adding a top border
+     and 10px of padding to every row is precisely the height that made the two
+     views indistinguishable in the feed. */
+  .actionRow {
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .gridList .actionRow {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}

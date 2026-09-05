@@ -2,6 +2,126 @@
 
 Notable changes to Newt, newest first.
 
+## v1.27.1 - The search box searches here first
+
+**2026-09-05**
+
+**A plain query opens a search page instead of leaving for Google.** The box has
+always searched some of what is here - bookmarks, notes, the reading list, and
+since v1.20.0 the whole feed archive - but only as a dropdown of eight rows, and
+only as a way of getting back to one thing you half-remembered. Press Enter and
+you left for a search engine.
+
+That dropdown could never answer the other question: what is on this instance
+about a subject. Two of the corpora it has to reach were not searchable by text
+at all. A post was findable through its author's profile or a tag hub and
+nowhere else; an explore only from the article it was started from, which is no
+help at all when the thing you remember is what you asked rather than what you
+were reading at the time.
+
+So /search is a page now. Six corpora at once - feed articles, posts, explores,
+your saved articles, your bookmarks and your notes - each in its own section
+with a count, and a tab per corpus for when you know which one you want. Both
+the query and the tab are in the address, so a result set is a thing you can
+send to somebody or come back to.
+
+**A result is a feed card, because that is what it is.** The same article, found
+a different way - so the page is built out of what the feed already has rather
+than out of anything of its own. The control bar is the feed's control bar,
+frosted and stuck under the shell bar exactly as it is over the river, with the
+groups this page has an answer for: which kind of thing to show, which site,
+which topic, and the layout switch at the far end. The cards are the feed's
+cards, at the feed's measurements - list is the same 26px table with the same
+four columns, cards is the same 200px column, magazine is the same 250px grid
+with features spanning two tracks - and the column is the same width, because
+the feed does not clamp its own either. And the two buttons on them are the
+feed's two buttons: Save files an article to the reading list or a shelf, and
+Discuss opens the reader, with Explore, Repost and Share behind its caret. A
+search page that invented its own filters, its own card and its own way to save
+would have made you learn the app twice.
+
+Two things moved to make that true rather than merely look true. The bar's
+surface and its stickiness were written in FeedPanel, which meant a bar anywhere
+else was a second copy of them; they belong to the control bar and are now in
+it. And the Save menu's list of destinations was in FeedPanel too, with a note
+saying it was shared "so the two can't drift apart about what Save means" - it
+is in utils now, where a third surface can reach it without copying it.
+
+**Results page, rather than stopping at twenty.** Twenty was the server's page
+size and nothing ever asked for a twenty-first, so a search that matched two
+hundred articles looked exactly like one that matched twenty. Narrowing to one
+kind of result now scrolls: the same sentinel-and-button the feed uses, loading
+the next page as you reach the foot of the list, with the button underneath as
+the manual way and as the thing that says there is more.
+
+Two details worth stating. The counts read "20+" rather than "20" wherever there
+is another page, because twenty is how many were fetched and not how many exist
+- the server could only turn that into a real number by re-running the match
+with the visibility rules applied to every row rather than to one page of them,
+which is a whole second query to decorate a heading with. And every ordering
+that paging reads gained a final tiebreaker on the row's own id: without a total
+order, two articles published in the same second can swap places between one
+page and the next, which shows one of them twice and loses the other. Paging
+stops at 400 rows deep, where the honest answer is a narrower query rather than
+a slower page.
+
+**Cards carry their artwork, in the feed as well.** Cards was the text view: the
+picture only appeared in magazine, because the code asked which layout you were
+in rather than whether the article had a cover. That threw away the one thing
+that tells two headlines apart at a glance, in the densest view there is. Both
+grids draw the cover now, at the same 16:9 bleed. The two magazine variants that
+opt out still do, for reasons of their own - a text card is the variant *for* the
+articles with no art, and a brief runs its whole snippet where a banner would
+push the piece below the fold.
+
+The source under a headline is a link to that publisher's page here, the same
+journey every byline in the app already offers - so "what else has this site
+run, and what have I kept from it" is one click from a result rather than a
+search of its own.
+
+**The web is one keystroke away rather than gone.** /g, /d, /b and /br still go
+straight out, and the dropdown offers both: searching here, then searching the
+web, in that order. A typed address is still an address - a hostname goes to the
+hostname, not to a page of results about it.
+
+**Posts and explores got full-text indexes.** Both are stored generated tsvector
+columns, weighted the way the feed archive's is: a post is title, then excerpt,
+then its tags; an explore is its title, then the title of the article it came
+from. A post's *body* is deliberately not in there - it is sanitized HTML, and
+indexing it would make every embed attribute and tag name a searchable word. An
+explore's transcript is not in there either, for a stronger reason: those
+messages quote your own private comments and reading-list notes back at you, so
+indexing them would make a shared thread matchable on words its author never
+wrote and does not know are in it.
+
+**What you can see is decided in one place.** The ranking query is deliberately
+blind - it ranks every matching row on the instance - and the visibility filter
+is the tiers-and-blocks rule the rest of the app already runs on, applied
+afterwards. One consequence worth stating: your own drafts and your own private
+explores are in your results, badged as what they are. Everyone else's are
+public-or-friends as always.
+
+**Share links say what they point at.** The link Share put on the clipboard was
+the article's whole URL in base64 - 318 characters for a local news story, of
+which the only readable part was the domain of *this* site. It is now
+`newt.page/s/www.cascadiadaily.com/2026/sep/05/facing-rising-rent-fairhaven-taphouse`:
+122 characters, and a link somebody can look at and decide whether to open.
+
+It needs no shortener and no database of redirects, because the path *is* the
+article - `https://` plus the host and the path, read straight back. It sits
+under the publisher's page rather than taking a prefix of its own, which is the
+relationship the two pages actually have: `/s/cascadiadaily.com` is everything
+gathered from them, and one segment further down is a piece of it.
+
+Two smaller things fall out of the format. The tracking tail is dropped, which
+is where most of that 318 characters was - a syndication URL is often more utm
+than article, and none of it means anything to the page it points at. And the
+handful of URLs the short form cannot carry back exactly - an http-only
+publisher, an article whose own URL has a query, a bare front page - still get
+the old base64 link rather than a guess. Every link already shared keeps working
+and always will: those are in other people's chats, and stored as the href of
+every reference embed written before today.
+
 ## v1.27.0 - The list becomes a list, and finishing with an article stops deleting it
 
 **2026-08-31**

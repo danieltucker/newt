@@ -38,6 +38,7 @@ describe('security headers', () => {
     '/u/someone',
     '/u/someone/a-post',
     '/a/abc123',
+    '/s/example.com/a-slug',
     '/t/design',
     '/recent',
     '/robots.txt',

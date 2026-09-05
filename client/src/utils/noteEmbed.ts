@@ -90,7 +90,7 @@ function escapeHtml(s: string): string {
 
 // Attribute values reach an <img src> and an <a href>, so anything that could
 // carry script is dropped rather than rewritten. Everything we generate
-// ourselves (the /a/ path, the favicon service) passes; a hostile reading-list
+// ourselves (the reader path, the favicon service) passes; a hostile reading-list
 // row cannot smuggle a scheme through.
 function safeUrl(raw: string | undefined): string {
   const s = (raw ?? '').trim();
@@ -239,7 +239,7 @@ function innerHtml(data: EmbedData, variant: EmbedVariant): string {
  * itself; both of those carry the thread, so the row leads where the card does.
  * A pasted link points off-site - following it would take you to the source,
  * not to the conversation - so its row goes to the reader for that URL, which
- * is the page the thread actually lives on. `/a/<id>` needs no server-side
+ * is the page the thread actually lives on. A reader path needs no server-side
  * mapping, so this works for any URL, saved or not (see utils/articleUrl).
  */
 function commentsHref(data: EmbedData): string {

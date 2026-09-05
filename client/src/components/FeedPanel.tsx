@@ -15,7 +15,10 @@ import ArticleDetailModal from './ArticleDetailModal';
 import LayoutSwitch, { ListIcon, CardsIcon, MagazineIcon } from './LayoutSwitch';
 import FeedFilterBar, { FilterGroup } from './FeedFilterBar';
 import TagChip from './TagChip';
-import SaveButton, { SaveDestination } from './SaveButton';
+import SaveButton from './SaveButton';
+// The Save menu's destinations, out in utils since the search results offer the
+// same button - see the note there.
+import { destinationsFor, READING_LIST_DEST } from '../utils/saveDestinations';
 import { prepareFavorites, favoritesFor, coveringFavorites } from '../utils/favoriteTags';
 import { hideWithoutMovingThePage } from '../utils/scrollAnchor';
 import { saveCountLabel } from '../utils/saveCount';
@@ -122,21 +125,6 @@ function relativeDate(s: string | null): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
-}
-
-// Not a folder id, so it can't collide with one.
-const READING_LIST_DEST = 'reading-list';
-
-// Where Save can put this article. The reading list leads and is what the label
-// alone does; a Library shelf below it is for the pieces you already know you're
-// keeping rather than queueing. Shared by the card and the reader so the two
-// can't drift apart about what Save means.
-function destinationsFor(folders: ReadingFolder[]): SaveDestination[] {
-  return [
-    { id: READING_LIST_DEST, label: 'Reading list', hint: 'Default' },
-    { id: '', label: 'Unsorted', group: 'Saved articles' },
-    ...folders.map(f => ({ id: f.id, label: f.name, group: 'Saved articles' })),
-  ];
 }
 
 /** What the "Saved to …" placeholder calls a shelf. '' is Unsorted, a real shelf. */
@@ -1050,42 +1038,40 @@ export default function FeedPanel({ feedFolders, subscriptions, onManageFeeds, o
   // it is hardest to find. FeedFilterBar returns null on an empty bar unless it
   // has actions, which is what keeps that true.
   const controlBar = (
-    <div className={styles.controls}>
-      <FeedFilterBar
-        className={styles.filterBox}
-        groups={filterGroups}
-        // Read state is only tracked when read-on-scroll is on, so without it
-        // there is no such thing as unread here to filter to - and nothing to
-        // mark as read either, which is why both halves of the chip are gated
-        // on the same setting.
-        unread={markReadOnScroll
-          ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly, menu: markAllRead }
-          : undefined}
-        actions={
-          <>
-            {/* Icon and a tooltip, at every width. This is the rarest control
-                in the bar - you set your feeds up once - and the sliders glyph
-                is the same one the feed manager itself wears, so the button
-                looks like the thing it opens. The words are still in the
-                accessibility tree, and they come back as a label inside the ⋯
-                menu, where there is room for them: see `--action-label`. */}
-            <button
-              className={styles.manageBtn}
-              onClick={onManageFeeds}
-              title="Manage feeds"
-              aria-label="Manage feeds"
-            >
-              <SlidersIcon />
-              <span className={styles.actionLabel}>Manage feeds</span>
-            </button>
+    <FeedFilterBar
+      sticky
+      groups={filterGroups}
+      // Read state is only tracked when read-on-scroll is on, so without it
+      // there is no such thing as unread here to filter to - and nothing to
+      // mark as read either, which is why both halves of the chip are gated
+      // on the same setting.
+      unread={markReadOnScroll
+        ? { count: unreadTotal, active: unreadOnly, onToggle: toggleUnreadOnly, menu: markAllRead }
+        : undefined}
+      actions={
+        <>
+          {/* Icon and a tooltip, at every width. This is the rarest control
+              in the bar - you set your feeds up once - and the sliders glyph
+              is the same one the feed manager itself wears, so the button
+              looks like the thing it opens. The words are still in the
+              accessibility tree, and they come back as a label inside the ⋯
+              menu, where there is room for them: see `--action-label`. */}
+          <button
+            className={styles.manageBtn}
+            onClick={onManageFeeds}
+            title="Manage feeds"
+            aria-label="Manage feeds"
+          >
+            <SlidersIcon />
+            <span className={styles.actionLabel}>Manage feeds</span>
+          </button>
 
-            {onLayoutChange && articles.length > 0 && (
-              <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
-            )}
-          </>
-        }
-      />
-    </div>
+          {onLayoutChange && articles.length > 0 && (
+            <LayoutSwitch value={layout} options={LAYOUT_OPTIONS} onChange={onLayoutChange} label="Feed layout" />
+          )}
+        </>
+      }
+    />
   );
 
   // What has landed since this page was drawn, and the only thing that puts it
@@ -1339,7 +1325,19 @@ function ArticleCard({ article, variant, isNew, read, saved, cardRef, onSave, on
     }
     : {};
 
-  const showImage = variant === 'feature' || variant === 'standard';
+  // Artwork wherever there is artwork, in every layout that draws a card.
+  //
+  // Cards used to be the text view - `variant` is only set in magazine, so an
+  // undefined one meant no picture and Cards showed none. That was a rule about
+  // which layout you were in rather than about the article, and it left the
+  // densest card view throwing away the one thing that tells two headlines
+  // apart at a glance.
+  //
+  // The two magazine variants that opt out still opt out, and for reasons of
+  // their own: a text card is the variant *for* the articles with no art, and a
+  // brief runs its whole snippet under an accent rule where a banner would push
+  // the piece itself below the fold.
+  const showImage = !!article.imageUrl && variant !== 'text' && variant !== 'brief';
   // Magazine text variants always run their snippet; elsewhere keep the
   // original heuristic of only padding out short titles
   const showSnippet = !!article.snippet && (

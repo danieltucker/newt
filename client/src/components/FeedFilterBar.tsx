@@ -220,6 +220,23 @@ interface Props {
    * would knock it off the shared centre line).
    */
   className?: string;
+  /**
+   * Draw the bar on its own frosted surface.
+   *
+   * On by default for the surfaces that give it one, off for the reading list,
+   * where the bar is one item inside a toolbar that already has a surface -
+   * a box inside a box.
+   */
+  frame?: boolean;
+  /**
+   * Stick the bar under the shell bar for as long as its list is on screen.
+   *
+   * The controls are wanted at exactly the moment they scroll away: you notice
+   * a site is flooding the results, or that you have read everything worth
+   * reading, some way down the page. Implies `frame` - a bar that scrolls over
+   * content and has no surface of its own reads as text floating on text.
+   */
+  sticky?: boolean;
 }
 
 const ChevronIcon = () => (
@@ -272,7 +289,9 @@ const MoreIcon = () => (
  * The two shapes share their option list (`optionsFor`) and their open/close
  * state (`openId`), so they can't drift apart: only the trigger differs.
  */
-export default function FeedFilterBar({ groups, unread, favorites, actions, className = '' }: Props) {
+export default function FeedFilterBar({
+  groups, unread, favorites, actions, className = '', frame, sticky,
+}: Props) {
   // Which popover is showing. In the folded bar that's ROOT for the group list
   // or a group id once you've drilled into one; spread out, it's just the id of
   // the chip you clicked. Sharing one value is what lets both shapes reuse the
@@ -611,7 +630,19 @@ export default function FeedFilterBar({ groups, unread, favorites, actions, clas
   }
 
   return (
-    <div className={`${styles.bar} ${className}`} ref={barRef}>
+    <div
+      className={[
+        styles.bar,
+        // One element, not a wrapper around one: the row is what sticks and the
+        // row is what carries the surface, so there is nothing between them to
+        // get the offsets wrong.
+        sticky ? styles.sticky : '',
+        (frame ?? sticky) ? styles.frame : '',
+        // Spacing is the consumer's call, so its class goes last and wins.
+        className,
+      ].filter(Boolean).join(' ')}
+      ref={barRef}
+    >
       <div className={styles.left}>
         {/* ── Unread, and what you can do about it ──
             The filter on the left, a caret on the right for the things that

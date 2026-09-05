@@ -5,13 +5,18 @@ import { noteText, noteSnippet } from '../utils/noteText';
 import { blogAuthorOfUrl } from '../utils/blogUrl';
 import { useFeedSearch } from '../hooks/useFeedSearch';
 import { referenceQuery } from '../utils/referenceCommand';
+import { webSearchUrl, webEngine } from '../utils/webSearch';
 
 // Rotating placeholder hints - cycled with a per-letter flip animation
+//
+// The first line changed when a plain query stopped going to a search engine.
+// Telling someone to "search the web" in the box that no longer does that by
+// default is the kind of small lie that costs a reader one confused search.
 const HINTS = [
-  'Search the web or enter an address',
+  'Search Newt - articles, posts, explores, your saves and notes',
   'Ask Claude anything with /c your question',
-  'Search your bookmarks, notes, feeds and reading list - try #tag',
-  '/g Google · /d DuckDuckGo · /b Bing · /br Brave',
+  'Press Enter to search everything here - try #tag',
+  'The web is a keystroke away: /g Google · /d DuckDuckGo · /b Bing · /br Brave',
   'Paste a URL to go straight there',
 ];
 
@@ -21,20 +26,15 @@ const ASK_HINT = 'Ask your own model with /ask - or attach an article with /refe
 const HINT_INTERVAL_MS = 6000;
 const HINT_FLIP_MS = 340;
 
-const SEARCH_URLS: Record<string, (q: string) => string> = {
-  google:     q => `https://www.google.com/search?q=${q}`,
-  duckduckgo: q => `https://duckduckgo.com/?q=${q}`,
-  bing:       q => `https://www.bing.com/search?q=${q}`,
-  brave:      q => `https://search.brave.com/search?q=${q}`,
-};
-
 // Slash shortcuts: /g → Google, /d → DuckDuckGo, /b → Bing, /br → Brave, /c → Claude
 // Longer prefixes listed first so /br is matched before /b
 const SHORTCUTS = [
-  { prefix: '/br', engine: 'Brave',      verb: 'Search', url: (q: string) => `https://search.brave.com/search?q=${encodeURIComponent(q)}` },
-  { prefix: '/g',  engine: 'Google',     verb: 'Search', url: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
-  { prefix: '/d',  engine: 'DuckDuckGo', verb: 'Search', url: (q: string) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}` },
-  { prefix: '/b',  engine: 'Bing',       verb: 'Search', url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
+  { prefix: '/br', engine: 'Brave',      verb: 'Search', url: (q: string) => webSearchUrl('brave', q) },
+  { prefix: '/g',  engine: 'Google',     verb: 'Search', url: (q: string) => webSearchUrl('google', q) },
+  { prefix: '/d',  engine: 'DuckDuckGo', verb: 'Search', url: (q: string) => webSearchUrl('duckduckgo', q) },
+  { prefix: '/b',  engine: 'Bing',       verb: 'Search', url: (q: string) => webSearchUrl('bing', q) },
+  // Claude is not in utils/webSearch: that table is the engines a reader can
+  // pick as their default, and this one answers rather than searches.
   { prefix: '/c',  engine: 'Claude',     verb: 'Ask',    url: (q: string) => `https://claude.ai/new?q=${encodeURIComponent(q)}` },
 ];
 
@@ -84,6 +84,7 @@ type Suggestion =
   | { kind: 'note';     id: string; title: string; snippet: string }
   | { kind: 'bookmark'; id: string; name: string; domain: string }
   | { kind: 'article';  id: string; title: string; source: string; url: string; matchedTag?: string }
+  | { kind: 'site';     text: string }
   | { kind: 'search';   text: string; url: string }
   | { kind: 'url';      text: string; url: string }
   | { kind: 'shortcut'; text: string; url: string; engine: string; verb: string };
@@ -117,6 +118,21 @@ interface Props {
    * and /reference is not offered.
    */
   onReference?: (url: string) => void;
+  /**
+   * Opens the search page for a plain query — the box's default on Enter.
+   *
+   * This is the one change that alters what the box has always done: a query
+   * with no slash prefix used to be handed straight to a search engine, and now
+   * it stops here first, at everything on this instance about that subject. The
+   * web is not lost — /g, /d, /b and /br still go out, the results page offers
+   * the reader's chosen engine in a click, and a typed address still resolves
+   * as an address rather than a search.
+   *
+   * Undefined for a bar with no page to open — a standalone one, with no shell
+   * around it to draw results in. There the old behaviour is still the right
+   * one, and Enter goes to the search engine as before.
+   */
+  onSearch?: (query: string) => void;
 }
 
 export default function SearchBar({
@@ -129,6 +145,7 @@ export default function SearchBar({
   onOpenArticle,
   onAsk,
   onReference,
+  onSearch,
 }: Props) {
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
@@ -269,17 +286,28 @@ export default function SearchBar({
         matchedTag: tagsOf(a).find(t => t.toLowerCase().startsWith(q)),
       }));
 
-    if (tagOnly) return results;
+    // A tag search gets the page row too. The rows above it are the handful of
+    // tagged things this dropdown happens to hold; the page searches the tag
+    // across the archive and everyone's posts, which is the same relationship
+    // the plain-text case has and should not read differently.
+    if (tagOnly) {
+      if (onSearch) results.push({ kind: 'site', text: raw });
+      return results;
+    }
 
     if (isUrl(raw)) {
       results.push({ kind: 'url', text: raw, url: raw.startsWith('http') ? raw : `https://${raw}` });
     } else {
-      const url = (SEARCH_URLS[searchEngine] ?? SEARCH_URLS.google)(encodeURIComponent(raw));
-      results.push({ kind: 'search', text: raw, url });
+      // Both, in this order, and the order is the change. The rows above are
+      // the handful of things this dropdown can name; the page behind this row
+      // is all of them, ranked, including the posts and explores no dropdown
+      // ever reached. The web sits underneath it rather than being gone.
+      if (onSearch) results.push({ kind: 'site', text: raw });
+      results.push({ kind: 'search', text: raw, url: webSearchUrl(searchEngine, raw) });
     }
 
     return results;
-  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, onAsk, referenceTerm, searchEngine]);
+  }, [value, bookmarks, readingItems, feedHits, notes, onOpenNote, onAsk, onSearch, referenceTerm, searchEngine]);
 
   function navigate(url: string) {
     if (searchNewTab) {
@@ -314,6 +342,11 @@ export default function SearchBar({
       setSelectedIndex(-1);
     } else if (item.kind === 'bookmark') {
       navigate(bookmarkHref(item.domain));
+    } else if (item.kind === 'site') {
+      onSearch?.(item.text);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
     } else if (item.kind === 'article' && onOpenArticle) {
       // Articles and posts stop in Newt first: the reader, its comments and the
       // save controls are all here, and a search result is usually a "was this
@@ -366,10 +399,23 @@ export default function SearchBar({
       navigate(shortcut.url(query));
       return;
     }
-    const url = isUrl(q)
-      ? (q.startsWith('http') ? q : `https://${q}`)
-      : (SEARCH_URLS[searchEngine] ?? SEARCH_URLS.google)(encodeURIComponent(q));
-    navigate(url);
+    // An address is still an address. Someone who types a hostname means to go
+    // there, and sending them to a results page listing what we know about it
+    // would be answering a question they didn't ask.
+    if (isUrl(q)) {
+      navigate(q.startsWith('http') ? q : `https://${q}`);
+      return;
+    }
+    // The default, and the whole point of the page: a plain query is a question
+    // about what is here before it is a question for a search engine.
+    if (onSearch) {
+      onSearch(q);
+      setValue('');
+      setOpen(false);
+      setSelectedIndex(-1);
+      return;
+    }
+    navigate(webSearchUrl(searchEngine, q));
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -458,7 +504,7 @@ export default function SearchBar({
             // is the difference between a key that looks like it submits and
             // one that looks like it inserts a line break.
             enterKeyHint="search"
-            aria-label="Search the web or enter an address"
+            aria-label="Search Newt, search the web, or enter an address"
           />
           {!value && (
             <span className={styles.hint} aria-hidden="true">
@@ -587,13 +633,32 @@ export default function SearchBar({
                 <span className={styles.badge}>{item.engine}</span>
               </div>
             );
+            if (item.kind === 'site') return (
+              <div key="site" className={`${styles.result} ${sel ? styles.resultSel : ''}`}
+                onMouseDown={() => handleMouseDown(item)} onMouseEnter={() => setSelectedIndex(i)}>
+                <div className={styles.resultIconWrap}><IconSearch /></div>
+                <div className={styles.resultText}>
+                  <span className={styles.resultLabel}>Search for <strong>{item.text}</strong></span>
+                  <span className={styles.resultSub}>
+                    Articles, posts, explores, your saves and notes
+                  </span>
+                </div>
+                <span className={styles.badge}>Newt</span>
+              </div>
+            );
             return (
               <div key="search" className={`${styles.result} ${sel ? styles.resultSel : ''}`}
                 onMouseDown={() => handleMouseDown(item)} onMouseEnter={() => setSelectedIndex(i)}>
                 <div className={styles.resultIconWrap}><IconSearch /></div>
                 <div className={styles.resultText}>
-                  <span className={styles.resultLabel}>Search for <strong>{item.text}</strong></span>
+                  {/* Named rather than the bare "Search for …" it used to be.
+                      With the row above it there are now two searches on offer,
+                      and which one leaves the app has to be the visible part. */}
+                  <span className={styles.resultLabel}>
+                    Search <strong>{webEngine(searchEngine).label}</strong> for <strong>{item.text}</strong>
+                  </span>
                 </div>
+                <span className={styles.badge}>{webEngine(searchEngine).label}</span>
               </div>
             );
           })}

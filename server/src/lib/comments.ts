@@ -208,7 +208,7 @@ export function isBlankHtml(html: string): boolean {
 // Normalises an article URL so the same piece read from a feed, a saved reading
 // list entry, or a shared link all resolve to one comment thread. Tracking
 // params are dropped so "?utm_source=..." variants don't fork the thread.
-const TRACKING_PARAMS = /^(utm_|fbclid$|gclid$|mc_(cid|eid)$|ref$|ref_src$|igshid$|cmpid$|smid$)/i;
+export const TRACKING_PARAMS = /^(utm_|fbclid$|gclid$|mc_(cid|eid)$|ref$|ref_src$|igshid$|cmpid$|smid$)/i;
 
 export function canonicalArticleKey(raw: string): string {
   try {

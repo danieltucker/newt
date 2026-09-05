@@ -8,7 +8,7 @@ import { blogFeedUrlFor, renderRss } from '../lib/blogFeed';
 import { normalizeTag, tagPostsWhere, TAG_PAGE_SIZE, MIN_TAG_POSTS_TO_INDEX } from '../lib/tags';
 import { eligibleAuthorIds } from '../lib/recent';
 import { PUBLIC_USER_SELECT, displayNameOf } from '../lib/friends';
-import { canonicalArticleKey, articleHost } from '../lib/comments';
+import { canonicalArticleKey, articleHost, TRACKING_PARAMS } from '../lib/comments';
 import { assembleThread } from '../lib/commentTree';
 import logger from '../lib/logger';
 
@@ -476,18 +476,68 @@ router.get('/t/:tag/feed.xml', async (req: Request, res: Response): Promise<void
   }
 });
 
-// ── Shared thread link: /a/<base64url> ───────────────────────────────────────
+// ── A thread on somebody else's article: /s/<host>/<path> and /a/<base64url> ─
 
 /**
- * The article URL out of a thread link. The mirror of encodeArticleId in
+ * The article URL out of a legacy thread link. The mirror of encodeArticleId in
  * client/src/utils/articleUrl.ts — the id is the URL itself, base64url-encoded,
  * so there is no mapping to look up and nothing to keep in step but this.
+ *
+ * Only ever *read* now; the readable form below is what gets minted. It stays
+ * because links in this shape are already pasted into other people's chats, and
+ * because every note embed written before the change stored one as its href.
  */
 function decodeArticleId(id: string): string | null {
   try {
     const b64 = id.replace(/-/g, '+').replace(/_/g, '/');
     const url = Buffer.from(b64, 'base64').toString('utf8');
     return /^https?:\/\//i.test(url) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+// Mirrors HOSTNAME in client/src/utils/articleUrl.ts and the same test in
+// siteUrl.ts: the first segment of a readable article path has to be a plain
+// hostname, or it is not one of ours.
+const ARTICLE_HOSTNAME = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
+
+/**
+ * The article URL a readable path names — `https://` plus the two halves.
+ *
+ * The client mints these (articleUrl.ts) and the conditions live there; the job
+ * here is only to be as suspicious of the result as of any other path off the
+ * wire. The host is re-checked and the whole thing re-parsed, because this value
+ * ends up in a database query and in an `og:url`.
+ */
+function articleUrlFromPath(domain: string, rest: string): string | null {
+  try {
+    const host = decodeURIComponent(domain).trim().toLowerCase();
+    if (!ARTICLE_HOSTNAME.test(host)) return null;
+    const path = '/' + rest.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (path === '/') return null;
+    const u = new URL(`https://${host}${path}`);
+    return u.hostname === host ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The readable path for an article URL, or null where there isn't one. The
+ * mirror of readablePathFor in client/src/utils/articleUrl.ts, which documents
+ * why each condition is there; this copy exists so the canonical below can name
+ * the short spelling of a page reached at its long one.
+ */
+function readableArticlePath(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== 'https:' || u.hash || u.port || u.username) return null;
+    if ([...u.searchParams.keys()].some(k => !TRACKING_PARAMS.test(k))) return null;
+    const host = u.hostname.toLowerCase();
+    if (!ARTICLE_HOSTNAME.test(host)) return null;
+    const path = u.pathname.replace(/\/+$/, '');
+    return path ? `/s/${host}${path}` : null;
   } catch {
     return null;
   }
@@ -511,60 +561,93 @@ function decodeArticleId(id: string): string | null {
  * The meta is still rendered in full, because `noindex` is a search directive
  * and unfurlers ignore it: a thread link pasted into Slack should still show
  * what it is.
+ *
+ * `selfPath` rather than the request path: the two routes below are two
+ * spellings of one page, and the canonical is the one place that has to pick a
+ * spelling. It names the readable one whenever the URL can be written that way,
+ * so an unfurler quoting the canonical quotes the short link even when it was
+ * handed the long one.
  */
+async function renderArticleDocument(res: Response, url: string, selfPath: string): Promise<void> {
+  const key = canonicalArticleKey(url);
+  const host = articleHost(url);
+  const [comment, count, item] = await Promise.all([
+    prisma.comment.findFirst({
+      where: { articleKey: key, visibility: 'public', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { articleTitle: true },
+    }),
+    prisma.comment.count({ where: { articleKey: key, visibility: 'public', deletedAt: null } }),
+    // What the publisher says about their own article, as it arrived in a
+    // feed. Without this the card for a shared article described *Newt* — the
+    // host name where a headline belongs and "read and discuss this article on
+    // Newt" where the standfirst belongs — which is the least useful thing a
+    // link to somebody else's writing could say about itself.
+    //
+    // FeedItem rather than ReadingListItem: this row is publisher metadata
+    // that arrived over a public feed, and the page it feeds is public. A
+    // reading-list row belongs to a person, and whose library an article sits
+    // in is not something a shared link should answer.
+    prisma.feedItem.findFirst({
+      where: { linkKey: key },
+      orderBy: { fetchedAt: 'desc' },
+      select: { title: true, snippet: true, imageUrl: true },
+    }),
+  ]);
+
+  const title = comment?.articleTitle || item?.title || host || 'Discussion';
+  // The publisher's own image, hotlinked — it is theirs, it is already public,
+  // and an unfurler wants an address it can GET. Anything that is not an
+  // http(s) address is not one.
+  const image = item?.imageUrl && /^https?:\/\//i.test(item.imageUrl) ? item.imageUrl : null;
+  const head = renderHead({
+    title,
+    // The article's own standfirst first: a card for a link to somebody else's
+    // piece should say what the piece is about. The comment count is what Newt
+    // adds to it, and is only worth the whole description when there is
+    // nothing better to say.
+    description: item?.snippet
+      || (count > 0
+        ? `${count} public ${count === 1 ? 'comment' : 'comments'} on this article, on Newt.`
+        : 'Read and discuss this article on Newt.'),
+    canonical: `${publicOrigin()}${selfPath}`,
+    image,
+    robots: 'noindex, follow',
+    ogType: 'article',
+  });
+
+  res.type('html').send(await renderShell(head));
+}
+
+/**
+ * The readable share link, and what the client mints today.
+ *
+ * It nests under the publisher's own page rather than taking a prefix of its
+ * own: `/s/theverge.com` is everything Newt has from The Verge, and
+ * `/s/theverge.com/<path>` is one piece from them, which is the relationship the
+ * two pages actually have. Express will not match `:domain` across a `/`, so the
+ * site route further down keeps every single-segment path and this one takes the
+ * rest — the two cannot shadow each other.
+ */
+router.get('/s/:domain/*', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const url = articleUrlFromPath(req.params.domain, (req.params as Record<string, string>)[0] ?? '');
+    if (!url) { await notFound(res); return; }
+    // req.path, not the original URL: the query string is the reader's own
+    // (?c=<id> aims at one comment) and does not belong in a canonical.
+    await renderArticleDocument(res, url, req.path.replace(/\/+$/, ''));
+  } catch (err) {
+    logger.error(err, 'Thread document error');
+    await plainShell(res, 500);
+  }
+});
+
+/** The same page at its old address. See decodeArticleId above for why it stays. */
 router.get('/a/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const url = decodeArticleId(req.params.id);
     if (!url) { await notFound(res); return; }
-
-    const key = canonicalArticleKey(url);
-    const host = articleHost(url);
-    const [comment, count, item] = await Promise.all([
-      prisma.comment.findFirst({
-        where: { articleKey: key, visibility: 'public', deletedAt: null },
-        orderBy: { createdAt: 'asc' },
-        select: { articleTitle: true },
-      }),
-      prisma.comment.count({ where: { articleKey: key, visibility: 'public', deletedAt: null } }),
-      // What the publisher says about their own article, as it arrived in a
-      // feed. Without this the card for a shared article described *Newt* — the
-      // host name where a headline belongs and "read and discuss this article on
-      // Newt" where the standfirst belongs — which is the least useful thing a
-      // link to somebody else's writing could say about itself.
-      //
-      // FeedItem rather than ReadingListItem: this row is publisher metadata
-      // that arrived over a public feed, and the page it feeds is public. A
-      // reading-list row belongs to a person, and whose library an article sits
-      // in is not something a shared link should answer.
-      prisma.feedItem.findFirst({
-        where: { linkKey: key },
-        orderBy: { fetchedAt: 'desc' },
-        select: { title: true, snippet: true, imageUrl: true },
-      }),
-    ]);
-
-    const title = comment?.articleTitle || item?.title || host || 'Discussion';
-    // The publisher's own image, hotlinked — it is theirs, it is already public,
-    // and an unfurler wants an address it can GET. Anything that is not an
-    // http(s) address is not one.
-    const image = item?.imageUrl && /^https?:\/\//i.test(item.imageUrl) ? item.imageUrl : null;
-    const head = renderHead({
-      title,
-      // The article's own standfirst first: a card for a link to somebody else's
-      // piece should say what the piece is about. The comment count is what Newt
-      // adds to it, and is only worth the whole description when there is
-      // nothing better to say.
-      description: item?.snippet
-        || (count > 0
-          ? `${count} public ${count === 1 ? 'comment' : 'comments'} on this article, on Newt.`
-          : 'Read and discuss this article on Newt.'),
-      canonical: `${publicOrigin()}/a/${encodeURIComponent(req.params.id)}`,
-      image,
-      robots: 'noindex, follow',
-      ogType: 'article',
-    });
-
-    res.type('html').send(await renderShell(head));
+    await renderArticleDocument(res, url, readableArticlePath(url) || `/a/${encodeURIComponent(req.params.id)}`);
   } catch (err) {
     logger.error(err, 'Thread document error');
     await plainShell(res, 500);

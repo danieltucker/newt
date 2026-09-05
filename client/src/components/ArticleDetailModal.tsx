@@ -75,11 +75,11 @@ interface Props {
   focusCommentId?: string | null;
 }
 
-// History bookkeeping for the reader's /a/<id> URL. Module-level (only one reader
+// History bookkeeping for the reader's own URL. Module-level (only one reader
 // is ever open at a time) so that React StrictMode's mount→unmount→mount probe in
 // dev doesn't push/pop twice: the throwaway unmount schedules its cleanup on a
 // timeout, and the immediate re-mount cancels it before it can run.
-let readerActive = false;   // our /a/<id> entry is currently on the history stack
+let readerActive = false;   // our reader entry is currently on the history stack
 let readerPushed = false;   // we pushed it (vs. the page was opened *at* that URL)
 let pendingHistoryCleanup: ReturnType<typeof setTimeout> | null = null;
 
@@ -141,7 +141,7 @@ export default function ArticleDetailModal({
     };
   }, [onClose]);
 
-  // Reflect the open article in the browser URL (/a/<id>) so it's shareable and
+  // Reflect the open article in the browser URL (see articleUrl) so it's shareable and
   // the back button closes the reader. We push an entry on open (unless we were
   // opened *from* that URL - a shared deep link) and undo it on close.
   useEffect(() => {

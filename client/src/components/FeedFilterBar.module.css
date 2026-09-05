@@ -21,6 +21,54 @@
   flex-wrap: nowrap;
 }
 
+/* ── The bar's own surface ──
+   These two lived in FeedPanel as .controls and .filterBox, which meant a
+   second surface anywhere else was a second copy of them - and the search page
+   proved it, arriving with a bar that behaved like the feed's and looked
+   nothing like it. They belong to the control bar, so they are here, behind
+   `sticky` and `frame`.
+
+   Sticky rather than fixed: `position: fixed` inside .bodyGrid is clamped to
+   the grid's box (its finished `rise` animation leaves a transform behind,
+   which makes it the containing block), and sticky is what this wants anyway -
+   the bar belongs to its list and should leave with it rather than ride over
+   whatever is above.
+
+   --shellbar-h is published by ShellBar from its own measured height; the
+   fallback only covers the frame before that first measurement lands.
+
+   --z-page-sticky, one band below the shell bar. The bars themselves never
+   overlap - the offset already clears it - but the menus hanging off the shell
+   bar reach down over this one, and those are stuck at their bar's band
+   whatever z-index they carry (see the scale in tokens.css). */
+.sticky {
+  position: sticky;
+  top: calc(var(--shellbar-h, 56px) + 8px);
+  z-index: var(--z-page-sticky);
+  margin-bottom: 14px;
+}
+
+/* Frosted rather than a near-transparent tint: cards pass underneath it, and
+   the same liquid-glass vocabulary as the shell bar and the bookmarks rail is
+   what makes the strip read as chrome rather than as a card that refuses to
+   scroll.
+
+   No `overflow` of any kind. The Filters dropdown is absolutely positioned
+   against this box on a narrow screen (see .panel below), and any overflow
+   value but `visible` would clip it into a sliver. */
+.frame {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 88%, transparent),
+    color-mix(in oklab, var(--surface) 72%, transparent)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 6px 22px color-mix(in oklab, var(--shadow) 45%, transparent);
+}
+
 /* The compressible half. `min-width: 0` is load-bearing: without it a flex
    item's automatic minimum size is its min-content width, so the chips would
    refuse to give any width back and the row would overflow its box instead. */

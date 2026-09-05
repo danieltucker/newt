@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { shareLinkFor } from './shareLink';
+import { articlePathFor } from './articleUrl';
 
 // Where Share sends people.
 //
 // The rule this pins down is the one the first version of Share got wrong: an
 // article published elsewhere has no page here except the reader, but a post
-// written *here* already has one, and wrapping that in /a/ handed readers a
-// generic reader whose only route to the post was "Open original".
+// written *here* already has one, and wrapping that in the reader handed people a
+// generic page whose only route to the post was "Open original".
 //
 // noteEmbed makes the same distinction when it decides where a reference card
 // points, so the two must not drift apart.
@@ -30,16 +31,22 @@ describe('shareLinkFor', () => {
 
   it('sends an article published elsewhere to the reader', () => {
     const link = shareLinkFor('https://techcrunch.com/2026/08/16/a-story/');
-    expect(link.startsWith(`${ORIGIN}/a/`)).toBe(true);
+    expect(link).toBe(`${ORIGIN}/s/techcrunch.com/2026/08/16/a-story`);
   });
 
   // The origin check is the security-relevant half: a feed can carry any link,
   // and a lookalike /u/<name>/<slug> on somebody else's host must not be
   // rewritten into a path on this instance.
+  //
+  // The reader path now spells the article out, so the lookalike’s own
+  // /u/dan/my-post is visible inside it - under its host, where it is a foreign
+  // URL being quoted rather than a path on this instance. The assertion is
+  // therefore about the whole link, not a substring of it.
   it('does not treat a lookalike post path on another host as one of ours', () => {
-    const link = shareLinkFor('https://evil.example/u/dan/my-post');
-    expect(link.startsWith(`${ORIGIN}/a/`)).toBe(true);
-    expect(link).not.toContain('/u/dan/my-post');
+    const url = 'https://evil.example/u/dan/my-post';
+    const link = shareLinkFor(url);
+    expect(link).toBe(`${ORIGIN}/s/evil.example/u/dan/my-post`);
+    expect(link).not.toBe(`${ORIGIN}/u/dan/my-post`);
   });
 
   // Usernames are not charset-restricted server-side, so the segment is
@@ -58,6 +65,8 @@ describe('shareLinkFor', () => {
   // A profile is one segment, not two, so it is not a post - it must fall
   // through to the reader rather than being mistaken for one.
   it('does not mistake a bare profile for a post', () => {
-    expect(shareLinkFor(`${ORIGIN}/u/dan`).startsWith(`${ORIGIN}/a/`)).toBe(true);
+    const url = `${ORIGIN}/u/dan`;
+    expect(shareLinkFor(url)).toBe(ORIGIN + articlePathFor(url));
+    expect(shareLinkFor(url)).not.toBe(url);
   });
 });

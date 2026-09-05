@@ -42,6 +42,7 @@ import {
 } from './utils/researchUrl';
 import { parseSharedExplorePath } from './utils/exploreShareUrl';
 import { isSettingsPath, parseSettingsSection } from './utils/settingsUrl';
+import { isSearchPath, parseSearchQuery, parseSearchFilter } from './utils/searchUrl';
 import { isAdminPath, parseAdminTab, parseAdminReportId } from './utils/adminUrl';
 
 // The two routes that render the sign-in form. Everything else a signed-out
@@ -365,6 +366,19 @@ export default function App() {
     // The #hash names one setting inside the section. It is passed on rather
     // than acted on here: which anchors exist is the settings page's business,
     // and an unknown one simply lands nowhere.
+    // The search page. Signed-in only and with no public counterpart, like
+    // /explore and /s/ above it: two of the three corpora it searches are
+    // scoped to the reader (their subscriptions, their visibility tiers), so
+    // there is no coherent signed-out version of it. A signed-out visitor asking
+    // for /search falls through to the landing page rather than a sign-in wall.
+    //
+    // Both the query and the tab live in the query string, so this is one of
+    // the few views that reads `search` rather than `path`.
+    : isSearchPath(path) ? {
+        kind: 'search',
+        query: parseSearchQuery(search),
+        filter: parseSearchFilter(search),
+      }
     : isSettingsPath(path) ? {
         kind: 'settings',
         section: parseSettingsSection(path),

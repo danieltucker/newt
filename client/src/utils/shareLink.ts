@@ -19,13 +19,13 @@ export const COPIED_FAIL = 'Couldn’t copy';
  * what the first version of Share did:
  *
  *  - An **article** published elsewhere has no page here of its own, so the
- *    Newt page for it is the reader at `/a/<id>`. That is where its comment
+ *    Newt page for it is the reader at `/s/<host>/<path>`. That is where its comment
  *    thread lives, and it is the reason to send this link instead of the
  *    publisher's URL.
  *  - A **post written on this instance** already has a page - `/u/<author>/
  *    <slug>` - with the writing itself on it, the author's name, and the same
  *    comment thread (threads key on the post's URL, so the two cannot diverge).
- *    Wrapping it in `/a/` instead sent readers to a generic reader rendering a
+ *    Wrapping it in the reader instead sent readers to a generic page rendering a
  *    feed item *about* the post, whose only way through to the post was the
  *    toolbar's "Open original".
  *

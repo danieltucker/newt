@@ -470,12 +470,22 @@ model ResearchThread {
   messages     ResearchMessage[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @default(now())
+  // Title as A, sourceTitle as B. The transcript is deliberately not in here —
+  // message bodies quote the reader's own private comments and notes back at
+  // them, and a thread must not be matchable on words its author never wrote.
+  // Generated, so it cannot drift from the row; declared here only so `migrate`
+  // doesn't read it as drift. Read through $queryRaw, never through the client.
+  searchVector Unsupported("tsvector")?
 
   @@index([userId, updatedAt])
   // "What has been shared about this article", which is the explored-paths
   // query. Keyed on sourceKey first because that is always the equality term;
   // visibility narrows it to the tiers the viewer is allowed to see.
   @@index([sourceKey, visibility, sharedAt])
+  // Search narrows by tier for everyone else's threads, and the index above
+  // leads with a sourceKey that query has no value for.
+  @@index([visibility])
+  @@index([searchVector], type: Gin)
 }
 
 model ResearchMessage {
@@ -1235,6 +1245,13 @@ model BlogPost {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   references      PostReference[]
+  // Title as A, excerpt as B, tags as C — the author's own labels rank below
+  // the sentence they wrote to summarise the post. `body` is left out because
+  // it is sanitized HTML, and every tag name and embed attribute in it would
+  // become a searchable word. Generated, so it cannot drift from the row;
+  // declared here only so `migrate` doesn't read it as drift and offer to drop
+  // it. Read through $queryRaw, never selected through the client.
+  searchVector    Unsupported("tsvector")?
 
   @@unique([userId, slug])
   @@index([userId, publishedAt])
@@ -1246,6 +1263,9 @@ model BlogPost {
   // author, which without this is a sequential scan of the whole table on a
   // route a crawler will walk exhaustively.
   @@index([tags(ops: ArrayOps)], type: Gin)
+  // What makes the search page's `@@` an index lookup rather than a scan of
+  // every post on the instance.
+  @@index([searchVector], type: Gin)
 }
 
 // An article a post points at, one row per referenced URL.
