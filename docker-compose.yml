@@ -44,6 +44,40 @@ services:
       # pages in. The client container serves it, so this is that service by name;
       # only change it if the service is renamed.
       SHELL_ORIGIN: ${SHELL_ORIGIN:-http://client}
+      # Close signups once you have created your account(s).
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      # The console’s ping/tracert endpoints. Set false on anything reachable
+      # from outside your own network.
+      CONSOLE_ENABLED: ${CONSOLE_ENABLED:-true}
+      # The address strangers type in, when it differs from CLIENT_ORIGIN — it
+      # is what share links and your outgoing RSS point at. Blank falls back
+      # to CLIENT_ORIGIN.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # ── AI tasks: which private hosts the site model may reach ───────────────
+      # THE ONE AI SETTING THAT MUST LIVE HERE RATHER THAN IN THE ADMIN PANEL.
+      #
+      # Endpoints themselves are configured in Admin → AI → Models, which is a
+      # convenience: switching model or adding a box should not need a shell.
+      # But the site model is the only call in Newt permitted to reach an
+      # address inside your network, and that capability stays gated on access
+      # to this file — editing a database row needs only an admin web session,
+      # which is a much cheaper thing for an attacker to obtain.
+      #
+      # Comma-separated hostnames or literal addresses. Blank means the panel
+      # accepts only public endpoints. docker-compose.truenas.yml has the long
+      # version, plus a commented-out Ollama service to point it at.
+      OPERATOR_LLM_PRIVATE_HOSTS: ${OPERATOR_LLM_PRIVATE_HOSTS:-}
+      # How the site model was configured before the admin panel existed. Still
+      # honoured as a fallback when no endpoint has been added there, so an
+      # upgrade does not switch the AI tasks off. Prefer the panel.
+      OPERATOR_LLM_BASE_URL: ${OPERATOR_LLM_BASE_URL:-}
+      OPERATOR_LLM_MODEL: ${OPERATOR_LLM_MODEL:-}
+      OPERATOR_LLM_KEY: ${OPERATOR_LLM_KEY:-}
+      # Background workers: the feed poller and the AI job queue. Either can be
+      # switched off with false, which is what you want on a second instance
+      # sharing one database.
+      FEED_SCHEDULER: ${FEED_SCHEDULER:-true}
+      AI_QUEUE: ${AI_QUEUE:-true}
     depends_on:
       postgres:
         condition: service_healthy
