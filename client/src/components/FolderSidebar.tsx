@@ -25,7 +25,12 @@ interface Props {
   bookmarkOpenMode?: 'same-tab' | 'new-tab';
   onSelectFolder: (id: string, el: HTMLElement) => void;
   onNewFolder: () => void;
-  onNewBookmark: () => void;
+  /**
+   * Opens the add-bookmark dialog. The folder id is passed when the request came
+   * from a folder's own + button, so the dialog opens already filed there; the
+   * sidebar's footer button passes nothing and lets the page choose.
+   */
+  onNewBookmark: (folderId?: string) => void;
   onEditFolder: (f: Folder) => void;
   onDeleteFolder: (id: string) => void;
   onMarkFolderRead: (id: string) => void;
@@ -114,6 +119,7 @@ interface SortableFolderProps {
   isActive: boolean;
   expanded?: boolean;
   onSelect: (id: string, el: HTMLElement) => void;
+  onAddBookmark: (id: string) => void;
   onEdit: (f: Folder) => void;
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
@@ -122,7 +128,7 @@ interface SortableFolderProps {
 
 function SortableFolder({
   folder, isActive, expanded,
-  onSelect, onEdit, onDelete, onMarkRead, folderRefs,
+  onSelect, onAddBookmark, onEdit, onDelete, onMarkRead, folderRefs,
 }: SortableFolderProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: folder.id });
 
@@ -175,6 +181,28 @@ function SortableFolder({
       <span className={`${styles.chevron} ${expanded ? styles.chevronOpen : ''}`} aria-hidden>
         ›
       </span>
+
+      {/* Filing a link is the one thing you do *to* a folder often enough to
+          want on the row itself. It rides beside the ··· rather than inside it
+          because a menu costs two clicks and this is the common case; the menu
+          keeps the rare ones. Same reveal-on-hover as the ···, so a resting
+          column of folders is still a column of names.
+
+          stopPropagation on the click keeps the row from toggling open
+          underneath the dialog; on pointerdown it keeps the drag sensors from
+          reading a press on a button as a press on the row. */}
+      <button
+        className={styles.addBtn}
+        onClick={e => { e.stopPropagation(); onAddBookmark(folder.id); }}
+        onPointerDown={e => e.stopPropagation()}
+        title={`Add a bookmark to ${folder.name}`}
+        aria-label={`Add a bookmark to ${folder.name}`}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
 
       <FolderMenu folder={folder} onEdit={onEdit} onDelete={onDelete} onMarkRead={onMarkRead} />
     </div>
@@ -560,6 +588,7 @@ export default function FolderSidebar({
                   isActive={folder.id === activeFolderId}
                   expanded={isOpen}
                   onSelect={handleFolderClick}
+                  onAddBookmark={onNewBookmark}
                   onEdit={onEditFolder}
                   onDelete={onDeleteFolder}
                   onMarkRead={onMarkFolderRead}
@@ -604,7 +633,7 @@ export default function FolderSidebar({
         <button className={styles.newFolder} onClick={onNewFolder}>
           + New folder
         </button>
-        <button className={styles.newFolder} onClick={onNewBookmark}>
+        <button className={styles.newFolder} onClick={() => onNewBookmark()}>
           + New bookmark
         </button>
       </div>

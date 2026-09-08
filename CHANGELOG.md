@@ -2,6 +2,30 @@
 
 Notable changes to Newt, newest first.
 
+## v1.27.2 - A + on every folder, and a rail that scrolls
+
+**2026-09-08**
+
+**Filing a link starts on the folder you want it in.** Every folder row in the
+rail now carries a + beside its ···, and pressing it opens the add-bookmark
+dialog already filed into that folder. It was two steps before - open the
+dialog from the foot of the rail, then find the folder again in its dropdown -
+and the folder you meant was usually the one under the pointer at the time. The
+button keeps the ··· menu's manners: invisible until the row is hovered, so a
+resting column of folders is still a column of names, and always visible on
+touch, where there is no hover to reveal it.
+
+**The folder list scrolls when the rail is a dropdown.** On a narrow window the
+rail moves into the hamburger, and there the wheel did nothing at all anywhere
+over the folders - a list of thirty folders showed the first few and there was
+no way to reach the rest. The rail is built so the folder tree scrolls inside
+itself, which needs the box holding it to have a height for the tree to overflow
+against; the dropdown was handing it none, so the tree became a scroll container
+with nothing to scroll and quietly swallowed every wheel event meant for the
+dropdown around it. The phone's navigation sheet had the same fault for the same
+reason. Both now behave the way the sticky rail on a wide window always has:
+Places stays put at the top and the folder tree scrolls under it.
+
 ## v1.27.1 - The search box searches here first
 
 **2026-09-05**

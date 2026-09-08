@@ -45,6 +45,7 @@
 }
 
 .item {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -149,3 +150,84 @@
   /* The badge moves above the title rather than shrinking the text beside it. */
   .item { flex-direction: column; gap: 8px; }
 }
+
+/* ── Expanded explore ──────────────────────────────────────────────────── */
+
+/* The chevron sits out of the flex flow entirely. In the narrow layout the card
+   turns into a column, and a third flex child would have landed under the meta
+   line as a stray glyph on its own row. */
+.chev {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 0.18s, color 0.15s;
+}
+
+.item[data-expandable] { padding-right: 34px; }
+
+.item:hover .chev { color: var(--text); }
+
+/* Open: the row is the lid of the panel under it rather than a card of its own,
+   so it loses its bottom corners and the seam between them. */
+.item[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+  background: var(--surface2);
+}
+
+.item[aria-expanded='true'] .chev {
+  transform: rotate(180deg);
+  color: var(--text);
+}
+
+.panel {
+  padding: 4px 16px 14px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  background: var(--surface2);
+}
+
+/* No max-height and no scroller. A box that scrolls inside a modal that already
+   scrolls is the wheel trap this app has hit before - and a reader who opened a
+   conversation asked to read it, not to read it through a slot. */
+
+.panelNote {
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.panelFoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.panelBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panelBtn:hover { color: var(--text); }
+
+.panelLink {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.panelLink:hover { text-decoration: underline; }

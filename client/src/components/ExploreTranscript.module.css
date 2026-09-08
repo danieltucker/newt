@@ -1,0 +1,75 @@
+/* The transcript, inline under a path row. A step quieter and a size smaller
+   than the standalone page it mirrors: there the conversation is the page, here
+   it is an aside inside somebody's article, and it must not out-shout the piece
+   the reader is standing in. */
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* The question is the quieter half - it is short, and the answer under it is
+   what the reader expanded for - so it is set as a heading for the block rather
+   than as a bubble competing with it. */
+.user .who { color: var(--accent); }
+
+.who {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.user .body {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.assistant .body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.body :global(p) { margin: 0 0 11px; }
+.body :global(p:last-child) { margin-bottom: 0; }
+.body :global(h1),
+.body :global(h2),
+.body :global(h3) {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 15.5px;
+  margin: 16px 0 7px;
+}
+.body :global(ul), .body :global(ol) { margin: 0 0 11px; padding-left: 20px; }
+.body :global(li) { margin-bottom: 4px; }
+.body :global(a) { color: var(--accent); }
+.body :global(code) {
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface2);
+}
+/* Its own scroller, and the only one in here. A code block is the one thing a
+   model writes that cannot be wrapped, and without this it widens the article
+   modal's scroller instead of itself. */
+.body :global(pre) {
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--surface2);
+  overflow-x: auto;
+}
+.body :global(pre code) { padding: 0; background: none; }
+.body :global(blockquote) {
+  margin: 0 0 11px;
+  padding-left: 13px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}

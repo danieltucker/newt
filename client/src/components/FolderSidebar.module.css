@@ -370,7 +370,16 @@
 
    The bookmarks *inside* a folder are a different matter - those are things you
    click rather than read, and they get a proper hover. See .inlineLink. */
-.folderItem:hover .menuWrap {
+.folderItem:hover .menuWrap,
+.folderItem:hover .addBtn {
+  opacity: 1;
+}
+
+/* Both controls are invisible at rest but still in the tab order, so keyboard
+   focus has to bring them back - otherwise tabbing along a folder row lands on
+   a button nobody can see. */
+.addBtn:focus-visible,
+.menuWrap:focus-within {
   opacity: 1;
 }
 
@@ -490,6 +499,33 @@
   color: var(--text);
 }
 
+/* "Add a bookmark here", on the row it applies to. Same square, same resting
+   invisibility and same quiet grey as the ··· beside it, so the pair reads as
+   one set of row controls rather than a button and a menu; the accent only
+   arrives under the pointer, where it is the difference between "these are the
+   controls" and "this is the one you are about to press". */
+.addBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  padding: 0;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.addBtn:hover {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
 .dropdown {
   position: absolute;
   top: 28px;
@@ -574,7 +610,8 @@
    The one real difference is touch: there is no hover, so the ··· menus have
    to be visible to be reachable. */
 @media (max-width: 900px) {
-  .menuWrap {
+  .menuWrap,
+  .addBtn {
     opacity: 1;
   }
 
@@ -602,6 +639,9 @@
      inside needs scaling with them. */
   .pinMenuTrigger,
   .menuTrigger { font-size: 16px; }
+
+  /* The + is an SVG, so it scales by its own box rather than a font size. */
+  .addBtn svg { width: 15px; height: 15px; }
 
   .inlineFaviconWrap { width: 24px; height: 24px; }
   .inlineMonogram { font-size: 12px; }

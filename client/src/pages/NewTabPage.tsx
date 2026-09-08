@@ -370,6 +370,10 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
 
   // Modal state
   const [showAddLink, setShowAddLink] = useState(false);
+  // Which folder the add-link dialog should open filed into. Set by a folder
+  // row's own + button; null for every other way in, which falls back to
+  // whichever folder is open.
+  const [addLinkFolderId, setAddLinkFolderId] = useState<string | null>(null);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -758,7 +762,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   const dismissOtherOverlays = useCallback((keep: Overlay) => {
     if (keep !== 'console') { setShowConsole(false); setConsoleFading(false); }
     if (keep !== 'notes') { setShowNotes(false); setNotesFading(false); setNotesTarget(null); setNotesNew(false); }
-    if (keep !== 'addLink') { setShowAddLink(false); setBookmarkletAddUrl(''); }
+    if (keep !== 'addLink') { setShowAddLink(false); setBookmarkletAddUrl(''); setAddLinkFolderId(null); }
     setShowNewFolder(false);
     setShowImport(false);
     setEditingBookmark(null);
@@ -770,6 +774,13 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
   useEffect(() => { if (showNotes) dismissOtherOverlays('notes'); }, [showNotes, dismissOtherOverlays]);
   useEffect(() => { if (showConsole) dismissOtherOverlays('console'); }, [showConsole, dismissOtherOverlays]);
   useEffect(() => { if (showAddLink) dismissOtherOverlays('addLink'); }, [showAddLink, dismissOtherOverlays]);
+
+  // One way in for every "add a link" affordance. The folder is optional: the
+  // + on a folder row names one, the sidebar footer and the grid's tile don't.
+  const openAddLink = useCallback((folderId?: string) => {
+    setAddLinkFolderId(folderId ?? null);
+    setShowAddLink(true);
+  }, []);
 
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
 
@@ -1134,7 +1145,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
             if (bookmarkLayout === 'panel') close();
           }}
           onNewFolder={() => { close(); setShowNewFolder(true); }}
-          onNewBookmark={() => { close(); setShowAddLink(true); }}
+          onNewBookmark={folderId => { close(); openAddLink(folderId); }}
           onEditFolder={f => { close(); setEditingFolder(f); }}
           onDeleteFolder={handleDeleteFolder}
           onMarkFolderRead={handleMarkFolderRead}
@@ -1428,7 +1439,7 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
                 folder={activeFolder}
                 bookmarks={activeFolderId ? (bookmarksByFolder[activeFolderId] ?? []) : []}
                 tileRefs={tileRefs}
-                onAddLink={() => setShowAddLink(true)}
+                onAddLink={() => openAddLink()}
                 onReorder={reorderBookmarks}
                 onEditBookmark={setEditingBookmark}
                 onDeleteBookmark={handleDeleteBookmark}
@@ -1545,12 +1556,13 @@ export default function NewTabPage({ accessToken, username, isAdmin, themeSettin
       {showAddLink && (
         <AddLinkModal
           folders={folders}
-          defaultFolderId={activeFolderId}
+          defaultFolderId={addLinkFolderId ?? activeFolderId}
           defaultUrl={bookmarkletAddUrl || undefined}
           onAdd={handleAddLink}
           onCreateFolder={createFolder}
           onClose={() => {
             setShowAddLink(false);
+            setAddLinkFolderId(null);
             setBookmarkletAddUrl('');
             if (bookmarkletModeRef.current && window.opener) window.close();
           }}

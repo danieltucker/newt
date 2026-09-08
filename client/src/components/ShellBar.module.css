@@ -335,10 +335,34 @@
   color: var(--muted);
 }
 
+/* A flex column, not a plain block, and that is load-bearing rather than
+   cosmetic. ShellRail is built so the *folder tree* is the thing that scrolls:
+   .treeBody carries `overflow-y: auto` and `overscroll-behavior: contain`, and
+   .rail/.bookmarks carry `flex: 1; min-height: 0` to hand it a definite height
+   to overflow against. In a block container that chain never resolves -
+   .treeBody sizes to its content, so it is a scroll container with nothing to
+   scroll, and `overscroll-behavior: contain` on a box that cannot scroll still
+   swallows the wheel rather than chaining it up to this box, which is the one
+   that actually overflows. The result was a dropdown full of folders where the
+   wheel did nothing anywhere over the tree. Measured before the fix: this box
+   scrollHeight 1426 against clientHeight 504, and a 300px wheel over a folder
+   row moved neither.
+
+   A column resolves the chain the way the sticky .leftCol already does, so the
+   tree scrolls inside itself here too and Places stays put above it.
+   .sheetBody needs the same for the same reason.
+
+   The padding is 8px rather than 4 because .treeBody bleeds 8px sideways (a
+   negative margin giving back the room its own padding takes for hover rings);
+   at 4px it bled past this box's content edge and left it permanently 4px
+   scrollable sideways. The width grows by the same 8px so the rows inside keep
+   the width they had. */
 .menuRail {
-  width: min(272px, calc(100vw - 44px));
+  display: flex;
+  flex-direction: column;
+  width: min(280px, calc(100vw - 44px));
   max-height: 72vh;
-  padding: 0 4px 4px;
+  padding: 0 8px 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -521,7 +545,13 @@
   color: var(--text);
 }
 
+/* A column for the same reason .menuRail is one - see the note there. Without
+   it the rail's folder tree is a scroll container with nothing to scroll, and
+   its `overscroll-behavior: contain` eats every swipe that starts on a folder
+   instead of letting this box take it. */
 .sheetBody {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   /* The rail's foot - Settings, your own row - is the last thing in here, so the
