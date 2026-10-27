@@ -39,7 +39,7 @@
     "qrcode": "^1.5.4",
     "sanitize-html": "^2.17.6",
     "speakeasy": "^2.0.0",
-    "vite": "8.1.3"
+    "vite": "8.1.6"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
